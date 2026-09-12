@@ -8,12 +8,14 @@
 import {
   AdditiveBlending,
   BufferGeometry,
+  CanvasTexture,
   DynamicDrawUsage,
   Float32BufferAttribute,
   Mesh,
   MeshBasicMaterial,
   Points,
   PointsMaterial,
+  SRGBColorSpace,
   Vector3,
 } from 'three';
 import { QUALITY } from '../core/quality.js';
@@ -148,6 +150,27 @@ export function createContrails(scene) {
 
 /* ----------------------------------------------------------------- spray --- */
 
+/**
+ * A soft round droplet, drawn into a canvas at load. Untextured points render
+ * as hard squares, which look like pixels rather than water.
+ */
+function dropletTexture() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.45, 'rgba(255,255,255,0.75)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
 export function createSpray(scene) {
   const count = QUALITY.spray;
   const geometry = new BufferGeometry();
@@ -159,7 +182,8 @@ export function createSpray(scene) {
   const points = new Points(
     geometry,
     new PointsMaterial({
-      size: 2.2,
+      size: 1.7,
+      map: dropletTexture(),
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
@@ -168,6 +192,9 @@ export function createSpray(scene) {
     })
   );
   points.frustumCulled = false;
+  // The sea is a transparent surface with renderOrder 1; anything that floats
+  // above it and does not write depth has to be drawn after it.
+  points.renderOrder = 3;
   scene.add(points);
 
   const particles = Array.from({ length: count }, () => ({
@@ -187,12 +214,12 @@ export function createSpray(scene) {
       flight.pos.z + rand(-2.5, 2.5)
     );
     p.vel.set(rand(-4, 4), rand(5, 13), rand(-4, 4)).addScaledVector(flight.velocity, 0.06);
-    p.life = rand(0.5, 1.1);
+    p.life = rand(0.6, 1.3);
   }
 
   function update(dt, flight, t) {
     if (flight.skimming && flight.speed > 22) {
-      const rate = clamp((TUNE.skimHeight + 2 - flight.groundClearance) / 8, 0, 1) * 40;
+      const rate = clamp((TUNE.skimHeight + 2 - flight.groundClearance) / 8, 0, 1) * 95;
       emitCarry += rate * dt;
       while (emitCarry > 1) {
         emit(flight, t);
