@@ -57,6 +57,10 @@ Other scripts:
 **Touch** — left stick flies, the right-hand slider is the throttle, ⚡ boosts,
 and the buttons along the top change camera, light, photo mode and sound.
 
+Land in the cove and taxi up to the beach: somebody has left a deck chair, a
+table of drinks, a newspaper and a radio on the sand, and the radio is still
+playing — you can hear it from the water.
+
 **Landing** Throttle back until you are under about 30 knots, ease the nose
 down, and the floats take the water; the sea stops holding you up as soon as
 you are slow enough. Steer with the stick or rudder while taxiing, and open the
@@ -81,6 +85,7 @@ src/
     sky.js             gradient dome with a sun
     lighting.js        the three light presets and the cross-fade between them
     village.js  lighthouse.js  cove.js  props.js  cloth.js
+    beach-camp.js      the deck chair, drinks, newspaper and radio in the cove
     creatures.js       gulls that scatter, villagers who look up
     aircraft.js        the aeroplane model and the neighbours
     world.js           assembles the island and ticks everything on it

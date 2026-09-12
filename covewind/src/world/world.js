@@ -53,6 +53,7 @@ export function createWorld(scene) {
     lighthouse: PLACES.lighthouse,
     cove: PLACES.coveBeach,
     arch: archPosition(),
+    beachCamp: cove.camp.spot,
     summit: PLACES.summit,
   };
 

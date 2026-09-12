@@ -49,7 +49,9 @@ Prioritise, in order:
   a flyable rock arch, fishing village on a hillside shelf with lanes and
   laundry, harbour with piers and boats, lighthouse on a headland, hidden cove,
   trees, villagers, gulls that scatter when you buzz them, clouds, 3 AI
-  aeroplanes.
+  aeroplanes, and somebody's afternoon left on the cove beach — deck chair,
+  drinks, a newspaper stirring in the same wind as the laundry, and a radio
+  that is actually playing (`world/beach-camp.js`, tune in `audio/ambience.js`).
 - Wingtip contrails under boost and spray when you skim the water.
 - PWA: installable, offline, Three.js bundled into the build.
 - Vite project, `three@0.186.0` the only runtime dependency, no art assets.

@@ -194,6 +194,13 @@ function boot() {
     { key: 'lighthouse', at: () => world.landmarks.lighthouse, radius: 120, below: 160, text: 'The lighthouse on the point' },
     { key: 'village', at: () => world.landmarks.village, radius: 140, below: 110, text: 'Over the village — mind the laundry' },
     { key: 'arch', at: () => world.landmarks.arch, radius: 34, below: 46, text: 'Straight through the arch!' },
+    {
+      key: 'camp',
+      at: () => world.landmarks.beachCamp,
+      radius: 42,
+      below: 26,
+      text: "Someone's chair on the sand, and the radio still on",
+    },
     { key: 'summit', at: () => world.landmarks.summit, radius: 90, below: 240, text: 'The top of the island' },
   ];
 

@@ -6,6 +6,7 @@ import { BoxGeometry, CylinderGeometry, Group, Mesh, SphereGeometry } from 'thre
 import { PLACES, terrainHeightAt } from './terrain.js';
 import { createBoat, createHouse, createPier, createTree } from './props.js';
 import { createCloth } from './cloth.js';
+import { createBeachCamp } from './beach-camp.js';
 import { MAT, CLOTH } from '../core/materials.js';
 import { QUALITY } from '../core/quality.js';
 import { chance, pick, rand, TAU } from '../core/utils.js';
@@ -87,6 +88,9 @@ export function createCove(scene) {
     createTree(group, beach.x + rand(-58, 58), beach.z + rand(-20, 60), rand(0.7, 1.05), chance(0.6) ? 'palm' : 'olive');
   }
 
+  // Somebody's afternoon on the sand: deck chair, drinks, paper, radio.
+  const camp = createBeachCamp(group);
+
   // A flag on the dock head so the cove is findable from the air.
   const pole = new Mesh(new CylinderGeometry(0.14, 0.18, 7.5, 5), MAT.woodDark);
   pole.position.set(dock.x, 4.5, dock.z);
@@ -94,5 +98,5 @@ export function createCove(scene) {
   const flag = createCloth(group, { width: 3, height: 2, material: pick(CLOTH) });
   flag.position.set(dock.x + 1.6, 7.2, dock.z);
 
-  return { group, moorings };
+  return { group, moorings, camp };
 }

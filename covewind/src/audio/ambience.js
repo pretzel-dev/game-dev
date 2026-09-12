@@ -6,6 +6,7 @@
  * that you notice them only when you fly low enough to.
  */
 import { PLACES, coastDistance, islandRadius } from '../world/terrain.js';
+import { beachCampSpot } from '../world/beach-camp.js';
 import { clamp } from '../core/utils.js';
 
 function panner(ctx, { refDistance = 80, maxDistance = 1300, rolloff = 1.1 } = {}) {
@@ -136,6 +137,66 @@ export function createAmbience(ctx, master, noise) {
     });
   }
 
+  /* ------------------------------------------------------- beach radio --- */
+
+  // A little portable radio left playing on the sand in the cove. One voice, a
+  // narrow band and some hiss: the sound of a speaker the size of a biscuit.
+  const radioSpot = beachCampSpot();
+  const radioPanner = panner(ctx, { refDistance: 22, maxDistance: 280, rolloff: 2.1 });
+  place(radioPanner, radioSpot.x, radioSpot.y + 1, radioSpot.z, ctx);
+  radioPanner.connect(bus);
+
+  const radioBand = ctx.createBiquadFilter();
+  radioBand.type = 'bandpass';
+  radioBand.frequency.value = 1250;
+  radioBand.Q.value = 2.6;
+  radioBand.connect(radioPanner);
+
+  const radioVoice = ctx.createGain();
+  radioVoice.gain.value = 0;
+  radioVoice.connect(radioBand);
+  const radioOsc = ctx.createOscillator();
+  radioOsc.type = 'square';
+  radioOsc.frequency.value = 440;
+  radioOsc.connect(radioVoice);
+  radioOsc.start();
+
+  // The carrier hiss underneath, always there while the set is on.
+  const radioHiss = ctx.createBufferSource();
+  radioHiss.buffer = noise;
+  radioHiss.loop = true;
+  const hissGain = ctx.createGain();
+  hissGain.gain.value = 0.035;
+  radioHiss.connect(hissGain).connect(radioBand);
+  radioHiss.start();
+
+  // A lazy pentatonic tune in semitones from A, with rests written in.
+  const TUNE = [0, 3, 5, 7, 5, 3, 0, null, 3, 5, 7, 10, 12, 10, 7, null, 5, 7, 5, 3, 0, null];
+  const BEAT = 0.34;
+  let noteIndex = 0;
+  let nextNote = ctx.currentTime + 0.5;
+
+  function scheduleRadio() {
+    // If nobody has been near for a while the clock has run on without us;
+    // pick the tune up from now rather than scheduling the missed hour.
+    if (nextNote < ctx.currentTime) nextNote = ctx.currentTime + 0.05;
+    // Keep half a second of tune queued up, no more.
+    while (nextNote < ctx.currentTime + 0.5) {
+      const step = TUNE[noteIndex % TUNE.length];
+      noteIndex++;
+      const length = BEAT * (noteIndex % 8 === 0 ? 2 : 1);
+      if (step !== null) {
+        const freq = 440 * Math.pow(2, (step + 12) / 12);
+        radioOsc.frequency.setValueAtTime(freq, nextNote);
+        radioVoice.gain.setValueAtTime(0.0001, nextNote);
+        radioVoice.gain.exponentialRampToValueAtTime(0.09, nextNote + 0.02);
+        radioVoice.gain.exponentialRampToValueAtTime(0.02, nextNote + length * 0.7);
+        radioVoice.gain.exponentialRampToValueAtTime(0.0001, nextNote + length * 0.95);
+      }
+      nextNote += length;
+    }
+  }
+
   /* ------------------------------------------------------------- update --- */
 
   let gullTimer = 2;
@@ -178,6 +239,11 @@ export function createAmbience(ctx, master, noise) {
         );
       }
     }
+
+    // The radio only bothers to play when someone is close enough to hear it.
+    const toRadio = Math.hypot(x - radioSpot.x, z - radioSpot.z);
+    if (toRadio < 320) scheduleRadio();
+    hissGain.gain.setTargetAtTime(toRadio < 320 ? 0.035 : 0, now, 0.4);
 
     // The bells, on their own slow schedule.
     bellTimer -= dt;

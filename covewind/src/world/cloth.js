@@ -27,8 +27,13 @@ function clothMaterial(base) {
 /**
  * @param {object} opts
  * @param {'flag'|'hang'} opts.mode  Attached along its left edge, or its top.
+ * @param {number} [opts.amplitude]  Scales how far it moves — a newspaper on
+ *   the sand should stir, not fly.
  */
-export function createCloth(parent, { width = 6, height = 4, mode = 'flag', material = MAT.linen, phase = rand(0, 10) } = {}) {
+export function createCloth(
+  parent,
+  { width = 6, height = 4, mode = 'flag', material = MAT.linen, phase = rand(0, 10), amplitude = 1 } = {}
+) {
   const segX = mode === 'flag' ? 7 : 4;
   const segY = mode === 'flag' ? 3 : 5;
   const geometry = new PlaneGeometry(width, height, segX, segY);
@@ -45,6 +50,7 @@ export function createCloth(parent, { width = 6, height = 4, mode = 'flag', mate
     width,
     height,
     phase,
+    amplitude,
     speed: rand(3.2, 4.6),
   });
   return mesh;
@@ -55,8 +61,9 @@ export function createCloth(parent, { width = 6, height = 4, mode = 'flag', mate
  * @param {number} strength Wind strength, 0..1-ish.
  */
 export function updateCloth(t, strength) {
-  const amp = 0.35 + strength * 1.5;
+  const base = 0.35 + strength * 1.5;
   for (const p of patches) {
+    const amp = base * p.amplitude;
     const pos = p.geometry.attributes.position;
     const array = pos.array;
     for (let i = 0; i < array.length; i += 3) {
