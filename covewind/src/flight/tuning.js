@@ -61,12 +61,12 @@ export const TUNE = {
   landingSpeed: 32, // slower than this, the sea stops holding you up
   touchdownHeight: 6,
   floatDraft: 2.1, // how high the aeroplane rides above the surface
-  taxiIdle: 4,
-  taxiSpeed: 30, // at full throttle this passes takeoffSpeed
+  taxiSpeed: 34, // at full throttle this passes takeoffSpeed
   taxiBoost: 9,
   takeoffSpeed: 30,
   waterSteer: 0.85,
   waterDrag: 0.9,
+  waterBrake: 2.6, // pull back on the stick to come to a stop
 
   // Sky and sea breeze limits.
   ceiling: 330,

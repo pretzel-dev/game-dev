@@ -225,9 +225,13 @@ function updateOnWater(flight, input, dt, t) {
   flight.contact = 1;
   flight.stall = 0;
 
-  const target =
-    TUNE.taxiIdle + flight.throttle * TUNE.taxiSpeed + (flight.boosting ? TUNE.taxiBoost : 0);
+  // Throttle drives the speed, all the way down to stopped, and pulling back
+  // on the stick brakes against the water.
+  const brake = clamp(shapeAxis(clamp(input.pitch, -1, 1)), 0, 1);
+  const target = flight.throttle * TUNE.taxiSpeed + (flight.boosting ? TUNE.taxiBoost : 0);
   flight.speed = damp(flight.speed, target, TUNE.waterDrag, dt);
+  if (brake > 0) flight.speed = damp(flight.speed, 0, TUNE.waterBrake * brake, dt);
+  if (flight.speed < 0.25) flight.speed = 0;
 
   // Slow water taxiing needs the rudder; at speed the floats track straighter.
   const authority = 0.5 + clamp(flight.speed / 26, 0, 1) * 0.75;
@@ -272,6 +276,6 @@ function updateOnWater(flight, input, dt, t) {
 
 /** Adjust throttle by a delta, clamped to the usable range. */
 export function nudgeThrottle(flight, delta) {
-  flight.throttle = clamp(flight.throttle + delta, 0.16, 1);
+  flight.throttle = clamp(flight.throttle + delta, 0, 1);
   return flight.throttle;
 }

@@ -26,8 +26,8 @@ Prioritise, in order:
 
 - Arcade flight model with bank-to-turn, pitch, rudder, throttle and boost.
   Speed trades against height, hard turns cost a little lift, and a stall is a
-  soft nose-drop that recovers itself. Which way the stick pitches is a
-  preference (`I`), because people disagree about it.
+  soft nose-drop that recovers itself. Pull back to climb by default, as on a
+  stick; `I` or the chips on the title card swap it, because people disagree.
 - It is a **floatplane**: throttle back under about 30 knots and it settles onto
   the sea, taxis under throttle and rudder, and unsticks again at full power.
   Landing in the cove is the closest thing to a destination.

@@ -17,6 +17,7 @@ import {
 import { MAT, mat } from '../core/materials.js';
 import { clamp, damp, rand, TAU } from '../core/utils.js';
 import { createCloth } from './cloth.js';
+import { terrainHeightAt } from './terrain.js';
 
 /**
  * @param {number} color Fuselage colour.
@@ -209,6 +210,9 @@ export function createAIPlanes(scene) {
 
 const _pos = new Vector3();
 
+/** How far above the ground the neighbours insist on staying. */
+const AI_CLEARANCE = 46;
+
 export function updateAIPlanes(planes, t, dt) {
   for (const p of planes) {
     const a = p.phase + t * p.speed;
@@ -220,11 +224,35 @@ export function updateAIPlanes(planes, t, dt) {
       p.centre.z + Math.sin(a) * (p.figure ? r * 1.15 : r)
     );
 
+    // Climb over the island rather than through it: look at the ground under
+    // the aeroplane and a little way ahead, and take the higher of the two.
+    const lookAhead = 90;
+    const ahead = a + 0.35;
+    const aheadR = p.figure ? p.radius * (0.65 + 0.35 * Math.cos(ahead * 2)) : p.radius;
+    const ground = Math.max(
+      terrainHeightAt(_pos.x, _pos.z),
+      terrainHeightAt(
+        p.centre.x + Math.cos(ahead) * aheadR,
+        p.centre.z + Math.sin(ahead) * (p.figure ? aheadR * 1.15 : aheadR)
+      ),
+      terrainHeightAt(_pos.x + Math.sin(p.group.rotation.y) * lookAhead, _pos.z + Math.cos(p.group.rotation.y) * lookAhead)
+    );
+    const floor = ground + AI_CLEARANCE;
+    if (_pos.y < floor) _pos.y = floor;
+    // Ease into the climb so they rise like an aeroplane rather than a lift —
+    // but climb away from rising ground faster than they settle back down.
+    const rate = _pos.y > (p.height ?? _pos.y) ? 3.4 : 0.9;
+    p.height = p.height === undefined ? _pos.y : damp(p.height, _pos.y, rate, dt);
+    _pos.y = p.height;
+
     const dx = _pos.x - p.group.position.x;
+    const dy = _pos.y - p.group.position.y;
     const dz = _pos.z - p.group.position.z;
     p.group.position.copy(_pos);
     if (dx * dx + dz * dz > 1e-5) p.group.rotation.y = Math.atan2(dx, dz);
-    p.group.rotation.x = -0.06 * Math.sin(t + p.bob);
+    // Nose follows the climb or descent.
+    const climb = Math.atan2(dy, Math.max(0.001, Math.hypot(dx, dz)));
+    p.group.rotation.x = damp(p.group.rotation.x, -climb * 0.6 - 0.06 * Math.sin(t + p.bob), 3, dt);
     p.group.rotation.z = damp(p.group.rotation.z, p.figure ? 0.34 * Math.cos(a * 2) : 0.3, 2, dt);
     p.group.userData.propeller.rotation.z += dt * 34;
   }

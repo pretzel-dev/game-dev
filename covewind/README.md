@@ -42,7 +42,7 @@ Other scripts:
 
 | Key | |
 | --- | --- |
-| `W` / `S` or ↑ / ↓ | pitch |
+| `S` / `W` or ↓ / ↑ | climb / dive — pull back to climb, as on a stick (`I` swaps it) |
 | `A` / `D` or ← / → | bank |
 | `Q` / `E` | rudder |
 | `R` / `F` | throttle |
@@ -50,7 +50,6 @@ Other scripts:
 | `C` | camera (chase · close · postcard) |
 | `L` | light (sunrise · noon · golden hour) |
 | `P` | photo mode — `Esc` leaves it |
-| `I` | swap which way the stick pitches |
 | `H` | hide the HUD |
 | `M` | sound |
 

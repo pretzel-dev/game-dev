@@ -78,6 +78,18 @@ console.log('\nLanding on the water');
   check('idles slowly on the water', flight.speed < 16, `${flight.speed.toFixed(0)}kt`);
   check('stays on the water at low power', flight.waterborne, 'took off on its own');
 
+  // Throttle shut, and it drifts to a stop rather than creeping for ever.
+  flight.throttle = 0;
+  fly(flight, 10, {});
+  check('the throttle closes all the way', flight.speed < 1, `still making ${flight.speed.toFixed(1)}kt`);
+
+  // Under way again, pulling back on the stick brakes against the water.
+  flight.throttle = 0.5;
+  fly(flight, 6, {});
+  const cruising = flight.speed;
+  fly(flight, 3, { pitch: 1 });
+  check('pull back to stop', flight.speed < cruising * 0.4, `${cruising.toFixed(0)}kt to ${flight.speed.toFixed(0)}kt`);
+
   flight.throttle = 1;
   fly(flight, 12, {});
   check('full throttle gets it off again', !flight.waterborne, `still on the water at ${flight.speed.toFixed(0)}kt`);

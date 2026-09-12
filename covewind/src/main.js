@@ -305,7 +305,7 @@ function boot() {
       controls.clearThrottleSet();
     }
     if (input.throttleAxis) {
-      flight.throttle = clamp(flight.throttle + input.throttleAxis * 0.34 * dt, 0.16, 1);
+      flight.throttle = clamp(flight.throttle + input.throttleAxis * 0.34 * dt, 0, 1);
     }
 
     if (!photo.active) {

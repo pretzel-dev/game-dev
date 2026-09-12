@@ -120,7 +120,7 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     let pointerId = null;
     const setThrottle = (event) => {
       const rect = throttle.getBoundingClientRect();
-      input.throttleSet = clamp(1 - (event.clientY - rect.top) / rect.height, 0.16, 1);
+      input.throttleSet = clamp(1 - (event.clientY - rect.top) / rect.height, 0, 1);
     };
     throttle.addEventListener('pointerdown', (event) => {
       pointerId = event.pointerId;
