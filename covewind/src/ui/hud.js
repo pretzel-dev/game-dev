@@ -27,6 +27,7 @@ export function createHud({ actions = {} } = {}) {
   let refresh = 0;
   let lastHint = '';
 
+
   const wire = (selector, action) => {
     const node = document.querySelector(selector);
     if (!node || !action) return;
@@ -53,13 +54,26 @@ export function createHud({ actions = {} } = {}) {
     hintTimer = seconds;
   }
 
+  /**
+   * Opacity is driven from here rather than from CSS classes: hidden and
+   * idle-faded are two states of the same dial, and one writer keeps them from
+   * fighting each other.
+   */
+  function applyVisibility() {
+    const faded = visible && idle > 0.2 && hintTimer <= 0;
+    const dim = (full) => (!visible ? 0 : faded ? full * 0.19 : full);
+    el.hud.style.opacity = String(dim(0.94));
+    if (el.keyhints) el.keyhints.style.opacity = String(dim(0.68));
+    if (el.tools) {
+      el.tools.style.opacity = String(dim(1));
+      el.tools.style.pointerEvents = visible ? 'auto' : 'none';
+    }
+    if (!visible && el.hint) el.hint.style.opacity = '0';
+  }
+
   function toggle() {
     visible = !visible;
-    const opacity = visible ? '' : '0';
-    el.hud.style.opacity = visible ? '.94' : '0';
-    if (el.keyhints) el.keyhints.style.opacity = visible ? '.68' : '0';
-    if (el.tools) el.tools.style.opacity = visible ? '1' : '0';
-    if (!visible && el.hint) el.hint.style.opacity = opacity;
+    applyVisibility();
     return visible;
   }
 
@@ -72,12 +86,16 @@ export function createHud({ actions = {} } = {}) {
   function update(dt, flight, activity) {
     if (hintTimer > 0) {
       hintTimer -= dt;
-      if (hintTimer <= 0 && el.hint) el.hint.style.opacity = '0';
+      if (hintTimer <= 0 && el.hint) {
+        el.hint.style.opacity = '0';
+        applyVisibility(); // a hint holds the fade off while it is up
+      }
     }
 
     // Idle fade: the UI gets out of the way when you are just flying.
+    const wasFaded = idle > 0.2;
     idle = activity > IDLE_AFTER ? Math.min(idle + dt, 2) : 0;
-    document.body.classList.toggle('idle', visible && idle > 0.2 && hintTimer <= 0);
+    if (wasFaded !== idle > 0.2) applyVisibility();
 
     refresh -= dt;
     if (refresh > 0) return;

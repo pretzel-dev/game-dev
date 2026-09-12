@@ -336,9 +336,9 @@ function boot() {
     photo.flush(renderer);
 
     // If the device is struggling, shed load once rather than stutter forever.
-    if (!QUALITY.degraded && dt > 0.032) {
+    if (!QUALITY.degraded && dt > 0.042) {
       slowFrames++;
-      if (slowFrames > 150 && degrade(renderer, scene)) {
+      if (slowFrames > 260 && degrade(renderer, scene)) {
         hud.hint('Easing off the detail so this stays smooth', 2.4);
       }
     } else if (slowFrames > 0) {
