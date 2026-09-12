@@ -59,7 +59,7 @@ export function createSky(scene) {
       glowStrength: { value: 0.5 },
     },
   });
-  const sky = new Mesh(new SphereGeometry(1600, 32, 20), material);
+  const sky = new Mesh(new SphereGeometry(2600, 32, 20), material);
   sky.frustumCulled = false;
   sky.renderOrder = -1;
   scene.add(sky);

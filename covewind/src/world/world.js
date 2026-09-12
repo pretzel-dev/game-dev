@@ -1,51 +1,70 @@
 /**
- * Builds the island and ticks everything living on it.
+ * Builds the archipelago and ticks everything living on it.
  */
 import { Vector3 } from 'three';
-import { createIsland, archPosition } from './island.js';
+import { createIslands, archPosition } from './island.js';
 import { createVillage } from './village.js';
 import { createLighthouse } from './lighthouse.js';
 import { createCove } from './cove.js';
+import { createFalls } from './falls.js';
+import { createWhales } from './whales.js';
 import { createBirds, updateBirds, updateVillagers } from './creatures.js';
 import { createAIPlanes, updateAIPlanes } from './aircraft.js';
 import { createBoat, createCloud, createTree } from './props.js';
 import { updateCloth } from './cloth.js';
 import { waveHeight } from './water.js';
-import { PLACES, islandRadius, terrainHeightAt, TAU } from './terrain.js';
+import { ISLANDS, PLACES, island, islandRadiusAt, terrainHeightAt, TAU } from './terrain.js';
 import { QUALITY } from '../core/quality.js';
-import { angleDelta, damp, rand } from '../core/utils.js';
+import { angleDelta, damp, pick, rand } from '../core/utils.js';
+
+/** Scatter trees over one island, thickest on the lower slopes. */
+function plantIsland(scene, spec, count, kinds = null) {
+  for (let i = 0; i < count; i++) {
+    const a = rand(0, TAU);
+    const r = islandRadiusAt(spec, a) * Math.sqrt(rand(0.05, 0.92));
+    const x = spec.centre.x + Math.cos(a) * r;
+    const z = spec.centre.z + Math.sin(a) * r;
+    createTree(scene, x, z, rand(0.6, 1.15), kinds ? pick(kinds) : null);
+  }
+}
 
 export function createWorld(scene) {
-  const island = createIsland(scene);
+  const islands = createIslands(scene);
   const village = createVillage(scene);
   const lighthouse = createLighthouse(scene);
   const cove = createCove(scene);
+  const falls = createFalls(scene);
 
-  // Scrub and olive groves across the middle of the island.
-  const inland = Math.round(QUALITY.trees * 0.41);
-  for (let i = 0; i < inland; i++) {
-    const a = rand(0, TAU);
-    const r = rand(40, 300) * 0.82;
-    createTree(scene, Math.cos(a) * r, Math.sin(a) * r, rand(0.6, 1.15));
-  }
+  // Scrub and olive groves on the main island, cover for the others, and
+  // nothing but palms on the ring around the lagoon.
+  plantIsland(scene, island('harbour'), Math.round(QUALITY.trees * 0.41));
+  plantIsland(scene, island('canyon'), Math.round(QUALITY.trees * 0.16), ['cypress', 'olive']);
+  plantIsland(scene, island('falls'), Math.round(QUALITY.trees * 0.18), ['round', 'cypress']);
+  plantIsland(scene, island('atoll'), Math.round(QUALITY.trees * 0.16), ['palm']);
 
   const clouds = [];
   for (let i = 0; i < QUALITY.clouds; i++) {
     clouds.push(
-      createCloud(scene, rand(-860, 860), rand(215, 400), rand(-860, 860), rand(0.9, 2.4))
+      createCloud(scene, rand(-1500, 1500), rand(215, 420), rand(-1500, 1500), rand(0.9, 2.6))
     );
   }
 
-  const boats = [...village.moorings, ...cove.moorings];
+  // Boats: the harbour's moorings, plus a few working between the islands.
+  const boats = [...village.moorings];
   for (let i = 0; i < QUALITY.boats; i++) {
-    // Out on the open water, clear of the rocks.
-    const a = rand(0, TAU);
-    const r = islandRadius(a) + rand(45, 260);
-    boats.push(createBoat(scene, Math.cos(a) * r, Math.sin(a) * r, rand(0.7, 1.25)));
+    let x = 0;
+    let z = 0;
+    for (let tries = 0; tries < 24; tries++) {
+      x = rand(-1100, 1100);
+      z = rand(-1100, 1100);
+      if (terrainHeightAt(x, z) < -14) break;
+    }
+    boats.push(createBoat(scene, x, z, rand(0.7, 1.25)));
   }
 
   const birds = createBirds(scene);
   const aiPlanes = createAIPlanes(scene);
+  const whales = createWhales(scene);
 
   const landmarks = {
     village: PLACES.villageCentre,
@@ -53,8 +72,12 @@ export function createWorld(scene) {
     lighthouse: PLACES.lighthouse,
     cove: PLACES.coveBeach,
     arch: archPosition(),
-    beachCamp: cove.camp.spot,
     summit: PLACES.summit,
+    beachCamp: cove.camp.spot,
+    canyon: PLACES.canyonMouth,
+    canyonEnd: PLACES.canyonEnd,
+    falls: falls.position,
+    lagoon: PLACES.lagoon,
   };
 
   const _planePos = new Vector3();
@@ -65,7 +88,7 @@ export function createWorld(scene) {
     for (const cloud of clouds) {
       cloud.group.position.x += cloud.drift * dt * (1 + wind.gust * 0.8);
       cloud.group.position.y += Math.sin(t * 0.12 + cloud.bob) * dt * 0.6;
-      if (cloud.group.position.x > 820) cloud.group.position.x = -820;
+      if (cloud.group.position.x > 1600) cloud.group.position.x = -1600;
     }
 
     for (const boat of boats) {
@@ -112,19 +135,25 @@ export function createWorld(scene) {
     updateVillagers(village.villagers, t, dt, _planePos);
     updateAIPlanes(aiPlanes, t, dt);
     updateCloth(t, wind.gust);
+    whales.update(t, dt);
+    falls.update(t);
     lighthouse.update(t, beamOpacity);
   }
 
   return {
-    island,
+    islands,
+    island: islands.byKey.harbour,
     village,
     lighthouse,
     cove,
+    falls,
+    whales,
     clouds,
     boats,
     birds,
     aiPlanes,
     landmarks,
+    specs: ISLANDS,
     update,
   };
 }

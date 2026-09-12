@@ -1,10 +1,10 @@
 /**
- * The island mesh, its cliffs and the rocks in the water.
+ * The island meshes, their cliffs and the rocks in the water.
  *
- * The ground is one polar grid with vertex colours — sand, grass, dry grass,
- * rock — chosen from the same height field the plane collides with, so the
- * beaches are wherever the land actually meets the sea. Rings bunch up towards
- * the coast, which is where the silhouette lives.
+ * One polar grid per island, with vertex colours — sand, grass, dry grass,
+ * rock — chosen from the same height field the aeroplane collides with, so the
+ * beaches are wherever the land actually meets the sea. Rings bunch a little
+ * towards the coast, which is where the silhouette lives.
  */
 import {
   BufferGeometry,
@@ -18,10 +18,12 @@ import {
   TorusGeometry,
 } from 'three';
 import {
+  ISLANDS,
   PLACES,
   TAU,
-  cliffFactor,
-  islandRadius,
+  cliffFactorAt,
+  island as islandByKey,
+  islandRadiusAt,
   terrainGradient,
   terrainHeightAt,
 } from './terrain.js';
@@ -56,17 +58,11 @@ function groundColour(x, z, height, slope, out) {
   // Higher ground dries out towards the ridge.
   out.lerp(COLOURS.dry, smoothstep(52, 140, height) * 0.72);
 
-  // Rock: on anything steep, and along the cliffy stretches of coast. Banded
-  // by height so a cliff face reads as strata.
+  // Steepness decides where the rock shows, banded by height so a cliff face
+  // reads as strata.
   const band = 0.5 + 0.5 * Math.sin(height * 0.33 + x * 0.004);
   const rock = _rock.copy(COLOURS.rock).lerp(COLOURS.rockWarm, band);
-  // Steepness decides where the rock shows, never the coastline's cliff factor:
-  // that is a function of bearing alone, and painting with it fans radial
-  // stripes across the polar mesh.
-  const bare = Math.max(
-    smoothstep(0.32, 0.8, slope),
-    mid * smoothstep(112, 172, height) * 0.8
-  );
+  const bare = Math.max(smoothstep(0.32, 0.8, slope), mid * smoothstep(112, 172, height) * 0.8);
   out.lerp(rock, Math.min(bare, 1));
 
   // Beaches, and a darker wet strip right at the waterline.
@@ -75,9 +71,14 @@ function groundColour(x, z, height, slope, out) {
   return out;
 }
 
-export function createIsland(scene) {
-  const rings = QUALITY.islandRings;
-  const segs = QUALITY.islandSegments;
+/** One island's ground mesh. */
+function buildIsland(scene, spec) {
+  // Smaller islands need fewer rings, and the segment count follows the coast
+  // so triangles stay roughly square whatever the island's size.
+  const scale = spec.base / 300;
+  const rings = Math.max(20, Math.round(QUALITY.islandRings * (0.6 + scale * 0.4)));
+  const segs = Math.max(64, Math.round(QUALITY.islandSegments * (0.55 + scale * 0.45)));
+
   const positions = [];
   const colors = [];
   const indices = [];
@@ -91,14 +92,14 @@ export function createIsland(scene) {
     const rr = 1 - Math.pow(1 - u, 1.25);
     for (let s = 0; s < segs; s++) {
       const th = (s / segs) * TAU;
-      const edge = islandRadius(th);
+      const edge = islandRadiusAt(spec, th);
       const rad = edge * rr;
-      const x = Math.cos(th) * rad;
-      const z = Math.sin(th) * rad;
+      const x = spec.centre.x + Math.cos(th) * rad;
+      const z = spec.centre.z + Math.sin(th) * rad;
 
       let y;
       if (r === rings) {
-        y = -34; // skirt, so the island never shows daylight under its hem
+        y = -40; // skirt, so an island never shows daylight under its hem
       } else {
         y = terrainHeightAt(x, z);
         // A little hand-crumpled noise, strongest on the slopes.
@@ -137,13 +138,16 @@ export function createIsland(scene) {
     new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true })
   );
   mesh.receiveShadow = true;
-  mesh.name = 'island';
+  mesh.name = `island:${spec.key}`;
   scene.add(mesh);
-
-  addCoastalRocks(scene);
-  addCoveArch(scene);
-
   return mesh;
+}
+
+export function createIslands(scene) {
+  const meshes = ISLANDS.map((spec) => buildIsland(scene, spec));
+  for (const spec of ISLANDS) addCoastalRocks(scene, spec);
+  addCoveArch(scene);
+  return { meshes, byKey: Object.fromEntries(ISLANDS.map((s, i) => [s.key, meshes[i]])) };
 }
 
 /** A rough, tapered stack of stone — the shape every good sea cliff has. */
@@ -166,23 +170,24 @@ function rockStack(height, radius, material) {
   return group;
 }
 
-/** Stacks and boulders along the cliffy parts of the coast. */
-function addCoastalRocks(scene) {
-  const count = QUALITY.coveRocks;
+/** Stacks and boulders along the cliffy parts of one island's coast. */
+function addCoastalRocks(scene, spec) {
+  const count = Math.round(QUALITY.coveRocks * (spec.key === 'atoll' ? 0.3 : 0.75));
   for (let i = 0; i < count; i++) {
     // Walk the coast, and only build where it is genuinely cliffy.
     let th = 0;
     let tries = 0;
     do {
-      th = rand(-1.5, 0.6);
+      th = rand(0, TAU);
       tries++;
-    } while (cliffFactor(th) < 0.45 && tries < 40);
+    } while (cliffFactorAt(spec, th) < 0.45 && tries < 60);
+    if (cliffFactorAt(spec, th) < 0.3) continue;
 
-    const edge = islandRadius(th);
+    const edge = islandRadiusAt(spec, th);
     const offshore = rand(-6, 34); // most sit just off the rocks
     const rad = edge + offshore;
-    const x = Math.cos(th) * rad;
-    const z = Math.sin(th) * rad;
+    const x = spec.centre.x + Math.cos(th) * rad;
+    const z = spec.centre.z + Math.sin(th) * rad;
     const ground = terrainHeightAt(x, z);
     const height = rand(12, 34) * (offshore > 12 ? 0.85 : 1.2);
 
@@ -193,32 +198,31 @@ function addCoastalRocks(scene) {
   }
 
   // A handful of boulders on the beaches, for scale.
-  for (let i = 0; i < 8; i++) {
-    const target = i % 2 ? PLACES.coveBeach : PLACES.villageBeach;
-    const x = target.x + rand(-52, 52);
-    const z = target.z + rand(-52, 52);
-    const ground = terrainHeightAt(x, z);
-    if (ground < -3 || ground > 16) continue;
-    const boulder = new Mesh(new DodecahedronGeometry(rand(2.4, 5.5), 0), MAT.rock);
-    boulder.position.set(x, ground + 0.6, z);
-    boulder.rotation.set(rand(-0.4, 0.4), rand(0, TAU), rand(-0.3, 0.3));
-    boulder.scale.y = rand(0.6, 1.05);
-    boulder.castShadow = true;
-    boulder.receiveShadow = true;
-    scene.add(boulder);
+  for (const beach of spec.beaches ?? []) {
+    for (let i = 0; i < 4; i++) {
+      const th = beach.theta + rand(-0.3, 0.3);
+      const rad = islandRadiusAt(spec, th) * rand(0.82, 0.98);
+      const x = spec.centre.x + Math.cos(th) * rad;
+      const z = spec.centre.z + Math.sin(th) * rad;
+      const ground = terrainHeightAt(x, z);
+      if (ground < -3 || ground > 16) continue;
+      const boulder = new Mesh(new DodecahedronGeometry(rand(2.4, 5.5), 0), MAT.rock);
+      boulder.position.set(x, ground + 0.6, z);
+      boulder.rotation.set(rand(-0.4, 0.4), rand(0, TAU), rand(-0.3, 0.3));
+      boulder.scale.y = rand(0.6, 1.05);
+      boulder.castShadow = true;
+      boulder.receiveShadow = true;
+      scene.add(boulder);
+    }
   }
 }
 
 /**
  * The arch at the mouth of the cove. It is big enough to fly through, which is
- * the only kind of challenge this island offers.
+ * the only kind of challenge this archipelago offers.
  */
 function addCoveArch(scene) {
-  const theta = Math.atan2(PLACES.coveBeach.z, PLACES.coveBeach.x);
-  const radius = islandRadius(theta) + 62;
-  const x = Math.cos(theta) * radius;
-  const z = Math.sin(theta) * radius;
-
+  const { x, z, theta } = archPosition();
   const arch = new Group();
   arch.position.set(x, 0, z);
   arch.rotation.y = -theta + Math.PI / 2;
@@ -236,7 +240,6 @@ function addCoveArch(scene) {
 
   const top = new Mesh(new TorusGeometry(span, 8, 5, 12, Math.PI), MAT.rockWarm);
   top.position.y = legHeight - 5;
-  top.rotation.z = 0;
   top.scale.y = 0.78;
   top.castShadow = true;
   top.receiveShadow = true;
@@ -254,7 +257,12 @@ function addCoveArch(scene) {
 
 /** Where the arch is, so the rest of the world can point at it. */
 export function archPosition() {
-  const theta = Math.atan2(PLACES.coveBeach.z, PLACES.coveBeach.x);
-  const radius = islandRadius(theta) + 62;
-  return { x: Math.cos(theta) * radius, z: Math.sin(theta) * radius };
+  const spec = islandByKey('cove');
+  const theta = Math.atan2(PLACES.coveBeach.z - spec.centre.z, PLACES.coveBeach.x - spec.centre.x);
+  const radius = islandRadiusAt(spec, theta) + 62;
+  return {
+    x: spec.centre.x + Math.cos(theta) * radius,
+    z: spec.centre.z + Math.sin(theta) * radius,
+    theta,
+  };
 }

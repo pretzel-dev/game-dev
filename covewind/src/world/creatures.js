@@ -16,7 +16,7 @@ import {
 import { MAT } from '../core/materials.js';
 import { QUALITY } from '../core/quality.js';
 import { angleDelta, damp, rand, TAU } from '../core/utils.js';
-import { PLACES, surfaceHeightAt, terrainHeightAt, islandRadius } from './terrain.js';
+import { ISLANDS, PLACES, surfaceHeightAt, terrainHeightAt, islandRadiusAt } from './terrain.js';
 
 const birds = [];
 
@@ -70,21 +70,23 @@ function createBird(scene, x, y, z, scale = 1) {
 export function createBirds(scene) {
   const count = QUALITY.birds;
   for (let i = 0; i < count; i++) {
-    // Most gulls hang around the harbour and the cove; the rest patrol the coast.
+    // Most gulls hang around the harbour and the cove; the rest patrol the
+    // coast of whichever island they belong to.
     const roll = i / count;
     let x;
     let z;
-    if (roll < 0.34) {
+    if (roll < 0.26) {
       x = PLACES.harbour.x + rand(-90, 90);
       z = PLACES.harbour.z + rand(-40, 110);
-    } else if (roll < 0.55) {
+    } else if (roll < 0.42) {
       x = PLACES.coveBeach.x + rand(-70, 90);
       z = PLACES.coveBeach.z + rand(-90, 50);
     } else {
+      const spec = ISLANDS[i % ISLANDS.length];
       const a = rand(0, TAU);
-      const r = islandRadius(a) + rand(-40, 70);
-      x = Math.cos(a) * r;
-      z = Math.sin(a) * r;
+      const r = islandRadiusAt(spec, a) + rand(-40, 70);
+      x = spec.centre.x + Math.cos(a) * r;
+      z = spec.centre.z + Math.sin(a) * r;
     }
     createBird(scene, x, rand(28, 105), z, rand(0.75, 1.3));
   }

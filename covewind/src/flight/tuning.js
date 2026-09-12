@@ -71,6 +71,6 @@ export const TUNE = {
   // Sky and sea breeze limits.
   ceiling: 330,
   softCeiling: 300,
-  homeRadius: 900,
+  homeRadius: 1450,
   turnHomeRate: 0.18,
 };

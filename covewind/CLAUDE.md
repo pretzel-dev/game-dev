@@ -45,20 +45,30 @@ Prioritise, in order:
 - Procedural audio: engine and wind, plus spatial ambience — gulls over the
   harbour and cove, surf on the nearest shore, a village murmur, church and fog
   bells. No audio files.
-- Procedural world from one analytic height field: island, cliffs, sea stacks,
-  a flyable rock arch, fishing village on a hillside shelf with lanes and
-  laundry, harbour with piers and boats, lighthouse on a headland, hidden cove,
-  trees, villagers, gulls that scatter when you buzz them, clouds, 3 AI
-  aeroplanes, and somebody's afternoon left on the cove beach — deck chair,
-  drinks, a newspaper stirring in the same wind as the laundry, and a radio
-  that is actually playing (`world/beach-camp.js`, tune in `audio/ambience.js`).
+- Procedural archipelago from one analytic height field — five islands with
+  water between them, all reachable in a couple of minutes of flying:
+  **harbour** (village on a hillside shelf with lanes and laundry, piers and
+  boats, lighthouse on a headland, the flyable rock arch, the summit), **cove**
+  (two cliff arms round a beach, with somebody's afternoon left on the sand —
+  deck chair, drinks, a newspaper stirring in the same wind as the laundry, and
+  a radio that is actually playing: `world/beach-camp.js`, tune in
+  `audio/ambience.js`), **canyon** (a flooded slot cut right through, flyable
+  end to end at sea level), **falls** (a tarn over a high lip down the sea
+  cliff, `world/falls.js`) and **atoll** (a sand ring round a shallow lagoon
+  you can land in).
+- Whale pods in the deep channels (`world/whales.js`): a slow circuit, a rise,
+  a blow, an arch and back down. They do not react to you.
+- Cliffs, sea stacks, trees, villagers, gulls that scatter when you buzz them,
+  clouds and 3 AI aeroplanes that follow the terrain instead of going through
+  it.
 - Wingtip contrails under boost and spray when you skim the water.
 - PWA: installable, offline, Three.js bundled into the build.
 - Vite project, `three@0.186.0` the only runtime dependency, no art assets.
 
 ## Architecture notes
 
-- `src/world/terrain.js` is the single source of truth for the island and is
+- `src/world/terrain.js` is the single source of truth for the archipelago
+  (`ISLANDS`, `PLACES`, `terrainHeightAt`) and is
   deliberately free of Three.js so it can be tested in Node (`npm run check`)
   and shared with the water shader.
 - `src/flight/tuning.js` holds every number that decides how the aeroplane
@@ -69,7 +79,8 @@ Prioritise, in order:
 ## Good next improvements
 
 - A grass strip or beach to settle onto, for the wheels the floats replaced.
-- Interiors of the cove: a cave you can fly into.
+- A cave you can fly into, in the canyon walls or under the falls.
+- A sixth island with a different character — somewhere wooded, or a wreck.
 - More weather as a choice alongside the light presets (light haze, high cloud).
 - Gentle multiplayer-free "postcards": save the photo with the light and place.
 - Richer boat behaviour — fishing boats that actually leave the harbour.

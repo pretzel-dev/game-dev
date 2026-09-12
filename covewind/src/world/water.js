@@ -66,12 +66,13 @@ const fragmentShader = /* glsl */ `
   varying vec3 vWorld;
   varying float vWave;
   ${WAVE_GLSL}
-  ${/* islandRadius(), shared with the terrain */ ''}
+  ${/* coastDistance(), shared with the terrain */ ''}
   __COASTLINE__
 
   void main() {
     vec2 p = vWorld.xz;
-    float coast = length(p) - islandRadius(atan(p.y, p.x));
+    // Distance to the nearest island's shore, out of all of them.
+    float coast = coastDistance(p);
 
     // Depth banding: turquoise over the sand, ink out in the channel.
     float depth = smoothstep(-20.0, 430.0, coast);
@@ -97,7 +98,10 @@ const fragmentShader = /* glsl */ `
     // Surf. Two ragged bands that crawl up the beach with the swell.
     float swell = sin(time * 0.55 + coast * 0.09) * 3.0;
     float edge = coast + swell;
-    float ripple = 0.5 + 0.5 * sin(atan(p.y, p.x) * 190.0 + time * 0.7);
+    // Ragged edge to the surf, from position rather than bearing — bearing
+    // only works when there is one island and it is at the origin.
+    float ripple = 0.5 + 0.5 * sin((p.x + p.y) * 0.085 + time * 0.7)
+                       * sin((p.x - p.y) * 0.061 - time * 0.4);
     float surf = smoothstep(15.0 + ripple * 7.0, 1.0, edge) * smoothstep(-9.0, -1.0, edge);
     float wash = smoothstep(36.0, 6.0, edge) * 0.08;
     col = mix(col, foamColor, clamp(surf * 0.85 + wash, 0.0, 1.0));
@@ -114,7 +118,7 @@ const fragmentShader = /* glsl */ `
 `;
 
 export function createWater(scene) {
-  const size = 3600;
+  const size = 6400;
   const material = new ShaderMaterial({
     transparent: true,
     depthWrite: true,

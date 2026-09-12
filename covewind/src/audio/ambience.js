@@ -5,7 +5,7 @@
  * All synthesised, all panned with `PannerNode`, and all quiet — the point is
  * that you notice them only when you fly low enough to.
  */
-import { PLACES, coastDistance, islandRadius } from '../world/terrain.js';
+import { PLACES, nearestCoast } from '../world/terrain.js';
 import { beachCampSpot } from '../world/beach-camp.js';
 import { clamp } from '../core/utils.js';
 
@@ -137,6 +137,22 @@ export function createAmbience(ctx, master, noise) {
     });
   }
 
+  /* ------------------------------------------------------- waterfall --- */
+
+  // A steady roar at the foot of the falls: noise, low and wide.
+  const fallsSource = ctx.createBufferSource();
+  fallsSource.buffer = noise;
+  fallsSource.loop = true;
+  const fallsFilter = ctx.createBiquadFilter();
+  fallsFilter.type = 'lowpass';
+  fallsFilter.frequency.value = 1400;
+  const fallsGain = ctx.createGain();
+  fallsGain.gain.value = 0;
+  const fallsPanner = panner(ctx, { refDistance: 90, maxDistance: 900, rolloff: 1.5 });
+  place(fallsPanner, PLACES.fallsTop.x, 40, PLACES.fallsTop.z + 16, ctx);
+  fallsSource.connect(fallsFilter).connect(fallsGain).connect(fallsPanner).connect(bus);
+  fallsSource.start();
+
   /* ------------------------------------------------------- beach radio --- */
 
   // A little portable radio left playing on the sand in the cove. One voice, a
@@ -214,11 +230,16 @@ export function createAmbience(ctx, master, noise) {
     const villageLevel = clamp(1 - toVillage / 320, 0, 1) * height * (0.55 + Math.sin(murmurPhase) * 0.18);
     murmurGain.gain.setTargetAtTime(villageLevel * 0.1, now, 0.4);
 
-    // Surf follows the nearest piece of coast.
-    const theta = Math.atan2(z, x);
-    const radius = islandRadius(theta);
-    place(surfPanner, Math.cos(theta) * radius, 2, Math.sin(theta) * radius, ctx);
-    const distance = Math.abs(coastDistance(x, z));
+    // Surf follows the nearest piece of coast, on whichever island that is.
+    const coast = nearestCoast(x, z);
+    place(
+      surfPanner,
+      coast.spec.centre.x + Math.cos(coast.theta) * (coast.r - coast.distance),
+      2,
+      coast.spec.centre.z + Math.sin(coast.theta) * (coast.r - coast.distance),
+      ctx
+    );
+    const distance = Math.abs(coast.distance);
     const surfLevel = clamp(1 - distance / 260, 0, 1) * height;
     surfGain.gain.setTargetAtTime(surfLevel * 0.11, now, 0.5);
     surfFilter.frequency.setTargetAtTime(600 + surfLevel * 900, now, 0.5);
@@ -239,6 +260,10 @@ export function createAmbience(ctx, master, noise) {
         );
       }
     }
+
+    // The falls, which you can hear from a good way out over the water.
+    const toFalls = Math.hypot(x - PLACES.fallsTop.x, z - PLACES.fallsTop.z);
+    fallsGain.gain.setTargetAtTime(clamp(1 - toFalls / 620, 0, 1) * 0.17, now, 0.4);
 
     // The radio only bothers to play when someone is close enough to hear it.
     const toRadio = Math.hypot(x - radioSpot.x, z - radioSpot.z);

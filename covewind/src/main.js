@@ -51,7 +51,7 @@ function boot() {
   document.body.insertBefore(renderer.domElement, document.querySelector('#ui'));
 
   const scene = new Scene();
-  const camera = new PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 2600);
+  const camera = new PerspectiveCamera(58, innerWidth / innerHeight, 0.5, 4200);
   scene.add(camera);
   // Timer (rather than Clock) so a backgrounded tab doesn't come back with a
   // ten-second delta and throw the aeroplane across the island.
@@ -190,10 +190,11 @@ function boot() {
   // counts them, nothing is unlocked, and they never come back.
   const found = new Set();
   const DISCOVERIES = [
-    { key: 'cove', at: () => world.landmarks.cove, radius: 120, below: 130, text: 'The hidden cove' },
+    { key: 'cove', at: () => world.landmarks.cove, radius: 130, below: 130, text: 'The hidden cove' },
     { key: 'lighthouse', at: () => world.landmarks.lighthouse, radius: 120, below: 160, text: 'The lighthouse on the point' },
     { key: 'village', at: () => world.landmarks.village, radius: 140, below: 110, text: 'Over the village — mind the laundry' },
     { key: 'arch', at: () => world.landmarks.arch, radius: 34, below: 46, text: 'Straight through the arch!' },
+    { key: 'summit', at: () => world.landmarks.summit, radius: 90, below: 240, text: 'The top of the island' },
     {
       key: 'camp',
       at: () => world.landmarks.beachCamp,
@@ -201,7 +202,10 @@ function boot() {
       below: 26,
       text: "Someone's chair on the sand, and the radio still on",
     },
-    { key: 'summit', at: () => world.landmarks.summit, radius: 90, below: 240, text: 'The top of the island' },
+    { key: 'canyon', at: () => world.landmarks.canyon, radius: 150, below: 150, text: 'The canyon — it goes all the way through' },
+    { key: 'canyonEnd', at: () => world.landmarks.canyonEnd, radius: 90, below: 60, text: 'Out the other side' },
+    { key: 'falls', at: () => world.landmarks.falls, radius: 170, below: 190, text: 'The waterfall' },
+    { key: 'lagoon', at: () => world.landmarks.lagoon, radius: 130, below: 120, text: 'The lagoon — shallow enough to land in' },
   ];
 
   // One nudge, the first time you are slow and low over the water, so the
