@@ -1,0 +1,20 @@
+{
+  "name": "covewind",
+  "version": "1.0.0",
+  "description": "A tiny free-flight holiday above a warm fishing island.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run icons && vite build",
+    "preview": "vite preview",
+    "check": "node tools/check-world.mjs",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  }
+}

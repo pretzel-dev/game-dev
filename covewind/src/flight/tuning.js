@@ -1,0 +1,61 @@
+/**
+ * Every number that decides how the aeroplane feels, in one place.
+ *
+ * The aim is an aeroplane that is *pleasant*, not accurate: it trades height
+ * for speed like a real one, it sinks a little in a hard turn, and it will not
+ * let you break it. Nothing here can end a flight.
+ */
+export const TUNE = {
+  // Attitude rates (radians/second at full stick).
+  pitchRate: 1.02,
+  rollRate: 2.9, // how fast bank follows the stick
+  yawRate: 0.52,
+  maxPitch: 1.02,
+  maxRoll: 1.2,
+
+  // Hands off, the aeroplane tidies itself up — the single biggest comfort win
+  // on a touch screen.
+  pitchCentring: 0.5,
+  rollCentring: 1.5,
+
+  // Speed, in the made-up units the HUD calls knots.
+  minSpeed: 13,
+  maxSpeed: 96,
+  baseSpeed: 20,
+  throttleSpeed: 40,
+  boostSpeed: 21,
+  // Climbing costs speed and diving gains it: the aeroplane trades energy.
+  pitchSpeedTrade: 30,
+  speedResponse: 1.25,
+
+  // Turning.
+  turnBase: 0.4,
+  turnFromSpeed: 0.0075,
+  bankSink: 0.5, // how much height a hard turn costs
+
+  // Lift: fast means climb a touch, slow and throttled back means sink.
+  liftPerSpeed: 0.02,
+  liftNeutralSpeed: 34,
+  idleSink: 0.5,
+
+  // Stall: soft, self-recovering, never fatal.
+  stallSpeed: 25,
+  stallAuthority: 0.45,
+  stallNoseDown: 0.6,
+
+  // Ground and water are cushions, not walls. The sea lets you get properly
+  // low — that is half the fun — while the land keeps a rooftop's worth of
+  // room under the wheels.
+  waterCushion: 9,
+  landCushion: 19,
+  cushionRise: 5.5,
+  lookAhead: 52,
+  skimScrub: 0.22,
+  skimHeight: 10,
+
+  // Sky and sea breeze limits.
+  ceiling: 330,
+  softCeiling: 300,
+  homeRadius: 900,
+  turnHomeRate: 0.18,
+};
