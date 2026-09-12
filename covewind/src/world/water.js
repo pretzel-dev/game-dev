@@ -92,14 +92,14 @@ const fragmentShader = /* glsl */ `
 
     // Fresnel: the sea goes pale and skyish at grazing angles.
     float fres = pow(1.0 - max(dot(normal, viewDir), 0.0), 4.0);
-    col = mix(col, fogColor, fres * 0.22);
+    col = mix(col, fogColor, fres * 0.15);
 
     // Surf. Two ragged bands that crawl up the beach with the swell.
     float swell = sin(time * 0.55 + coast * 0.09) * 3.0;
     float edge = coast + swell;
     float ripple = 0.5 + 0.5 * sin(atan(p.y, p.x) * 190.0 + time * 0.7);
     float surf = smoothstep(15.0 + ripple * 7.0, 1.0, edge) * smoothstep(-9.0, -1.0, edge);
-    float wash = smoothstep(40.0, 6.0, edge) * 0.12;
+    float wash = smoothstep(36.0, 6.0, edge) * 0.08;
     col = mix(col, foamColor, clamp(surf * 0.85 + wash, 0.0, 1.0));
 
     float fogAmount = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));

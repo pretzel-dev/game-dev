@@ -123,7 +123,12 @@ function harbour(parent, moorings) {
     createPier(parent, { x: px, z: pz, length: 52 + rand(-6, 10), rot: rand(-0.12, 0.12) });
     // Boats tied up alongside.
     for (let b = 0; b < 2; b++) {
-      moorings.push(createBoat(parent, px + (b ? 9 : -9), pz + rand(-14, 14), rand(0.7, 0.95)));
+      moorings.push(
+        createBoat(parent, px + (b ? 9 : -9), pz + rand(-14, 14), rand(0.7, 0.95), {
+          moored: true,
+          heading: rand(-0.2, 0.2),
+        })
+      );
     }
   }
 

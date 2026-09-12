@@ -26,7 +26,11 @@ Prioritise, in order:
 
 - Arcade flight model with bank-to-turn, pitch, rudder, throttle and boost.
   Speed trades against height, hard turns cost a little lift, and a stall is a
-  soft nose-drop that recovers itself.
+  soft nose-drop that recovers itself. Which way the stick pitches is a
+  preference (`I`), because people disagree about it.
+- It is a **floatplane**: throttle back under about 30 knots and it settles onto
+  the sea, taxis under throttle and rudder, and unsticks again at full power.
+  Landing in the cove is the closest thing to a destination.
 - Forgiving collision: the ground and the sea are cushions (a low one over
   water so you can properly skim, a rooftop-high one over land), a look-ahead
   sample lifts you over cliffs, and slopes nudge you away from the rock. There
@@ -62,7 +66,7 @@ Prioritise, in order:
 
 ## Good next improvements
 
-- Landing and taxiing: a beach or a grass strip you can settle onto.
+- A grass strip or beach to settle onto, for the wheels the floats replaced.
 - Interiors of the cove: a cave you can fly into.
 - More weather as a choice alongside the light presets (light haze, high cloud).
 - Gentle multiplayer-free "postcards": save the photo with the light and place.

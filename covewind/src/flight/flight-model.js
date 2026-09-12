@@ -29,6 +29,13 @@ export function createFlight() {
     skimming: false,
     boosting: false,
     groundClearance: 100,
+    /** True while the floats are in the water. */
+    waterborne: false,
+    /** Set for one frame on touchdown and on unsticking, for hints and audio. */
+    justLanded: false,
+    justTookOff: false,
+    /** Floats touching the shallows while taxiing. */
+    grounded: false,
   };
 }
 
@@ -53,6 +60,10 @@ export function headingVector(flight, out = _forward) {
  * @param {number} t       Elapsed time, for the wave field.
  */
 export function updateFlight(flight, input, wind, dt, t) {
+  flight.justLanded = false;
+  flight.justTookOff = false;
+  if (flight.waterborne) return updateOnWater(flight, input, dt, t);
+
   const pitchIn = shapeAxis(clamp(input.pitch, -1, 1));
   const rollIn = shapeAxis(clamp(input.roll, -1, 1));
   const yawIn = shapeAxis(clamp(input.yaw, -1, 1), 0.1, 0.2);
@@ -84,10 +95,12 @@ export function updateFlight(flight, input, wind, dt, t) {
   flight.roll += Math.sin(flight.wobble * 1.7) * buffet * dt * 2.4;
   flight.pitch += Math.sin(flight.wobble * 2.3 + 1.1) * buffet * dt * 1.4;
 
+  // Bank right, turn right. Heading grows anticlockwise seen from above, so a
+  // right-hand turn subtracts from it.
   const turn =
     Math.sin(flight.roll) * (TUNE.turnBase + flight.speed * TUNE.turnFromSpeed) * authority +
     yawIn * TUNE.yawRate;
-  flight.heading += turn * dt;
+  flight.heading -= turn * dt;
 
   /* -- speed: throttle, boost, and the trade against height -------------- */
   const target =
@@ -102,8 +115,10 @@ export function updateFlight(flight, input, wind, dt, t) {
   headingVector(flight, _forward);
   flight.velocity.copy(_forward).multiplyScalar(flight.speed);
 
-  // Lift and sink, then the wind on top.
-  const lift = (flight.speed - TUNE.liftNeutralSpeed) * TUNE.liftPerSpeed;
+  // Lift and sink, then the wind on top. Fast means a gentle climb; slow means
+  // the wing stops holding you up, which is how you get down onto the water.
+  const speedDelta = flight.speed - TUNE.liftNeutralSpeed;
+  const lift = speedDelta * (speedDelta >= 0 ? TUNE.liftPerSpeed : TUNE.sinkPerSpeed);
   const idle = (1 - flight.throttle) * TUNE.idleSink;
   const bankSink = Math.abs(Math.sin(flight.roll)) * TUNE.bankSink;
   flight.velocity.y += lift - idle - bankSink;
@@ -128,15 +143,24 @@ export function updateFlight(flight, input, wind, dt, t) {
   const aheadSurface = surfaceHeightAt(_ahead.x, _ahead.z);
   const aheadClearance = flight.pos.y - aheadSurface;
 
-  // Water gives you a low pass; land keeps a rooftop's clearance.
-  const cushion =
-    flight.overWater && aheadSurface <= 0 ? TUNE.waterCushion : TUNE.landCushion;
-  const clearance = Math.min(flight.groundClearance, aheadClearance);
-  const push = clamp(1 - clearance / cushion, 0, 1);
+  // The look-ahead is there to lift you over what you would otherwise fly
+  // into, so it counts only ground that stands at or above the aeroplane. A
+  // beach you are descending towards is below you, and must not shove you back
+  // up just as you were settling onto the water in front of it.
+  const risesAhead = aheadSurface > flight.pos.y - 2;
+
+  // Water gives you a low pass; land keeps a rooftop's clearance. Below
+  // landing speed the sea stops holding you up at all, so you can settle onto it.
+  const cushion = flight.overWater && !risesAhead ? TUNE.waterCushion : TUNE.landCushion;
+  const landing = flight.overWater && !risesAhead && flight.speed < TUNE.landingSpeed;
+  const clearance = risesAhead
+    ? Math.min(flight.groundClearance, aheadClearance)
+    : flight.groundClearance;
+  const push = landing ? 0 : clamp(1 - clearance / cushion, 0, 1);
   flight.contact = damp(flight.contact, push, 9, dt);
 
   if (push > 0) {
-    const floor = Math.max(surface, aheadSurface) + cushion * 0.72;
+    const floor = (risesAhead ? Math.max(surface, aheadSurface) : surface) + cushion * 0.72;
     flight.pos.y = damp(flight.pos.y, Math.max(flight.pos.y, floor), TUNE.cushionRise * push, dt);
     // The nose is eased up, never snapped.
     flight.pitch = damp(flight.pitch, Math.max(flight.pitch, 0.16 * push), 3.5 * push, dt);
@@ -156,6 +180,15 @@ export function updateFlight(flight, input, wind, dt, t) {
 
   flight.skimming = flight.overWater && flight.groundClearance < TUNE.skimHeight;
 
+  // Touchdown: slow, low, over open water, and not climbing away.
+  if (landing && flight.groundClearance < TUNE.touchdownHeight && flight.velocity.y < 3) {
+    flight.waterborne = true;
+    flight.justLanded = true;
+    flight.speed = Math.min(flight.speed, TUNE.takeoffSpeed - 6);
+    flight.pos.y = surface + TUNE.floatDraft;
+    return flight;
+  }
+
   /* -- the sky has a soft lid, and the sea a soft fence ------------------- */
   if (flight.pos.y > TUNE.softCeiling) {
     flight.pos.y = damp(flight.pos.y, TUNE.softCeiling, 1.6, dt);
@@ -174,6 +207,66 @@ export function updateFlight(flight, input, wind, dt, t) {
     flight.heading += delta * TUNE.turnHomeRate * strength * dt * 3;
   }
 
+  return flight;
+}
+
+/**
+ * Taxiing on the surface. The throttle drives the speed, the stick and rudder
+ * steer, and the swell tips the floats about. Open the throttle all the way and
+ * the aeroplane unsticks and flies again.
+ */
+function updateOnWater(flight, input, dt, t) {
+  const steer = clamp(
+    shapeAxis(clamp(input.roll, -1, 1)) + shapeAxis(clamp(input.yaw, -1, 1), 0.1, 0.2),
+    -1,
+    1
+  );
+  flight.boosting = !!input.boost;
+  flight.contact = 1;
+  flight.stall = 0;
+
+  const target =
+    TUNE.taxiIdle + flight.throttle * TUNE.taxiSpeed + (flight.boosting ? TUNE.taxiBoost : 0);
+  flight.speed = damp(flight.speed, target, TUNE.waterDrag, dt);
+
+  // Slow water taxiing needs the rudder; at speed the floats track straighter.
+  const authority = 0.5 + clamp(flight.speed / 26, 0, 1) * 0.75;
+  flight.heading -= steer * TUNE.waterSteer * authority * dt;
+
+  const step = flight.speed * dt;
+  const nextX = flight.pos.x + Math.sin(flight.heading) * step;
+  const nextZ = flight.pos.z + Math.cos(flight.heading) * step;
+  if (terrainHeightAt(nextX, nextZ) < -1.5) {
+    flight.pos.x = nextX;
+    flight.pos.z = nextZ;
+    flight.grounded = false;
+  } else {
+    // Nudging the sand: the floats stop, and you can turn back out.
+    flight.speed *= 1 - 2.4 * dt;
+    flight.grounded = true;
+  }
+
+  // Ride the swell: height from the wave under the floats, tilt from its slope.
+  const wave = waveHeight(flight.pos.x, flight.pos.z, t);
+  const ahead = waveHeight(flight.pos.x + Math.sin(flight.heading) * 6, flight.pos.z + Math.cos(flight.heading) * 6, t);
+  const side = waveHeight(flight.pos.x + Math.cos(flight.heading) * 6, flight.pos.z - Math.sin(flight.heading) * 6, t);
+  flight.pos.y = damp(flight.pos.y, wave + TUNE.floatDraft, 8, dt);
+  flight.pitch = damp(flight.pitch, (ahead - wave) * 0.06, 3, dt);
+  flight.roll = damp(flight.roll, (side - wave) * 0.05 + steer * 0.12, 3, dt);
+
+  flight.velocity.set(Math.sin(flight.heading) * flight.speed, 0, Math.cos(flight.heading) * flight.speed);
+  flight.groundClearance = TUNE.floatDraft;
+  flight.overWater = true;
+  flight.skimming = flight.speed > 10;
+
+  // On the step and away.
+  if (flight.speed > TUNE.takeoffSpeed) {
+    flight.waterborne = false;
+    flight.justTookOff = true;
+    flight.grounded = false;
+    flight.pitch = 0.14;
+    flight.contact = 0;
+  }
   return flight;
 }
 

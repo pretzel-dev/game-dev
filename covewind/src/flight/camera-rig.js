@@ -43,7 +43,8 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
     const cp = Math.cos(flight.pitch);
     _forward.set(Math.sin(flight.heading) * cp, Math.sin(flight.pitch), Math.cos(flight.heading) * cp);
     _flat.set(Math.sin(flight.heading), 0, Math.cos(flight.heading));
-    _right.set(Math.cos(flight.heading), 0, -Math.sin(flight.heading));
+    // Right-hand side of the aeroplane: forward × up.
+    _right.set(-Math.cos(flight.heading), 0, Math.sin(flight.heading));
 
     const speedT = clamp((flight.speed - 20) / 55, 0, 1);
     let lag = 4.6;
@@ -62,13 +63,15 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
       lag = 7;
       targetFov = 46;
     } else if (state.mode === 0) {
-      // Chase: sits behind and above, swings wide through a turn.
+      // Chase: sits behind and above, swings wide through a turn, and comes in
+      // closer and lower when the floats are in the water.
       const bank = Math.sin(flight.roll);
+      const astern = flight.waterborne ? -18 : -26 - speedT * 6;
       _desired
         .copy(flight.pos)
-        .addScaledVector(_flat, -26 - speedT * 6)
-        .addScaledVector(_right, bank * 4.5)
-        .addScaledVector(_up, 9.2 - flight.pitch * 4);
+        .addScaledVector(_flat, astern)
+        .addScaledVector(_right, -bank * 4.5) // swing wide, to the outside of the turn
+        .addScaledVector(_up, (flight.waterborne ? 5.5 : 9.2) - flight.pitch * 4);
       _target
         .copy(flight.pos)
         .addScaledVector(_forward, 30)
@@ -100,6 +103,10 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
 
     if (boosting) targetFov += 7;
 
+    // Keep the line from the aeroplane to the camera clear of the island: down
+    // in the cove, a camera 26 metres astern would otherwise sit inside a cliff.
+    pullInPastTerrain(_desired, flight.pos);
+
     camera.position.lerp(_desired, 1 - Math.exp(-lag * dt));
 
     // Never let the camera scrape through the ground or dip under the sea.
@@ -110,7 +117,7 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
 
     // A touch of roll in the camera sells the turn without making anyone queasy.
     const tilt = state.photo.active ? 0 : Math.sin(flight.roll) * 0.14;
-    _up.set(tilt, 1, 0).normalize();
+    _up.set(0, 1, 0).addScaledVector(_right, tilt).normalize();
     camera.up.lerp(_up, 1 - Math.exp(-4 * dt));
     _up.set(0, 1, 0);
     camera.lookAt(lookAt);
@@ -120,6 +127,36 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
       camera.fov = state.fov;
       camera.updateProjectionMatrix();
     }
+  }
+
+  /**
+   * Shorten the camera boom until nothing solid lies between the subject and
+   * the camera. Six height samples is plenty for an island this smooth.
+   */
+  function pullInPastTerrain(desired, focus) {
+    const steps = 6;
+    let clear = 1;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const x = focus.x + (desired.x - focus.x) * t;
+      const y = focus.y + (desired.y - focus.y) * t;
+      const z = focus.z + (desired.z - focus.z) * t;
+      if (y < surfaceHeightAt(x, z) + 3) {
+        clear = (i - 1) / steps;
+        break;
+      }
+    }
+    if (clear >= 1) return;
+
+    // Shorten rather than climb: going up and over would put the obstacle
+    // between the camera and the aeroplane, which is worse than a close shot.
+    // Never come closer than 40% of the way in.
+    const t = Math.max(clear, 0.4);
+    desired.set(
+      focus.x + (desired.x - focus.x) * t,
+      Math.max(focus.y + (desired.y - focus.y) * t, surfaceHeightAt(desired.x, desired.z) + 3.5),
+      focus.z + (desired.z - focus.z) * t
+    );
   }
 
   /** Snap the rig to a sensible starting place. */

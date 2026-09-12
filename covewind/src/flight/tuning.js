@@ -35,6 +35,9 @@ export const TUNE = {
 
   // Lift: fast means climb a touch, slow and throttled back means sink.
   liftPerSpeed: 0.02,
+  // Below the neutral speed the wing gives up much faster than it gains — that
+  // asymmetry is what makes throttling back feel like coming down to land.
+  sinkPerSpeed: 0.24,
   liftNeutralSpeed: 34,
   idleSink: 0.5,
 
@@ -52,6 +55,18 @@ export const TUNE = {
   lookAhead: 52,
   skimScrub: 0.22,
   skimHeight: 10,
+
+  // On the water. Throttle back and sink onto the sea, taxi about, then
+  // firewall it to unstick — the floats mean the cove is somewhere to land.
+  landingSpeed: 32, // slower than this, the sea stops holding you up
+  touchdownHeight: 6,
+  floatDraft: 2.1, // how high the aeroplane rides above the surface
+  taxiIdle: 4,
+  taxiSpeed: 30, // at full throttle this passes takeoffSpeed
+  taxiBoost: 9,
+  takeoffSpeed: 30,
+  waterSteer: 0.85,
+  waterDrag: 0.9,
 
   // Sky and sea breeze limits.
   ceiling: 330,

@@ -42,8 +42,10 @@ export function createLighting(scene, renderer, sky, water) {
   sun.shadow.camera.bottom = -d;
   sun.shadow.camera.near = 10;
   sun.shadow.camera.far = 1900;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.6;
+  sun.shadow.bias = -0.0005;
+  // Generous, because the shadow frustum covers a whole island: without it,
+  // steep slopes at a low sun stripe with shadow acne.
+  sun.shadow.normalBias = 2.2;
   scene.add(sun);
   scene.add(sun.target);
 

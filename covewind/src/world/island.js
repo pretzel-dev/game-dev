@@ -42,8 +42,8 @@ const COLOURS = {
 
 const _rock = new Color();
 
-/** Ground colour from height, steepness and how cliffy the coast is here. */
-function groundColour(x, z, height, slope, cliff, out) {
+/** Ground colour from height and steepness — the island's whole palette. */
+function groundColour(x, z, height, slope, out) {
   // Three scales of wobble, so the hillside reads as fields, scrub and bare
   // patches rather than one flat green.
   const broad = 0.5 + 0.5 * Math.sin(x * 0.0075 + z * 0.0061 + 1.3);
@@ -60,9 +60,11 @@ function groundColour(x, z, height, slope, cliff, out) {
   // by height so a cliff face reads as strata.
   const band = 0.5 + 0.5 * Math.sin(height * 0.33 + x * 0.004);
   const rock = _rock.copy(COLOURS.rock).lerp(COLOURS.rockWarm, band);
+  // Steepness decides where the rock shows, never the coastline's cliff factor:
+  // that is a function of bearing alone, and painting with it fans radial
+  // stripes across the polar mesh.
   const bare = Math.max(
-    smoothstep(0.4, 0.95, slope),
-    cliff * smoothstep(70, 14, height) * 0.85,
+    smoothstep(0.32, 0.8, slope),
     mid * smoothstep(112, 172, height) * 0.8
   );
   out.lerp(rock, Math.min(bare, 1));
@@ -83,12 +85,13 @@ export function createIsland(scene) {
 
   for (let r = 0; r <= rings; r++) {
     const u = r / rings;
-    // Bunch rings towards the coast, where the shape matters most.
-    const rr = 1 - Math.pow(1 - u, 1.7);
+    // Bunch rings towards the coast, where the shape matters most — but only
+    // gently. Crowd them and the quads become long thin slivers that flat
+    // shading turns into radial streaks down every cliff.
+    const rr = 1 - Math.pow(1 - u, 1.25);
     for (let s = 0; s < segs; s++) {
       const th = (s / segs) * TAU;
       const edge = islandRadius(th);
-      const cliff = cliffFactor(th);
       const rad = edge * rr;
       const x = Math.cos(th) * rad;
       const z = Math.sin(th) * rad;
@@ -105,7 +108,7 @@ export function createIsland(scene) {
 
       const g = terrainGradient(x, z, 5);
       const slope = Math.hypot(g.x, g.z);
-      groundColour(x, z, y, slope, cliff, c);
+      groundColour(x, z, y, slope, c);
       if (r === rings) c.lerp(COLOURS.rock, 0.7);
       colors.push(c.r, c.g, c.b);
     }

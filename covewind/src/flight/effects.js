@@ -76,7 +76,13 @@ export function createContrails(scene) {
   let emitTimer = 0;
 
   function update(dt, plane, flight, camera) {
-    const want = flight.boosting ? 1 : flight.contact > 0.35 && flight.speed > 52 ? 0.45 : 0;
+    const want = flight.waterborne
+      ? 0
+      : flight.boosting
+        ? 1
+        : flight.contact > 0.35 && flight.speed > 52
+          ? 0.45
+          : 0;
     strength = damp(strength, want, want > strength ? 7 : 2.2, dt);
     emitTimer += dt;
     const emit = emitTimer >= EMIT_INTERVAL;

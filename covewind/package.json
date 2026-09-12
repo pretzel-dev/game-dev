@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "npm run icons && vite build",
     "preview": "vite preview",
-    "check": "node tools/check-world.mjs",
+    "check": "node tools/check-world.mjs && node tools/check-flight.mjs",
     "icons": "node tools/make-icons.mjs"
   },
   "dependencies": {

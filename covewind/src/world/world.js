@@ -13,7 +13,7 @@ import { updateCloth } from './cloth.js';
 import { waveHeight } from './water.js';
 import { PLACES, islandRadius, terrainHeightAt, TAU } from './terrain.js';
 import { QUALITY } from '../core/quality.js';
-import { damp, rand } from '../core/utils.js';
+import { angleDelta, damp, rand } from '../core/utils.js';
 
 export function createWorld(scene) {
   const island = createIsland(scene);
@@ -77,16 +77,33 @@ export function createWorld(scene) {
       group.rotation.x = damp(group.rotation.x, (ahead - here) * 0.08, 3, dt);
       group.rotation.z = damp(group.rotation.z, -(side - here) * 0.08, 3, dt);
 
-      if (boat.drift > 0.1) {
-        const nx = group.position.x + Math.sin(boat.heading) * boat.drift * dt * 6;
-        const nz = group.position.z + Math.cos(boat.heading) * boat.drift * dt * 6;
-        if (terrainHeightAt(nx, nz) < -4) {
+      if (boat.drift > 0) {
+        // Look ahead, and put the wheel over gently — a boat turns over
+        // several seconds, not in a frame.
+        const lookAhead = 26;
+        const bowX = group.position.x + Math.sin(boat.heading) * lookAhead;
+        const bowZ = group.position.z + Math.cos(boat.heading) * lookAhead;
+        if (terrainHeightAt(bowX, bowZ) > -5) {
+          if (boat.turnTimer <= 0) {
+            // Commit to one direction for the whole manoeuvre.
+            boat.turn = Math.sin(boat.heading * 3.1 + group.position.x * 0.01) > 0 ? 1 : -1;
+            boat.turnTimer = 4;
+          }
+        } else if (boat.turnTimer <= 0) {
+          boat.turn = 0;
+        }
+        boat.turnTimer = Math.max(0, boat.turnTimer - dt);
+        boat.heading += boat.turn * 0.5 * dt;
+
+        const step = boat.drift * dt;
+        const nx = group.position.x + Math.sin(boat.heading) * step;
+        const nz = group.position.z + Math.cos(boat.heading) * step;
+        if (terrainHeightAt(nx, nz) < -3) {
           group.position.x = nx;
           group.position.z = nz;
-        } else {
-          boat.heading += 1.9; // sheer away from the rocks
         }
-        group.rotation.y = damp(group.rotation.y, boat.heading, 1.4, dt);
+        // Damp along the shortest way round, so the hull never unwinds a turn.
+        group.rotation.y += angleDelta(group.rotation.y, boat.heading) * Math.min(1, dt * 1.6);
       }
     }
 

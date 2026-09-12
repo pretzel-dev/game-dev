@@ -164,10 +164,15 @@ export function createTree(parent, x, z, scale = 1, kind = null) {
 
 /* ---------------------------------------------------------------- boats --- */
 
-export function createBoat(parent, x, z, scale = 1) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.moored] Tied up: bobs on the swell but never wanders.
+ * @param {number}  [opts.heading] Which way it points.
+ */
+export function createBoat(parent, x, z, scale = 1, { moored = false, heading = null } = {}) {
   const group = new Group();
   group.position.set(x, 1.2, z);
-  group.rotation.y = rand(0, TAU);
+  group.rotation.y = heading ?? rand(0, TAU);
   group.scale.setScalar(scale);
   parent.add(group);
 
@@ -223,8 +228,10 @@ export function createBoat(parent, x, z, scale = 1) {
   return {
     group,
     phase: rand(0, TAU),
-    drift: rand(0.06, 0.22),
-    heading: rand(0, TAU),
+    drift: moored ? 0 : rand(1.4, 3.6), // units per second
+    heading: group.rotation.y,
+    turn: 0,
+    turnTimer: 0,
   };
 }
 

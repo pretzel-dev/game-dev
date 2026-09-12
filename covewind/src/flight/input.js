@@ -11,6 +11,9 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
   const keys = Object.create(null);
   const stick = { pitch: 0, roll: 0 };
   let touchBoost = false;
+  // Half the world expects "up" to climb and half expects it to push the nose
+  // down. Neither is wrong, so it is a preference rather than a decision.
+  let invertPitch = false;
   const input = {
     pitch: 0,
     roll: 0,
@@ -39,6 +42,7 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     KeyM: 'sound',
     KeyP: 'photo',
     KeyL: 'light',
+    KeyI: 'invertPitch',
     Escape: 'escape',
   };
 
@@ -196,7 +200,7 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     const keyRoll = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
     const keyYaw = (keys.KeyE ? 1 : 0) - (keys.KeyQ ? 1 : 0);
 
-    input.pitch = clamp(keyPitch + stick.pitch, -1, 1);
+    input.pitch = clamp(keyPitch + stick.pitch, -1, 1) * (invertPitch ? -1 : 1);
     input.roll = clamp(keyRoll + stick.roll, -1, 1);
     input.yaw = clamp(keyYaw, -1, 1);
     input.throttleAxis = (keys.KeyR ? 1 : 0) - (keys.KeyF ? 1 : 0);
@@ -218,5 +222,21 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     touchBoost = value;
   }
 
-  return { input, sample, clearThrottleSet, setBoost, keys, throttleFill };
+  function setInvertPitch(value) {
+    invertPitch = !!value;
+    return invertPitch;
+  }
+
+  return {
+    input,
+    sample,
+    clearThrottleSet,
+    setBoost,
+    setInvertPitch,
+    get invertPitch() {
+      return invertPitch;
+    },
+    keys,
+    throttleFill,
+  };
 }

@@ -8,6 +8,7 @@ const defaults = {
   light: null, // set by main.js from the palette default
   sound: true,
   camera: 0,
+  invertPitch: false,
 };
 
 function read() {

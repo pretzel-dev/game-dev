@@ -138,6 +138,7 @@ function boot() {
       photo: togglePhoto,
       sound: toggleSound,
       hud: () => hud.toggle(),
+      invertPitch: () => setInvertPitch(!controls.invertPitch),
       escape: () => photo.set(false),
       orbit: (dx, dy) => {
         if (photo.active) rig.orbit(dx, dy);
@@ -149,9 +150,23 @@ function boot() {
     onFirstInput: () => audio.start(),
   });
 
+  function setInvertPitch(value) {
+    const on = controls.setInvertPitch(value);
+    settings.set('invertPitch', on);
+    hud.hint(on ? 'Pull back to climb' : 'Push forward to climb', 1.6);
+    for (const chip of document.querySelectorAll('[data-pitch]')) {
+      chip.setAttribute('aria-pressed', String((chip.dataset.pitch === 'inverted') === on));
+    }
+  }
+
   // Remembered preferences.
   setLight(settings.get('light') || DEFAULT_LIGHT);
   lighting.set(settings.get('light') || DEFAULT_LIGHT, { instant: true });
+  controls.setInvertPitch(settings.get('invertPitch'));
+  for (const chip of document.querySelectorAll('[data-pitch]')) {
+    chip.setAttribute('aria-pressed', String((chip.dataset.pitch === 'inverted') === !!settings.get('invertPitch')));
+    chip.addEventListener('click', () => setInvertPitch(chip.dataset.pitch === 'inverted'));
+  }
   if (settings.get('sound') === false) audio.setEnabled(false);
   hud.setSound(audio.enabled);
 
@@ -181,6 +196,16 @@ function boot() {
     { key: 'arch', at: () => world.landmarks.arch, radius: 34, below: 46, text: 'Straight through the arch!' },
     { key: 'summit', at: () => world.landmarks.summit, radius: 90, below: 240, text: 'The top of the island' },
   ];
+
+  // One nudge, the first time you are slow and low over the water, so the
+  // floats are not a secret.
+  let landingHinted = false;
+  function offerLanding() {
+    if (landingHinted || flight.waterborne) return;
+    if (!flight.overWater || flight.pos.y > 45 || flight.speed > 34) return;
+    landingHinted = true;
+    hud.hint('Ease the nose down — the floats will take the water', 4);
+  }
 
   function checkDiscoveries() {
     for (const spot of DISCOVERIES) {
@@ -228,6 +253,8 @@ function boot() {
   let slowFrames = 0;
   let neighbourCooldown = 0;
   let scatterCooldown = 0;
+  let groundedCooldown = 0;
+  let landedOnce = false;
   let fps = 60;
 
   // A small hatch for tinkering from the console — drop yourself over the cove,
@@ -278,14 +305,29 @@ function boot() {
       if (started) {
         updateFlight(flight, input, windState, dt, t);
         checkDiscoveries();
+        offerLanding();
       } else {
         // Attract mode: a slow left-hand circuit over the bay.
         updateFlight(flight, { pitch: 0, roll: -0.22, yaw: 0, boost: false }, windState, dt, t);
       }
     }
 
+    if (flight.justLanded) {
+      hud.hint(
+        landedOnce ? 'Down on the water' : 'Down on the water — open the throttle to take off again',
+        landedOnce ? 1.6 : 4
+      );
+      landedOnce = true;
+    } else if (flight.justTookOff) {
+      hud.hint('Airborne', 1.2);
+    } else if (flight.grounded && groundedCooldown <= 0) {
+      groundedCooldown = 8;
+      hud.hint('The floats are nudging the sand', 1.8);
+    }
+    groundedCooldown = Math.max(0, groundedCooldown - dt);
+
     plane.position.copy(flight.pos);
-    plane.rotation.set(-flight.pitch, flight.heading, -flight.roll);
+    plane.rotation.set(-flight.pitch, flight.heading, flight.roll);
     plane.userData.propeller.rotation.z += dt * (16 + flight.speed * 0.8);
     setControlSurfaces(
       plane,
@@ -323,7 +365,7 @@ function boot() {
           break;
         }
       }
-      if (flight.contact > 0.55) {
+      if (flight.contact > 0.55 && !flight.waterborne) {
         neighbourCooldown = 6;
         hud.hint(flight.overWater ? 'Skimming the waves!' : 'Easy — give the rooftops some room', 1.4);
       }

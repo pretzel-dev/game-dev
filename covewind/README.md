@@ -1,9 +1,10 @@
 # Covewind — browser free-flight toy
 
 A no-objective arcade flying sandbox above a stylised Mediterranean fishing
-island. Take off, follow the coast, find the cove behind the lighthouse, fly
-through the arch, take a photograph, stop whenever you like. There is no score,
-no mission, no timer and no way to crash.
+island. It is a floatplane, so you can throttle back, settle onto the sea and
+taxi about — landing in the hidden cove is the closest thing here to a
+destination. Follow the coast, fly through the arch, take a photograph, stop
+whenever you like. There is no score, no mission, no timer and no way to crash.
 
 Everything you see and hear is generated at runtime: the island, the village,
 the boats, the gulls, the engine note and the harbour gulls are all built from
@@ -32,7 +33,7 @@ Other scripts:
 
 | Script | What it does |
 | --- | --- |
-| `npm run check` | Sanity-checks the generated world: no house in the sea, no landmark on a cliff, no tears in the height field, summit below the flight ceiling. |
+| `npm run check` | Flies the model and checks the world without a browser: the stick turns the way you expect, the aeroplane lands on water and gets off again, nothing can put it through the island, no house is in the sea, no landmark is on a cliff. |
 | `npm run icons` | Regenerates `public/icons/*.png` from `tools/make-icons.mjs`. Runs automatically as part of `npm run build`. |
 
 ## Controls
@@ -49,11 +50,18 @@ Other scripts:
 | `C` | camera (chase · close · postcard) |
 | `L` | light (sunrise · noon · golden hour) |
 | `P` | photo mode — `Esc` leaves it |
+| `I` | swap which way the stick pitches |
 | `H` | hide the HUD |
 | `M` | sound |
 
 **Touch** — left stick flies, the right-hand slider is the throttle, ⚡ boosts,
 and the buttons along the top change camera, light, photo mode and sound.
+
+**Landing** Throttle back until you are under about 30 knots, ease the nose
+down, and the floats take the water; the sea stops holding you up as soon as
+you are slow enough. Steer with the stick or rudder while taxiing, and open the
+throttle all the way to get off again. Come in fast and the aeroplane skims
+instead, which is its own kind of fun.
 
 **Photo mode** hides the interface, holds the aeroplane still and orbits around
 it while the island carries on living. Drag to look around, pinch or scroll to
@@ -98,7 +106,9 @@ A few things worth knowing if you are going to change it:
 - **Flight feel lives in `flight/tuning.js`.** Nothing in the model can end a
   flight: the ground and sea are cushions that push back and scrub a little
   speed, cliffs lift you over rather than stopping you, and a stall just drops
-  the nose until the aeroplane is flying again.
+  the nose until the aeroplane is flying again. Below landing speed the sea
+  stops cushioning you and the floats take over, which is the whole landing
+  mechanic. `tools/check-flight.mjs` flies all of that in Node.
 - **Performance knobs are in `core/quality.js`.** The tier is picked from the
   device on load (segment counts, shadow map size, gull and cloud counts, pixel
   ratio); if frames are still slow the game sheds shadows and pixel ratio once,

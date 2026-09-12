@@ -6,7 +6,8 @@
  */
 
 function detectTier() {
-  if (typeof navigator === 'undefined') return 'high';
+  // Node has a `navigator` too, so test for the thing actually being used.
+  if (typeof matchMedia !== 'function' || typeof window === 'undefined') return 'high';
   const coarse = matchMedia('(pointer: coarse)').matches;
   const small = Math.min(innerWidth, innerHeight) < 520;
   const cores = navigator.hardwareConcurrency || 4;
@@ -24,7 +25,7 @@ const TIERS = {
     shadowMap: 1024,
     shadowDistance: 380,
     islandRings: 34,
-    islandSegments: 96,
+    islandSegments: 112,
     waterSegments: 64,
     clouds: 9,
     birds: 14,
@@ -44,7 +45,7 @@ const TIERS = {
     shadowMap: 1536,
     shadowDistance: 460,
     islandRings: 40,
-    islandSegments: 120,
+    islandSegments: 140,
     waterSegments: 90,
     clouds: 13,
     birds: 22,
@@ -64,7 +65,7 @@ const TIERS = {
     shadowMap: 2048,
     shadowDistance: 520,
     islandRings: 48,
-    islandSegments: 144,
+    islandSegments: 168,
     waterSegments: 120,
     clouds: 18,
     birds: 30,

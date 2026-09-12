@@ -40,7 +40,10 @@ export function createCove(scene) {
   const moorings = [];
   for (let i = 0; i < 2; i++) {
     moorings.push(
-      createBoat(group, dock.x + rand(-16, 16), dock.z + rand(-16, 16), rand(0.55, 0.8))
+      createBoat(group, dock.x + rand(-16, 16), dock.z + rand(-16, 16), rand(0.55, 0.8), {
+        moored: true,
+        heading: outward + rand(-0.3, 0.3),
+      })
     );
   }
 

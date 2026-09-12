@@ -12,7 +12,6 @@ import {
   Group,
   Mesh,
   SphereGeometry,
-  TorusGeometry,
   Vector3,
 } from 'three';
 import { MAT, mat } from '../core/materials.js';
@@ -92,20 +91,44 @@ export function createPlaneModel(color = 0xc9473d, tiny = false) {
   cockpit.position.set(0, 0.88 * s, 0.75 * s);
   group.add(cockpit);
 
-  // Undercarriage.
-  const axle = new Mesh(new CylinderGeometry(0.12 * s, 0.12 * s, 5.4 * s, 6), MAT.dark);
-  axle.rotation.z = Math.PI / 2;
-  axle.position.set(0, -1.2 * s, 1.5 * s);
-  group.add(axle);
+  // Floats instead of wheels: this aeroplane lives on the water, and the cove
+  // is somewhere to land rather than only to look at.
   for (const side of [-1, 1]) {
-    const wheel = new Mesh(new TorusGeometry(0.7 * s, 0.18 * s, 6, 10), MAT.dark);
-    wheel.rotation.y = Math.PI / 2;
-    wheel.position.set(side * 2.6 * s, -1.72 * s, 1.5 * s);
-    group.add(wheel);
-    const spat = new Mesh(new ConeGeometry(0.5 * s, 1.6 * s, 6), MAT.cream);
-    spat.rotation.x = Math.PI / 2;
-    spat.position.set(side * 2.6 * s, -1.3 * s, 1.7 * s);
-    group.add(spat);
+    const float = new Group();
+    float.position.set(side * 2.9 * s, -2.5 * s, 0.9 * s);
+    group.add(float);
+
+    const hull = new Mesh(new BoxGeometry(1.5 * s, 1.15 * s, 8.4 * s), MAT.cream);
+    hull.castShadow = true;
+    float.add(hull);
+
+    // Upswept bow and a planing step, which is what makes a float read as one.
+    const bow = new Mesh(new ConeGeometry(1.05 * s, 3.2 * s, 4), MAT.cream);
+    bow.rotation.x = Math.PI / 2;
+    bow.rotation.z = Math.PI / 4;
+    bow.scale.set(1, 1, 0.72);
+    bow.position.set(0, 0.16 * s, 5.3 * s);
+    bow.castShadow = true;
+    float.add(bow);
+
+    const keel = new Mesh(new BoxGeometry(1.1 * s, 0.5 * s, 3.4 * s), MAT.red);
+    keel.position.set(0, -0.72 * s, -1.1 * s);
+    float.add(keel);
+
+    const stern = new Mesh(new BoxGeometry(1.4 * s, 0.9 * s, 1.2 * s), MAT.cream);
+    stern.position.set(0, 0.2 * s, -4.6 * s);
+    float.add(stern);
+
+    // Struts up to the fuselage and the lower wing.
+    for (const z of [2.2, -1.6]) {
+      const strut = new Mesh(new BoxGeometry(0.2 * s, 2 * s, 0.5 * s), MAT.dark);
+      strut.position.set(side * 2.9 * s, -1.5 * s, z * s);
+      group.add(strut);
+    }
+    const brace = new Mesh(new BoxGeometry(2.6 * s, 0.18 * s, 0.4 * s), MAT.dark);
+    brace.position.set(side * 1.6 * s, -1.9 * s, 0.6 * s);
+    brace.rotation.z = side * 0.42;
+    group.add(brace);
   }
 
   const propeller = new Group();
@@ -155,8 +178,8 @@ export function setControlSurfaces(plane, { roll = 0, pitch = 0, yaw = 0 }, dt =
   for (const { pivot, side } of ailerons) {
     pivot.rotation.x = damp(pivot.rotation.x, clamp(roll, -1, 1) * 0.5 * side, 12, dt);
   }
-  elevator.rotation.x = damp(elevator.rotation.x, clamp(-pitch, -1, 1) * 0.42, 12, dt);
-  rudder.rotation.y = damp(rudder.rotation.y, clamp(-yaw, -1, 1) * 0.5, 12, dt);
+  elevator.rotation.x = damp(elevator.rotation.x, clamp(pitch, -1, 1) * 0.42, 12, dt);
+  rudder.rotation.y = damp(rudder.rotation.y, clamp(yaw, -1, 1) * 0.5, 12, dt);
 }
 
 /* ---------------------------------------------------------- neighbours --- */
@@ -202,7 +225,7 @@ export function updateAIPlanes(planes, t, dt) {
     p.group.position.copy(_pos);
     if (dx * dx + dz * dz > 1e-5) p.group.rotation.y = Math.atan2(dx, dz);
     p.group.rotation.x = -0.06 * Math.sin(t + p.bob);
-    p.group.rotation.z = damp(p.group.rotation.z, p.figure ? -0.34 * Math.cos(a * 2) : -0.3, 2, dt);
+    p.group.rotation.z = damp(p.group.rotation.z, p.figure ? 0.34 * Math.cos(a * 2) : 0.3, 2, dt);
     p.group.userData.propeller.rotation.z += dt * 34;
   }
 }
