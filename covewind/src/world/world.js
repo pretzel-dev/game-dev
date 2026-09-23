@@ -1,0 +1,159 @@
+/**
+ * Builds the archipelago and ticks everything living on it.
+ */
+import { Vector3 } from 'three';
+import { createIslands, archPosition } from './island.js';
+import { createVillage } from './village.js';
+import { createLighthouse } from './lighthouse.js';
+import { createCove } from './cove.js';
+import { createFalls } from './falls.js';
+import { createWhales } from './whales.js';
+import { createBirds, updateBirds, updateVillagers } from './creatures.js';
+import { createAIPlanes, updateAIPlanes } from './aircraft.js';
+import { createBoat, createCloud, createTree } from './props.js';
+import { updateCloth } from './cloth.js';
+import { waveHeight } from './water.js';
+import { ISLANDS, PLACES, island, islandRadiusAt, terrainHeightAt, TAU } from './terrain.js';
+import { QUALITY } from '../core/quality.js';
+import { angleDelta, damp, pick, rand } from '../core/utils.js';
+
+/** Scatter trees over one island, thickest on the lower slopes. */
+function plantIsland(scene, spec, count, kinds = null) {
+  for (let i = 0; i < count; i++) {
+    const a = rand(0, TAU);
+    const r = islandRadiusAt(spec, a) * Math.sqrt(rand(0.05, 0.92));
+    const x = spec.centre.x + Math.cos(a) * r;
+    const z = spec.centre.z + Math.sin(a) * r;
+    createTree(scene, x, z, rand(0.6, 1.15), kinds ? pick(kinds) : null);
+  }
+}
+
+export function createWorld(scene) {
+  const islands = createIslands(scene);
+  const village = createVillage(scene);
+  const lighthouse = createLighthouse(scene);
+  const cove = createCove(scene);
+  const falls = createFalls(scene);
+
+  // Scrub and olive groves on the main island, cover for the others, and
+  // nothing but palms on the ring around the lagoon.
+  plantIsland(scene, island('harbour'), Math.round(QUALITY.trees * 0.41));
+  plantIsland(scene, island('canyon'), Math.round(QUALITY.trees * 0.16), ['cypress', 'olive']);
+  plantIsland(scene, island('falls'), Math.round(QUALITY.trees * 0.18), ['round', 'cypress']);
+  plantIsland(scene, island('atoll'), Math.round(QUALITY.trees * 0.16), ['palm']);
+
+  const clouds = [];
+  for (let i = 0; i < QUALITY.clouds; i++) {
+    clouds.push(
+      createCloud(scene, rand(-1500, 1500), rand(215, 420), rand(-1500, 1500), rand(0.9, 2.6))
+    );
+  }
+
+  // Boats: the harbour's moorings, plus a few working between the islands.
+  const boats = [...village.moorings];
+  for (let i = 0; i < QUALITY.boats; i++) {
+    let x = 0;
+    let z = 0;
+    for (let tries = 0; tries < 24; tries++) {
+      x = rand(-1100, 1100);
+      z = rand(-1100, 1100);
+      if (terrainHeightAt(x, z) < -14) break;
+    }
+    boats.push(createBoat(scene, x, z, rand(0.7, 1.25)));
+  }
+
+  const birds = createBirds(scene);
+  const aiPlanes = createAIPlanes(scene);
+  const whales = createWhales(scene);
+
+  const landmarks = {
+    village: PLACES.villageCentre,
+    harbour: PLACES.harbour,
+    lighthouse: PLACES.lighthouse,
+    cove: PLACES.coveBeach,
+    arch: archPosition(),
+    summit: PLACES.summit,
+    beachCamp: cove.camp.spot,
+    canyon: PLACES.canyonMouth,
+    canyonEnd: PLACES.canyonEnd,
+    falls: falls.position,
+    lagoon: PLACES.lagoon,
+  };
+
+  const _planePos = new Vector3();
+
+  function update(t, dt, flight, wind, { beamOpacity = 0.15, onBirdScatter } = {}) {
+    _planePos.copy(flight.pos);
+
+    for (const cloud of clouds) {
+      cloud.group.position.x += cloud.drift * dt * (1 + wind.gust * 0.8);
+      cloud.group.position.y += Math.sin(t * 0.12 + cloud.bob) * dt * 0.6;
+      if (cloud.group.position.x > 1600) cloud.group.position.x = -1600;
+    }
+
+    for (const boat of boats) {
+      const { group } = boat;
+      // Boats ride the same waves the aeroplane skims.
+      const here = waveHeight(group.position.x, group.position.z, t);
+      const ahead = waveHeight(group.position.x, group.position.z + 6, t);
+      const side = waveHeight(group.position.x + 6, group.position.z, t);
+      group.position.y = here + 1.05;
+      group.rotation.x = damp(group.rotation.x, (ahead - here) * 0.08, 3, dt);
+      group.rotation.z = damp(group.rotation.z, -(side - here) * 0.08, 3, dt);
+
+      if (boat.drift > 0) {
+        // Look ahead, and put the wheel over gently — a boat turns over
+        // several seconds, not in a frame.
+        const lookAhead = 26;
+        const bowX = group.position.x + Math.sin(boat.heading) * lookAhead;
+        const bowZ = group.position.z + Math.cos(boat.heading) * lookAhead;
+        if (terrainHeightAt(bowX, bowZ) > -5) {
+          if (boat.turnTimer <= 0) {
+            // Commit to one direction for the whole manoeuvre.
+            boat.turn = Math.sin(boat.heading * 3.1 + group.position.x * 0.01) > 0 ? 1 : -1;
+            boat.turnTimer = 4;
+          }
+        } else if (boat.turnTimer <= 0) {
+          boat.turn = 0;
+        }
+        boat.turnTimer = Math.max(0, boat.turnTimer - dt);
+        boat.heading += boat.turn * 0.5 * dt;
+
+        const step = boat.drift * dt;
+        const nx = group.position.x + Math.sin(boat.heading) * step;
+        const nz = group.position.z + Math.cos(boat.heading) * step;
+        if (terrainHeightAt(nx, nz) < -3) {
+          group.position.x = nx;
+          group.position.z = nz;
+        }
+        // Damp along the shortest way round, so the hull never unwinds a turn.
+        group.rotation.y += angleDelta(group.rotation.y, boat.heading) * Math.min(1, dt * 1.6);
+      }
+    }
+
+    updateBirds(t, dt, _planePos, onBirdScatter);
+    updateVillagers(village.villagers, t, dt, _planePos);
+    updateAIPlanes(aiPlanes, t, dt);
+    updateCloth(t, wind.gust);
+    whales.update(t, dt);
+    falls.update(t);
+    lighthouse.update(t, beamOpacity);
+  }
+
+  return {
+    islands,
+    island: islands.byKey.harbour,
+    village,
+    lighthouse,
+    cove,
+    falls,
+    whales,
+    clouds,
+    boats,
+    birds,
+    aiPlanes,
+    landmarks,
+    specs: ISLANDS,
+    update,
+  };
+}
