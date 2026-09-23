@@ -21,6 +21,7 @@ import {
   SEA_LEVEL,
   ceilingAt,
   roofTopAt,
+  solidHeightAt,
   surfaceBelow,
   terrainGradient,
   terrainHeightAt,
@@ -326,7 +327,7 @@ export function updateFlight(flight, input, wind, dt, t) {
   }
 
   /* -- the ground is a cushion ------------------------------------------- */
-  const ground = groundOverride ?? terrainHeightAt(flight.pos.x, flight.pos.z);
+  const ground = groundOverride ?? solidHeightAt(flight.pos.x, flight.pos.z);
   // Lakes float at their own level; in a tunnel, only the sea counts.
   const level = flight.underRoof != null ? SEA_LEVEL : waterLevelAt(flight.pos.x, flight.pos.z);
   flight.overWater = ground <= level;

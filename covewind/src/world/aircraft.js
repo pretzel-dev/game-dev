@@ -30,6 +30,7 @@ import { MAT, mat } from '../core/materials.js';
 import { clamp, damp, rand, TAU } from '../core/utils.js';
 import { createCloth } from './cloth.js';
 import { terrainHeightAt } from './terrain.js';
+import { bakeLocal } from '../core/merge.js';
 
 /* -------------------------------------------------------------- helpers --- */
 
@@ -429,6 +430,13 @@ export function createPlaneModel(color = 0xc9473d, tiny = false, scheme = {}) {
       o.receiveShadow = true;
     }
   });
+
+  // Everything that moves on its own stays separate; the rest of the
+  // aeroplane becomes one mesh per material.
+  for (const part of [propeller, disc, elevator, rudder, scarf, ...ailerons.map((a) => a.pivot)]) {
+    if (part) part.userData.dynamic = true;
+  }
+  bakeLocal(group);
 
   group.userData = { propeller, disc, ailerons, elevator, rudder, scarf };
   return group;

@@ -8,6 +8,7 @@
 import { CapsuleGeometry, ConeGeometry, Group, Mesh, SphereGeometry } from 'three';
 import { terrainHeightAt } from './terrain.js';
 import { mat } from '../core/materials.js';
+import { bakeLocal } from '../core/merge.js';
 import { QUALITY } from '../core/quality.js';
 import { damp, rand, TAU } from '../core/utils.js';
 
@@ -74,6 +75,10 @@ function buildWhale(scale) {
   whale.add(dorsal);
 
   whale.scale.setScalar(scale);
+  // The tail swings, so it is baked on its own.
+  stock.userData.dynamic = true;
+  bakeLocal(whale);
+  bakeLocal(stock);
   return { whale, stock };
 }
 

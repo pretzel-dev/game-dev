@@ -324,6 +324,8 @@ function boot() {
     camera,
     rig,
     quality: QUALITY,
+    renderer,
+    scene,
     get fps() {
       return Math.round(fps);
     },

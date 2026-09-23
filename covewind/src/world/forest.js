@@ -43,6 +43,9 @@ export function plant(kind, x, y, z, scale = 1) {
   plantings[kind].push({ x, y, z, scale, rot: rand(0, TAU), tint: rand(-1, 1) });
 }
 
+/** Trees are drawn in patches this big, so whole patches can be culled. */
+const CHUNK = 320;
+
 export function plantedCount() {
   return KINDS.reduce((n, k) => n + plantings[k].length, 0);
 }
@@ -130,8 +133,8 @@ const TEMPLATES = {
     const { geometry: trunk, tip } = bentTrunk(12, 0.85, 0.45, 1.6, BARK);
     const parts = [trunk];
     const green = new Color(palette.pine);
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * TAU;
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * TAU;
       const r = i === 0 ? 0 : rand(2.8, 4.6);
       const puff = clump(rand(2.8, 3.6), 0.42, 1, green);
       puff.translate(tip.x + Math.cos(a) * r, tip.y + 1.2 + rand(-0.4, 0.6), tip.z + Math.sin(a) * r);
@@ -213,7 +216,7 @@ const TEMPLATES = {
     const green = new Color(palette.maquis);
     const parts = [];
     for (let i = 0; i < 3; i++) {
-      const puff = clump(rand(1.4, 2.1), 0.7, 1, green);
+      const puff = clump(rand(1.4, 2.1), 0.7, 0, green);
       puff.translate(rand(-1.4, 1.4), 0.9, rand(-1.4, 1.4));
       parts.push(puff);
     }
@@ -264,27 +267,38 @@ export function buildForest(scene) {
   const shared = foliageMaterial(false);
   const palms = foliageMaterial(true);
   for (const kind of KINDS) {
-    const list = plantings[kind];
-    if (!list.length) continue;
-    const mesh = new InstancedMesh(TEMPLATES[kind](), kind === 'palm' ? palms : shared, list.length);
-    list.forEach((tree, i) => {
-      _q.setFromAxisAngle(_up, tree.rot);
-      _s.setScalar(tree.scale);
-      _p.set(tree.x, tree.y - 0.3, tree.z);
-      mesh.setMatrixAt(i, _m.compose(_p, _q, _s));
-      // A little variety per tree: some greener, some drier.
-      _c.setRGB(1, 1, 1).offsetHSL(tree.tint * 0.015, tree.tint * 0.05, tree.tint * 0.04);
-      mesh.setColorAt(i, _c);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.castShadow = kind !== 'bush';
-    mesh.receiveShadow = true;
-    mesh.computeBoundingSphere();
-    mesh.frustumCulled = false;
-    mesh.name = `forest:${kind}`;
-    scene.add(mesh);
-    meshes.push(mesh);
+    const all = plantings[kind];
+    if (!all.length) continue;
+    const template = TEMPLATES[kind]();
+    // Group into patches: each is one instanced mesh with a tight bounding
+    // sphere, so the camera and the sun's shadow pass skip what they cannot see.
+    const patches = new Map();
+    for (const tree of all) {
+      const key = `${Math.floor(tree.x / CHUNK)},${Math.floor(tree.z / CHUNK)}`;
+      if (!patches.has(key)) patches.set(key, []);
+      patches.get(key).push(tree);
+    }
+    for (const list of patches.values()) {
+      const mesh = new InstancedMesh(template, kind === 'palm' ? palms : shared, list.length);
+      list.forEach((tree, i) => {
+        _q.setFromAxisAngle(_up, tree.rot);
+        _s.setScalar(tree.scale);
+        _p.set(tree.x, tree.y - 0.3, tree.z);
+        mesh.setMatrixAt(i, _m.compose(_p, _q, _s));
+        // A little variety per tree: some greener, some drier.
+        _c.setRGB(1, 1, 1).offsetHSL(tree.tint * 0.015, tree.tint * 0.05, tree.tint * 0.04);
+        mesh.setColorAt(i, _c);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.castShadow = kind !== 'bush';
+      mesh.receiveShadow = true;
+      mesh.computeBoundingSphere();
+      mesh.boundingSphere.radius += 12; // crowns sway past their trunks
+      mesh.name = `forest:${kind}`;
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
   }
   return meshes;
 }

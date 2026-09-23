@@ -16,18 +16,26 @@ import {
   Group,
   IcosahedronGeometry,
   Mesh,
+  CircleGeometry,
   SphereGeometry,
   TorusGeometry,
 } from 'three';
-import { MAT, mat, HOUSE_WALLS, HOUSE_ROOFS, CLOTH } from '../core/materials.js';
+import { MAT, mat, HOUSE_WALLS, HOUSE_ROOFS, SHUTTERS, CLOTH } from '../core/materials.js';
+import { archedDoor, bougainvillea, flowerPots, hipRoofGeometry, shutteredWindow } from './architecture.js';
 import { chance, pick, rand, TAU } from '../core/utils.js';
 import { lakeAt, terrainHeightAt } from './terrain.js';
 import { plant } from './forest.js';
 import { HOUSE_SITES } from './village-plan.js';
 import { createCloth } from './cloth.js';
+import { bakeLocal } from '../core/merge.js';
 
 /* --------------------------------------------------------------- houses --- */
 
+/**
+ * A Dalmatian house: pale stone or washed plaster, a hipped terracotta roof
+ * with deep eaves, green shutters, an arched door, and — depending on the
+ * house — a balcony of geraniums, bougainvillea down the wall, a flag.
+ */
 export function createHouse(parent, { x, z, rot = 0, scale = 1, wall = null, tall = false } = {}) {
   const group = new Group();
   group.position.set(x, terrainHeightAt(x, z) - 0.6, z);
@@ -35,69 +43,102 @@ export function createHouse(parent, { x, z, rot = 0, scale = 1, wall = null, tal
   group.scale.setScalar(scale);
   parent.add(group);
 
-  const w = rand(12, 15.5);
-  const d = rand(10.5, 13);
-  const storeys = tall ? 3 : chance(0.3) ? 2 : 1;
-  const h = 6.2 + storeys * 3.4;
+  const w = rand(11, 15);
+  const d = rand(9.5, 12.5);
+  const storeys = tall ? 3 : chance(0.45) ? 2 : 1;
+  const storeyH = 3.6;
+  const h = 1.2 + storeys * storeyH + 0.6;
+  const wallMat = wall || pick(HOUSE_WALLS);
+  const shutter = pick(SHUTTERS);
 
-  const walls = new Mesh(new BoxGeometry(w, h, d), wall || pick(HOUSE_WALLS));
+  // A stone plinth that takes up the slope, then the walls.
+  const plinth = new Mesh(new BoxGeometry(w + 0.4, 1.8, d + 0.4), MAT.stoneDark);
+  plinth.position.y = 0.3;
+  group.add(plinth);
+  const walls = new Mesh(new BoxGeometry(w, h, d), wallMat);
   walls.position.y = h / 2;
-  walls.castShadow = true;
-  walls.receiveShadow = true;
   group.add(walls);
 
-  const roof = new Mesh(new ConeGeometry(Math.max(w, d) * 0.79, 5.6, 4), pick(HOUSE_ROOFS));
-  roof.position.y = h + 2.6;
-  roof.rotation.y = Math.PI / 4;
-  roof.scale.z = d / w;
-  roof.castShadow = true;
+  const roof = new Mesh(hipRoofGeometry(w, d, rand(3.2, 4.4), 0.9), pick(HOUSE_ROOFS));
+  roof.position.y = h;
   group.add(roof);
+  // Eaves course under the roof.
+  const eaves = new Mesh(new BoxGeometry(w + 0.5, 0.45, d + 0.5), MAT.stone);
+  eaves.position.y = h - 0.1;
+  group.add(eaves);
 
-  const door = new Mesh(new BoxGeometry(2.7, 5, 0.3), MAT.woodDark);
-  door.position.set(rand(-2, 2), 2.5, d / 2 + 0.1);
-  group.add(door);
+  const front = d / 2 + 0.05;
+  const doorX = rand(-w * 0.25, w * 0.25);
+  archedDoor(group, doorX, front, { w: 2.2, h: 3.4, material: chance(0.5) ? shutter : MAT.woodDark });
 
-  // Shuttered windows, one row per storey.
-  for (let s = 0; s < storeys; s++) {
-    const y = 6.6 + s * 3.4;
-    if (y > h - 1.6) continue;
-    for (const sx of [-w * 0.26, w * 0.26]) {
-      const win = new Mesh(new BoxGeometry(2.3, 2.6, 0.24), MAT.blue);
-      win.position.set(sx, y, d / 2 + 0.08);
-      group.add(win);
+  // Windows: a row per storey on the front, and a couple down each side.
+  for (let st = 0; st < storeys; st++) {
+    const y = 1.2 + st * storeyH + storeyH * 0.55;
+    const columns = w > 13 ? [-w * 0.32, 0, w * 0.32] : [-w * 0.27, w * 0.27];
+    for (const cx of columns) {
+      if (st === 0 && Math.abs(cx - doorX) < 2.6) continue;
+      shutteredWindow(group, cx, y, front, { shutter, w: 1.4, h: 2.1 });
     }
-    if (chance(0.5)) {
-      const side = new Mesh(new BoxGeometry(0.24, 2.4, 2.1), MAT.blue);
-      side.position.set(w / 2 + 0.06, y, rand(-2, 2));
-      group.add(side);
+    // Sides: a window each, facing out along ±x.
+    for (const side of [-1, 1]) {
+      if (!chance(0.6)) continue;
+      const holder = new Group();
+      holder.rotation.y = (side * Math.PI) / 2;
+      group.add(holder);
+      shutteredWindow(holder, rand(-d * 0.2, d * 0.2), y, w / 2 + 0.05, { shutter, w: 1.3, h: 2 });
     }
   }
 
-  if (chance(0.55)) {
-    const chimney = new Mesh(new BoxGeometry(1.9, 4.6, 1.9), MAT.plaster2);
-    chimney.position.set(rand(-w * 0.3, w * 0.3), h + 2.2, rand(-2, 2));
-    chimney.castShadow = true;
+  if (storeys > 1 && chance(0.55)) {
+    // A balcony on the first floor, with pots along it.
+    const y = 1.2 + storeyH;
+    const slab = new Mesh(new BoxGeometry(4.6, 0.35, 1.6), MAT.stone);
+    slab.position.set(doorX, y, front + 0.8);
+    group.add(slab);
+    const rail = new Mesh(new BoxGeometry(4.6, 1, 0.12), MAT.dark);
+    rail.position.set(doorX, y + 0.7, front + 1.55);
+    group.add(rail);
+    flowerPots(group, doorX, y + 0.18, front + 1.2, 4, 1);
+  } else if (chance(0.5)) {
+    flowerPots(group, doorX + 2.2, 0.6, front + 0.5, 2, 0.8);
+  }
+
+  if (chance(0.35)) bougainvillea(group, rand(-w * 0.35, w * 0.35), h - 0.5, front, 2.4);
+
+  if (chance(0.6)) {
+    // A chimney with the little stone hat they wear here.
+    const cx = rand(-w * 0.25, w * 0.25);
+    const chimney = new Mesh(new BoxGeometry(1.4, 3.8, 1.4), wallMat);
+    chimney.position.set(cx, h + 2.4, rand(-1.5, 1.5));
     group.add(chimney);
-  }
-
-  if (chance(0.35)) {
-    // A striped awning over the door.
-    const awning = new Mesh(new BoxGeometry(5.4, 0.35, 2.6), pick([MAT.red, MAT.blue, MAT.cream]));
-    awning.position.set(door.position.x, 6.1, d / 2 + 1.2);
-    awning.rotation.x = -0.28;
-    awning.castShadow = true;
-    group.add(awning);
+    const hat = new Mesh(new BoxGeometry(2, 0.35, 2), MAT.roof2);
+    hat.position.set(cx, h + 4.45, chimney.position.z);
+    group.add(hat);
   }
 
   if (chance(0.3)) {
-    // A little flag on the gable — the wind system animates it.
-    const pole = new Mesh(new CylinderGeometry(0.12, 0.12, 4.4, 5), MAT.woodDark);
-    pole.position.set(w * 0.36, h + 4, 0);
-    group.add(pole);
-    const flag = createCloth(group, { width: 3.4, height: 2.2, material: pick(CLOTH), phase: rand(0, TAU) });
-    flag.position.set(w * 0.36 + 1.8, h + 4.9, 0);
+    // A striped awning over the door.
+    const awning = new Mesh(new BoxGeometry(4.2, 0.3, 2.2), pick([MAT.red, MAT.blue, MAT.yellow]));
+    awning.position.set(doorX, 3.9, front + 1.05);
+    awning.rotation.x = -0.3;
+    group.add(awning);
   }
 
+  if (chance(0.25)) {
+    // A little flag on the roof — the wind system animates it.
+    const pole = new Mesh(new CylinderGeometry(0.1, 0.1, 4.4, 5), MAT.woodDark);
+    pole.position.set(w * 0.3, h + 3.4, 0);
+    group.add(pole);
+    const flag = createCloth(group, { width: 3, height: 1.9, material: pick(CLOTH), phase: rand(0, TAU) });
+    flag.position.set(w * 0.3 + 1.6, h + 4.6, 0);
+  }
+
+  group.traverse((o) => {
+    if (o.isMesh && !o.userData.dynamic) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
   return group;
 }
 
@@ -135,65 +176,156 @@ export function createTree(parent, x, z, scale = 1, kind = null) {
 /* ---------------------------------------------------------------- boats --- */
 
 /**
+ * A double-ended wooden hull, lofted from U-shaped sections: pointed at both
+ * ends like a gozzo, with the sheer sweeping up at bow and stern.
+ */
+function hullGeometry(length = 10, beam = 3.4, depth = 1.8) {
+  const sections = 12;
+  const ring = [];
+  for (let i = 0; i <= sections; i++) {
+    const t = i / sections;
+    const z = (t - 0.5) * length;
+    const b = (beam / 2) * Math.pow(Math.sin(Math.PI * t), 0.55);
+    const sheer = 0.9 + Math.pow(Math.abs(t - 0.5) * 2, 2.2) * 0.9;
+    const d = depth * (0.35 + 0.65 * Math.pow(Math.sin(Math.PI * t), 0.4));
+    // Gunwale, bilge and keel on the starboard side, mirrored to port.
+    ring.push([
+      [b, sheer, z],
+      [b * 0.92, -d * 0.35, z],
+      [b * 0.45, -d * 0.85, z],
+      [0, -d, z],
+      [-b * 0.45, -d * 0.85, z],
+      [-b * 0.92, -d * 0.35, z],
+      [-b, sheer, z],
+    ]);
+  }
+  const positions = [];
+  const quad = (a, b, c, d) => positions.push(...a, ...b, ...c, ...a, ...c, ...d);
+  for (let i = 0; i < sections; i++) {
+    const r0 = ring[i];
+    const r1 = ring[i + 1];
+    for (let k = 0; k < r0.length - 1; k++) {
+      quad(r0[k], r1[k], r1[k + 1], r0[k + 1]);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** Deck boards, just under the gunwale. */
+function deckGeometry(length, beam) {
+  const shape = [];
+  const n = 12;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    shape.push([(beam / 2) * 0.95 * Math.pow(Math.sin(Math.PI * t), 0.55), (t - 0.5) * length]);
+  }
+  const positions = [];
+  for (let i = 0; i < n; i++) {
+    const [b0, z0] = shape[i];
+    const [b1, z1] = shape[i + 1];
+    positions.push(-b0, 0, z0, b1, 0, z1, b0, 0, z0);
+    positions.push(-b0, 0, z0, -b1, 0, z1, b1, 0, z1);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+const HULLS = [MAT.white, MAT.blue, MAT.cream, MAT.red, mat(0x2f7f78), MAT.yellow];
+const SAILS = [MAT.white, MAT.linen, mat(0xd9733a), mat(0xc8452f), mat(0xe8b23f)];
+
+/**
  * @param {object} [opts]
  * @param {boolean} [opts.moored] Tied up: bobs on the swell but never wanders.
  * @param {number}  [opts.heading] Which way it points.
+ * @param {'fishing'|'sail'} [opts.kind]
  */
-export function createBoat(parent, x, z, scale = 1, { moored = false, heading = null } = {}) {
+export function createBoat(parent, x, z, scale = 1, { moored = false, heading = null, kind = null } = {}) {
   const group = new Group();
   group.position.set(x, 1.2, z);
   group.rotation.y = heading ?? rand(0, TAU);
   group.scale.setScalar(scale);
+  group.userData.dynamic = true; // it bobs, so it is never baked
   parent.add(group);
 
-  // Hull: a slab with a pointed bow, which is all a boat needs from the air.
-  const hullColour = pick([MAT.wood, MAT.red, MAT.blue, MAT.cream]);
-  const hull = new Mesh(new BoxGeometry(5.4, 2.6, 10), hullColour);
-  hull.position.y = 0.1;
+  const length = 10;
+  const beam = 3.6;
+  const hullColour = pick(HULLS);
+  const hull = new Mesh(hullGeometry(length, beam, 1.9), hullColour);
   hull.castShadow = true;
   group.add(hull);
+  // A painted band along the sheer, in a second colour.
+  const band = new Mesh(hullGeometry(length * 1.005, beam * 1.02, 0.5), hullColour === MAT.white ? MAT.blue : MAT.white);
+  band.position.y = 0.45;
+  band.scale.y = 0.5;
+  group.add(band);
+  const deck = new Mesh(deckGeometry(length * 0.96, beam * 0.96), MAT.wood);
+  deck.position.y = 0.95;
+  group.add(deck);
 
-  const bow = new Mesh(new ConeGeometry(3.9, 6, 4), hullColour);
-  bow.rotation.x = Math.PI / 2;
-  bow.rotation.z = Math.PI / 4;
-  bow.scale.set(0.98, 1, 0.66);
-  bow.position.set(0, 0.1, 7.2);
-  bow.castShadow = true;
-  group.add(bow);
-
-  const rail = new Mesh(new BoxGeometry(5.8, 0.45, 10.4), MAT.cream);
-  rail.position.y = 1.5;
-  group.add(rail);
-
-  const fishing = chance(0.55);
+  const fishing = kind ? kind === 'fishing' : chance(0.5);
   if (fishing) {
-    const cabin = new Mesh(new BoxGeometry(4, 2.8, 4.4), MAT.cream);
-    cabin.position.set(0, 3.1, -2.2);
+    // A little wheelhouse aft, a mast with a lamp, and nets on the foredeck.
+    const cabin = new Mesh(new BoxGeometry(2.4, 2, 2.4), MAT.cream);
+    cabin.position.set(0, 2, -1.8);
     cabin.castShadow = true;
     group.add(cabin);
-    const roof = new Mesh(new BoxGeometry(4.4, 0.4, 4.8), MAT.blue);
-    roof.position.set(0, 4.6, -2.2);
+    const roof = new Mesh(new BoxGeometry(2.8, 0.3, 2.8), hullColour === MAT.white ? MAT.blue : hullColour);
+    roof.position.set(0, 3.1, -1.8);
     group.add(roof);
-    // Net stack and a couple of floats.
-    const net = new Mesh(new TorusGeometry(1.5, 0.5, 5, 8), MAT.leaf2);
+    const mast = new Mesh(new CylinderGeometry(0.1, 0.13, 5, 5), MAT.woodDark);
+    mast.position.set(0, 4, 0.8);
+    group.add(mast);
+    const lamp = new Mesh(new SphereGeometry(0.25, 6, 4), MAT.lamp);
+    lamp.position.set(0, 6.4, 0.8);
+    group.add(lamp);
+    const net = new Mesh(new TorusGeometry(0.9, 0.38, 5, 8), MAT.leaf2);
     net.rotation.x = Math.PI / 2;
-    net.position.set(0, 2, 3.4);
+    net.position.set(0, 1.3, 2.6);
     group.add(net);
+    for (let i = 0; i < 3; i++) {
+      const float = new Mesh(new SphereGeometry(0.28, 6, 4), pick([MAT.red, MAT.yellow]));
+      float.position.set(rand(-0.8, 0.8), 1.5, 2.6 + rand(-0.6, 0.6));
+      group.add(float);
+    }
   } else {
-    const mast = new Mesh(new CylinderGeometry(0.18, 0.24, 12, 6), MAT.wood);
-    mast.position.y = 6;
+    // Mast, boom, a mainsail and a jib — sometimes the painted ochre and red
+    // of the old lagoon boats.
+    const mast = new Mesh(new CylinderGeometry(0.12, 0.18, 12, 6), MAT.woodDark);
+    mast.position.set(0, 6.8, 1.2);
     mast.castShadow = true;
     group.add(mast);
-    const sail = new Mesh(sailGeometry(), chance(0.5) ? MAT.white : MAT.red);
-    sail.position.set(0.3, 0, 0);
-    sail.castShadow = true;
-    group.add(sail);
+    const colour = pick(SAILS);
+    const main = new Mesh(sailGeometry([0, 12.4, 0], [0, 1.7, 0], [0, 2.1, -5.2]), colour);
+    main.position.set(0, 0.2, 1.1);
+    main.castShadow = true;
+    group.add(main);
+    const jib = new Mesh(sailGeometry([0, 11, 0], [0, 1.6, 0], [0, 1.8, 4]), colour === MAT.white ? MAT.linen : MAT.white);
+    jib.position.set(0, 0.2, 1.3);
+    group.add(jib);
+    if (colour !== MAT.white && colour !== MAT.linen && chance(0.6)) {
+      // A painted sun on the sail, as the old boats wore.
+      const sun = new Mesh(new CircleGeometry(1.1, 12), MAT.yellow);
+      sun.position.set(0.02, 6, -1.3);
+      sun.rotation.y = Math.PI / 2;
+      group.add(sun);
+      const sunBack = sun.clone();
+      sunBack.position.x = -0.02;
+      sunBack.rotation.y = -Math.PI / 2;
+      group.add(sunBack);
+    }
   }
 
   if (chance(0.4)) {
-    const flag = createCloth(group, { width: 2.2, height: 1.4, material: pick(CLOTH) });
-    flag.position.set(1.2, fishing ? 6 : 11.4, -2);
+    const flag = createCloth(group, { width: 1.8, height: 1.1, material: pick(CLOTH) });
+    flag.position.set(0.9, fishing ? 6.4 : 12.6, fishing ? 0.8 : 1.2);
   }
+
+  bakeLocal(group);
 
   return {
     group,
@@ -202,16 +334,15 @@ export function createBoat(parent, x, z, scale = 1, { moored = false, heading = 
     heading: group.rotation.y,
     turn: 0,
     turnTimer: 0,
+    // Under sail, a boat leans away from the wind.
+    heel: fishing ? 0 : rand(0.08, 0.16),
   };
 }
 
-function sailGeometry() {
+/** A triangular sail, double-sided, from three corners. */
+function sailGeometry(a = [0, 11, 0], b = [0, 1.6, 0], c = [6.4, 2.4, 0]) {
   const geometry = new BufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new Float32BufferAttribute([0, 11, 0, 0, 1.6, 0, 6.4, 2.4, 0], 3)
-  );
-  geometry.setIndex([0, 1, 2]);
+  geometry.setAttribute('position', new Float32BufferAttribute([...a, ...b, ...c, ...a, ...c, ...b], 3));
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -252,6 +383,7 @@ export function createVillager(parent, x, z) {
   group.position.set(x, ground, z);
   group.rotation.y = rand(0, TAU);
   group.scale.setScalar(rand(0.85, 1.15));
+  group.userData.dynamic = true; // villagers wander
   parent.add(group);
 
   const body = new Mesh(new CapsuleGeometry(0.62, 1.5, 3, 7), pick([MAT.red, MAT.blue, MAT.yellow, MAT.navy, MAT.cream]));
@@ -268,6 +400,8 @@ export function createVillager(parent, x, z) {
     hat.position.y = 3.16;
     group.add(hat);
   }
+
+  bakeLocal(group);
 
   return {
     group,

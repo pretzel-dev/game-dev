@@ -312,6 +312,14 @@ function along(key, theta, fraction) {
  */
 export const OVERHANGS = [];
 
+/**
+ * Tall things that are not ground — towers, the lighthouse, the fortress keep,
+ * bridge piers — as upright cylinders. The island meshes ignore them; the
+ * aeroplane and the camera treat them as solid, so the cushion lifts you
+ * over a bell tower rather than through it. Each is `{x, z, radius, top}`.
+ */
+export const OBSTACLES = [];
+
 /** World-space anchors. Everything that gets built looks itself up here. */
 export const PLACES = {
   villageCentre: { x: -110, z: 167 },
@@ -372,6 +380,14 @@ island('falls').shelves = [
 island('chapel').shelves = [{ ...PLACES.chapel, radius: 36, height: 13, strength: 0.9 }];
 island('fortress').shelves = [{ ...PLACES.fortress, radius: 78, height: 54, strength: 0.92 }];
 island('pines').shelves = [{ ...PLACES.pinesBay, radius: 40, height: 2.6, strength: 0.9 }];
+
+// The tall buildings (heights measured from the ground they stand on).
+for (const [place, radius, height] of [
+  [PLACES.church, 8, 72],
+  [PLACES.lighthouse, 9, 50],
+]) {
+  OBSTACLES.push({ x: place.x, z: place.z, radius, top: 0, height, pending: true });
+}
 
 /* -------------------------------------------------- tunnels and lakes --- */
 
@@ -572,7 +588,10 @@ function heightOfIsland(spec, x, z, uncut = false) {
 
   // Coastal profile: beaches ramp gently, cliff faces snap up almost vertically.
   const ramp = 1 - Math.exp(-t * (6 + cliff * 150));
-  let h = (spec.rise * t + spec.peak * t * t + cliff * (spec.cliffHeight ?? 44)) * ramp;
+  // The peak term is eased at the top, so summits are rounded hills rather
+  // than the point of a cone.
+  const crown = t * t * (2.2 - 1.2 * t);
+  let h = (spec.rise * t + spec.peak * crown + cliff * (spec.cliffHeight ?? 44)) * ramp;
 
   h += ridgeAt(spec, x, z) * ramp;
 
@@ -646,6 +665,24 @@ export function waterLevelAt(x, z) {
   return lakeAt(x, z)?.level ?? SEA_LEVEL;
 }
 
+/* ------------------------------------------------------------ obstacles --- */
+
+
+export function obstacleHeightAt(x, z) {
+  let best = -Infinity;
+  for (const o of OBSTACLES) {
+    const dx = x - o.x;
+    const dz = z - o.z;
+    if (dx * dx + dz * dz < o.radius * o.radius && o.top > best) best = o.top;
+  }
+  return best;
+}
+
+/** Ground or building, whichever is higher. */
+export function solidHeightAt(x, z) {
+  return Math.max(terrainHeightAt(x, z), obstacleHeightAt(x, z));
+}
+
 /* ------------------------------------------------------------ overhangs --- */
 
 /** The roof over a point, or null if the sky is open. */
@@ -666,7 +703,7 @@ export function roofTopAt(roof, x, z) {
 
 /** Height of whatever you would hit — ground above water, otherwise the sea. */
 export function surfaceHeightAt(x, z) {
-  return Math.max(terrainHeightAt(x, z), waterLevelAt(x, z));
+  return Math.max(terrainHeightAt(x, z), waterLevelAt(x, z), obstacleHeightAt(x, z));
 }
 
 /**
@@ -776,4 +813,13 @@ export function coastlineGLSL() {
 ${calls}
     return best;
   }`;
+}
+
+// Obstacles registered by height above ground get their tops once the
+// height field is ready.
+for (const o of OBSTACLES) {
+  if (o.pending) {
+    o.top = terrainHeightAt(o.x, o.z) + o.height;
+    delete o.pending;
+  }
 }

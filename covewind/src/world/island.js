@@ -32,6 +32,7 @@ import {
   terrainHeightAt,
 } from './terrain.js';
 import { MAT, mat } from '../core/materials.js';
+import { bakeStatic } from '../core/merge.js';
 import { palette } from '../core/palette.js';
 import { QUALITY } from '../core/quality.js';
 import { rand, smoothstep } from '../core/utils.js';
@@ -364,10 +365,13 @@ function buildLake(scene, lake) {
 
 export function createIslands(scene) {
   const meshes = ISLANDS.map((spec) => buildIsland(scene, spec));
-  for (const spec of ISLANDS) if (!spec.spires) addCoastalRocks(scene, spec);
+  const rocks = new Group();
+  scene.add(rocks);
+  for (const spec of ISLANDS) if (!spec.spires) addCoastalRocks(rocks, spec);
+  addCoveArch(rocks);
+  bakeStatic(rocks);
   for (const roof of OVERHANGS) if (roof.top == null) buildRoof(scene, roof);
   for (const lake of LAKES) buildLake(scene, lake);
-  addCoveArch(scene);
   return { meshes, byKey: Object.fromEntries(ISLANDS.map((s, i) => [s.key, meshes[i]])) };
 }
 

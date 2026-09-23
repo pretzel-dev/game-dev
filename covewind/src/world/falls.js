@@ -26,6 +26,7 @@ import { createTree } from './props.js';
 import { MAT, mat } from '../core/materials.js';
 import { QUALITY } from '../core/quality.js';
 import { chance, rand, TAU } from '../core/utils.js';
+import { bakeStatic } from '../core/merge.js';
 
 const WATER_TOP = new Color(0xbfe9f2);
 const WATER_DEEP = new Color(0x5fb6c9);
@@ -141,6 +142,7 @@ export function createFalls(scene) {
     const sheet = new Mesh(new PlaneGeometry(34 - i * 8, drop, 1, 1), material);
     sheet.position.set(top.x + i * 3, drop / 2 - 2, top.z + 12 + offset * -1);
     sheet.renderOrder = 3;
+    sheet.userData.dynamic = true;
     sheets.push(sheet);
     group.add(sheet);
   }
@@ -148,14 +150,18 @@ export function createFalls(scene) {
   // Spray where it lands, and a plunge pool of foam.
   const mistMaterial = mat(0xf4fbff, { flat: false, roughness: 1 });
   mistMaterial.transparent = true;
-  mistMaterial.opacity = 0.5;
+  mistMaterial.opacity = 0.4;
   mistMaterial.emissive = new Color(0x5a6a70);
   const mist = [];
   for (let i = 0; i < (QUALITY.tier === 'low' ? 5 : 9); i++) {
-    const puff = new Mesh(new IcosahedronGeometry(rand(7, 14), 1), mistMaterial);
-    puff.position.set(top.x + rand(-22, 22), rand(2, 26), top.z + 18 + rand(-16, 16));
+    // Spray to either side of the plunge, leaving the way in behind the
+    // fall clear for anyone who knows it is there.
+    const side = i % 2 ? 1 : -1;
+    const puff = new Mesh(new IcosahedronGeometry(rand(5, 9), 1), mistMaterial);
+    puff.position.set(top.x + side * rand(20, 34), rand(2, 16), top.z + 24 + rand(-6, 12));
     puff.scale.set(rand(1, 1.6), rand(0.6, 1), rand(1, 1.5));
     puff.renderOrder = 4;
+    puff.userData.dynamic = true;
     mist.push({ mesh: puff, phase: rand(0, TAU), base: puff.position.y });
     group.add(puff);
   }
@@ -179,6 +185,8 @@ export function createFalls(scene) {
       chance(0.6) ? 'cypress' : 'round'
     );
   }
+
+  bakeStatic(group);
 
   return {
     group,

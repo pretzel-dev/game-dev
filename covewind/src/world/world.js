@@ -11,6 +11,7 @@ import { createWhales } from './whales.js';
 import { createBirds, updateBirds, updateVillagers } from './creatures.js';
 import { createAIPlanes, updateAIPlanes } from './aircraft.js';
 import { createBoat, createTree } from './props.js';
+import { createLandmarks } from './landmarks.js';
 import { buildForest, foliageUniforms } from './forest.js';
 import { lakeUniforms } from './island.js';
 import { updateCloth } from './cloth.js';
@@ -70,6 +71,9 @@ export function createWorld(scene, sky) {
     boats.push(createBoat(scene, x, z, rand(0.7, 1.25)));
   }
 
+  const places = createLandmarks(scene);
+  boats.push(...places.boats);
+
   const birds = createBirds(scene);
   const aiPlanes = createAIPlanes(scene);
   const whales = createWhales(scene);
@@ -108,13 +112,18 @@ export function createWorld(scene, sky) {
 
     for (const boat of boats) {
       const { group } = boat;
+      if (boat.lake != null) {
+        // A lake is still: the boat just breathes on it.
+        group.position.y = boat.lake + 0.9 + Math.sin(t * 0.8 + boat.phase) * 0.05;
+        continue;
+      }
       // Boats ride the same waves the aeroplane skims.
       const here = waveHeight(group.position.x, group.position.z, t);
       const ahead = waveHeight(group.position.x, group.position.z + 6, t);
       const side = waveHeight(group.position.x + 6, group.position.z, t);
-      group.position.y = here + 1.05;
+      group.position.y = here + (boat.ride ?? 1.05);
       group.rotation.x = damp(group.rotation.x, (ahead - here) * 0.08, 3, dt);
-      group.rotation.z = damp(group.rotation.z, -(side - here) * 0.08, 3, dt);
+      group.rotation.z = damp(group.rotation.z, -(side - here) * 0.08 + (boat.heel ?? 0), 3, dt);
 
       if (boat.drift > 0) {
         // Look ahead, and put the wheel over gently — a boat turns over
