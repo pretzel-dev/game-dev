@@ -8,16 +8,21 @@
  */
 import {
   BufferGeometry,
+  CircleGeometry,
   Color,
   CylinderGeometry,
   DodecahedronGeometry,
   Float32BufferAttribute,
   Group,
   Mesh,
+  ShaderMaterial,
   TorusGeometry,
+  Vector3,
 } from 'three';
 import {
   ISLANDS,
+  LAKES,
+  OVERHANGS,
   PLACES,
   TAU,
   cliffFactorAt,
@@ -113,14 +118,12 @@ const groundMaterial = (() => {
   return material;
 })();
 
-/** One island's ground mesh. */
-function buildIsland(scene, spec) {
-  // Smaller islands need fewer rings, and the segment count follows the coast
-  // so triangles stay roughly square whatever the island's size.
-  const scale = spec.base / 300;
-  const rings = Math.max(20, Math.round(QUALITY.islandRings * (0.6 + scale * 0.4)));
-  const segs = Math.max(64, Math.round(QUALITY.islandSegments * (0.55 + scale * 0.45)));
-
+/**
+ * A polar patch of ground: rings out from a centre to a coastline, heights
+ * and colours from the height field. Islands are one patch; sea stacks are a
+ * patch per stack.
+ */
+function polarPatch(scene, { cx, cz, radiusAt, rings, segs, name }) {
   const positions = [];
   const colors = [];
   const grass = [];
@@ -130,15 +133,14 @@ function buildIsland(scene, spec) {
   for (let r = 0; r <= rings; r++) {
     const u = r / rings;
     // Bunch rings towards the coast, where the shape matters most — but only
-    // gently. Crowd them and the quads become long thin slivers that flat
-    // shading turns into radial streaks down every cliff.
+    // gently. Crowd them and the quads become long thin slivers that turn
+    // into radial streaks down every cliff.
     const rr = 1 - Math.pow(1 - u, 1.25);
     for (let s = 0; s < segs; s++) {
       const th = (s / segs) * TAU;
-      const edge = islandRadiusAt(spec, th);
-      const rad = edge * rr;
-      const x = spec.centre.x + Math.cos(th) * rad;
-      const z = spec.centre.z + Math.sin(th) * rad;
+      const rad = radiusAt(th) * rr;
+      const x = cx + Math.cos(th) * rad;
+      const z = cz + Math.sin(th) * rad;
 
       let y;
       if (r === rings) {
@@ -180,14 +182,191 @@ function buildIsland(scene, spec) {
 
   const mesh = new Mesh(geometry, groundMaterial);
   mesh.receiveShadow = true;
-  mesh.name = `island:${spec.key}`;
+  mesh.castShadow = true;
+  mesh.name = name;
+  scene.add(mesh);
+  return mesh;
+}
+
+/** One island's ground mesh (or, for the sea stacks, one per stack). */
+function buildIsland(scene, spec) {
+  if (spec.spires) {
+    const group = new Group();
+    scene.add(group);
+    for (const spire of spec.spires) {
+      polarPatch(group, {
+        cx: spec.centre.x + spire.dx,
+        cz: spec.centre.z + spire.dz,
+        radiusAt: () => spire.radius + 14,
+        rings: Math.round(QUALITY.islandRings * 0.6),
+        segs: Math.round(QUALITY.islandSegments * 0.45),
+        name: `island:${spec.key}`,
+      });
+    }
+    return group;
+  }
+  // Smaller islands need fewer rings, and the segment count follows the coast
+  // so triangles stay roughly square whatever the island's size.
+  const scale = spec.base / 300;
+  return polarPatch(scene, {
+    cx: spec.centre.x,
+    cz: spec.centre.z,
+    radiusAt: (th) => islandRadiusAt(spec, th),
+    rings: Math.max(20, Math.round(QUALITY.islandRings * (0.6 + scale * 0.4))),
+    segs: Math.max(64, Math.round(QUALITY.islandSegments * (0.55 + scale * 0.45))),
+    name: `island:${spec.key}`,
+  });
+}
+
+/* -------------------------------------------------------- tunnel roofs --- */
+
+const CAVE_CEILING = mat(0x6f6a78, { flat: true });
+
+/**
+ * Put the rock back over a tunnel: a slab whose top is the ground as it was
+ * before the tunnel was cut, and whose underside is the cave ceiling. From
+ * the air it is just hillside; from inside, it is a roof.
+ */
+function buildRoof(scene, roof) {
+  const dx = roof.to.x - roof.from.x;
+  const dz = roof.to.z - roof.from.z;
+  const len = Math.hypot(dx, dz);
+  const ux = len ? dx / len : 1;
+  const uz = len ? dz / len : 0;
+  const reach = roof.width + 10;
+  const step = 3;
+  const nu = Math.ceil((len + reach * 2) / step);
+  const nv = Math.ceil((reach * 2) / step);
+
+  const top = [];
+  const topColours = [];
+  const topGrass = [];
+  const under = [];
+  const inside = [];
+  const c = new Color();
+  for (let i = 0; i <= nu; i++) {
+    for (let j = 0; j <= nv; j++) {
+      const a = -reach + (i / nu) * (len + reach * 2);
+      const b = -reach + (j / nv) * reach * 2;
+      const x = roof.from.x + ux * a - uz * b;
+      const z = roof.from.z + uz * a + ux * b;
+      const ground = terrainHeightAt(x, z, true);
+      // Where the rock stops, the top comes down to meet the underside, so
+      // the edge of the roof is closed rather than a hollow shell.
+      const y = Math.max(ground + 0.35, roof.bottom);
+      top.push(x, y, z);
+      under.push(x, roof.bottom + Math.sin(x * 0.21) * Math.sin(z * 0.17) * 1.4, z);
+      const e = 5;
+      const slope =
+        Math.hypot(
+          terrainHeightAt(x + e, z, true) - terrainHeightAt(x - e, z, true),
+          terrainHeightAt(x, z + e, true) - terrainHeightAt(x, z - e, true)
+        ) /
+        (2 * e);
+      const grassy = groundColour(x, z, ground, slope, c);
+      topColours.push(c.r, c.g, c.b);
+      topGrass.push(grassy);
+      // Only where there is rock above the roof line is there a roof.
+      inside.push(ground > roof.bottom + 2);
+    }
+  }
+
+  const topIndex = [];
+  const underIndex = [];
+  const at = (i, j) => i * (nv + 1) + j;
+  for (let i = 0; i < nu; i++) {
+    for (let j = 0; j < nv; j++) {
+      const q = [at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)];
+      if (!q.some((k) => inside[k])) continue;
+      topIndex.push(q[0], q[2], q[1], q[1], q[2], q[3]);
+      underIndex.push(q[0], q[1], q[2], q[1], q[3], q[2]);
+    }
+  }
+
+  const topGeometry = new BufferGeometry();
+  topGeometry.setAttribute('position', new Float32BufferAttribute(top, 3));
+  topGeometry.setAttribute('color', new Float32BufferAttribute(topColours, 3));
+  topGeometry.setAttribute('grassy', new Float32BufferAttribute(topGrass, 1));
+  topGeometry.setIndex(topIndex);
+  topGeometry.computeVertexNormals();
+  const topMesh = new Mesh(topGeometry, groundMaterial);
+  topMesh.receiveShadow = true;
+  topMesh.castShadow = true;
+  scene.add(topMesh);
+
+  const underGeometry = new BufferGeometry();
+  underGeometry.setAttribute('position', new Float32BufferAttribute(under, 3));
+  underGeometry.setIndex(underIndex);
+  underGeometry.computeVertexNormals();
+  const underMesh = new Mesh(underGeometry, CAVE_CEILING);
+  underMesh.castShadow = true;
+  scene.add(underMesh);
+}
+
+/* ---------------------------------------------------------------- lakes --- */
+
+const lakeVertex = /* glsl */ `
+  varying vec3 vWorld;
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+const lakeFragment = /* glsl */ `
+  uniform float time;
+  uniform vec3 centre;
+  uniform float radius;
+  uniform vec3 deep;
+  uniform vec3 shallow;
+  uniform vec3 sky;
+  varying vec3 vWorld;
+  void main() {
+    float d = length(vWorld.xz - centre.xz) / radius;
+    vec3 col = mix(deep, shallow, smoothstep(0.35, 1.0, d));
+    vec3 view = normalize(cameraPosition - vWorld);
+    col = mix(col, sky, pow(1.0 - view.y, 3.0) * 0.5);
+    // Ripple rings drifting out from the middle, drawn as thin pale lines.
+    float ring = fract(d * 6.0 - time * 0.12);
+    col = mix(col, vec3(1.0), smoothstep(0.04, 0.0, abs(ring - 0.5)) * 0.18 * (1.0 - d));
+    // A shore line of foam where it laps the bank.
+    col = mix(col, vec3(0.97, 1.0, 0.98), smoothstep(0.9, 0.98, d) * 0.6);
+    gl_FragColor = vec4(col, 0.92);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+export const lakeUniforms = { time: { value: 0 }, sky: { value: new Color(0xbfe7f5) } };
+
+function buildLake(scene, lake) {
+  const material = new ShaderMaterial({
+    vertexShader: lakeVertex,
+    fragmentShader: lakeFragment,
+    transparent: true,
+    uniforms: {
+      time: lakeUniforms.time,
+      sky: lakeUniforms.sky,
+      centre: { value: new Vector3(lake.x, lake.level, lake.z) },
+      radius: { value: lake.radius * 1.15 },
+      deep: { value: new Color(0x1f7f9c) },
+      shallow: { value: new Color(0x5fcfc4) },
+    },
+  });
+  const mesh = new Mesh(new CircleGeometry(lake.radius * 1.15, 48), material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(lake.x, lake.level, lake.z);
+  mesh.renderOrder = 2;
   scene.add(mesh);
   return mesh;
 }
 
 export function createIslands(scene) {
   const meshes = ISLANDS.map((spec) => buildIsland(scene, spec));
-  for (const spec of ISLANDS) addCoastalRocks(scene, spec);
+  for (const spec of ISLANDS) if (!spec.spires) addCoastalRocks(scene, spec);
+  for (const roof of OVERHANGS) if (roof.top == null) buildRoof(scene, roof);
+  for (const lake of LAKES) buildLake(scene, lake);
   addCoveArch(scene);
   return { meshes, byKey: Object.fromEntries(ISLANDS.map((s, i) => [s.key, meshes[i]])) };
 }

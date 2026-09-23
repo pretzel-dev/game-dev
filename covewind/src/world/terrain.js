@@ -339,7 +339,7 @@ export const PLACES = {
   // under the tarn, with water on its floor.
   grottoMouth: along('falls', 1.6, 1.02),
   grottoCavern: along('falls', 1.6, 0.5),
-  grottoExit: along('falls', 1.6 - Math.PI, 1.02),
+  grottoExit: along('falls', 2.75, 1.02),
 
   chapel: { x: 0, z: -838 },
   chapelQuay: along('chapel', 1.57, 1.08),
@@ -380,11 +380,11 @@ island('pines').shelves = [{ ...PLACES.pinesBay, radius: 40, height: 2.6, streng
  * (see OVERHANGS below): the grotto behind the falls, the arch through the
  * fortress headland, and the hole through the middle sea stack.
  */
-function tunnel(key, from, to, { width, wall = 10, floor = -6, roof, name }) {
+function tunnel(key, from, to, { width, wall = 10, floor = -6, roof, name, glow = false }) {
   const spec = island(key);
   spec.carves ??= [];
   spec.carves.push({ from, to, width, wall, floor, roofed: true });
-  OVERHANGS.push({ from, to, width: width + wall * 0.6, bottom: roof, name, island: key });
+  OVERHANGS.push({ from, to, width: width + wall * 0.6, bottom: roof, name, island: key, glow });
 }
 
 /**
@@ -410,6 +410,7 @@ tunnel('falls', PLACES.grottoCavern, PLACES.grottoCavern, {
   wall: 12,
   roof: 34,
   name: 'The blue grotto — land if you like',
+  glow: true,
 });
 tunnel('falls', PLACES.grottoCavern, PLACES.grottoExit, {
   width: 20,

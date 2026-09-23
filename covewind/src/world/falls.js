@@ -13,11 +13,15 @@ import {
   Group,
   IcosahedronGeometry,
   Mesh,
-  MeshStandardMaterial,
+  CircleGeometry,
   PlaneGeometry,
   ShaderMaterial,
 } from 'three';
-import { PLACES, terrainHeightAt } from './terrain.js';
+import { PLACES, terrainHeightAt as heightCut } from './terrain.js';
+
+// The falls pour over the roof of the grotto, so everything here stands on the
+// rock as it was before the tunnel was cut.
+const terrainHeightAt = (x, z) => heightCut(x, z, true);
 import { createTree } from './props.js';
 import { MAT, mat } from '../core/materials.js';
 import { QUALITY } from '../core/quality.js';
@@ -87,17 +91,7 @@ function river(parent, points, width) {
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  const mesh = new Mesh(
-    geometry,
-    new MeshStandardMaterial({
-      color: 0x74c4d6,
-      roughness: 0.35,
-      flatShading: true,
-      transparent: true,
-      opacity: 0.88,
-      side: DoubleSide,
-    })
-  );
+  const mesh = new Mesh(geometry, mat(0x6cc6d4, { transparent: true, opacity: 0.9, side: DoubleSide, emissive: 0x0d2a33 }));
   mesh.renderOrder = 2;
   parent.add(mesh);
   return mesh;
@@ -113,27 +107,13 @@ export function createFalls(scene) {
   const tarn = PLACES.fallsTarn;
   const lipHeight = terrainHeightAt(top.x, top.z);
 
-  // The tarn on the shelf behind the lip.
-  const pool = new Mesh(
-    new PlaneGeometry(118, 96, 1, 1),
-    new MeshStandardMaterial({
-      color: 0x63b6cc,
-      roughness: 0.3,
-      transparent: true,
-      opacity: 0.9,
-      flatShading: true,
-    })
-  );
-  pool.rotation.x = -Math.PI / 2;
-  pool.position.set(tarn.x, terrainHeightAt(tarn.x, tarn.z) + 1.4, tarn.z);
-  pool.renderOrder = 2;
-  group.add(pool);
+  // The tarn itself is one of the lakes (see `island.js`).
 
   // The river from the tarn to the lip.
   river(
     group,
     [
-      { x: tarn.x + 6, z: tarn.z + 18, y: terrainHeightAt(tarn.x, tarn.z) + 1 },
+      { x: tarn.x + 6, z: tarn.z + 30, y: lipHeight + 0.4 },
       { x: tarn.x + 10, z: tarn.z + 44, y: lipHeight + 2 },
       { x: top.x, z: top.z - 8, y: lipHeight + 1.5 },
       { x: top.x, z: top.z + 6, y: lipHeight + 1 },
@@ -181,14 +161,8 @@ export function createFalls(scene) {
   }
 
   const foam = new Mesh(
-    new PlaneGeometry(86, 70, 1, 1),
-    new MeshStandardMaterial({
-      color: 0xf2fbff,
-      roughness: 0.6,
-      transparent: true,
-      opacity: 0.72,
-      flatShading: true,
-    })
+    new CircleGeometry(40, 24),
+    mat(0xf2fbff, { transparent: true, opacity: 0.7, emissive: 0x44555a })
   );
   foam.rotation.x = -Math.PI / 2;
   foam.position.set(top.x + 2, 0.7, top.z + 24);

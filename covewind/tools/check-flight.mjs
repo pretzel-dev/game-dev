@@ -7,7 +7,7 @@
  * off again, and that nothing can put it through the island.
  */
 import { createFlight, updateFlight } from '../src/flight/flight-model.js';
-import { LAKES, OVERHANGS, PLACES, terrainHeightAt } from '../src/world/terrain.js';
+import { LAKES, OVERHANGS, PLACES, ceilingAt, terrainHeightAt } from '../src/world/terrain.js';
 
 let failures = 0;
 const check = (name, ok, detail) => {
@@ -230,14 +230,23 @@ for (const o of OVERHANGS) {
   // Bridges are flown under along the canyon, square to the span.
   const [ax, az] = o.bridge ? [uz, -ux] : [ux, uz];
   const mid = { x: (o.from.x + o.to.x) / 2, z: (o.from.z + o.to.z) / 2 };
-  const run = o.bridge ? 120 : len / 2 + 70;
+  const half = o.bridge ? 0 : len / 2;
+  // Start out in open water if the passage opens onto the sea, or in the
+  // cavern it leads from; finish likewise at the far end.
+  const open = (x, z) => terrainHeightAt(x, z) < -1 && !ceilingAt(x, z);
+  const before = half + 70;
+  const after = half + 70;
+  const startOut = open(mid.x - ax * before, mid.z - az * before);
+  const endOut = open(mid.x + ax * after, mid.z + az * after);
+  const from = startOut ? before : half;
+  const to = endOut ? after : half;
   const height = Math.min(o.bottom - 12, 16);
-  const flight = levelAt(mid.x - ax * run, height, mid.z - az * run, Math.atan2(ax, az), 0.6);
+  const flight = levelAt(mid.x - ax * from, height, mid.z - az * from, Math.atan2(ax, az), 0.6);
   flight.speed = 42;
   let highest = -Infinity;
   let lowest = Infinity;
   let passed = false;
-  fly(flight, (run * 2) / 42, {}, (f) => {
+  fly(flight, (from + to) / 42, {}, (f) => {
     const roof = f.underRoof;
     if (roof != null) {
       passed = true;

@@ -21,7 +21,9 @@ import {
 } from 'three';
 import { MAT, mat, HOUSE_WALLS, HOUSE_ROOFS, CLOTH } from '../core/materials.js';
 import { chance, pick, rand, TAU } from '../core/utils.js';
-import { terrainHeightAt } from './terrain.js';
+import { lakeAt, terrainHeightAt } from './terrain.js';
+import { plant } from './forest.js';
+import { HOUSE_SITES } from './village-plan.js';
 import { createCloth } from './cloth.js';
 
 /* --------------------------------------------------------------- houses --- */
@@ -101,65 +103,33 @@ export function createHouse(parent, { x, z, rot = 0, scale = 1, wall = null, tal
 
 /* ---------------------------------------------------------------- trees --- */
 
-const TREE_KINDS = ['round', 'cypress', 'olive', 'palm'];
+const TREE_KINDS = ['pine', 'cypress', 'olive', 'round', 'round', 'pine'];
 
+/**
+ * Plant a tree (drawn later, instanced, by `forest.js`). Refuses the beach,
+ * the sea and anything steep enough to be a cliff. `parent` is kept for the
+ * old call sites; trees all live in one forest now.
+ */
 export function createTree(parent, x, z, scale = 1, kind = null) {
-  const ground = terrainHeightAt(x, z);
+  // Trees on a tunnel roof stand on the rock as it was before it was cut.
+  const ground = terrainHeightAt(x, z, true);
   if (ground < 4.5) return null;
-
-  const group = new Group();
-  group.position.set(x, ground, z);
-  group.rotation.y = rand(0, TAU);
-  group.scale.setScalar(scale);
-  parent.add(group);
-
-  const type = kind || pick(TREE_KINDS);
-  if (type === 'cypress') {
-    const trunk = new Mesh(new CylinderGeometry(0.7, 1.1, 5, 6), MAT.woodDark);
-    trunk.position.y = 2.5;
-    group.add(trunk);
-    const crown = new Mesh(new ConeGeometry(2.9, 15, 7), MAT.leaf);
-    crown.position.y = 11;
-    crown.castShadow = true;
-    group.add(crown);
-  } else if (type === 'olive') {
-    const trunk = new Mesh(new CylinderGeometry(1, 1.7, 5.5, 6), MAT.wood);
-    trunk.position.y = 2.7;
-    trunk.rotation.z = rand(-0.12, 0.12);
-    group.add(trunk);
-    for (let i = 0; i < 3; i++) {
-      const puff = new Mesh(new IcosahedronGeometry(rand(3.4, 5), 0), chance(0.5) ? MAT.leaf : MAT.leaf2);
-      puff.position.set(rand(-3, 3), rand(6.5, 9), rand(-3, 3));
-      puff.scale.y = 0.72;
-      puff.castShadow = true;
-      group.add(puff);
-    }
-  } else if (type === 'palm') {
-    const trunk = new Mesh(new CylinderGeometry(0.55, 1.1, 11, 6), MAT.wood);
-    trunk.position.y = 5.5;
-    trunk.rotation.z = rand(-0.16, 0.16);
-    trunk.castShadow = true;
-    group.add(trunk);
-    for (let i = 0; i < 6; i++) {
-      const frond = new Mesh(new ConeGeometry(1.5, 7.5, 3), MAT.leaf2);
-      const a = (i / 6) * TAU + rand(-0.2, 0.2);
-      frond.position.set(Math.cos(a) * 2.6, 11.2, Math.sin(a) * 2.6);
-      frond.rotation.set(Math.sin(a) * 1.15, -a, -Math.cos(a) * 1.15);
-      frond.castShadow = true;
-      group.add(frond);
-    }
-  } else {
-    const trunk = new Mesh(new CylinderGeometry(1.1, 1.7, 7.5, 6), MAT.wood);
-    trunk.position.y = 3.7;
-    trunk.castShadow = true;
-    group.add(trunk);
-    const crown = new Mesh(new IcosahedronGeometry(6.2, 1), chance(0.5) ? MAT.leaf : MAT.leaf2);
-    crown.scale.set(rand(0.8, 1.1), rand(1, 1.35), rand(0.8, 1.1));
-    crown.position.y = 10.4;
-    crown.castShadow = true;
-    group.add(crown);
+  const step = 4;
+  const slope =
+    Math.hypot(
+      terrainHeightAt(x + step, z, true) - terrainHeightAt(x - step, z, true),
+      terrainHeightAt(x, z + step, true) - terrainHeightAt(x, z - step, true)
+    ) /
+    (2 * step);
+  if (slope > 0.95) return null;
+  if (lakeAt(x, z)) return null;
+  // Not through anybody's roof.
+  for (const site of HOUSE_SITES) {
+    if (Math.abs(site.x - x) < 11 && Math.abs(site.z - z) < 11) return null;
   }
-  return group;
+  const type = kind || pick(TREE_KINDS);
+  plant(type, x, ground, z, scale * (type === 'bush' ? rand(0.7, 1.3) : 1));
+  return true;
 }
 
 /* ---------------------------------------------------------------- boats --- */
@@ -270,30 +240,6 @@ export function createPier(parent, { x, z, length = 54, width = 5, rot = 0 }) {
     }
   }
   return group;
-}
-
-/* --------------------------------------------------------------- clouds --- */
-
-// Clouds are lit by a sun that never quite reaches their undersides, so they
-// get their own material with enough self-illumination to stay cloud-white.
-const CLOUD_MATERIAL = mat(0xfffaf0, { flat: false, roughness: 1 });
-CLOUD_MATERIAL.emissive = new Color(0x4a4438);
-
-export function createCloud(parent, x, y, z, scale = 1) {
-  const group = new Group();
-  group.position.set(x, y, z);
-  group.scale.setScalar(scale);
-  group.rotation.y = rand(0, TAU);
-  parent.add(group);
-
-  const puffs = 4 + Math.floor(rand(0, 3));
-  for (let i = 0; i < puffs; i++) {
-    const puff = new Mesh(new IcosahedronGeometry(rand(6, 12), 1), CLOUD_MATERIAL);
-    puff.scale.set(rand(1.2, 2), rand(0.5, 0.85), rand(0.9, 1.5));
-    puff.position.set(i * 8 - rand(10, 17), rand(-2, 4), rand(-5, 5));
-    group.add(puff);
-  }
-  return { group, drift: rand(0.5, 1.3), bob: rand(0, TAU) };
 }
 
 /* ------------------------------------------------------------- villager --- */

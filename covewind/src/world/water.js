@@ -7,7 +7,7 @@
  * turquoise over the sand.
  */
 import { Color, DoubleSide, Mesh, PlaneGeometry, ShaderMaterial, Vector3 } from 'three';
-import { coastlineGLSL } from './terrain.js';
+import { OVERHANGS, coastlineGLSL } from './terrain.js';
 import { QUALITY } from '../core/quality.js';
 
 /** Wave field, in world space. Keep in sync with `WAVE_GLSL` below. */
@@ -68,6 +68,7 @@ const fragmentShader = /* glsl */ `
   varying float vWave;
   ${WAVE_GLSL}
   __COASTLINE__
+  __ROOFS__
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -116,7 +117,7 @@ const fragmentShader = /* glsl */ `
     float nh = max(dot(normal, halfDir), 0.0);
     float sheen = pow(nh, 40.0);
     col += sunColor * sheen * 0.18;
-    float sparkle = step(0.9965, nh) * step(0.55, noise(p * 0.6 + time * 1.3));
+    float sparkle = step(0.997, nh) * step(0.72, noise(p * 1.7 + time * 1.3));
     col += vec3(1.0) * sparkle * 1.6;
 
     // Whitecaps: little brush flecks on the swell crests, out in open water.
@@ -134,6 +135,13 @@ const fragmentShader = /* glsl */ `
     line *= smoothstep(64.0, 14.0, coast) * step(0.0, coast) * step(0.35, noise(p * 0.05 + 3.0));
     col = mix(col, foamColor, clamp(surf * 0.95 + line * 0.7, 0.0, 1.0));
 
+    // Under rock the sea is in shade — except in the grotto, where sunlight
+    // coming up through the water turns it an impossible, glowing blue.
+    vec2 cave = roofShade(p);
+    float glint = 0.6 + 0.4 * noise(p * 0.15 + time * 0.6);
+    col = mix(col, col * vec3(0.3, 0.36, 0.48), cave.x * (1.0 - cave.y));
+    col = mix(col, vec3(0.12, 0.62, 1.25) * glint + caustic(p * 2.0, time) * 0.3, cave.y);
+
     float fogAmount = smoothstep(fogNear, fogFar, dist);
     col = mix(col, fogColor, fogAmount);
 
@@ -144,6 +152,30 @@ const fragmentShader = /* glsl */ `
     #include <colorspace_fragment>
   }
 `;
+
+/** Shade (x) and grotto glow (y) from the rock overhead, as GLSL. */
+function roofGLSL() {
+  const f = (n) => n.toFixed(3);
+  const body = OVERHANGS.filter((o) => o.top == null)
+    .map((o) => {
+      const d = `cw_segment(p, vec2(${f(o.from.x)}, ${f(o.from.z)}), vec2(${f(o.to.x)}, ${f(o.to.z)}))`;
+      const inside = `smoothstep(${f(o.width)}, ${f(o.width - 10)}, ${d})`;
+      return o.glow ? `glow = max(glow, ${inside});` : `shade = max(shade, ${inside});`;
+    })
+    .join('\n    ');
+  return `
+  float cw_segment(vec2 p, vec2 a, vec2 b) {
+    vec2 v = b - a;
+    float t = clamp(dot(p - a, v) / max(dot(v, v), 1e-3), 0.0, 1.0);
+    return length(p - a - v * t);
+  }
+  vec2 roofShade(vec2 p) {
+    float shade = 0.0;
+    float glow = 0.0;
+    ${body}
+    return vec2(max(shade, glow), glow);
+  }`;
+}
 
 export function createWater(scene) {
   const size = 6400;
@@ -164,7 +196,7 @@ export function createWater(scene) {
       fogFar: { value: 1270 },
     },
     vertexShader,
-    fragmentShader: fragmentShader.replace('__COASTLINE__', coastlineGLSL()),
+    fragmentShader: fragmentShader.replace('__COASTLINE__', coastlineGLSL()).replace('__ROOFS__', roofGLSL()),
   });
 
   const segments = QUALITY.waterSegments;

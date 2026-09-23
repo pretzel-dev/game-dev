@@ -11,6 +11,8 @@ import { createWhales } from './whales.js';
 import { createBirds, updateBirds, updateVillagers } from './creatures.js';
 import { createAIPlanes, updateAIPlanes } from './aircraft.js';
 import { createBoat, createTree } from './props.js';
+import { buildForest, foliageUniforms } from './forest.js';
+import { lakeUniforms } from './island.js';
 import { updateCloth } from './cloth.js';
 import { waveHeight } from './water.js';
 import { ISLANDS, PLACES, island, islandRadiusAt, terrainHeightAt, TAU } from './terrain.js';
@@ -35,12 +37,23 @@ export function createWorld(scene, sky) {
   const cove = createCove(scene);
   const falls = createFalls(scene);
 
-  // Scrub and olive groves on the main island, cover for the others, and
-  // nothing but palms on the ring around the lagoon.
-  plantIsland(scene, island('harbour'), Math.round(QUALITY.trees * 0.41));
-  plantIsland(scene, island('canyon'), Math.round(QUALITY.trees * 0.16), ['cypress', 'olive']);
-  plantIsland(scene, island('falls'), Math.round(QUALITY.trees * 0.18), ['round', 'cypress']);
-  plantIsland(scene, island('atoll'), Math.round(QUALITY.trees * 0.16), ['palm']);
+  // Each island planted to its character: olive groves and pines round the
+  // town, cypress on the canyon's rim, woods on the falls island, palms on
+  // the sand ring, a dark stand of umbrella pines on the pine island, and
+  // maquis scrub everywhere there is room.
+  const T = QUALITY.trees;
+  plantIsland(scene, island('harbour'), Math.round(T * 0.2), ['olive', 'olive', 'pine', 'round', 'cypress']);
+  plantIsland(scene, island('cove'), Math.round(T * 0.08), ['pine', 'round', 'olive']);
+  plantIsland(scene, island('canyon'), Math.round(T * 0.08), ['cypress', 'pine', 'olive']);
+  plantIsland(scene, island('falls'), Math.round(T * 0.13), ['round', 'round', 'pine', 'cypress']);
+  plantIsland(scene, island('atoll'), Math.round(T * 0.07), ['palm']);
+  plantIsland(scene, island('fortress'), Math.round(T * 0.04), ['cypress', 'olive']);
+  plantIsland(scene, island('chapel'), 6, ['cypress']);
+  plantIsland(scene, island('pines'), Math.round(T * 0.2), ['pine', 'pine', 'pine', 'round']);
+  for (const spec of ISLANDS) {
+    if (spec.spires || spec.lagoon) continue;
+    plantIsland(scene, spec, Math.round(T * (spec.base / 330) * 0.35), ['bush']);
+  }
 
   const clouds = sky.clouds;
 
@@ -61,6 +74,9 @@ export function createWorld(scene, sky) {
   const aiPlanes = createAIPlanes(scene);
   const whales = createWhales(scene);
 
+  // Everything that planted a tree has done so by now.
+  const forest = buildForest(scene);
+
   const landmarks = {
     village: PLACES.villageCentre,
     harbour: PLACES.harbour,
@@ -80,6 +96,9 @@ export function createWorld(scene, sky) {
   function update(t, dt, flight, wind, { beamOpacity = 0.15, onBirdScatter } = {}) {
     _planePos.copy(flight.pos);
     terrainUniforms.time.value = t;
+    foliageUniforms.time.value = t;
+    foliageUniforms.gust.value = wind.gust;
+    lakeUniforms.time.value = t;
 
     for (const cloud of clouds) {
       cloud.group.position.x += cloud.drift * dt * (1 + wind.gust * 0.8);
