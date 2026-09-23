@@ -17,6 +17,8 @@ const COLOR_KEYS = [
   'skyTop',
   'skyHorizon',
   'sunGlow',
+  'cloudLit',
+  'cloudShade',
   'fog',
   'seaShallow',
   'seaDeep',
@@ -31,7 +33,7 @@ const SCALAR_KEYS = [
   'beam',
 ];
 
-export function createLighting(scene, renderer, sky, water) {
+export function createLighting(scene, renderer, sky, water, clouds = null) {
   const sun = new DirectionalLight(0xffe0ae, 4);
   sun.castShadow = QUALITY.shadows;
   const d = QUALITY.shadowDistance;
@@ -109,6 +111,18 @@ export function createLighting(scene, renderer, sky, water) {
     water.uniforms.fogColor.value.copy(live.fog);
     water.uniforms.fogNear.value = live.fogNear;
     water.uniforms.fogFar.value = live.fogFar;
+    water.uniforms.skyColor.value.copy(live.skyHorizon).lerp(live.skyTop, 0.35);
+
+    sky.uniforms.cloudColor.value.copy(live.cloudLit);
+    clouds?.setLight({
+      lit: live.cloudLit,
+      shade: live.cloudShade,
+      glow: live.sunGlow,
+      sunDir: live.sunDir,
+      fog: live.fog,
+      fogNear: live.fogNear,
+      fogFar: live.fogFar,
+    });
   }
 
   setTargets(LIGHT_PRESETS[DEFAULT_LIGHT]);

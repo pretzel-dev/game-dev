@@ -14,7 +14,6 @@ import {
   Float32BufferAttribute,
   Group,
   Mesh,
-  MeshStandardMaterial,
   TorusGeometry,
 } from 'three';
 import {
@@ -27,49 +26,92 @@ import {
   terrainGradient,
   terrainHeightAt,
 } from './terrain.js';
-import { MAT } from '../core/materials.js';
+import { MAT, mat } from '../core/materials.js';
 import { palette } from '../core/palette.js';
 import { QUALITY } from '../core/quality.js';
 import { rand, smoothstep } from '../core/utils.js';
 
 const COLOURS = {
-  wetSand: new Color(0xd9bc8a),
+  wetSand: new Color(0xcfb483),
   sand: new Color(palette.sand),
+  pebble: new Color(palette.pebble),
   grass: new Color(palette.grass),
   grass2: new Color(palette.grass2),
   dry: new Color(palette.grassDry),
+  maquis: new Color(palette.maquis),
   rock: new Color(palette.rock),
   rockWarm: new Color(palette.rockWarm),
 };
 
 const _rock = new Color();
 
-/** Ground colour from height and steepness — the island's whole palette. */
+/**
+ * Ground colour from height and steepness — the island's whole palette, and
+ * how grassy the spot is (0..1) for the wind shimmer.
+ */
 function groundColour(x, z, height, slope, out) {
-  // Three scales of wobble, so the hillside reads as fields, scrub and bare
-  // patches rather than one flat green.
+  // Painted in patches rather than gradients: broad fields, then the scrub
+  // and bare stone on top of them, each with a hard-ish edge.
   const broad = 0.5 + 0.5 * Math.sin(x * 0.0075 + z * 0.0061 + 1.3);
   const mid = 0.5 + 0.5 * Math.sin(x * 0.021 + z * 0.017 - 0.6) * Math.sin(z * 0.013 - x * 0.009);
   const fine = 0.5 + 0.5 * Math.sin(x * 0.055 - z * 0.047) * Math.sin(z * 0.038 + 0.7);
-  out.copy(COLOURS.grass).lerp(COLOURS.grass2, broad * 0.55 + mid * 0.45);
-  out.lerp(COLOURS.dry, mid * 0.45 * smoothstep(10, 55, height));
-  out.lerp(COLOURS.grass, fine * 0.18);
+  const patch = (v, at) => smoothstep(at - 0.06, at + 0.06, v);
 
-  // Higher ground dries out towards the ridge.
-  out.lerp(COLOURS.dry, smoothstep(52, 140, height) * 0.72);
+  out.copy(COLOURS.grass).lerp(COLOURS.grass2, patch(broad * 0.6 + mid * 0.4, 0.5) * 0.8);
+  // Golden summer grass on the upper slopes and in open patches.
+  out.lerp(COLOURS.dry, patch(mid, 0.62) * smoothstep(14, 60, height) * 0.85);
+  out.lerp(COLOURS.dry, smoothstep(70, 150, height) * 0.6);
+  // Dark maquis in clumps across the lower hillsides.
+  const scrub = patch(fine * 0.55 + broad * 0.45, 0.66) * (1 - smoothstep(90, 150, height));
+  out.lerp(COLOURS.maquis, scrub * 0.9);
 
-  // Steepness decides where the rock shows, banded by height so a cliff face
-  // reads as strata.
-  const band = 0.5 + 0.5 * Math.sin(height * 0.33 + x * 0.004);
-  const rock = _rock.copy(COLOURS.rock).lerp(COLOURS.rockWarm, band);
-  const bare = Math.max(smoothstep(0.32, 0.8, slope), mid * smoothstep(112, 172, height) * 0.8);
+  // White limestone wherever it is steep, banded so a cliff reads as strata.
+  const band = 0.5 + 0.5 * Math.sin(height * 0.42 + x * 0.004);
+  const rock = _rock.copy(COLOURS.rock).lerp(COLOURS.rockWarm, patch(band, 0.55) * 0.7);
+  const bare = Math.max(
+    smoothstep(0.85, 1.25, slope),
+    patch(mid, 0.7) * smoothstep(110, 160, height)
+  );
   out.lerp(rock, Math.min(bare, 1));
 
-  // Beaches, and a darker wet strip right at the waterline.
-  out.lerp(COLOURS.sand, smoothstep(7.5, 3.0, height) * smoothstep(1.1, 0.5, slope));
-  out.lerp(COLOURS.wetSand, smoothstep(2.2, 0.2, height) * smoothstep(1.1, 0.5, slope));
-  return out;
+  // Pebble beaches, sand, and a darker wet strip right at the waterline.
+  const beach = smoothstep(6.5, 3.5, height) * smoothstep(1.4, 0.7, slope);
+  out.lerp(broad > 0.5 ? COLOURS.pebble : COLOURS.sand, beach);
+  out.lerp(COLOURS.wetSand, smoothstep(1.8, 0.2, height) * smoothstep(1.1, 0.5, slope));
+
+  return (1 - Math.min(bare, 1)) * (1 - beach) * (1 - scrub * 0.6);
 }
+
+/** Shared by every island: the wind brushing across the grass. */
+export const terrainUniforms = { time: { value: 0 } };
+
+const groundMaterial = (() => {
+  const material = mat(0xffffff, { vertexColors: true, soft: true });
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.time = terrainUniforms.time;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float grassy;\nvarying float vGrassy;\nvarying vec2 vGround;')
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvGrassy = grassy;\nvGround = (modelMatrix * vec4(position, 1.0)).xz;'
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float time;\nvarying float vGrassy;\nvarying vec2 vGround;')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          // Gusts running over a meadow: bright bands that travel downwind.
+          vec2 g = vGround;
+          float a = sin(g.x * 0.021 + g.y * 0.013 - time * 1.1);
+          float b = sin(g.x * 0.047 - g.y * 0.031 - time * 1.7 + a * 1.4);
+          float gust = smoothstep(0.55, 0.95, a * 0.6 + b * 0.4);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.16 + vec3(0.03, 0.035, 0.0), gust * vGrassy * 0.75);
+        }`
+      );
+  };
+  return material;
+})();
 
 /** One island's ground mesh. */
 function buildIsland(scene, spec) {
@@ -81,6 +123,7 @@ function buildIsland(scene, spec) {
 
   const positions = [];
   const colors = [];
+  const grass = [];
   const indices = [];
   const c = new Color();
 
@@ -103,15 +146,16 @@ function buildIsland(scene, spec) {
       } else {
         y = terrainHeightAt(x, z);
         // A little hand-crumpled noise, strongest on the slopes.
-        y += Math.sin(s * 12.37 + r * 2.1) * 0.55 * (1 - rr);
+        y += Math.sin(s * 12.37 + r * 2.1) * 0.35 * (1 - rr);
       }
       positions.push(x, y, z);
 
       const g = terrainGradient(x, z, 5);
       const slope = Math.hypot(g.x, g.z);
-      groundColour(x, z, y, slope, c);
+      const grassy = groundColour(x, z, y, slope, c);
       if (r === rings) c.lerp(COLOURS.rock, 0.7);
       colors.push(c.r, c.g, c.b);
+      grass.push(r === rings ? 0 : grassy);
     }
   }
 
@@ -130,13 +174,11 @@ function buildIsland(scene, spec) {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
   geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('grassy', new Float32BufferAttribute(grass, 1));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  const mesh = new Mesh(
-    geometry,
-    new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true })
-  );
+  const mesh = new Mesh(geometry, groundMaterial);
   mesh.receiveShadow = true;
   mesh.name = `island:${spec.key}`;
   scene.add(mesh);

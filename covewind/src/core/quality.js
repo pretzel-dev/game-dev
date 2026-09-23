@@ -20,6 +20,8 @@ function detectTier() {
 
 const TIERS = {
   low: {
+    msaa: 0,
+    halation: false,
     pixelRatio: 1.25,
     shadows: true,
     shadowMap: 1024,
@@ -40,6 +42,8 @@ const TIERS = {
     anisotropy: 1,
   },
   medium: {
+    msaa: 2,
+    halation: true,
     pixelRatio: 1.5,
     shadows: true,
     shadowMap: 1536,
@@ -60,6 +64,8 @@ const TIERS = {
     anisotropy: 2,
   },
   high: {
+    msaa: 4,
+    halation: true,
     pixelRatio: 2,
     shadows: true,
     shadowMap: 2048,

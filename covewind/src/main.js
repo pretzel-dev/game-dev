@@ -23,6 +23,7 @@ import { clamp } from './core/utils.js';
 
 import * as terrain from './world/terrain.js';
 import { createSky } from './world/sky.js';
+import { createClouds } from './world/clouds.js';
 import { createWater } from './world/water.js';
 import { createLighting } from './world/lighting.js';
 import { createWorld } from './world/world.js';
@@ -37,6 +38,7 @@ import { createInput } from './flight/input.js';
 import { createHud } from './ui/hud.js';
 import { createPhotoMode } from './ui/photo-mode.js';
 import { createAudio } from './audio/audio.js';
+import { createPost } from './render/post.js';
 
 function boot() {
   /* ------------------------------------------------------------ renderer --- */
@@ -60,9 +62,11 @@ function boot() {
 
   /* --------------------------------------------------------------- world --- */
   const sky = createSky(scene);
+  const clouds = createClouds(scene);
   const water = createWater(scene);
-  const lighting = createLighting(scene, renderer, sky, water);
-  const world = createWorld(scene);
+  const lighting = createLighting(scene, renderer, sky, water, clouds);
+  const world = createWorld(scene, clouds);
+  const post = createPost(renderer);
 
   const plane = createPlaneModel(0xc9473d, false);
   plane.rotation.order = 'YXZ';
@@ -240,6 +244,7 @@ function boot() {
       camera.updateProjectionMatrix();
       renderer.setPixelRatio(Math.min(devicePixelRatio || 1, QUALITY.pixelRatio));
       renderer.setSize(innerWidth, innerHeight);
+      post.setSize();
     },
     { passive: true }
   );
@@ -349,6 +354,7 @@ function boot() {
     lighting.follow(flight.pos);
     lighting.update(dt);
     water.uniforms.time.value = t;
+    sky.uniforms.time.value = t;
 
     world.update(t, dt, flight, windState, {
       beamOpacity: lighting.beam,
@@ -385,13 +391,16 @@ function boot() {
     audio.update(dt, flight, windState, camera, _lookAt);
     hud.update(dt, flight, photo.active ? 99 : input.lastActivity);
 
-    renderer.render(scene, camera);
+    sky.follow(camera.position);
+    clouds.follow(camera.position);
+    post.render(scene, camera);
     photo.flush(renderer);
 
     // If the device is struggling, shed load once rather than stutter forever.
     if (!QUALITY.degraded && dt > 0.042) {
       slowFrames++;
       if (slowFrames > 260 && degrade(renderer, scene)) {
+        post.setSize();
         hud.hint('Easing off the detail so this stays smooth', 2.4);
       }
     } else if (slowFrames > 0) {

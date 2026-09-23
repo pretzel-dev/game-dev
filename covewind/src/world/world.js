@@ -2,7 +2,7 @@
  * Builds the archipelago and ticks everything living on it.
  */
 import { Vector3 } from 'three';
-import { createIslands, archPosition } from './island.js';
+import { createIslands, archPosition, terrainUniforms } from './island.js';
 import { createVillage } from './village.js';
 import { createLighthouse } from './lighthouse.js';
 import { createCove } from './cove.js';
@@ -10,7 +10,7 @@ import { createFalls } from './falls.js';
 import { createWhales } from './whales.js';
 import { createBirds, updateBirds, updateVillagers } from './creatures.js';
 import { createAIPlanes, updateAIPlanes } from './aircraft.js';
-import { createBoat, createCloud, createTree } from './props.js';
+import { createBoat, createTree } from './props.js';
 import { updateCloth } from './cloth.js';
 import { waveHeight } from './water.js';
 import { ISLANDS, PLACES, island, islandRadiusAt, terrainHeightAt, TAU } from './terrain.js';
@@ -28,7 +28,7 @@ function plantIsland(scene, spec, count, kinds = null) {
   }
 }
 
-export function createWorld(scene) {
+export function createWorld(scene, sky) {
   const islands = createIslands(scene);
   const village = createVillage(scene);
   const lighthouse = createLighthouse(scene);
@@ -42,12 +42,7 @@ export function createWorld(scene) {
   plantIsland(scene, island('falls'), Math.round(QUALITY.trees * 0.18), ['round', 'cypress']);
   plantIsland(scene, island('atoll'), Math.round(QUALITY.trees * 0.16), ['palm']);
 
-  const clouds = [];
-  for (let i = 0; i < QUALITY.clouds; i++) {
-    clouds.push(
-      createCloud(scene, rand(-1500, 1500), rand(215, 420), rand(-1500, 1500), rand(0.9, 2.6))
-    );
-  }
+  const clouds = sky.clouds;
 
   // Boats: the harbour's moorings, plus a few working between the islands.
   const boats = [...village.moorings];
@@ -84,11 +79,12 @@ export function createWorld(scene) {
 
   function update(t, dt, flight, wind, { beamOpacity = 0.15, onBirdScatter } = {}) {
     _planePos.copy(flight.pos);
+    terrainUniforms.time.value = t;
 
     for (const cloud of clouds) {
       cloud.group.position.x += cloud.drift * dt * (1 + wind.gust * 0.8);
       cloud.group.position.y += Math.sin(t * 0.12 + cloud.bob) * dt * 0.6;
-      if (cloud.group.position.x > 1600) cloud.group.position.x = -1600;
+      if (cloud.group.position.x > 1700) cloud.group.position.x = -1700;
     }
 
     for (const boat of boats) {
