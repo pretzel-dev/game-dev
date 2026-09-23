@@ -12,6 +12,7 @@ import { createBirds, updateBirds, updateVillagers } from './creatures.js';
 import { createAIPlanes, updateAIPlanes } from './aircraft.js';
 import { createBoat, createTree } from './props.js';
 import { createLandmarks } from './landmarks.js';
+import { createDolphins } from './dolphins.js';
 import { buildForest, foliageUniforms } from './forest.js';
 import { lakeUniforms } from './island.js';
 import { updateCloth } from './cloth.js';
@@ -74,6 +75,19 @@ export function createWorld(scene, sky) {
   const places = createLandmarks(scene);
   boats.push(...places.boats);
 
+  // A regatta: little sailing boats with coloured sails, rounding a course
+  // in the open water between the town and the sand ring.
+  const regatta = { centre: { x: 430, z: 330 }, radius: 110 };
+  for (let i = 0; i < (QUALITY.tier === 'low' ? 3 : 6); i++) {
+    const boat = createBoat(scene, regatta.centre.x, regatta.centre.z, rand(0.75, 0.95), { kind: 'sail' });
+    boat.course = { ...regatta, angle: (i / 6) * TAU * 0.5, speed: rand(5.5, 7), wobble: rand(-8, 8) };
+    boat.drift = 0;
+    boat.heel = rand(0.16, 0.24);
+    boats.push(boat);
+  }
+
+  const dolphins = createDolphins(scene, QUALITY.tier === 'low' ? 3 : 5);
+
   const birds = createBirds(scene);
   const aiPlanes = createAIPlanes(scene);
   const whales = createWhales(scene);
@@ -93,11 +107,19 @@ export function createWorld(scene, sky) {
     canyonEnd: PLACES.canyonEnd,
     falls: falls.position,
     lagoon: PLACES.lagoon,
+    campanile: PLACES.church,
+    lido: PLACES.villageBeach,
+    chapel: PLACES.chapel,
+    fortress: PLACES.fortress,
+    stacks: PLACES.stacks,
+    wreck: PLACES.wreck,
+    pines: island('pines').centre,
+    grotto: PLACES.grottoMouth,
   };
 
   const _planePos = new Vector3();
 
-  function update(t, dt, flight, wind, { beamOpacity = 0.15, onBirdScatter } = {}) {
+  function update(t, dt, flight, wind, { beamOpacity = 0.15, onBirdScatter, onDolphins } = {}) {
     _planePos.copy(flight.pos);
     terrainUniforms.time.value = t;
     foliageUniforms.time.value = t;
@@ -125,7 +147,16 @@ export function createWorld(scene, sky) {
       group.rotation.x = damp(group.rotation.x, (ahead - here) * 0.08, 3, dt);
       group.rotation.z = damp(group.rotation.z, -(side - here) * 0.08 + (boat.heel ?? 0), 3, dt);
 
-      if (boat.drift > 0) {
+      if (boat.course) {
+        // Round and round the marks, leaning into the breeze.
+        const c = boat.course;
+        c.angle += (c.speed / c.radius) * dt;
+        const r = c.radius + c.wobble + Math.sin(c.angle * 3) * 12;
+        group.position.x = c.centre.x + Math.cos(c.angle) * r;
+        group.position.z = c.centre.z + Math.sin(c.angle) * r;
+        const heading = Math.atan2(-Math.sin(c.angle), Math.cos(c.angle));
+        group.rotation.y += angleDelta(group.rotation.y, heading) * Math.min(1, dt * 2);
+      } else if (boat.drift > 0) {
         // Look ahead, and put the wheel over gently — a boat turns over
         // several seconds, not in a frame.
         const lookAhead = 26;
@@ -160,6 +191,7 @@ export function createWorld(scene, sky) {
     updateAIPlanes(aiPlanes, t, dt);
     updateCloth(t, wind.gust);
     whales.update(t, dt);
+    if (dolphins.update(t, dt, flight)) onDolphins?.();
     falls.update(t);
     lighthouse.update(t, beamOpacity);
   }
@@ -172,6 +204,8 @@ export function createWorld(scene, sky) {
     cove,
     falls,
     whales,
+    dolphins,
+    places,
     clouds,
     boats,
     birds,

@@ -45,20 +45,27 @@ const fallFragment = /* glsl */ `
   uniform vec3 deepColor;
   varying vec2 vUv;
 
+  float hash(float n) { return fract(sin(n) * 43758.5453); }
+
   void main() {
-    // Streaks falling at slightly different speeds, breaking up as they go.
-    float lane = floor(vUv.x * 9.0);
-    float speed = 1.4 + fract(sin(lane * 12.9898) * 43758.5453) * 0.8;
-    float v = vUv.y * 3.0 + time * speed;
-    float streak = 0.55 + 0.45 * sin(v * 6.2831 + lane);
-    float broken = smoothstep(0.15, 0.9, fract(v * 0.5 + sin(lane) * 0.3));
+    // Drawn water: long ribbons of light and shade falling at their own
+    // pace, with white streaks breaking through, the way a waterfall is
+    // painted in a background rather than simulated.
+    float lanes = 22.0;
+    float lane = floor(vUv.x * lanes);
+    float speed = 1.2 + hash(lane) * 1.1;
+    float v = vUv.y * 2.4 + time * speed + hash(lane + 7.0) * 10.0;
+    float ribbon = step(0.5, fract(v * 0.7 + hash(lane + 3.0)));
+    float streak = step(0.86, fract(v * 1.3 + hash(lane + 11.0) * 3.0));
 
-    vec3 col = mix(deepColor, topColor, streak * 0.7 + broken * 0.3);
-    // Whiter where it has fallen furthest and is all foam.
-    col = mix(col, vec3(1.0), smoothstep(0.55, 0.0, vUv.y) * 0.65);
+    vec3 col = mix(deepColor, topColor, 0.35 + ribbon * 0.4);
+    col = mix(col, vec3(1.0), streak * 0.85);
+    // All foam near the bottom, where it has fallen furthest.
+    float foam = smoothstep(0.32, 0.0, vUv.y + (hash(lane) - 0.5) * 0.08);
+    col = mix(col, vec3(1.0), foam * 0.9);
 
-    float alpha = 0.55 + streak * 0.35;
-    alpha *= smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
+    float edge = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+    float alpha = (0.72 + ribbon * 0.2 + streak * 0.1) * edge;
     gl_FragColor = vec4(col, alpha);
 
     #include <tonemapping_fragment>

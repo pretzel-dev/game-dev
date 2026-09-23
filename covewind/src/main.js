@@ -194,7 +194,7 @@ function boot() {
     started = true;
     hud.hideIntro();
     audio.start();
-    hud.hint('Follow the coast — there is a cove hiding past the lighthouse', 5);
+    hud.hint('Follow the coast — there is a cove hiding past the lighthouse, and a lot more besides', 5);
   });
 
   /* ------------------------------------------------------- discoveries --- */
@@ -218,6 +218,14 @@ function boot() {
     { key: 'canyonEnd', at: () => world.landmarks.canyonEnd, radius: 90, below: 60, text: 'Out the other side' },
     { key: 'falls', at: () => world.landmarks.falls, radius: 170, below: 190, text: 'The waterfall' },
     { key: 'lagoon', at: () => world.landmarks.lagoon, radius: 130, below: 120, text: 'The lagoon — shallow enough to land in' },
+    { key: 'campanile', at: () => world.landmarks.campanile, radius: 60, below: 130, text: 'Round the campanile — mind the bells' },
+    { key: 'lido', at: () => world.landmarks.lido, radius: 70, below: 45, text: 'The lido — somebody waves from under an umbrella' },
+    { key: 'chapel', at: () => world.landmarks.chapel, radius: 110, below: 90, text: 'The chapel on the rock' },
+    { key: 'fortress', at: () => world.landmarks.fortress, radius: 140, below: 160, text: 'The old fortress — there is an arch through the headland' },
+    { key: 'stacks', at: () => world.landmarks.stacks, radius: 150, below: 160, text: 'The sea stacks — one of them has a hole right through it' },
+    { key: 'wreck', at: () => world.landmarks.wreck, radius: 60, below: 60, text: 'A wreck in the shallows' },
+    { key: 'pines', at: () => world.landmarks.pines, radius: 160, below: 110, text: 'The pine island — is that water between the trees?' },
+    { key: 'grotto', at: () => world.landmarks.grotto, radius: 70, below: 60, text: 'There is a way in, behind the falling water…' },
   ];
 
   // One nudge, the first time you are slow and low over the water, so the
@@ -372,9 +380,12 @@ function boot() {
     }
 
     if (flight.justLanded) {
+      const lake = terrain.lakeAt(flight.pos.x, flight.pos.z);
+      const roof = flight.underRoof != null;
+      const where = roof ? 'Down in the grotto — nobody will find you here' : lake ? `Down on ${lake.name}` : 'Down on the water';
       hud.hint(
-        landedOnce ? 'Down on the water' : 'Down on the water — open the throttle to take off again',
-        landedOnce ? 1.6 : 4
+        landedOnce ? where : `${where} — open the throttle to take off again`,
+        landedOnce ? 2 : 4
       );
       landedOnce = true;
     } else if (flight.justTookOff) {
@@ -403,6 +414,9 @@ function boot() {
 
     world.update(t, dt, flight, windState, {
       beamOpacity: lighting.beam,
+      onDolphins: () => {
+        if (started && !photo.active) hud.hint('Dolphins! They have come to race you', 2.6);
+      },
       onBirdScatter: () => {
         if (scatterCooldown > 0) return;
         scatterCooldown = 14;

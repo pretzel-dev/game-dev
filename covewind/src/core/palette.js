@@ -134,7 +134,31 @@ export const LIGHT_PRESETS = {
     beam: 0.06,
     shadowOpacity: 1,
   },
+  dusk: {
+    label: 'Dusk',
+    // The sun just gone, the sky rose and violet, lamps coming on.
+    sunDir: [-0.62, 0.1, 0.78],
+    sunColor: 0xff9f86,
+    sunIntensity: 2.1,
+    skyColor: 0xb7a8e0,
+    groundColor: 0x6a5a7a,
+    hemiIntensity: 1.9,
+    skyTop: 0x3c4f9a,
+    skyHorizon: 0xffa7a0,
+    sunGlow: 0xff7a6a,
+    glowStrength: 0.85,
+    cloudLit: 0xffc7b5,
+    cloudShade: 0x7f73b0,
+    fog: 0xc9a3b8,
+    fogNear: 650,
+    fogFar: 2800,
+    seaShallow: 0x5aa9c0,
+    seaDeep: 0x273f86,
+    exposure: 1.1,
+    beam: 0.2,
+    shadowOpacity: 0.8,
+  },
 };
 
-export const LIGHT_ORDER = ['sunrise', 'noon', 'golden'];
+export const LIGHT_ORDER = ['sunrise', 'noon', 'golden', 'dusk'];
 export const DEFAULT_LIGHT = 'golden';
