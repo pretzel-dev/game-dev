@@ -11,6 +11,21 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
   const keys = Object.create(null);
   const stick = { pitch: 0, roll: 0 };
   let touchBoost = false;
+  // A double-tap on a bank direction (or a double flick of the stick) asks
+  // for an aileron roll. It is an event: sampled once, then cleared.
+  let pendingTrick = 0;
+  const lastTap = { dir: 0, at: -1 };
+  const DOUBLE_TAP = 0.32;
+  function tapRoll(dir) {
+    const now = performance.now() / 1000;
+    if (lastTap.dir === dir && now - lastTap.at < DOUBLE_TAP) {
+      pendingTrick = dir;
+      lastTap.at = -1;
+    } else {
+      lastTap.dir = dir;
+      lastTap.at = now;
+    }
+  }
   // Half the world expects "up" to climb and half expects it to push the nose
   // down. Neither is wrong, so it is a preference rather than a decision.
   let invertPitch = false;
@@ -24,6 +39,8 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     throttleSet: null,
     touching: false,
     lastActivity: 0,
+    /** ±1 on the frame a roll is asked for. */
+    trick: 0,
   };
 
   let awoken = false;
@@ -43,6 +60,7 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     KeyP: 'photo',
     KeyL: 'light',
     KeyI: 'invertPitch',
+    KeyX: 'smoke',
     Escape: 'escape',
   };
 
@@ -53,6 +71,8 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     }
     keys[event.code] = true;
     wake();
+    if (event.code === 'KeyA' || event.code === 'ArrowLeft') tapRoll(-1);
+    if (event.code === 'KeyD' || event.code === 'ArrowRight') tapRoll(1);
     const action = ACTION_KEYS[event.code];
     if (action && actions[action]) {
       actions[action]();
@@ -91,7 +111,10 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
         dy = (dy / length) * max;
       }
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
-      stick.roll = clamp(dx / max, -1, 1);
+      const roll = clamp(dx / max, -1, 1);
+      // A flick to the edge counts as a tap: two quick ones roll.
+      if (Math.abs(roll) > 0.85 && Math.abs(stick.roll) <= 0.85) tapRoll(Math.sign(roll));
+      stick.roll = roll;
       stick.pitch = clamp(-dy / max, -1, 1);
     };
     joy.addEventListener('pointerdown', (event) => {
@@ -137,6 +160,13 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     throttle.addEventListener('pointerup', release);
     throttle.addEventListener('pointercancel', release);
   }
+
+  const smokeBtn = document.querySelector('#smokeBtn');
+  smokeBtn?.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    wake();
+    actions.smoke?.();
+  });
 
   if (boostBtn) {
     const press = (event) => {
@@ -205,6 +235,8 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     input.yaw = clamp(keyYaw, -1, 1);
     input.throttleAxis = (keys.KeyR ? 1 : 0) - (keys.KeyF ? 1 : 0);
     input.boost = !!keys.Space || touchBoost;
+    input.trick = pendingTrick;
+    pendingTrick = 0;
     if (keyPitch || keyRoll || keyYaw || input.throttleAxis || stick.pitch || stick.roll) {
       input.lastActivity = 0;
     } else {

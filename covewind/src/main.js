@@ -32,7 +32,7 @@ import { createPlaneModel, setControlSurfaces } from './world/aircraft.js';
 import { createFlight, updateFlight } from './flight/flight-model.js';
 import { createWind } from './flight/wind.js';
 import { createCameraRig, CAMERA_MODES } from './flight/camera-rig.js';
-import { createContrails, createSpray } from './flight/effects.js';
+import { createContrails, createSmoke, createSpray, SMOKE_MODES } from './flight/effects.js';
 import { createInput } from './flight/input.js';
 
 import { createHud } from './ui/hud.js';
@@ -77,6 +77,7 @@ function boot() {
   const rig = createCameraRig(camera, { mode: settings.get('camera') ?? 0 });
   const contrails = createContrails(scene);
   const spray = createSpray(scene);
+  const smoke = createSmoke(scene);
   const audio = createAudio();
 
   plane.position.copy(flight.pos);
@@ -93,6 +94,12 @@ function boot() {
       sound: () => toggleSound(),
     },
   });
+
+  function cycleSmoke() {
+    const mode = smoke.cycle();
+    hud.hint(SMOKE_MODES[mode], 1.3);
+    document.querySelector('#smokeBtn')?.classList.toggle('off', mode === 0);
+  }
 
   const photo = createPhotoMode({
     rig,
@@ -141,6 +148,7 @@ function boot() {
       light: cycleLight,
       photo: togglePhoto,
       sound: toggleSound,
+      smoke: cycleSmoke,
       hud: () => hud.toggle(),
       invertPitch: () => setInvertPitch(!controls.invertPitch),
       escape: () => photo.set(false),
@@ -235,6 +243,39 @@ function boot() {
     }
   }
 
+  /* ---------------------------------------------------------- flourishes --- */
+  // A word when you pull off something pretty. Nothing is counted; the first
+  // time is a small cheer, after that just a nod.
+  const done = new Set();
+  let flourishCooldown = 0;
+  let invertedNoted = false;
+  let tunnelNoted = 0;
+  const FLOURISH = {
+    loop: ['A loop! The whole sky went round', 'Loop'],
+    'outside loop': ['An outside loop — brave', 'Outside loop'],
+    roll: ['A barrel roll! Double-tap a bank to roll again', 'Roll'],
+  };
+  function celebrate(dt) {
+    flourishCooldown = Math.max(0, flourishCooldown - dt);
+    if (!started || photo.active) return;
+    if (flight.justDid && FLOURISH[flight.justDid] && flourishCooldown <= 0) {
+      const [first, again] = FLOURISH[flight.justDid];
+      hud.hint(done.has(flight.justDid) ? again : first, done.has(flight.justDid) ? 1 : 2.6);
+      done.add(flight.justDid);
+      flourishCooldown = 1.2;
+    }
+    if (flight.invertedTime > 2.5 && !invertedNoted) {
+      invertedNoted = true;
+      hud.hint('Upside down over the Adriatic — let go and it rolls back', 2.8);
+    }
+    tunnelNoted = Math.max(0, tunnelNoted - dt);
+    if (flight.underRoof && tunnelNoted <= 0) {
+      tunnelNoted = 10;
+      const roof = terrain.ceilingAt(flight.pos.x, flight.pos.z);
+      if (roof?.name) hud.hint(roof.name, 2);
+    }
+  }
+
   /* ------------------------------------------------------------- events --- */
   let paused = false;
   addEventListener(
@@ -324,7 +365,7 @@ function boot() {
         offerLanding();
       } else {
         // Attract mode: a slow left-hand circuit over the bay.
-        updateFlight(flight, { pitch: 0, roll: -0.22, yaw: 0, boost: false }, windState, dt, t);
+        updateFlight(flight, { pitch: 0, roll: -0.22, yaw: 0, boost: false, trick: 0 }, windState, dt, t);
       }
     }
 
@@ -341,9 +382,10 @@ function boot() {
       hud.hint('The floats are nudging the sand', 1.8);
     }
     groundedCooldown = Math.max(0, groundedCooldown - dt);
+    celebrate(dt);
 
     plane.position.copy(flight.pos);
-    plane.rotation.set(-flight.pitch, flight.heading, flight.roll);
+    plane.quaternion.copy(flight.quat);
     plane.userData.propeller.rotation.z += dt * (16 + flight.speed * 0.8);
     setControlSurfaces(
       plane,
@@ -367,6 +409,7 @@ function boot() {
 
     contrails.update(dt, plane, flight, camera);
     spray.update(dt, flight, t);
+    smoke.update(dt, plane, flight, renderer.domElement.height);
 
     rig.update(dt, flight, plane, { boosting: flight.boosting });
     _lookAt.copy(rig.lookAt);

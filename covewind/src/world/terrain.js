@@ -395,6 +395,27 @@ export function terrainHeightAt(x, z) {
   return best;
 }
 
+/* ------------------------------------------------------------ overhangs --- */
+
+/**
+ * Rock and stone you can fly *under*: arches, cave roofs, bridge spans. The
+ * height field cannot hold an overhang, so these are kept alongside it. Each
+ * is a capsule in plan (a segment and a half-width) with a roof between
+ * `bottom` and `top`. Below the bottom you are in the tunnel; above it the
+ * roof counts as ground. Filled in by whoever builds the thing.
+ *
+ * @type {{from:{x:number,z:number}, to:{x:number,z:number}, width:number, bottom:number, top:number, name?:string}[]}
+ */
+export const OVERHANGS = [];
+
+/** The roof over a point, or null if the sky is open. */
+export function ceilingAt(x, z) {
+  for (const o of OVERHANGS) {
+    if (distanceToSegment(x, z, o.from, o.to) < o.width) return o;
+  }
+  return null;
+}
+
 /* --------------------------------------------------------------- queries --- */
 
 /** Height of whatever you would hit — ground above water, otherwise the sea. */

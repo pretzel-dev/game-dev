@@ -6,7 +6,7 @@
  * lets the camera sink into the island or the sea.
  */
 import { Vector3 } from 'three';
-import { clamp, damp, lerp, TAU } from '../core/utils.js';
+import { clamp, damp, lerp, smoothstep, TAU } from '../core/utils.js';
 import { surfaceHeightAt } from '../world/terrain.js';
 
 export const CAMERA_MODES = ['Chase', 'Close', 'Postcard'];
@@ -17,6 +17,7 @@ const _right = new Vector3();
 const _desired = new Vector3();
 const _target = new Vector3();
 const _up = new Vector3(0, 1, 0);
+const _alt = new Vector3();
 
 export function createCameraRig(camera, { mode = 0 } = {}) {
   const lookAt = new Vector3();
@@ -39,12 +40,34 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
     return state.mode;
   }
 
+  // The chase camera follows a smoothed copy of the aeroplane's own axes, so
+  // it swings round through a loop or a roll instead of snapping when the
+  // heading flips over the top.
+  const trail = new Vector3(0, 0, 1);
+  const trailUp = new Vector3(0, 1, 0);
+  const _bodyUp = new Vector3();
+  const _bodyFwd = new Vector3();
+  let aerobatic = 0;
+
   function update(dt, flight, plane, { boosting = false } = {}) {
-    const cp = Math.cos(flight.pitch);
-    _forward.set(Math.sin(flight.heading) * cp, Math.sin(flight.pitch), Math.cos(flight.heading) * cp);
-    _flat.set(Math.sin(flight.heading), 0, Math.cos(flight.heading));
+    _bodyFwd.set(0, 0, 1).applyQuaternion(plane.quaternion);
+    _bodyUp.set(0, 1, 0).applyQuaternion(plane.quaternion);
+    _forward.copy(_bodyFwd);
+    _flat.set(_bodyFwd.x, 0, _bodyFwd.z);
+    if (_flat.lengthSq() < 1e-4) _flat.copy(trail).setY(0);
+    _flat.normalize();
     // Right-hand side of the aeroplane: forward × up.
-    _right.set(-Math.cos(flight.heading), 0, Math.sin(flight.heading));
+    _right.set(-_flat.z, 0, _flat.x);
+
+    // How far from ordinary flying are we? Steep, or anywhere near inverted.
+    const wild = Math.max(
+      smoothstep(0.75, 1.15, Math.abs(flight.climb ?? flight.pitch)),
+      smoothstep(0.35, -0.2, _bodyUp.y)
+    );
+    aerobatic = damp(aerobatic, wild, wild > aerobatic ? 3 : 0.8, dt);
+
+    trail.lerp(_bodyFwd, 1 - Math.exp(-4.2 * dt)).normalize();
+    trailUp.lerp(_bodyUp, 1 - Math.exp(-3.4 * dt)).normalize();
 
     const speedT = clamp((flight.speed - 20) / 55, 0, 1);
     let lag = 4.6;
@@ -64,28 +87,34 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
       targetFov = 46;
     } else if (state.mode === 0) {
       // Chase: sits behind and above, swings wide through a turn, and comes in
-      // closer and lower when the floats are in the water.
+      // closer and lower when the floats are in the water. Through aerobatics
+      // it rides along the aeroplane's own axes, so a loop is a loop on screen.
       const bank = Math.sin(flight.roll);
       const astern = flight.waterborne ? -18 : -26 - speedT * 6;
+      const height = flight.waterborne ? 5.5 : 9.2;
       _desired
         .copy(flight.pos)
         .addScaledVector(_flat, astern)
         .addScaledVector(_right, -bank * 4.5) // swing wide, to the outside of the turn
-        .addScaledVector(_up, (flight.waterborne ? 5.5 : 9.2) - flight.pitch * 4);
+        .addScaledVector(_up, height - (flight.climb ?? flight.pitch) * 4);
+      _alt.copy(flight.pos).addScaledVector(trail, astern).addScaledVector(trailUp, height * 0.8);
+      _desired.lerp(_alt, aerobatic);
       _target
         .copy(flight.pos)
         .addScaledVector(_forward, 30)
         .addScaledVector(_up, 1.6);
-      lag = 4.2 + speedT * 1.6;
-      targetFov = 58 + speedT * 4;
+      lag = 4.2 + speedT * 1.6 + aerobatic * 3;
+      targetFov = 58 + speedT * 4 + aerobatic * 4;
     } else if (state.mode === 1) {
       // Close: just off the tail, for skimming the waves.
       _desired
         .copy(flight.pos)
         .addScaledVector(_flat, -12.5)
         .addScaledVector(_up, 4.2);
+      _alt.copy(flight.pos).addScaledVector(trail, -12.5).addScaledVector(trailUp, 4);
+      _desired.lerp(_alt, aerobatic);
       _target.copy(flight.pos).addScaledVector(_forward, 42);
-      lag = 6.5;
+      lag = 6.5 + aerobatic * 3;
       targetFov = 62 + speedT * 4;
     } else {
       // Postcard: a slow drifting wide shot that shows off the island.
@@ -115,10 +144,12 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
 
     lookAt.lerp(_target, 1 - Math.exp(-(lag + 2) * dt));
 
-    // A touch of roll in the camera sells the turn without making anyone queasy.
+    // A touch of roll in the camera sells the turn without making anyone
+    // queasy; through aerobatics the horizon is allowed to go round.
     const tilt = state.photo.active ? 0 : Math.sin(flight.roll) * 0.14;
     _up.set(0, 1, 0).addScaledVector(_right, tilt).normalize();
-    camera.up.lerp(_up, 1 - Math.exp(-4 * dt));
+    if (!state.photo.active && state.mode !== 2) _up.lerp(trailUp, aerobatic * 0.85).normalize();
+    camera.up.lerp(_up, 1 - Math.exp(-4 * dt)).normalize();
     _up.set(0, 1, 0);
     camera.lookAt(lookAt);
 

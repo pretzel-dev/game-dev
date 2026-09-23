@@ -15,6 +15,7 @@ import {
   MeshBasicMaterial,
   Points,
   PointsMaterial,
+  ShaderMaterial,
   SRGBColorSpace,
   Vector3,
 } from 'three';
@@ -261,4 +262,150 @@ export function createSpray(scene) {
   }
 
   return { update };
+}
+
+/* ----------------------------------------------------------------- smoke --- */
+
+const smokeVertex = /* glsl */ `
+  attribute float size;
+  attribute vec4 tint;
+  varying vec4 vTint;
+  uniform float scale;
+  void main() {
+    vTint = tint;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = size * scale / max(1.0, -mv.z);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const smokeFragment = /* glsl */ `
+  varying vec4 vTint;
+  void main() {
+    vec2 c = gl_PointCoord - 0.5;
+    float d = length(c);
+    // A cel puff: flat colour with a soft rim, and a little shade underneath.
+    float a = smoothstep(0.5, 0.36, d) * vTint.a;
+    if (a < 0.01) discard;
+    float shade = smoothstep(-0.1, 0.35, c.y) * 0.18;
+    gl_FragColor = vec4(vTint.rgb * (1.0 - shade), a);
+  }
+`;
+
+/** Smoke colours: off, white, and the tricolore the display teams fly. */
+export const SMOKE_MODES = ['Off', 'Smoke on', 'Tricolore'];
+const TRICOLORE = [
+  [0.1, 0.62, 0.32],
+  [1, 1, 0.97],
+  [0.86, 0.16, 0.2],
+];
+
+/**
+ * Display smoke from the wingtips and tail: long-lived puffs that hang in the
+ * air and swell, so a loop leaves a ring you can fly back through.
+ */
+export function createSmoke(scene) {
+  const count = QUALITY.tier === 'low' ? 600 : 1400;
+  const geometry = new BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const tints = new Float32Array(count * 4);
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3).setUsage(DynamicDrawUsage));
+  geometry.setAttribute('size', new Float32BufferAttribute(sizes, 1).setUsage(DynamicDrawUsage));
+  geometry.setAttribute('tint', new Float32BufferAttribute(tints, 4).setUsage(DynamicDrawUsage));
+
+  const material = new ShaderMaterial({
+    vertexShader: smokeVertex,
+    fragmentShader: smokeFragment,
+    transparent: true,
+    depthWrite: false,
+    uniforms: { scale: { value: 600 } },
+  });
+  const points = new Points(geometry, material);
+  points.frustumCulled = false;
+  points.renderOrder = 3;
+  scene.add(points);
+
+  const particles = Array.from({ length: count }, () => ({
+    pos: new Vector3(),
+    vel: new Vector3(),
+    life: 0,
+    max: 1,
+    colour: [1, 1, 1],
+  }));
+  let next = 0;
+  let mode = 0;
+  let carry = 0;
+  const _emit = new Vector3();
+
+  function emitAt(local, plane, flight, colour) {
+    const p = particles[next];
+    next = (next + 1) % count;
+    _emit.copy(local);
+    plane.localToWorld(_emit);
+    p.pos.copy(_emit);
+    p.vel.copy(flight.velocity).multiplyScalar(0.12);
+    p.vel.x += rand(-0.6, 0.6);
+    p.vel.y += rand(-0.2, 0.8);
+    p.vel.z += rand(-0.6, 0.6);
+    p.max = rand(6, 8.5);
+    p.life = p.max;
+    p.colour = colour;
+  }
+
+  const EMITTERS = [new Vector3(5.6, -0.2, -1.2), new Vector3(0, 0.2, -6.4), new Vector3(-5.6, -0.2, -1.2)];
+
+  return {
+    get mode() {
+      return mode;
+    },
+    cycle() {
+      mode = (mode + 1) % SMOKE_MODES.length;
+      return mode;
+    },
+    update(dt, plane, flight, height) {
+      material.uniforms.scale.value = height * 0.9;
+      if (mode && !flight.waterborne) {
+        carry += dt * 45;
+        while (carry > 1) {
+          carry -= 1;
+          if (mode === 2) {
+            for (let i = 0; i < 3; i++) emitAt(EMITTERS[i], plane, flight, TRICOLORE[i]);
+          } else {
+            emitAt(EMITTERS[1], plane, flight, TRICOLORE[1]);
+          }
+        }
+      } else {
+        carry = 0;
+      }
+
+      const pos = geometry.attributes.position.array;
+      const size = geometry.attributes.size.array;
+      const tint = geometry.attributes.tint.array;
+      let alive = 0;
+      for (let i = 0; i < count; i++) {
+        const p = particles[i];
+        if (p.life > 0) {
+          p.life -= dt;
+          p.vel.multiplyScalar(Math.exp(-0.9 * dt));
+          p.vel.y += 0.25 * dt;
+          p.pos.addScaledVector(p.vel, dt);
+          alive++;
+        }
+        const age = 1 - Math.max(0, p.life) / p.max; // 0 new, 1 gone
+        pos[i * 3] = p.pos.x;
+        pos[i * 3 + 1] = p.pos.y;
+        pos[i * 3 + 2] = p.pos.z;
+        size[i] = 1.6 + age * 7;
+        tint[i * 4] = p.colour[0];
+        tint[i * 4 + 1] = p.colour[1];
+        tint[i * 4 + 2] = p.colour[2];
+        tint[i * 4 + 3] = p.life > 0 ? Math.min(1, age * 12) * (1 - age) * 0.85 : 0;
+      }
+      geometry.attributes.position.needsUpdate = true;
+      geometry.attributes.size.needsUpdate = true;
+      geometry.attributes.tint.needsUpdate = true;
+      points.visible = alive > 0;
+    },
+  };
 }

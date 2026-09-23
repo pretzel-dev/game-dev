@@ -160,5 +160,64 @@ console.log('\nHands off, it flies itself');
   check('stays near the island', Math.hypot(flight.pos.x, flight.pos.z) < 1400, 'drifted away');
 }
 
+console.log('\nAerobatics');
+{
+  // Full back stick, full power: it should go right over the top and come
+  // round, not stop at the vertical.
+  const flight = levelAt(600, 160, -600, 0, 1);
+  flight.speed = 70;
+  let did = null;
+  let maxY = 0;
+  let wentOver = false;
+  fly(flight, 9, { pitch: 1, boost: true }, (f) => {
+    if (f.justDid) did = f.justDid;
+    maxY = Math.max(maxY, f.pos.y);
+    if (Math.cos(f.bank) < -0.5 && f.climb > -0.3 && f.climb < 0.3) wentOver = true;
+  });
+  check('holding back goes over the top', wentOver, 'never got inverted at the top');
+  check('a loop is recognised', did === 'loop', `justDid was ${did}`);
+  check('the loop clears the sea', flight.pos.y > 20, `${flight.pos.y.toFixed(0)}m`);
+  console.log(`  info loop peak ${maxY.toFixed(0)}m`);
+
+  // A double-tap roll goes all the way round and comes back upright.
+  const roll = levelAt(600, 160, -600, 0, 0.8);
+  let rolled = null;
+  let sawInverted = false;
+  fly(roll, 0.1, { roll: 1, trick: 1 });
+  fly(roll, 3, {}, (f) => {
+    if (f.justDid) rolled = f.justDid;
+    if (Math.cos(f.bank) < -0.8) sawInverted = true;
+  });
+  check('a double-tap rolls right round', sawInverted && rolled === 'roll', `inverted ${sawInverted}, justDid ${rolled}`);
+  check('and comes out upright', Math.abs(roll.bank) < 0.1, `bank ${roll.bank.toFixed(2)}`);
+  check('without falling out of the sky', roll.pos.y > 140, `${roll.pos.y.toFixed(0)}m`);
+
+  // Hold the second tap for half a roll and it stays upside down.
+  const inverted = levelAt(600, 200, -600, 0, 0.8);
+  fly(inverted, 0.7, { roll: 1, trick: 1 });
+  fly(inverted, 2, {});
+  check('hold the roll and it stays inverted', Math.cos(inverted.bank) < -0.9, `bank ${inverted.bank.toFixed(2)}`);
+  check('inverted flight sinks', inverted.pos.y < 200, `${inverted.pos.y.toFixed(0)}m`);
+
+  // Keep a hand on it and it stays inverted down to the sea, where the
+  // cushion rolls it back; let go entirely and it rights itself anyway.
+  const low = levelAt(600, 60, -600, 0, 0.8);
+  fly(low, 0.7, { roll: 1, trick: 1 });
+  fly(low, 20, { yaw: 0.2 });
+  check('upside down near the sea, it rights itself', Math.cos(low.bank) > 0.9, `bank ${low.bank.toFixed(2)}`);
+  check('and never touches the water', low.pos.y > 1 && !low.waterborne, `${low.pos.y.toFixed(1)}m`);
+  fly(inverted, 8, {});
+  check('hands off, upside down, it rolls upright', Math.cos(inverted.bank) > 0.9, `bank ${inverted.bank.toFixed(2)}`);
+  check('without ever touching the water', inverted.pos.y > 1 && !inverted.waterborne, `${inverted.pos.y.toFixed(1)}m`);
+
+  // A loop started low still gets caught by the sea cushion.
+  const lowLoop = levelAt(600, 40, -600, 0, 0.3);
+  let lowest = Infinity;
+  fly(lowLoop, 12, { pitch: 1 }, (f) => {
+    lowest = Math.min(lowest, f.pos.y - Math.max(0, terrainHeightAt(f.pos.x, f.pos.z)));
+  });
+  check('a low loop never goes into the sea', lowest > 0.5, `lowest ${lowest.toFixed(1)}m`);
+}
+
 console.log(failures ? `\n${failures} flight check(s) failed\n` : '\nAll flight checks passed\n');
 process.exit(failures ? 1 : 0);

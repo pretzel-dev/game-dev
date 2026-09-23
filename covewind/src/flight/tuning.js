@@ -7,11 +7,11 @@
  */
 export const TUNE = {
   // Attitude rates (radians/second at full stick).
-  pitchRate: 1.02,
+  pitchRate: 1.3, // no limit on pitch: hold it back and you loop
   rollRate: 2.9, // how fast bank follows the stick
   yawRate: 0.52,
-  maxPitch: 1.02,
-  maxRoll: 1.2,
+  maxRoll: 1.25, // the bank the stick asks for; a double-tap rolls right round
+  trickRollRate: 4.4, // an aileron roll takes about a second and a half
 
   // Hands off, the aeroplane tidies itself up — the single biggest comfort win
   // on a touch screen.
@@ -40,6 +40,8 @@ export const TUNE = {
   sinkPerSpeed: 0.24,
   liftNeutralSpeed: 34,
   idleSink: 0.5,
+  invertedSink: 4.5, // upside down the wing pushes the wrong way
+  invertedPatience: 3, // seconds hands-off before it rolls itself upright
 
   // Stall: soft, self-recovering, never fatal.
   stallSpeed: 25,
@@ -55,6 +57,7 @@ export const TUNE = {
   lookAhead: 52,
   skimScrub: 0.22,
   skimHeight: 10,
+  roofCushion: 4, // how close under an arch or a cave roof you can fly
 
   // On the water. Throttle back and sink onto the sea, taxi about, then
   // firewall it to unstick — the floats mean the cove is somewhere to land.
