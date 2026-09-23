@@ -17,7 +17,15 @@
  */
 import { Euler, Quaternion, Vector3 } from 'three';
 import { TUNE } from './tuning.js';
-import { surfaceHeightAt, terrainGradient, terrainHeightAt, ceilingAt } from '../world/terrain.js';
+import {
+  SEA_LEVEL,
+  ceilingAt,
+  roofTopAt,
+  surfaceBelow,
+  terrainGradient,
+  terrainHeightAt,
+  waterLevelAt,
+} from '../world/terrain.js';
 import { waveHeight } from '../world/water.js';
 import { clamp, damp, shapeAxis, smoothstep } from '../core/utils.js';
 
@@ -312,28 +320,33 @@ export function updateFlight(flight, input, wind, dt, t) {
         if (flight.climb > 0) raiseNose(flight, -flight.climb * 4 * dt);
       }
     } else {
-      // Above it, the rock is ground like any other.
-      groundOverride = roof.top;
+      // Above it, the rock (or the bridge deck) is ground like any other.
+      groundOverride = Math.max(roofTopAt(roof, flight.pos.x, flight.pos.z), terrainHeightAt(flight.pos.x, flight.pos.z));
     }
   }
 
   /* -- the ground is a cushion ------------------------------------------- */
   const ground = groundOverride ?? terrainHeightAt(flight.pos.x, flight.pos.z);
-  flight.overWater = ground <= 0;
-  const wave = flight.overWater ? waveHeight(flight.pos.x, flight.pos.z, t) : 0;
+  // Lakes float at their own level; in a tunnel, only the sea counts.
+  const level = flight.underRoof != null ? SEA_LEVEL : waterLevelAt(flight.pos.x, flight.pos.z);
+  flight.overWater = ground <= level;
+  flight.onLake = flight.overWater && level > SEA_LEVEL;
+  const wave = flight.overWater ? (flight.onLake ? level : waveHeight(flight.pos.x, flight.pos.z, t)) : 0;
   const surface = Math.max(ground, wave);
+  flight.surfaceY = surface;
   flight.groundClearance = flight.pos.y - surface;
 
   // Look ahead as well, so cliffs lift you over rather than stopping you.
+  // Slow means a shorter look ahead, so a small lake is not all shore.
   const flatLen = Math.hypot(_forward.x, _forward.z) || 1;
+  const reach = TUNE.lookAhead * clamp(flight.speed / 50, 0.5, 1.2);
   _ahead.set(
-    flight.pos.x + (_forward.x / flatLen) * TUNE.lookAhead,
+    flight.pos.x + (_forward.x / flatLen) * reach,
     flight.pos.y,
-    flight.pos.z + (_forward.z / flatLen) * TUNE.lookAhead
+    flight.pos.z + (_forward.z / flatLen) * reach
   );
   // Under a roof, the way ahead is the tunnel, not the hill on top of it.
-  const aheadRoof = flight.underRoof ? ceilingAt(_ahead.x, _ahead.z) : null;
-  const aheadSurface = aheadRoof ? Math.max(0, terrainHeightAt(_ahead.x, _ahead.z)) : surfaceHeightAt(_ahead.x, _ahead.z);
+  const aheadSurface = surfaceBelow(_ahead.x, flight.pos.y, _ahead.z);
   const aheadClearance = flight.pos.y - aheadSurface;
 
   // The look-ahead is there to lift you over what you would otherwise fly
@@ -362,7 +375,7 @@ export function updateFlight(flight, input, wind, dt, t) {
 
     // Slopes gently turn you away from the rock, like air spilling off a ridge.
     const grad = terrainGradient(flight.pos.x, flight.pos.z, 14);
-    if (!flight.underRoof && Math.hypot(grad.x, grad.z) > 0.25) {
+    if (Math.hypot(grad.x, grad.z) > 0.25) {
       const awayHeading = Math.atan2(-grad.x, -grad.z);
       const delta = wrap(awayHeading - flight.heading);
       rotateWorld(flight, WORLD_UP, delta * push * 0.45 * dt);
@@ -419,13 +432,18 @@ function updateOnWater(flight, input, dt, t) {
   flight.boosting = !!input.boost;
   flight.contact = 1;
   flight.stall = 0;
-  flight.underRoof = ceilingAt(flight.pos.x, flight.pos.z)?.bottom ?? null;
+  const roof = ceilingAt(flight.pos.x, flight.pos.z);
+  flight.underRoof = roof && flight.pos.y < roof.bottom ? roof.bottom : null;
+  const level = flight.underRoof != null ? SEA_LEVEL : waterLevelAt(flight.pos.x, flight.pos.z);
+  flight.onLake = level > SEA_LEVEL;
 
   // Throttle drives the speed, all the way down to stopped, and pulling back
   // on the stick brakes against the water.
   const brake = clamp(shapeAxis(clamp(input.pitch, -1, 1)), 0, 1);
+  // A lake is short, so the floats get onto the step there more quickly.
+  const lake = flight.onLake;
   const target = flight.throttle * TUNE.taxiSpeed + (flight.boosting ? TUNE.taxiBoost : 0);
-  flight.speed = damp(flight.speed, target, TUNE.waterDrag, dt);
+  flight.speed = damp(flight.speed, target, TUNE.waterDrag * (lake ? 2 : 1), dt);
   if (brake > 0) flight.speed = damp(flight.speed, 0, TUNE.waterBrake * brake, dt);
   if (flight.speed < 0.25) flight.speed = 0;
 
@@ -436,7 +454,8 @@ function updateOnWater(flight, input, dt, t) {
   const step = flight.speed * dt;
   const nextX = flight.pos.x + Math.sin(flight.heading) * step;
   const nextZ = flight.pos.z + Math.cos(flight.heading) * step;
-  if (terrainHeightAt(nextX, nextZ) < -1.5) {
+  const nextFloor = flight.onLake ? terrainHeightAt(nextX, nextZ, true) : terrainHeightAt(nextX, nextZ);
+  if (nextFloor < level - (lake ? 0.6 : 1.5)) {
     flight.pos.x = nextX;
     flight.pos.z = nextZ;
     flight.grounded = false;
@@ -446,10 +465,13 @@ function updateOnWater(flight, input, dt, t) {
     flight.grounded = true;
   }
 
-  // Ride the swell: height from the wave under the floats, tilt from its slope.
-  const wave = waveHeight(flight.pos.x, flight.pos.z, t);
-  const ahead = waveHeight(flight.pos.x + Math.sin(flight.heading) * 6, flight.pos.z + Math.cos(flight.heading) * 6, t);
-  const side = waveHeight(flight.pos.x + Math.cos(flight.heading) * 6, flight.pos.z - Math.sin(flight.heading) * 6, t);
+  // Ride the swell: height from the wave under the floats, tilt from its
+  // slope. A lake is glass.
+  const swell = (x, z) => (flight.onLake ? level : waveHeight(x, z, t));
+  const wave = swell(flight.pos.x, flight.pos.z);
+  const ahead = swell(flight.pos.x + Math.sin(flight.heading) * 6, flight.pos.z + Math.cos(flight.heading) * 6);
+  const side = swell(flight.pos.x + Math.cos(flight.heading) * 6, flight.pos.z - Math.sin(flight.heading) * 6);
+  flight.surfaceY = wave;
   flight.pos.y = damp(flight.pos.y, wave + TUNE.floatDraft, 8, dt);
   flight.pitch = damp(flight.pitch, (ahead - wave) * 0.06, 3, dt);
   flight.roll = damp(flight.roll, (side - wave) * 0.05 + steer * 0.12, 3, dt);
@@ -459,12 +481,15 @@ function updateOnWater(flight, input, dt, t) {
   flight.overWater = true;
   flight.skimming = flight.speed > 10;
 
-  // On the step and away — unless there is rock overhead, in which case the
-  // floats keep planing until you are out from under it.
-  if (flight.speed > TUNE.takeoffSpeed && !flight.underRoof) {
+  // On the step and away. Under a roof the lid keeps you low until you are
+  // out from under it.
+  if (flight.speed > TUNE.takeoffSpeed * (lake ? 0.85 : 1)) {
     flight.waterborne = false;
     flight.justTookOff = true;
     flight.grounded = false;
+    // Off the step the wing takes over: carry enough speed not to settle
+    // straight back onto the water.
+    flight.speed = Math.max(flight.speed, TUNE.landingSpeed + 1);
     flight.pitch = 0.14;
     flight.contact = 0;
   }

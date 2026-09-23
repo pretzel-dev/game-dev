@@ -7,8 +7,7 @@
  * off again, and that nothing can put it through the island.
  */
 import { createFlight, updateFlight } from '../src/flight/flight-model.js';
-import { terrainHeightAt } from '../src/world/terrain.js';
-import { PLACES } from '../src/world/terrain.js';
+import { LAKES, OVERHANGS, PLACES, terrainHeightAt } from '../src/world/terrain.js';
 
 let failures = 0;
 const check = (name, ok, detail) => {
@@ -217,6 +216,55 @@ console.log('\nAerobatics');
     lowest = Math.min(lowest, f.pos.y - Math.max(0, terrainHeightAt(f.pos.x, f.pos.z)));
   });
   check('a low loop never goes into the sea', lowest > 0.5, `lowest ${lowest.toFixed(1)}m`);
+}
+
+console.log('\nUnder the rock');
+for (const o of OVERHANGS) {
+  if (o.from.x === o.to.x && o.from.z === o.to.z) continue; // a cavern, not a passage
+  // Line up outside one end and fly straight through at a sensible height.
+  const dx = o.to.x - o.from.x;
+  const dz = o.to.z - o.from.z;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  // Bridges are flown under along the canyon, square to the span.
+  const [ax, az] = o.bridge ? [uz, -ux] : [ux, uz];
+  const mid = { x: (o.from.x + o.to.x) / 2, z: (o.from.z + o.to.z) / 2 };
+  const run = o.bridge ? 120 : len / 2 + 70;
+  const height = Math.min(o.bottom - 12, 16);
+  const flight = levelAt(mid.x - ax * run, height, mid.z - az * run, Math.atan2(ax, az), 0.6);
+  flight.speed = 42;
+  let highest = -Infinity;
+  let lowest = Infinity;
+  let passed = false;
+  fly(flight, (run * 2) / 42, {}, (f) => {
+    const roof = f.underRoof;
+    if (roof != null) {
+      passed = true;
+      highest = Math.max(highest, f.pos.y - roof);
+    }
+    lowest = Math.min(lowest, f.pos.y - Math.max(0, terrainHeightAt(f.pos.x, f.pos.z)));
+  });
+  check(`${o.name}: you can fly through`, passed, 'never got under it');
+  check(`${o.name}: the roof holds you under it`, highest < -1, `${highest.toFixed(1)}m into the roof`);
+  check(`${o.name}: and the water under you`, lowest > 0.5, `lowest ${lowest.toFixed(1)}m`);
+}
+
+console.log('\nLanding on a lake');
+for (const lake of LAKES) {
+  const flight = levelAt(lake.x - lake.radius * 0.6, lake.level + 9, lake.z, Math.PI / 2, 0.1);
+  flight.speed = 27;
+  fly(flight, 1.2, { pitch: -0.15 });
+  fly(flight, 5, {});
+  check(`${lake.name}: sets down on it`, flight.waterborne && flight.onLake, `${(flight.pos.y - lake.level).toFixed(1)}m above, ${flight.speed.toFixed(0)}kt`);
+  check(`${lake.name}: floats at the lake's level`, Math.abs(flight.pos.y - lake.level - 3) < 1.5, `${flight.pos.y.toFixed(1)}m`);
+  // Turn to face the long way across, then open up.
+  flight.heading = Math.atan2(lake.x - flight.pos.x, lake.z - flight.pos.z) + Math.PI * 0.0;
+  flight.pos.x = lake.x - Math.sin(flight.heading) * lake.radius * 0.7;
+  flight.pos.z = lake.z - Math.cos(flight.heading) * lake.radius * 0.7;
+  flight.throttle = 1;
+  fly(flight, 8, { boost: true });
+  check(`${lake.name}: and gets off again`, !flight.waterborne, `still on the water at ${flight.speed.toFixed(0)}kt`);
 }
 
 console.log(failures ? `\n${failures} flight check(s) failed\n` : '\nAll flight checks passed\n');

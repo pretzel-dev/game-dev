@@ -217,7 +217,7 @@ export function createSpray(scene) {
     next = (next + 1) % count;
     p.pos.set(
       flight.pos.x + rand(-2.5, 2.5),
-      waveHeight(flight.pos.x, flight.pos.z, t) + rand(0, 1),
+      (flight.surfaceY ?? waveHeight(flight.pos.x, flight.pos.z, t)) + rand(0, 1),
       flight.pos.z + rand(-2.5, 2.5)
     );
     p.vel.set(rand(-4, 4), rand(5, 13), rand(-4, 4)).addScaledVector(flight.velocity, 0.06);

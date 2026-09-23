@@ -7,7 +7,7 @@
  */
 import { Vector3 } from 'three';
 import { clamp, damp, lerp, smoothstep, TAU } from '../core/utils.js';
-import { surfaceHeightAt } from '../world/terrain.js';
+import { surfaceBelow } from '../world/terrain.js';
 
 export const CAMERA_MODES = ['Chase', 'Close', 'Postcard'];
 
@@ -139,7 +139,7 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
     camera.position.lerp(_desired, 1 - Math.exp(-lag * dt));
 
     // Never let the camera scrape through the ground or dip under the sea.
-    const floor = surfaceHeightAt(camera.position.x, camera.position.z) + 3.5;
+    const floor = surfaceBelow(camera.position.x, camera.position.y, camera.position.z) + 3.5;
     if (camera.position.y < floor) camera.position.y = lerp(camera.position.y, floor, 0.6);
 
     lookAt.lerp(_target, 1 - Math.exp(-(lag + 2) * dt));
@@ -172,7 +172,7 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
       const x = focus.x + (desired.x - focus.x) * t;
       const y = focus.y + (desired.y - focus.y) * t;
       const z = focus.z + (desired.z - focus.z) * t;
-      if (y < surfaceHeightAt(x, z) + 3) {
+      if (y < surfaceBelow(x, y, z) + 3) {
         clear = (i - 1) / steps;
         break;
       }
@@ -185,7 +185,7 @@ export function createCameraRig(camera, { mode = 0 } = {}) {
     const t = Math.max(clear, 0.4);
     desired.set(
       focus.x + (desired.x - focus.x) * t,
-      Math.max(focus.y + (desired.y - focus.y) * t, surfaceHeightAt(desired.x, desired.z) + 3.5),
+      Math.max(focus.y + (desired.y - focus.y) * t, surfaceBelow(desired.x, focus.y, desired.z) + 3.5),
       focus.z + (desired.z - focus.z) * t
     );
   }
