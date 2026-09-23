@@ -63,7 +63,7 @@ export const TUNE = {
   // firewall it to unstick — the floats mean the cove is somewhere to land.
   landingSpeed: 32, // slower than this, the sea stops holding you up
   touchdownHeight: 6,
-  floatDraft: 2.1, // how high the aeroplane rides above the surface
+  floatDraft: 3.0, // how high the aeroplane rides above the surface
   taxiSpeed: 34, // at full throttle this passes takeoffSpeed
   taxiBoost: 9,
   takeoffSpeed: 30,

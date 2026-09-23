@@ -91,7 +91,7 @@ export function createContrails(scene) {
 
     for (const ribbon of ribbons) {
       // Wingtip position in world space.
-      _tip.set(ribbon.side * 6.4, 0.15, -0.4);
+      _tip.set(ribbon.side * 7.0, 3.1, -0.2);
       plane.localToWorld(_tip);
 
       const history = ribbon.history;
@@ -353,7 +353,7 @@ export function createSmoke(scene) {
     p.colour = colour;
   }
 
-  const EMITTERS = [new Vector3(5.6, -0.2, -1.2), new Vector3(0, 0.2, -6.4), new Vector3(-5.6, -0.2, -1.2)];
+  const EMITTERS = [new Vector3(6.4, 3.0, -0.4), new Vector3(0, 0.5, -6.4), new Vector3(-6.4, 3.0, -0.4)];
 
   return {
     get mode() {

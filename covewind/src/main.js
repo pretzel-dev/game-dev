@@ -390,7 +390,8 @@ function boot() {
     setControlSurfaces(
       plane,
       photo.active ? { roll: 0, pitch: 0, yaw: 0 } : input,
-      dt
+      dt,
+      flight.speed
     );
 
     lighting.follow(flight.pos);

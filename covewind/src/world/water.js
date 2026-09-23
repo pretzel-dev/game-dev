@@ -120,7 +120,7 @@ const fragmentShader = /* glsl */ `
     col += vec3(1.0) * sparkle * 1.6;
 
     // Whitecaps: little brush flecks on the swell crests, out in open water.
-    float crest = smoothstep(1.4, 2.2, vWave) * step(0.72, noise(p * 0.07 + vec2(time * 0.3, 0.0)));
+    float crest = smoothstep(1.4, 2.2, vWave) * step(0.8, noise(p * 0.22 + vec2(time * 0.5, 0.0)));
     col = mix(col, foamColor, crest * 0.55 * smoothstep(20.0, 120.0, coast) * (1.0 - smoothstep(500.0, 1400.0, dist)));
 
     // Surf: a clean ribbon on the shore, then drawn foam lines that roll in
