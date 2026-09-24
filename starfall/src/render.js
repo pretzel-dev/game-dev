@@ -89,7 +89,7 @@ export function createView(canvas, labelRoot) {
   const trailGeo = new THREE.BufferGeometry();
   trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
   trailGeo.setAttribute('color', new THREE.BufferAttribute(trailCol, 3));
-  const trails = new THREE.LineSegments(trailGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.35 }));
+  const trails = new THREE.LineSegments(trailGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.25 }));
   trails.frustumCulled = false;
   scene.add(trails);
 
@@ -245,15 +245,24 @@ export function createView(canvas, labelRoot) {
     let used = 0; // ship sprites handed out this frame
     updateBooms(dt);
 
+    const vis = ui.vis;
     for (const v of systems) {
       const { s } = v;
-      const col = ownerColor(s.owner);
-      if (v.owner !== s.owner) {
-        if (v.owner !== null) v.pulse = 1;
-        v.owner = s.owner;
+      // Fog of war: beyond sensor range a star is just a dim point of light.
+      const known = !vis || vis.systems.has(s.id);
+      const shownOwner = known ? s.owner : NEUTRAL;
+      const col = ownerColor(shownOwner);
+      if (v.owner !== shownOwner || v.known !== known) {
+        if (v.owner !== null && known && v.known) v.pulse = 1;
+        v.owner = shownOwner;
+        v.known = known;
         v.halo.material.color.set(col);
+        v.halo.material.opacity = known ? 1 : 0.35;
+        v.core.material.opacity = known ? 1 : 0.45;
+        v.core.material.transparent = !known;
         for (const r of v.rings) r.material.color.set(col);
         v.label.style.color = col;
+        v.label.style.opacity = known ? 1 : 0.45;
       }
       v.pulse = Math.max(0, v.pulse - dt * 1.5);
       const full = s.owner !== NEUTRAL && s.units >= capOf(s) - 0.01;
@@ -262,18 +271,18 @@ export function createView(canvas, labelRoot) {
       const building = upgradeProgress(s);
       v.rings.forEach((r, i) => {
         const underway = building > 0 && i === s.level;
-        r.visible = i < s.level || underway;
+        r.visible = known && (i < s.level || underway);
         r.material.opacity = underway ? 0.15 + building * 0.7 : 0.85;
         r.rotation.z += dt * (underway ? 3 : 0.25 + i * 0.1);
       });
-      if (building > 0 && Math.random() < dt * 10) {
+      if (known && building > 0 && Math.random() < dt * 10) {
         const a = Math.random() * Math.PI * 2;
         const rr = s.size * (1.9 + s.level * 0.55);
         boom(s.pos.x + Math.cos(a) * rr, s.pos.y + (Math.random() - 0.5) * s.size, s.pos.z + Math.sin(a) * rr, '#bfe6ff', s.size * 2.4, 0.6);
       }
 
       // Sieges: attackers circle the star while explosions flicker through the fight.
-      for (const g of s.sieges) {
+      for (const g of known ? s.sieges : []) {
         const gc = ownerColor(g.owner);
         const n = Math.min(60, Math.ceil(g.units));
         for (let j = 0; j < n; j++) {
@@ -294,6 +303,7 @@ export function createView(canvas, labelRoot) {
           sp.scale.setScalar(2.2);
         }
       }
+      if (!known) s.fighting = 0;
       if (s.fighting) {
         // One flash per ship lost, split between the attackers and the defences.
         let flashes = Math.min(14, s.fighting * 2 + Math.random());
@@ -322,9 +332,8 @@ export function createView(canvas, labelRoot) {
 
       // Screen-space label under the star.
       tmp.copy(v.g.position).project(camera);
-      const units = Math.floor(s.units);
       const attackers = s.sieges.map((g) => `<span style="color:${ownerColor(g.owner)}"> ⚔ ${Math.ceil(g.units)}</span>`).join('');
-      const text = `${units}${attackers}`;
+      const text = known ? `${Math.floor(s.units)}${attackers}` : '?';
       if (text !== v.shown) {
         v.label.innerHTML = text;
         v.shown = text;
@@ -341,18 +350,24 @@ export function createView(canvas, labelRoot) {
     }
 
     // Fleets: a wedge of ships sized by the fleet, a trail to the target and a label.
+    // Enemy fleets only show inside sensor range, and their details need intel.
+    const intel = vis ? vis.intel : 2;
     const fleets = game.fleets.slice(0, MAX_FLEETS);
+    let trailCount = 0;
     fleets.forEach((f, i) => {
       const a = game.systems[f.from].pos;
       const b = game.systems[f.to].pos;
       fleetPos(game, f, head);
+      const mine = !vis || f.owner === vis.owner;
+      const lbl = fleetLabel(i);
+      if (!mine && !vis.sees(head)) { lbl.style.visibility = 'hidden'; return; }
       dir.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
       side.crossVectors(dir, UP).normalize();
       up2.crossVectors(side, dir);
       const color = ownerColor(f.owner);
       // A loose cloud, one sprite per ship (up to a point). Each ship has its own
       // spot and pace, so the cloud drifts and stragglers trail behind.
-      const n = Math.min(80, f.units);
+      const n = Math.min(50, f.units);
       const spread = 1.2 + Math.sqrt(n) * 0.45;
       const p = progress(f);
       const grow = Math.min(1, p * 8, (1 - p) * 8); // gather at launch, close up on arrival
@@ -373,23 +388,28 @@ export function createView(canvas, labelRoot) {
         sp.material.color.set(color);
         sp.scale.setScalar(1.7 + r1 * 1.1);
       }
-      trailPos.set([head.x, head.y, head.z, b.x, b.y, b.z], i * 6);
-      tmpColor.set(color);
-      trailCol.set([tmpColor.r, tmpColor.g, tmpColor.b, tmpColor.r * 0.15, tmpColor.g * 0.15, tmpColor.b * 0.15], i * 6);
+      // Route lines only for our own fleets, or enemy ones once intel shows targets.
+      if (mine || intel >= 2) {
+        trailPos.set([head.x, head.y, head.z, b.x, b.y, b.z], trailCount * 6);
+        tmpColor.set(color);
+        trailCol.set([tmpColor.r * 0.6, tmpColor.g * 0.6, tmpColor.b * 0.6, 0, 0, 0], trailCount * 6);
+        trailCount++;
+      }
 
-      const lbl = fleetLabel(i);
+      // Labels stay small: our fleets show their size; enemy fleets need intel.
       tmp.copy(head).project(camera);
-      if (tmp.z > 1) { lbl.style.visibility = 'hidden'; return; }
+      if (tmp.z > 1 || (!mine && intel < 1)) { lbl.style.visibility = 'hidden'; return; }
       lbl.style.visibility = 'visible';
       lbl.style.color = color;
       const left = Math.max(0, f.duration - f.t);
-      const text = `${f.units}<small>${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</small>`;
+      const eta = !mine && intel >= 2 ? `<small>${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</small>` : '';
+      const text = `${f.units}${eta}`;
       if (lbl.innerHTML !== text) lbl.innerHTML = text;
       lbl.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * w}px, ${(-tmp.y * 0.5 + 0.5) * h - 22}px) translate(-50%, 0)`;
     });
     for (let i = used; i < fleetSprites.length; i++) fleetSprites[i].visible = false;
     for (let i = fleets.length; i < fleetLabels.length; i++) fleetLabels[i].style.visibility = 'hidden';
-    trailGeo.setDrawRange(0, fleets.length * 2);
+    trailGeo.setDrawRange(0, trailCount * 2);
     trailGeo.attributes.position.needsUpdate = true;
     trailGeo.attributes.color.needsUpdate = true;
 

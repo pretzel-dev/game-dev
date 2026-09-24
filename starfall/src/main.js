@@ -1,8 +1,10 @@
-import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES } from './sim.js';
+import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES, TECH, nextTier, research, visibility, speedOf, sensorRange } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
 const $ = (id) => document.getElementById(id);
+// Browsers normalise innerHTML, so compare against what we last wrote instead.
+const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
 const view = createView($('scene'), $('labels'));
 
 const prefs = loadPrefs();
@@ -11,7 +13,7 @@ let ais = [];
 let running = false;
 
 // UI state shared with the renderer.
-const ui = { selected: null, target: null, hover: null, drag: null, dragging: false, fraction: prefs.fraction };
+const ui = { vis: null, selected: null, target: null, hover: null, drag: null, dragging: false, fraction: prefs.fraction };
 
 function loadPrefs() {
   const d = { rivals: 2, difficulty: 'normal', fraction: 0.5 };
@@ -45,12 +47,15 @@ function start() {
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
   ui.selected = ui.target = ui.hover = ui.drag = null;
   view.build(game);
+  ui.vis = visibility(game, PLAYER);
+  lastTech = {};
   // Start looking at the player's home.
   const home = game.systems.find((s) => s.owner === PLAYER).pos;
   view.orbit.az = Math.abs(home.z) > Math.abs(home.x) || innerHeight > innerWidth ? (home.z >= 0 ? 0 : Math.PI) : Math.atan2(home.x, home.z);
   view.orbit.pol = 0.7;
-  view.orbit.target.set(0, 0, 0);
-  view.orbit.dist = view.fitDistance();
+  // Open on home, framing what your sensors can see; zoom out for the rest.
+  view.orbit.target.set(home.x, 0, home.z);
+  view.orbit.dist = sensorRange(game, PLAYER) * 3.2;
   view.orbit.vaz = view.orbit.vpol = 0;
   $('menu').hidden = true;
   $('end').hidden = true;
@@ -95,7 +100,9 @@ function orderSize() {
 function updateActions() {
   const s = ui.selected !== null ? game.systems[ui.selected] : null;
   const show = !!s && s.owner === PLAYER && running;
-  $('actions').hidden = !show;
+  if (!show) $('tech').hidden = true;
+  $('actions').hidden = !show || !$('tech').hidden;
+  renderTech();
   if (!show) return;
   const hasTarget = ui.target !== null;
   $('order').hidden = !hasTarget;
@@ -103,29 +110,72 @@ function updateActions() {
   if (hasTarget) {
     const t = game.systems[ui.target];
     const n = orderSize();
-    const eta = dist(s.pos, t.pos) / RULES.fleetSpeed;
-    const who = t.owner === PLAYER ? 'reinforce' : t.owner === NEUTRAL ? 'neutral' : 'enemy';
+    const eta = dist(s.pos, t.pos) / speedOf(game, PLAYER);
+    const known = ui.vis.systems.has(t.id);
+    const who = t.owner === NEUTRAL ? 'neutral' : 'enemy';
     const html = t.owner === PLAYER
       ? `<b>${n}</b> ships to reinforce · arrive in <b>${fmtTime(eta)}</b>`
-      : `<b>${n}</b> ships vs <b>${Math.floor(t.units)}</b> ${who} · arrive in <b>${fmtTime(eta)}</b>`;
-    if ($('order-info').innerHTML !== html) $('order-info').innerHTML = html;
+      : known
+        ? `<b>${n}</b> ships vs <b>${Math.floor(t.units)}</b> ${who} · arrive in <b>${fmtTime(eta)}</b>`
+        : `<b>${n}</b> ships into the unknown · arrive in <b>${fmtTime(eta)}</b>`;
+    setHTML($('order-info'), html);
     $('launch').disabled = s.units < 1;
   }
   const cost = upgradeCost(s);
   const btn = $('upgrade');
   if (s.upgrading > 0) {
     const html = `Building<small>${Math.floor(upgradeProgress(s) * 100)}%</small>`;
-    if (btn.innerHTML !== html) btn.innerHTML = html;
+    setHTML(btn, html);
     btn.disabled = true;
   } else if (cost === null) {
     btn.innerHTML = `Lv ${RULES.maxLevel}<small>max</small>`;
     btn.disabled = true;
   } else {
     const html = `Upgrade<small>${cost}</small>`;
-    if (btn.innerHTML !== html) btn.innerHTML = html;
+    setHTML(btn, html);
     btn.disabled = s.units < cost;
   }
 }
+
+// ---- Tech -----------------------------------------------------------------
+
+const ROMAN = ['', 'I', 'II', 'III', 'IV'];
+function renderTech() {
+  if ($('tech').hidden) return;
+  const t = game.tech[PLAYER];
+  const s = ui.selected !== null ? game.systems[ui.selected] : null;
+  $('tech-status').textContent = t.research
+    ? `${TECH[t.research.key].name} ${ROMAN[t[t.research.key] + 1]} · ${Math.floor((1 - t.research.left / t.research.total) * 100)}%`
+    : '';
+  const html = Object.entries(TECH).map(([key, def]) => {
+    const tier = nextTier(game, PLAYER, key);
+    const level = t[key];
+    const pips = '●'.repeat(level) + '○'.repeat(def.tiers.length - level);
+    if (!tier) return `<button class="tech-row" disabled><span class="t"><b>${def.name}<span class="pips">${pips}</span></b><small>Complete</small></span></button>`;
+    const ok = s && s.owner === PLAYER && !t.research && s.units >= tier.cost;
+    return `<button class="tech-row" data-k="${key}" ${ok ? '' : 'disabled'}><span class="t"><b>${def.name} ${ROMAN[level + 1]}<span class="pips">${pips}</span></b><small>${tier.text} · ${tier.time}s</small></span><span class="c">${tier.cost}</span></button>`;
+  }).join('');
+  setHTML($('tech-list'), html);
+}
+$('tech-btn').addEventListener('click', () => {
+  $('tech').hidden = false;
+  $('actions').hidden = true;
+  renderTech();
+});
+$('tech-close').addEventListener('click', () => {
+  $('tech').hidden = true;
+  updateActions();
+});
+$('tech-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-k]');
+  if (!b || ui.selected === null) return;
+  const key = b.dataset.k;
+  if (research(game, game.systems[ui.selected], key)) {
+    toast(`Researching ${TECH[key].name} ${ROMAN[game.tech[PLAYER][key] + 1]}`, ownerColor(PLAYER));
+    $('tech').hidden = true;
+    updateActions();
+  }
+});
 
 $('upgrade').addEventListener('click', () => {
   if (ui.selected !== null && upgrade(game, game.systems[ui.selected])) {
@@ -297,13 +347,12 @@ document.addEventListener('dblclick', (e) => e.preventDefault());
 const shareEl = $('share');
 let shareKey = '';
 function updateShare() {
-  const counts = Array.from({ length: game.players }, () => 0);
-  for (const s of game.systems) if (s.owner !== NEUTRAL) counts[s.owner] += s.units;
-  for (const f of game.fleets) counts[f.owner] += f.units;
-  const key = counts.map((c) => Math.round(c)).join();
+  // Only what you can know: your share of the stars.
+  const mine = game.systems.filter((s) => s.owner === PLAYER).length;
+  const key = `${mine}`;
   if (key === shareKey) return;
   shareKey = key;
-  shareEl.innerHTML = counts.map((c, i) => `<i style="flex-grow:${c};background:${ownerColor(i)}"></i>`).join('');
+  shareEl.innerHTML = `<i style="flex-grow:${mine};background:${ownerColor(PLAYER)}"></i><i style="flex-grow:${game.systems.length - mine}"></i>`;
 }
 
 function finish() {
@@ -323,6 +372,7 @@ function finish() {
 
 let last = performance.now();
 let hudClock = 0;
+let lastTech = {};
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -335,6 +385,11 @@ function frame(now) {
       hudClock -= dt;
       if (hudClock <= 0) {
         hudClock = 0.2;
+        ui.vis = visibility(game, PLAYER);
+        const t = game.tech[PLAYER];
+        const done = Object.keys(TECH).find((k) => t[k] > (lastTech[k] ?? 0));
+        if (done) toast(`${TECH[done].name} ${ROMAN[t[done]]} complete`, ownerColor(PLAYER));
+        lastTech = { ...t };
         updateShare();
         updateActions();
       }

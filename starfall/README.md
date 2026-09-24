@@ -14,10 +14,23 @@ rivals by sending ships between star systems.
   and both sides lose ships at the same rate until one runs out, so the bigger
   force wins with the difference. Big battles take 10 seconds or more, and a
   star under siege stops producing. The label shows `defenders ⚔ attackers`.
+- **Neutral stars** are lightly held and never grow or upgrade.
 - **Upgrade:** with your star selected, tap **Upgrade**. You pay the ships up
   front, then the upgrade takes 12–30 seconds to build. It raises the star's
   production and garrison cap, up to level 4; the rings show the level. A
   captured star drops one level and loses any upgrade it was building.
+- **Fog of war:** you only see owners, ship counts and battles within sensor
+  range of your stars. Stars beyond it show as a dim `?`, and enemy fleets out
+  there are hidden. Your fleets can still fly into the unknown.
+- **Tech:** with a star selected, tap **Tech**. Research is paid in ships from
+  that star and takes time, one project at a time:
+  - *Sensors I–III:* see further.
+  - *Fleet intel I–II:* see enemy fleet sizes, then their targets and arrival
+    times.
+  - *Drives I–II:* faster fleets.
+- **Rivals** play under the same rules: one action at a time (a launch from one
+  star, an upgrade or a research), only what their sensors show, and the same
+  tech tree.
 - **Camera:** drag with one finger to rotate. Pinch (or scroll) to zoom
   toward your fingers, and move two fingers to pan. Dragging from your selected
   star aims it at another star instead.

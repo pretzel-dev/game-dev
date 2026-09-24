@@ -4,7 +4,7 @@ export const NEUTRAL = -1;
 export const PLAYER = 0;
 
 export const RULES = {
-  fleetSpeed: 2.2, // world units per second: crossings take 30-90 seconds
+  fleetSpeed: 2.8, // world units per second, before Drives research
   // Indexed by factory level - 1.
   rate: [1, 1.7, 2.4, 3.2], // units produced per second
   cap: [40, 70, 110, 160], // production stops at this garrison
@@ -36,7 +36,7 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
   const rand = rng(seed);
   const players = opponents + 1;
   const count = 9 + players * 3;
-  const radius = 90 + players * 20;
+  const radius = 130 + players * 28;
   // Stretch the map along z to suit a portrait screen (z runs up the screen).
   const rx = portrait ? radius * 0.72 : radius * 1.15;
   const rz = portrait ? radius * 1.35 : radius * 0.85;
@@ -52,15 +52,16 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
       z: (rand() * 2 - 1) * rz,
     };
     if ((p.x / rx) ** 2 + (p.y / ry) ** 2 + (p.z / rz) ** 2 > 1) continue;
-    if (pts.every((q) => dist(p, q) > 38)) pts.push(p);
+    if (pts.every((q) => dist(p, q) > 52)) pts.push(p);
   }
 
   const systems = pts.map((pos, id) => ({
     id,
     pos,
     owner: NEUTRAL,
-    units: Math.round(10 + rand() * 25),
-    level: rand() < 0.25 ? 2 : 1,
+    // Neutrals are modest, never produce and never upgrade.
+    units: Math.round(6 + rand() * 12),
+    level: 1,
     size: 1.6 + rand() * 1.2,
     hue: rand(),
     sieges: [], // hostile fleets fighting at this system: { owner, units }
@@ -86,7 +87,76 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
     s.size = 2.6;
   });
 
-  return { systems, fleets: [], players, time: 0, winner: null, nextFleetId: 1 };
+  const tech = Array.from({ length: players }, () => ({ sensors: 0, intel: 0, drives: 0, research: null }));
+  return { systems, fleets: [], players, tech, time: 0, winner: null, nextFleetId: 1 };
+}
+
+// ---- Tech ---------------------------------------------------------------
+// Research is paid in ships from one star and takes time; one project at a
+// time per empire.
+
+export const TECH = {
+  sensors: {
+    name: 'Sensors',
+    tiers: [
+      { cost: 30, time: 25, text: 'See further' },
+      { cost: 60, time: 40, text: 'See much further' },
+      { cost: 100, time: 60, text: 'See across the sector' },
+    ],
+  },
+  intel: {
+    name: 'Fleet intel',
+    tiers: [
+      { cost: 30, time: 25, text: 'Enemy fleet sizes' },
+      { cost: 60, time: 40, text: 'Enemy targets and arrival times' },
+    ],
+  },
+  drives: {
+    name: 'Drives',
+    tiers: [
+      { cost: 40, time: 30, text: 'Fleets 25% faster' },
+      { cost: 80, time: 50, text: 'Fleets 50% faster' },
+    ],
+  },
+};
+export const SENSOR_RANGE = [95, 140, 195, 280];
+
+export const sensorRange = (game, owner) => SENSOR_RANGE[game.tech[owner].sensors];
+export const speedOf = (game, owner) => RULES.fleetSpeed * (1 + 0.25 * game.tech[owner].drives);
+
+/** The next tier of a tech for an owner, or null when it's maxed. */
+export function nextTier(game, owner, key) {
+  return TECH[key].tiers[game.tech[owner][key]] ?? null;
+}
+
+export function research(game, from, key) {
+  const t = game.tech[from.owner];
+  const tier = nextTier(game, from.owner, key);
+  if (!tier || t.research || from.units < tier.cost || game.winner !== null) return false;
+  from.units -= tier.cost;
+  t.research = { key, left: tier.time, total: tier.time };
+  return true;
+}
+
+/**
+ * What an owner can see: stars and points within sensor range of its stars.
+ * Fleets also see a little around themselves.
+ */
+export function visibility(game, owner) {
+  const range = sensorRange(game, owner);
+  const eyes = game.systems.filter((s) => s.owner === owner).map((s) => ({ pos: s.pos, r: range }));
+  for (const f of game.fleets) if (f.owner === owner) eyes.push({ pos: fleetPosition(game, f), r: 40 });
+  const sees = (pos) => eyes.some((e) => dist(e.pos, pos) <= e.r);
+  const systems = new Set(game.systems.filter((s) => s.owner === owner || sees(s.pos)).map((s) => s.id));
+  return { owner, sees, systems, intel: game.tech[owner].intel };
+}
+
+/** A fleet's straight-line position now (no visual arc). */
+export function fleetPosition(game, f) {
+  const a = game.systems[f.from].pos;
+  const b = game.systems[f.to].pos;
+  const p = Math.min(1, f.t / f.duration);
+  return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p, z: a.z + (b.z - a.z) * p };
 }
 
 export const rateOf = (s) => RULES.rate[s.level - 1];
@@ -105,7 +175,7 @@ export function sendUnits(game, from, to, n) {
     to: to.id,
     units: n,
     t: 0,
-    duration: dist(from.pos, to.pos) / RULES.fleetSpeed,
+    duration: dist(from.pos, to.pos) / speedOf(game, from.owner),
   };
   game.fleets.push(fleet);
   return fleet;
@@ -190,6 +260,11 @@ export function step(game, dt) {
     return false;
   });
   for (const s of game.systems) if (s.sieges.length) fight(s, dt);
+  for (const t of game.tech) {
+    if (!t.research) continue;
+    t.research.left -= dt;
+    if (t.research.left <= 0) { t[t.research.key] += 1; t.research = null; }
+  }
 
   const alive = new Set();
   for (const s of game.systems) if (s.owner !== NEUTRAL) alive.add(s.owner);
