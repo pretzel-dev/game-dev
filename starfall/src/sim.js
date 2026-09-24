@@ -10,12 +10,15 @@ export const RULES = {
   cap: [40, 70, 110, 160], // production stops at this garrison
   upgradeCost: [20, 40, 70], // cost to go from level n to n + 1
   upgradeTime: [12, 20, 30], // seconds to build each upgrade
-  // Battles follow Lanchester's square law: each side destroys ships in
-  // proportion to its own size, so overwhelming odds win cheaply and fast.
-  battleRate: 0.12, // ships destroyed per second, per firing ship
+  // Battles blend Lanchester's laws. At intensity 0 both sides lose ships at
+  // the same rate (the winner keeps the difference); at 1 each side's
+  // firepower grows with its size (square law: big fleets win cheaply).
+  battleIntensity: 0.5,
+  battleRate: 0.15, // firepower per ship, for a fleet of about 20
   battleFloor: 1, // minimum losses per second, so even fights finish
-  defenseBase: 1.2, // a garrison ship fights like this many attackers...
-  defensePerLevel: 0.1, // ...plus this much per factory level above 1
+  battlePace: 0.35, // the smaller side loses at most this share per second
+  defenseBase: 1.1, // a garrison ship fights like this many attackers...
+  defensePerLevel: 0.05, // ...plus this much per factory level above 1
   engageRange: 6, // hostile fleets closer than this stop and fight in space
   productionScale: 1, // multiplies every star's production
   maxLevel: 4,
@@ -169,7 +172,9 @@ export const defenseOf = (s) => RULES.defenseBase + RULES.defensePerLevel * (s.l
 
 // Settings exposed on the tuning page: [key, label, min, max, step].
 export const TUNABLES = [
+  ['battleIntensity', 'Battle intensity (0 even, 1 square law)', 0, 1, 0.05],
   ['battleRate', 'Battle speed', 0.03, 0.5, 0.01],
+  ['battlePace', 'Max share lost per second', 0.05, 1, 0.05],
   ['defenseBase', 'Defence bonus', 1, 2.5, 0.05],
   ['defensePerLevel', 'Defence per level', 0, 0.5, 0.05],
   ['fleetSpeed', 'Fleet speed', 1, 8, 0.1],
@@ -226,17 +231,36 @@ function capture(s, owner, units) {
   for (const g of s.sieges) if (g.owner === owner) { s.units += g.units; g.units = 0; }
 }
 
+const BATTLE_REF = 20; // fleet size at which battleRate is calibrated
+
+/** Firepower of n ships worth e each, under the current battle intensity. */
+const firepower = (n, e) => RULES.battleRate * BATTLE_REF * (n / BATTLE_REF) ** RULES.battleIntensity * e;
+
 /**
- * One step of a square-law exchange between two forces. Returns the losses
- * [a, b]. Each side destroys ships in proportion to its size times its
- * effectiveness, with a small floor so evenly matched fights still end.
+ * One step of an exchange between two forces; returns the losses [a, b].
+ * If the smaller side would lose more than battlePace of itself per second,
+ * both sides slow by the same factor: the battle lasts longer but the result
+ * is unchanged. A small floor makes sure evenly matched fights still end.
  */
 function exchange(a, ea, b, eb, dt) {
+  if (a <= EPS || b <= EPS) return [0, 0];
+  let la = firepower(b, eb) * dt;
+  let lb = firepower(a, ea) * dt;
+  const small = Math.min(a, b);
+  const frac = (a <= b ? la : lb) / (small * dt);
+  if (frac > RULES.battlePace) {
+    const k = RULES.battlePace / frac;
+    la *= k;
+    lb *= k;
+  }
   const floor = RULES.battleFloor * dt;
-  const la = Math.min(a, Math.max(RULES.battleRate * b * eb * dt, b > EPS ? floor : 0));
-  const lb = Math.min(b, Math.max(RULES.battleRate * a * ea * dt, a > EPS ? floor : 0));
-  return [la, lb];
+  if (a <= b) la = Math.max(la, floor);
+  else lb = Math.max(lb, floor);
+  return [Math.min(a, la), Math.min(b, lb)];
 }
+
+/** Ships needed to beat n defenders worth e each (the break-even force). */
+export const shipsToBeat = (n, e) => n * e ** (1 / (2 - RULES.battleIntensity));
 
 function fight(s, dt) {
   // The garrison splits its fire across the besieging fleets by size.

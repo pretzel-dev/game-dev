@@ -22,7 +22,8 @@ import { createAI, tickAI } from '../src/ai.js';
   assert.equal(target.owner, 0, 'fleet captures a weak system');
 }
 
-// Square law: overwhelming odds win cheaply; defenders get a bonus.
+// Blended laws (intensity 0.5): big forces win cheaper than the difference,
+// defenders get a bonus, and even lopsided battles take a few seconds.
 {
   const g = createGame({ seed: 2, opponents: 1 });
   const s = g.systems.find((x) => x.owner === NEUTRAL);
@@ -31,8 +32,9 @@ import { createAI, tickAI } from '../src/ai.js';
   let t = 0;
   while (s.owner === NEUTRAL && t < 60) { step(g, 0.05); t += 0.05; }
   assert.equal(s.owner, 1);
-  // 80^2 - 1.2 * 20^2 = 5920, so about 77 survive.
-  assert.ok(s.units > 74 && s.units < 79, `80 v 20 left ${s.units.toFixed(1)}`);
+  // (80^1.5 - 1.1 * 20^1.5)^(1/1.5) = about 72.
+  assert.ok(s.units > 68 && s.units < 76, `80 v 20 left ${s.units.toFixed(1)}`);
+  assert.ok(t > 3, `80 v 20 should still take a few seconds (took ${t.toFixed(1)}s)`);
   console.log(`80 v 20 garrison: ${s.units.toFixed(1)} survive in ${t.toFixed(1)}s`);
 }
 {
@@ -58,7 +60,8 @@ import { createAI, tickAI } from '../src/ai.js';
   assert.ok(met, 'fleets on the same route meet');
   assert.equal(g.fleets.length, 1);
   assert.equal(g.fleets[0], fa);
-  assert.ok(fa.units > 48 && fa.units < 54, `60 v 30 in space left ${fa.units}`);
+  // (60^1.5 - 30^1.5)^(1/1.5) = about 45.
+  assert.ok(fa.units > 41 && fa.units < 49, `60 v 30 in space left ${fa.units}`);
   console.log(`60 v 30 in space: ${fa.units} survive`);
 }
 {
