@@ -1,4 +1,4 @@
-import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES, TECH, nextTier, research, visibility, speedOf, sensorRange, TUNABLES, DEFAULTS } from './sim.js';
+import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES, TECH, nextTier, research, canResearch, researchSlots, visibility, speedOf, sensorRange, TUNABLES, DEFAULTS } from './sim.js';
 import { createAI, tickAI, AI_TUNING } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -62,7 +62,19 @@ $('settings-btn').addEventListener('click', () => {
   renderSettings();
   $('settings').hidden = false;
 });
-$('settings-done').addEventListener('click', () => ($('settings').hidden = true));
+let pausedForSettings = false;
+$('gear').addEventListener('click', () => {
+  if (!running) return;
+  running = false;
+  pausedForSettings = true;
+  renderSettings();
+  $('settings').hidden = false;
+});
+$('settings-done').addEventListener('click', () => {
+  $('settings').hidden = true;
+  if (pausedForSettings && $('menu').hidden) running = true;
+  pausedForSettings = false;
+});
 $('settings-reset').addEventListener('click', () => {
   for (const t of SETTINGS) t.obj[t.key] = t.def;
   saveSettings();
@@ -190,19 +202,29 @@ function renderTech() {
   if ($('tech').hidden) return;
   const t = game.tech[PLAYER];
   const s = ui.selected !== null ? game.systems[ui.selected] : null;
-  $('tech-status').textContent = t.research
-    ? `${TECH[t.research.key].name} ${ROMAN[t[t.research.key] + 1]} · ${Math.floor((1 - t.research.left / t.research.total) * 100)}%`
-    : '';
+  $('tech-status').textContent = `${t.projects.length} of ${researchSlots(game, PLAYER)} slots in use`;
   const html = Object.entries(TECH).map(([key, def]) => {
     const tier = nextTier(game, PLAYER, key);
     const level = t[key];
     const pips = '●'.repeat(level) + '○'.repeat(def.tiers.length - level);
     if (!tier) return `<button class="tech-row" disabled><span class="t"><b>${def.name}<span class="pips">${pips}</span></b><small>Complete</small></span></button>`;
-    const ok = s && s.owner === PLAYER && !t.research && s.units >= tier.cost;
-    return `<button class="tech-row" data-k="${key}" ${ok ? '' : 'disabled'}><span class="t"><b>${def.name} ${ROMAN[level + 1]}<span class="pips">${pips}</span></b><small>${tier.text} · ${tier.time}s</small></span><span class="c">${tier.cost}</span></button>`;
+    const ok = s && s.owner === PLAYER && canResearch(game, s, key);
+    const running = t.projects.find((p) => p.key === key);
+    const note = running ? `Researching · ${Math.floor((1 - running.left / running.total) * 100)}%` : `${tier.text} · ${tier.time}s`;
+    return `<button class="tech-row" data-k="${key}" ${ok ? '' : 'disabled'}><span class="t"><b>${def.name} ${ROMAN[level + 1]}<span class="pips">${pips}</span></b><small>${note}</small></span><span class="c">${running ? '' : tier.cost}</span></button>`;
   }).join('');
   setHTML($('tech-list'), html);
 }
+// Research under way, shown just below the top bar.
+function renderResearchBar() {
+  const t = game.tech[PLAYER];
+  const bar = $('research-bar');
+  bar.hidden = !running || !t.projects.length;
+  if (bar.hidden) return;
+  setHTML(bar, t.projects.map((p) =>
+    `<span><b>${TECH[p.key].name} ${ROMAN[t[p.key] + 1]}</b> <i>${Math.floor((1 - p.left / p.total) * 100)}%</i></span>`).join(''));
+}
+
 $('tech-btn').addEventListener('click', () => {
   $('tech').hidden = false;
   $('actions').hidden = true;
@@ -433,6 +455,7 @@ function frame(now) {
       if (hudClock <= 0) {
         hudClock = 0.2;
         ui.vis = visibility(game, PLAYER);
+        renderResearchBar();
         const t = game.tech[PLAYER];
         const done = Object.keys(TECH).find((k) => t[k] > (lastTech[k] ?? 0));
         if (done) toast(`${TECH[done].name} ${ROMAN[t[done]]} complete`, ownerColor(PLAYER));
@@ -465,4 +488,4 @@ view.build(game);
 requestAnimationFrame(frame);
 
 // Hook for the headless smoke test in tools/.
-window.__starfall = { get game() { return game; }, view };
+window.__starfall = { get game() { return game; }, view, sim: { research, visibility } };

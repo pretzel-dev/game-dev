@@ -27,13 +27,16 @@ rivals by sending ships between star systems.
   captured star drops one level and loses any upgrade it was building.
 - **Fog of war:** you only see owners, ship counts and battles within sensor
   range of your stars. Stars beyond it show as a dim `?`, and enemy fleets out
-  there are hidden. Your fleets can still fly into the unknown.
+  there are hidden. Your fleets can still fly into the unknown, and a fleet
+  besieging a star shows you its battle.
 - **Tech:** with a star selected, tap **Tech**. Research is paid in ships from
-  that star and takes time, one project at a time:
+  that star and takes time. Each star runs one project; if it falls, the
+  project is lost. What's under way shows just below the top bar.
   - *Sensors I–III:* see further.
   - *Fleet intel I–II:* see enemy fleet sizes, then their targets and arrival
     times.
   - *Drives I–II:* faster fleets.
+  - *Labs I–II:* a second, then a third research slot.
 - **Rivals** play under the same rules: one action at a time (a launch from one
   star, an upgrade or a research), only what their sensors show, and the same
   tech tree.
@@ -45,7 +48,7 @@ rivals by sending ships between star systems.
 
 ## Settings
 
-**Settings** on the menu has sliders for playtesting: battle intensity
+**Settings** (the ⚙ button in game, or on the menu) has sliders for playtesting: battle intensity
 (0 = winner keeps the difference, 1 = full square law), battle speed and pace, defence
 bonus, fleet speed, space engagement range, production, starting ships, and the
 AI's minimum fleet and pace. Changes are saved on the device.

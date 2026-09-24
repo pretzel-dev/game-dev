@@ -59,7 +59,7 @@ button {
 }
 #share { flex: 1; height: 4px; border-radius: 2px; overflow: hidden; display: flex; background: var(--line); }
 #share i { display: block; height: 100%; transition: flex-grow 0.4s; }
-#pause {
+#pause, #gear {
   pointer-events: auto;
   width: 40px; height: 40px;
   border-radius: 50%;
@@ -215,3 +215,19 @@ button {
 .set output { font-variant-numeric: tabular-nums; color: var(--accent); font-size: 14px; }
 .set input { grid-column: 1 / -1; width: 100%; height: 32px; accent-color: var(--accent); }
 .set.changed label::after { content: ' •'; color: var(--accent); }
+
+#gear { font-size: 17px; letter-spacing: 0; }
+#research-bar {
+  position: fixed;
+  top: calc(var(--safe-t) + 56px);
+  left: 16px; right: 16px;
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  font-size: 12px; color: var(--dim);
+  text-shadow: 0 0 4px #000;
+  pointer-events: none;
+}
+#research-bar[hidden] { display: none; }
+#research-bar b { color: var(--accent); font-weight: 600; }
+#research-bar i { font-style: normal; font-variant-numeric: tabular-nums; }
+.overlay { overflow-y: auto; justify-content: safe center; }
+#toast { top: calc(var(--safe-t) + 80px); }

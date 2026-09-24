@@ -1,5 +1,5 @@
 import {
-  NEUTRAL, TECH, dist, rateOf, capOf, upgradeCost, sendUnits, upgrade, research, nextTier,
+  NEUTRAL, TECH, dist, rateOf, capOf, upgradeCost, sendUnits, upgrade, research, nextTier, canResearch,
   speedOf, visibility, fleetPosition, defenseOf, shipsToBeat,
 } from './sim.js';
 
@@ -113,10 +113,10 @@ export function tickAI(game, ai, dt) {
     if (cost !== null && avail >= cost && !rich.upgrading && (ai.rand() < ai.d.upgradeBias || full)) {
       return upgrade(game, rich);
     }
-    if (!tech.research && ai.rand() < ai.d.upgradeBias) {
-      // Sensors first, then intel and drives in turn.
-      const order = ['sensors', 'intel', 'drives', 'sensors', 'drives'];
-      const key = order.find((k) => nextTier(game, ai.owner, k));
+    if (ai.rand() < ai.d.upgradeBias) {
+      // Sensors first, then intel, labs and drives in turn.
+      const order = ['sensors', 'intel', 'labs', 'drives', 'sensors', 'labs', 'drives'];
+      const key = order.find((k) => nextTier(game, ai.owner, k) && canResearch(game, rich, k));
       const tier = key && nextTier(game, ai.owner, key);
       if (tier && avail >= tier.cost) return research(game, rich, key);
     }
