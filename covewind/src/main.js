@@ -179,6 +179,25 @@ function boot() {
     chip.setAttribute('aria-pressed', String((chip.dataset.pitch === 'inverted') === !!settings.get('invertPitch')));
     chip.addEventListener('click', () => setInvertPitch(chip.dataset.pitch === 'inverted'));
   }
+  // Tilt steering: needs a tap to ask permission on iOS, so it is switched
+  // from the title card chips, and re-centred whenever you take off.
+  async function setTilt(on) {
+    const result = await controls.setTilt(on);
+    settings.set('tilt', result);
+    for (const chip of document.querySelectorAll('[data-tilt]')) {
+      chip.setAttribute('aria-pressed', String((chip.dataset.tilt === 'on') === result));
+    }
+    if (on && !result) hud.hint('This phone would not share its tilt', 2.4);
+    return result;
+  }
+  for (const chip of document.querySelectorAll('[data-tilt]')) {
+    chip.addEventListener('click', () => setTilt(chip.dataset.tilt === 'on'));
+  }
+  if (settings.get('tilt')) {
+    // Android needs no permission, so it can come straight back on;
+    // iOS will ask again from the chip.
+    if (typeof window.DeviceOrientationEvent?.requestPermission !== 'function') setTilt(true);
+  }
   if (settings.get('sound') === false) audio.setEnabled(false);
   hud.setSound(audio.enabled);
 
@@ -194,7 +213,11 @@ function boot() {
     started = true;
     hud.hideIntro();
     audio.start();
-    hud.hint('Follow the coast — there is a cove hiding past the lighthouse, and a lot more besides', 5);
+    if (controls.tilt) {
+      controls.recentreTilt();
+      hud.hint('Tilt to fly — hold the phone how you like, that is level', 3);
+    }
+    if (!controls.tilt) hud.hint('Follow the coast — there is a cove hiding past the lighthouse, and a lot more besides', 5);
   });
 
   /* ------------------------------------------------------- discoveries --- */
@@ -321,6 +344,7 @@ function boot() {
   let groundedCooldown = 0;
   let landedOnce = false;
   let fps = 60;
+  let cloudNoted = false;
 
   // A small hatch for tinkering from the console — drop yourself over the cove,
   // check the frame rate, poke at the flight model.
@@ -400,6 +424,7 @@ function boot() {
     plane.position.copy(flight.pos);
     plane.quaternion.copy(flight.quat);
     plane.userData.propeller.rotation.z += dt * (16 + flight.speed * 0.8);
+    plane.userData.strobe.visible = t % 1.4 < 0.12;
     setControlSurfaces(
       plane,
       photo.active ? { roll: 0, pitch: 0, yaw: 0 } : input,
@@ -453,6 +478,14 @@ function boot() {
 
     sky.follow(camera.position);
     clouds.follow(camera.position);
+    // Fly into a cloud and the world goes soft and white.
+    const inCloud = clouds.inside(camera.position);
+    post.uniforms.mist.value += (inCloud - post.uniforms.mist.value) * Math.min(1, dt * 4);
+    post.uniforms.mistColor.value.copy(clouds.materials[0].uniforms.litColor.value).lerp(clouds.materials[0].uniforms.shadeColor.value, 0.25);
+    if (inCloud > 0.5 && !cloudNoted && started) {
+      cloudNoted = true;
+      hud.hint('Inside a cloud — keep climbing and you will come out on top', 2.6);
+    }
     post.render(scene, camera);
     photo.flush(renderer);
 

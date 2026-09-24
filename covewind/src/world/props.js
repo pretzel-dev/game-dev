@@ -299,6 +299,9 @@ export function createBoat(parent, x, z, scale = 1, { moored = false, heading = 
     mast.position.set(0, 6.8, 1.2);
     mast.castShadow = true;
     group.add(mast);
+    const masthead = new Mesh(new SphereGeometry(0.22, 6, 4), MAT.lamp);
+    masthead.position.set(0, 12.9, 1.2);
+    group.add(masthead);
     const colour = pick(SAILS);
     const main = new Mesh(sailGeometry([0, 12.4, 0], [0, 1.7, 0], [0, 2.1, -5.2]), colour);
     main.position.set(0, 0.2, 1.1);

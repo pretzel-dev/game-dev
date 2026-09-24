@@ -156,7 +156,11 @@ export function createClouds(scene) {
   for (let i = 0; i < QUALITY.clouds; i++) {
     const width = rand(40, 95);
     const mesh = new Mesh(cumulusGeometry({ width, tower: rand(0.6, 1.3), detail }), near);
-    mesh.position.set(rand(-1600, 1600), rand(190, 380), rand(-1600, 1600));
+    // Two layers: fair-weather puffs you can weave between, and a higher,
+    // broader deck to climb out over and fly along the top of.
+    const high = i % 3 === 0;
+    mesh.position.set(rand(-1600, 1600), high ? rand(430, 520) : rand(190, 360), rand(-1600, 1600));
+    if (high) mesh.scale.set(rand(1.8, 2.6), rand(0.8, 1.1), rand(1.8, 2.6));
     mesh.rotation.y = rand(0, TAU);
     scene.add(mesh);
     clouds.push({ group: mesh, drift: rand(1.2, 3), bob: rand(0, TAU) });
@@ -195,6 +199,26 @@ export function createClouds(scene) {
       near.uniforms.fogFar.value = fogFar + 600;
       far.uniforms.fogNear.value = fogNear * 1.6;
       far.uniforms.fogFar.value = fogFar * 1.4;
+    },
+    /**
+     * How deep inside a cloud the camera is, 0..1 — the post pass turns it
+     * into a soft white-out. Measured against each cloud's bounding sphere,
+     * pulled in a little, since the puffs are lumpy rather than round.
+     */
+    inside(position) {
+      let best = 0;
+      for (const cloud of clouds) {
+        const mesh = cloud.group;
+        const sphere = mesh.geometry.boundingSphere;
+        const scale = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+        const r = sphere.radius * scale * 0.7;
+        const cx = mesh.position.x + sphere.center.x * mesh.scale.x;
+        const cy = mesh.position.y + sphere.center.y * mesh.scale.y;
+        const cz = mesh.position.z + sphere.center.z * mesh.scale.z;
+        const d = Math.hypot(position.x - cx, (position.y - cy) * 1.4, position.z - cz);
+        if (d < r) best = Math.max(best, Math.min(1, (r - d) / (r * 0.45)));
+      }
+      return best;
     },
     /** The horizon towers travel with the camera, like distant scenery. */
     follow(position) {

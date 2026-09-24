@@ -298,6 +298,18 @@ export function createPlaneModel(color = 0xc9473d, tiny = false, scheme = {}) {
     strut(model, [side * 1.05, -0.5, 0.2], [side * 4.3, wingY - 0.1, -0.5], 0.09, metal);
   }
 
+  // Navigation lights: red on the left wingtip, green on the right, white on
+  // the tail. Faint by day, bright at night; the tail one blinks.
+  for (const [side, material] of [[1, MAT.navRed], [-1, MAT.navGreen]]) {
+    const light = new Mesh(new SphereGeometry(0.22, 8, 6), material);
+    light.position.set(side * (SPAN - 0.25), wingY, 0.3);
+    model.add(light);
+  }
+  const strobe = new Mesh(new SphereGeometry(0.2, 8, 6), MAT.navWhite);
+  strobe.position.set(0, 3.35, -6.1);
+  strobe.userData.dynamic = true;
+  model.add(strobe);
+
   /* -- tail ---------------------------------------------------------------- */
   const TAIL_SPAN = 2.7;
   const tailplane = new Mesh(
@@ -438,7 +450,7 @@ export function createPlaneModel(color = 0xc9473d, tiny = false, scheme = {}) {
   }
   bakeLocal(group);
 
-  group.userData = { propeller, disc, ailerons, elevator, rudder, scarf };
+  group.userData = { propeller, disc, ailerons, elevator, rudder, scarf, strobe };
   return group;
 }
 

@@ -76,7 +76,15 @@ export const MAT = {
   brass: mat(0xd9a441),
   glass: mat(0x9fd6e6, { emissive: 0x1d3a44 }),
   lamp: mat(0xfff2c0, { emissive: 0xffe39a }),
+  // Lit windows: dark glass by day, warm light at dusk and night (the
+  // lighting turns up their emissive).
+  window: mat(0x283f4a, { emissive: 0xffb257 }),
+  navRed: mat(0xd83030, { emissive: 0xff2a2a }),
+  navGreen: mat(0x2fae5a, { emissive: 0x2aff6a }),
+  navWhite: mat(0xffffff, { emissive: 0xffffff }),
 };
+MAT.window.emissiveIntensity = 0;
+for (const m of [MAT.navRed, MAT.navGreen, MAT.navWhite]) m.emissiveIntensity = 0.4;
 
 export const HOUSE_WALLS = [MAT.cream, MAT.plaster, MAT.plaster2, MAT.plaster3, MAT.plaster4, MAT.stone];
 export const HOUSE_ROOFS = [MAT.roof, MAT.roof2, MAT.terracotta];

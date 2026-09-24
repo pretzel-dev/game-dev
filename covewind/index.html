@@ -24,6 +24,13 @@
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* Holding a control must never start a text selection or the long-press
+       menu. The title card keeps ordinary text behaviour. */
+    body, #ui, button, .joyBase, #throttle, #mobile, #tools, canvas {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
 
     html, body {
       margin: 0;
@@ -423,15 +430,21 @@
           <button class="chip" data-light="noon">Noon</button>
           <button class="chip" data-light="golden" aria-pressed="true">Golden hour</button>
           <button class="chip" data-light="dusk">Dusk</button>
+          <button class="chip" data-light="night">Night</button>
         </div>
         <div class="lightRow" id="pitchRow">
           <div class="label">Climbing</div>
           <button class="chip" data-pitch="normal">Push forward</button>
           <button class="chip" data-pitch="inverted" aria-pressed="true">Pull back</button>
         </div>
+        <div class="lightRow" id="tiltRow">
+          <div class="label">Steering (phones)</div>
+          <button class="chip" data-tilt="off" aria-pressed="true">Thumb stick</button>
+          <button class="chip" data-tilt="on">Tilt the phone</button>
+        </div>
         <div class="keys">
           Desktop: S climbs, W dives · A/D bank · double-tap A/D to roll · R/F throttle · SPACE boost · X smoke<br />
-          Mobile: left stick flies, flick it twice to roll · right slider is the throttle · ⚡ boosts · ☁ smoke<br />
+          Mobile: left stick flies (or tilt the phone), flick it twice to roll · right slider is the throttle · ⚡ boosts · ☁ smoke<br />
           Hold the stick back to loop. Hold the second tap of a roll to stop upside down.<br />
           It's a floatplane — throttle back over the water and you can land on it.
         </div>

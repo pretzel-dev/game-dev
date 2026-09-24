@@ -52,6 +52,8 @@ const fragmentShader = /* glsl */ `
   uniform float saturation;
   uniform float halation;
   uniform float grain;
+  uniform float mist;
+  uniform vec3 mistColor;
   varying vec2 vUv;
 
   float viewZ(vec2 uv) {
@@ -114,6 +116,11 @@ const fragmentShader = /* glsl */ `
     col = mix(col, col * shadowTint * 1.25, shade * 0.35);
     col = mix(col, col * lightTint, light * 0.25);
 
+    /* -- inside a cloud: soft white, thinner at the edges of the screen -- */
+    vec2 m = vUv - 0.5;
+    float wisp = 0.85 + 0.15 * sin(vUv.x * 9.0 + vUv.y * 5.0);
+    col = mix(col, mistColor, clamp(mist * wisp * (1.0 - dot(m, m) * 0.6), 0.0, 0.92));
+
     /* -- paper ---------------------------------------------------------- */
     vec2 px = gl_FragCoord.xy;
     float paper = noise(px * 0.35) * 0.6 + noise(px * 0.09) * 0.4;
@@ -158,6 +165,8 @@ export function createPost(renderer) {
       saturation: { value: 1.12 },
       halation: { value: 0.4 },
       grain: { value: 0.045 },
+      mist: { value: 0 },
+      mistColor: { value: new Color(0xf4f1ea) },
     },
   });
 

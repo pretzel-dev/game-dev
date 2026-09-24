@@ -9,6 +9,7 @@ import { Color, DirectionalLight, Fog, HemisphereLight, Vector3 } from 'three';
 import { LIGHT_PRESETS, DEFAULT_LIGHT } from '../core/palette.js';
 import { QUALITY } from '../core/quality.js';
 import { damp } from '../core/utils.js';
+import { MAT } from '../core/materials.js';
 
 const COLOR_KEYS = [
   'sunColor',
@@ -31,6 +32,7 @@ const SCALAR_KEYS = [
   'fogFar',
   'exposure',
   'beam',
+  'night',
 ];
 
 export function createLighting(scene, renderer, sky, water, clouds = null) {
@@ -78,7 +80,7 @@ export function createLighting(scene, renderer, sky, water, clouds = null) {
   function applyInstantly() {
     live.sunDir.copy(live.target);
     for (const key of COLOR_KEYS) live[key].copy(targetColor[key]);
-    for (const key of SCALAR_KEYS) live[key] = preset[key];
+    for (const key of SCALAR_KEYS) live[key] = preset[key] ?? 0;
     push();
   }
 
@@ -114,6 +116,11 @@ export function createLighting(scene, renderer, sky, water, clouds = null) {
     water.uniforms.skyColor.value.copy(live.skyHorizon).lerp(live.skyTop, 0.35);
 
     sky.uniforms.cloudColor.value.copy(live.cloudLit);
+    sky.uniforms.night.value = live.night;
+    // After dark: windows glow, lamps brighten, navigation lights stand out.
+    MAT.window.emissiveIntensity = live.night * 2.2;
+    MAT.lamp.emissiveIntensity = 1 + live.night * 3;
+    for (const m of [MAT.navRed, MAT.navGreen, MAT.navWhite]) m.emissiveIntensity = 0.4 + live.night * 3.2;
     clouds?.setLight({
       lit: live.cloudLit,
       shade: live.cloudShade,
@@ -141,6 +148,10 @@ export function createLighting(scene, renderer, sky, water, clouds = null) {
     get beam() {
       return live.beam;
     },
+    /** 0 by day, 1 at night. */
+    get night() {
+      return live.night;
+    },
 
     set(name, { instant = false } = {}) {
       const next = LIGHT_PRESETS[name];
@@ -160,7 +171,7 @@ export function createLighting(scene, renderer, sky, water, clouds = null) {
       const rate = 2.6;
       live.sunDir.lerp(live.target, 1 - Math.exp(-rate * dt)).normalize();
       for (const key of COLOR_KEYS) live[key].lerp(targetColor[key], 1 - Math.exp(-rate * dt));
-      for (const key of SCALAR_KEYS) live[key] = damp(live[key], preset[key], rate, dt);
+      for (const key of SCALAR_KEYS) live[key] = damp(live[key], preset[key] ?? 0, rate, dt);
       push();
     },
   };

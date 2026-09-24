@@ -22,6 +22,7 @@ const fragmentShader = /* glsl */ `
   uniform vec3 sunDir;
   uniform float glowStrength;
   uniform float time;
+  uniform float night;
   varying vec3 vDir;
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -56,7 +57,26 @@ const fragmentShader = /* glsl */ `
     col += glowColor * pow(max(0.0, cosA), 6.0) * glowStrength * 0.45;
     col += glowColor * pow(max(0.0, cosA), 90.0) * glowStrength * 0.9;
     // The disc: a flat, bright coin with a crisp edge, as a painter would.
-    col = mix(col, vec3(1.0, 0.98, 0.92) * 1.4, smoothstep(0.9990, 0.9994, cosA));
+    // At night it is the moon: much bigger, pale, with its seas drawn on.
+    float disc = smoothstep(mix(0.9990, 0.9955, night), mix(0.9994, 0.9960, night), cosA);
+    vec3 moon = vec3(0.95, 0.96, 1.0) * 1.5;
+    vec3 side = normalize(cross(normalize(sunDir), vec3(0.0, 1.0, 0.0)));
+    vec2 mp = vec2(dot(dir, side), dot(dir, cross(side, normalize(sunDir)))) * 40.0;
+    moon *= 1.0 - 0.18 * smoothstep(0.55, 0.75, fbm(mp * 1.3 + 3.0));
+    col = mix(col, mix(vec3(1.0, 0.98, 0.92) * 1.4, moon, night), disc);
+
+    // Stars, twinkling, thinning towards the horizon and hidden by the moon.
+    if (night > 0.01 && y > 0.0) {
+      vec2 sp = vec2(atan(dir.z, dir.x) * 180.0, y * 260.0);
+      vec2 cell = floor(sp);
+      float h = hash(cell);
+      vec2 offset = vec2(hash(cell + 7.1), hash(cell + 3.3));
+      float d = length(fract(sp) - offset);
+      float star = step(0.975, h) * smoothstep(0.12, 0.0, d);
+      star *= 0.6 + 0.4 * sin(time * (1.5 + h * 3.0) + h * 40.0);
+      star *= smoothstep(0.0, 0.25, y) * (1.0 - smoothstep(0.96, 0.99, cosA));
+      col += vec3(0.95, 0.97, 1.0) * star * night * 1.6;
+    }
 
     // High cirrus: long wind-combed strokes, only overhead.
     if (y > 0.04) {
@@ -91,6 +111,7 @@ export function createSky(scene) {
       sunDir: { value: new Vector3(-0.55, 0.3, 0.72) },
       glowStrength: { value: 0.5 },
       time: { value: 0 },
+      night: { value: 0 },
     },
   });
   const sky = new Mesh(new SphereGeometry(3600, 32, 20), material);

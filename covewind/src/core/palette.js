@@ -157,8 +157,34 @@ export const LIGHT_PRESETS = {
     exposure: 1.1,
     beam: 0.2,
     shadowOpacity: 0.8,
+    night: 0.35,
+  },
+  night: {
+    label: 'Night',
+    // A big moon over a sleeping town: the moon stands in for the sun.
+    sunDir: [0.45, 0.42, -0.62],
+    sunColor: 0xa9bdff,
+    sunIntensity: 1.1,
+    skyColor: 0x3a4c8a,
+    groundColor: 0x1c1c34,
+    hemiIntensity: 0.9,
+    skyTop: 0x070d2a,
+    skyHorizon: 0x24386e,
+    sunGlow: 0xb9ccff,
+    glowStrength: 0.55,
+    cloudLit: 0x9aa9d6,
+    cloudShade: 0x2a3163,
+    fog: 0x1b2850,
+    fogNear: 550,
+    fogFar: 2700,
+    seaShallow: 0x1e5c7c,
+    seaDeep: 0x0a1a42,
+    exposure: 1.2,
+    beam: 0.4,
+    shadowOpacity: 0.7,
+    night: 1,
   },
 };
 
-export const LIGHT_ORDER = ['sunrise', 'noon', 'golden', 'dusk'];
+export const LIGHT_ORDER = ['sunrise', 'noon', 'golden', 'dusk', 'night'];
 export const DEFAULT_LIGHT = 'golden';

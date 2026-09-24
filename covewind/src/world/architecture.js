@@ -87,7 +87,8 @@ export function gableRoofGeometry(w, d, height, overhang = 0.8) {
 
 /** A window with its pair of shutters, on a wall facing +z at (x, y). */
 export function shutteredWindow(parent, x, y, z, { shutter = MAT.green, open = chance(0.6), w = 1.6, h = 2.3 } = {}) {
-  const glass = new Mesh(new BoxGeometry(w, h, 0.2), MAT.dark);
+  // About half the windows have someone home, so they light up after dark.
+  const glass = new Mesh(new BoxGeometry(w, h, 0.2), chance(0.55) ? MAT.window : MAT.dark);
   glass.position.set(x, y, z + 0.02);
   parent.add(glass);
   const sill = new Mesh(new BoxGeometry(w + 0.6, 0.25, 0.5), MAT.stone);

@@ -72,8 +72,9 @@ export const TUNE = {
   waterBrake: 2.6, // pull back on the stick to come to a stop
 
   // Sky and sea breeze limits.
-  ceiling: 330,
-  softCeiling: 300,
+  // High enough to climb out over the top of the cloud layer.
+  ceiling: 760,
+  softCeiling: 720,
   homeRadius: 1450,
   turnHomeRate: 0.18,
 };
