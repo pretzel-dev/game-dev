@@ -57,6 +57,16 @@ const zoomedOut = o2.dist > o1.dist * 1.2;
 await page.waitForTimeout(800);
 
 // Order: tap home, tap target, Launch.
+// Frame both stars first (the map is random, and the game opens zoomed on home).
+await page.evaluate(({ home, target }) => {
+  const { game, view } = window.__starfall;
+  const a = game.systems[home].pos;
+  const b = game.systems[target].pos;
+  view.orbit.target.set((a.x + b.x) / 2, 0, (a.z + b.z) / 2);
+  view.orbit.dist = 60 + Math.hypot(a.x - b.x, a.z - b.z) * 2;
+  view.orbit.vaz = view.orbit.vpol = 0;
+}, ids);
+await page.waitForTimeout(500);
 const h2 = await screenOf(ids.home);
 await page.touchscreen.tap(h2.x, h2.y);
 await page.waitForTimeout(300);

@@ -1,6 +1,6 @@
 import {
   NEUTRAL, TECH, dist, rateOf, capOf, upgradeCost, sendUnits, upgrade, research, nextTier,
-  speedOf, visibility, fleetPosition,
+  speedOf, visibility, fleetPosition, defenseOf,
 } from './sim.js';
 
 // The AI plays like a person: one action at a time (a single launch from a
@@ -15,9 +15,12 @@ export const DIFFICULTY = {
 // Guess for a fleet whose size we can't read, and for stars we can't see.
 const UNKNOWN_FLEET = 25;
 const UNKNOWN_STAR = 30;
-// Never launch less than this (bar a weak neutral), so fleets matter.
-const MIN_FLEET = 15;
-const PLAN_TIMEOUT = 45;
+// Tunable from the settings page.
+export const AI_TUNING = {
+  minFleet: 15, // never launch less than this (bar a weak neutral in sight)
+  thinkScale: 1, // multiplies the pause between actions
+};
+const PLAN_TIMEOUT = 150;
 
 export function createAI(owner, difficulty, rand) {
   const d = DIFFICULTY[difficulty];
@@ -45,14 +48,16 @@ function incoming(game, vis, s, owner) {
 /** Garrison we expect at t on arrival, from what we can see. */
 function expected(game, vis, t, eta) {
   if (!vis.systems.has(t.id)) return UNKNOWN_STAR;
-  if (t.owner === NEUTRAL) return t.units;
-  return Math.min(capOf(t), t.units + rateOf(t) * eta);
+  // Under the square law, beating D defenders worth e each takes sqrt(e) * D.
+  const k = Math.sqrt(defenseOf(t));
+  if (t.owner === NEUTRAL) return t.units * k;
+  return Math.min(capOf(t), t.units + rateOf(t) * eta) * k;
 }
 
 export function tickAI(game, ai, dt) {
   ai.clock -= dt;
   if (ai.clock > 0 || game.winner !== null) return;
-  ai.clock = ai.d.think * (0.7 + ai.rand() * 0.6);
+  ai.clock = ai.d.think * AI_TUNING.thinkScale * (0.7 + ai.rand() * 0.6);
 
   const mine = game.systems.filter((s) => s.owner === ai.owner);
   if (!mine.length) return;
@@ -61,18 +66,23 @@ export function tickAI(game, ai, dt) {
   const speed = speedOf(game, ai.owner);
   const spare = (s) => Math.floor(s.units - incoming(game, vis, s, ai.owner).hostile - 5);
 
-  // 1. Carry on a combined strike: one more star launches.
+  // 1. Carry on an invasion plan: gather ships at a staging star one launch per
+  // turn, then send them all at once. (Under the square law, fleets that
+  // arrive one after another are beaten one at a time.)
   if (ai.plan) {
     const t = game.systems[ai.plan.target];
-    const left = ai.plan.need - incoming(game, vis, t, ai.owner).friendly;
-    if (t.owner === ai.owner || left <= 0 || game.time > ai.plan.until) {
+    const stage = game.systems[ai.plan.stage];
+    if (t.owner === ai.owner || stage.owner !== ai.owner || game.time > ai.plan.until) {
       ai.plan = null;
+    } else if (spare(stage) >= ai.plan.need) {
+      sendUnits(game, stage, t, spare(stage));
+      ai.plan = null;
+      return;
     } else {
-      // Only stars with a real fleet to give join in; otherwise wait for them to build up.
       const src = mine
-        .filter((s) => spare(s) >= Math.min(left, MIN_FLEET) && s.id !== t.id)
-        .sort((a, b) => dist(a.pos, t.pos) - dist(b.pos, t.pos))[0];
-      if (src) { sendUnits(game, src, t, Math.min(spare(src), Math.max(left, MIN_FLEET))); return; }
+        .filter((s) => s !== stage && spare(s) >= AI_TUNING.minFleet)
+        .sort((a, b) => dist(a.pos, stage.pos) - dist(b.pos, stage.pos))[0];
+      if (src) { sendUnits(game, src, stage, spare(src)); return; }
     }
   }
 
@@ -86,7 +96,7 @@ export function tickAI(game, ai, dt) {
       const guess = expected(game, vis, t, d / speed);
       let need = Math.ceil(guess * ai.d.greed) + 2;
       // A proper fleet, unless it's a weak neutral we can see.
-      if (!(t.owner === NEUTRAL && vis.systems.has(t.id))) need = Math.max(need, MIN_FLEET);
+      if (!(t.owner === NEUTRAL && vis.systems.has(t.id))) need = Math.max(need, AI_TUNING.minFleet);
       if (need > avail || incoming(game, vis, t, ai.owner).friendly >= need) continue;
       const known = vis.systems.has(t.id);
       const score = (t.level + (t.owner === NEUTRAL ? 0 : 0.5) + (known ? 0 : -0.3)) / (need + d * 0.4);
@@ -122,17 +132,18 @@ export function tickAI(game, ai, dt) {
   if (!best && build()) return;
   if (best) return;
 
-  // 4. Nothing one star can take: plan a strike from several, one launch per turn.
-  const total = mine.reduce((n, s) => n + (spare(s) >= MIN_FLEET ? spare(s) : 0), 0);
+  // 4. Nothing one star can take: plan an invasion gathered from several stars.
+  const total = mine.reduce((n, s) => n + (spare(s) >= AI_TUNING.minFleet ? spare(s) : 0), 0);
   let target = null;
   let need = Infinity;
   for (const t of others) {
     if (!vis.systems.has(t.id)) continue;
-    const n = Math.ceil(Math.max(t.units, capOf(t)) * ai.d.greed) + 5;
+    const n = Math.ceil(Math.max(t.units, capOf(t)) * Math.sqrt(defenseOf(t)) * ai.d.greed) + 5;
     if (n <= total && n < need) { target = t; need = n; }
   }
   if (target) {
-    ai.plan = { target: target.id, need, until: game.time + PLAN_TIMEOUT };
+    const stage = mine.slice().sort((a, b) => dist(a.pos, target.pos) - dist(b.pos, target.pos))[0];
+    ai.plan = { target: target.id, stage: stage.id, need, until: game.time + PLAN_TIMEOUT };
     ai.clock = 0.1; // the first launch goes out on the next turn
     return;
   }

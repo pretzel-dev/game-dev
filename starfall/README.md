@@ -10,10 +10,15 @@ rivals by sending ships between star systems.
   All, then tap **Launch** (or tap the target again). Systems are far apart and
   crossings take 30–90 seconds, so each launch is a big commitment. Fleets
   can't be recalled.
-- **Battles:** a fleet reaching a hostile star lays siege. Attackers circle it
-  and both sides lose ships at the same rate until one runs out, so the bigger
-  force wins with the difference. Big battles take 10 seconds or more, and a
-  star under siege stops producing. The label shows `defenders ⚔ attackers`.
+- **Battles:** a fleet reaching a hostile star lays siege, and the fight plays
+  out over a few seconds. Battles follow Lanchester's square law: each side
+  destroys ships in proportion to its own size. Overwhelming odds win fast and
+  cheaply (80 vs 20 leaves about 77), even fights wipe out both sides, and fleets
+  that arrive one after another get beaten one at a time. Each garrison ship is
+  worth 1.2 attackers, +0.1 per factory level. A star under siege stops
+  producing. The label shows `defenders ⚔ attackers`.
+- **Space battles:** hostile fleets that pass very close to each other stop and
+  fight where they are. The survivors carry on to their target.
 - **Neutral stars** are lightly held and never grow or upgrade.
 - **Upgrade:** with your star selected, tap **Upgrade**. You pay the ships up
   front, then the upgrade takes 12–30 seconds to build. It raises the star's
@@ -36,6 +41,12 @@ rivals by sending ships between star systems.
   star aims it at another star instead.
 - The bar at the top shows each side's share of all ships.
 - You win when no rival holds a star or has a fleet in flight.
+
+## Settings
+
+**Settings** on the menu has sliders for playtesting: battle speed, defence
+bonus, fleet speed, space engagement range, production, starting ships, and the
+AI's minimum fleet and pace. Changes are saved on the device.
 
 ## The main choice
 

@@ -1,5 +1,5 @@
-import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES, TECH, nextTier, research, visibility, speedOf, sensorRange } from './sim.js';
-import { createAI, tickAI } from './ai.js';
+import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES, TECH, nextTier, research, visibility, speedOf, sensorRange, TUNABLES, DEFAULTS } from './sim.js';
+import { createAI, tickAI, AI_TUNING } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
 const $ = (id) => document.getElementById(id);
@@ -22,6 +22,52 @@ function loadPrefs() {
 function savePrefs() {
   try { localStorage.setItem('starfall', JSON.stringify(prefs)); } catch { /* private mode */ }
 }
+
+// ---- Settings (tuning parameters for playtesting) ----------------------------
+
+const AI_DEFAULTS = { ...AI_TUNING };
+const SETTINGS = [
+  ...TUNABLES.map(([key, label, min, max, step]) => ({ key, label, min, max, step, obj: RULES, def: DEFAULTS[key] })),
+  { key: 'minFleet', label: 'AI minimum fleet', min: 1, max: 60, step: 1, obj: AI_TUNING, def: AI_DEFAULTS.minFleet },
+  { key: 'thinkScale', label: 'AI pause between actions', min: 0.25, max: 4, step: 0.05, obj: AI_TUNING, def: AI_DEFAULTS.thinkScale },
+];
+function loadSettings() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('starfall-settings') || '{}'); } catch { /* ignore */ }
+  for (const t of SETTINGS) if (typeof saved[t.key] === 'number') t.obj[t.key] = saved[t.key];
+}
+function saveSettings() {
+  const out = {};
+  for (const t of SETTINGS) if (t.obj[t.key] !== t.def) out[t.key] = t.obj[t.key];
+  try { localStorage.setItem('starfall-settings', JSON.stringify(out)); } catch { /* ignore */ }
+}
+const fmtSetting = (t) => (t.step >= 1 ? String(t.obj[t.key]) : t.obj[t.key].toFixed(2));
+function renderSettings() {
+  $('settings-list').innerHTML = SETTINGS.map((t, i) => `
+    <div class="set ${t.obj[t.key] !== t.def ? 'changed' : ''}">
+      <label for="set-${i}">${t.label}</label><output>${fmtSetting(t)}</output>
+      <input id="set-${i}" data-i="${i}" type="range" min="${t.min}" max="${t.max}" step="${t.step}" value="${t.obj[t.key]}" />
+    </div>`).join('');
+}
+loadSettings();
+$('settings-list').addEventListener('input', (e) => {
+  const t = SETTINGS[e.target.dataset.i];
+  if (!t) return;
+  t.obj[t.key] = Number(e.target.value);
+  e.target.parentElement.querySelector('output').textContent = fmtSetting(t);
+  e.target.parentElement.classList.toggle('changed', t.obj[t.key] !== t.def);
+  saveSettings();
+});
+$('settings-btn').addEventListener('click', () => {
+  renderSettings();
+  $('settings').hidden = false;
+});
+$('settings-done').addEventListener('click', () => ($('settings').hidden = true));
+$('settings-reset').addEventListener('click', () => {
+  for (const t of SETTINGS) t.obj[t.key] = t.def;
+  saveSettings();
+  renderSettings();
+});
 
 // ---- Menu -----------------------------------------------------------------
 

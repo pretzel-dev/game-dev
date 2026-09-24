@@ -1,6 +1,6 @@
 // Headless sanity check: AI-only matches must finish, and the rules must hold.
 import assert from 'node:assert/strict';
-import { createGame, step, sendFraction, upgrade, rng, NEUTRAL } from '../src/sim.js';
+import { createGame, step, sendFraction, sendUnits, upgrade, rng, NEUTRAL } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 
 // Rules.
@@ -22,18 +22,57 @@ import { createAI, tickAI } from '../src/ai.js';
   assert.equal(target.owner, 0, 'fleet captures a weak system');
 }
 
-// Battles take time and play out as a difference in ships.
+// Square law: overwhelming odds win cheaply; defenders get a bonus.
 {
   const g = createGame({ seed: 2, opponents: 1 });
   const s = g.systems.find((x) => x.owner === NEUTRAL);
-  s.units = 60;
+  s.units = 20;
   s.sieges.push({ owner: 1, units: 80 });
   let t = 0;
   while (s.owner === NEUTRAL && t < 60) { step(g, 0.05); t += 0.05; }
   assert.equal(s.owner, 1);
-  assert.ok(Math.abs(s.units - 20) < 1e-6);
-  assert.ok(t > 5, `a 60 v 80 battle should take a while (took ${t.toFixed(1)}s)`);
-  console.log(`60 v 80 battle took ${t.toFixed(1)}s`);
+  // 80^2 - 1.2 * 20^2 = 5920, so about 77 survive.
+  assert.ok(s.units > 74 && s.units < 79, `80 v 20 left ${s.units.toFixed(1)}`);
+  console.log(`80 v 20 garrison: ${s.units.toFixed(1)} survive in ${t.toFixed(1)}s`);
+}
+{
+  const g = createGame({ seed: 2, opponents: 1 });
+  const s = g.systems.find((x) => x.owner === NEUTRAL);
+  s.units = 50;
+  s.sieges.push({ owner: 1, units: 50 });
+  for (let t = 0; t < 60; t += 0.05) step(g, 0.05);
+  assert.equal(s.owner, NEUTRAL, 'an even fight goes to the defender');
+}
+
+// Hostile fleets that meet in space stop and fight; the survivor carries on.
+{
+  const g = createGame({ seed: 3, opponents: 1 });
+  const a = g.systems.find((x) => x.owner === 0);
+  const b = g.systems.find((x) => x.owner === 1);
+  a.units = 100;
+  b.units = 100;
+  const fa = sendUnits(g, a, b, 60);
+  const fb = sendUnits(g, b, a, 30);
+  let met = false;
+  for (let t = 0; t < 200 && g.fleets.length === 2; t += 0.1) { step(g, 0.1); met ||= !!fa.engaged; }
+  assert.ok(met, 'fleets on the same route meet');
+  assert.equal(g.fleets.length, 1);
+  assert.equal(g.fleets[0], fa);
+  assert.ok(fa.units > 48 && fa.units < 54, `60 v 30 in space left ${fa.units}`);
+  console.log(`60 v 30 in space: ${fa.units} survive`);
+}
+{
+  // Fleets that pass at a distance ignore each other.
+  const g = createGame({ seed: 3, opponents: 1 });
+  const mine = g.systems.find((x) => x.owner === 0);
+  const theirs = g.systems.find((x) => x.owner === 1);
+  const others = g.systems.filter((x) => x.owner === NEUTRAL);
+  mine.units = theirs.units = 100;
+  sendUnits(g, mine, others[0], 20);
+  sendUnits(g, theirs, others[1], 20);
+  let engaged = false;
+  for (let t = 0; t < 300 && g.fleets.length; t += 0.1) { step(g, 0.1); engaged ||= g.fleets.some((f) => f.engaged); }
+  if (!engaged) console.log('distant fleets passed without fighting');
 }
 
 // The AI acts like a player: at most one action (launch, upgrade or research) per turn.
