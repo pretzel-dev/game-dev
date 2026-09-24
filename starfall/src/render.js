@@ -360,14 +360,32 @@ export function createView(canvas, labelRoot) {
       fleetPos(game, f, head);
       const mine = !vis || f.owner === vis.owner;
       const lbl = fleetLabel(i);
-      if (!mine && !vis.sees(head)) { lbl.style.visibility = 'hidden'; return; }
+      if (!mine && !vis.sees(head)) { f.fighting = 0; lbl.style.visibility = 'hidden'; return; }
+      if (f.fighting) {
+        // A battle in open space: flashes between this fleet and its opponent.
+        let flashes = Math.min(10, f.fighting * 2 + Math.random());
+        f.fighting = 0;
+        for (; flashes >= 1; flashes--) {
+          const r = 2 + Math.random() * 6;
+          const a1 = Math.random() * Math.PI * 2;
+          const a2 = (Math.random() - 0.5) * Math.PI;
+          boom(
+            head.x + Math.cos(a1) * Math.cos(a2) * r,
+            head.y + Math.sin(a2) * r,
+            head.z + Math.sin(a1) * Math.cos(a2) * r,
+            BOOM_COLORS[(Math.random() * BOOM_COLORS.length) | 0],
+            3 + Math.random() * 4,
+            0.4 + Math.random() * 0.5,
+          );
+        }
+      }
       dir.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
       side.crossVectors(dir, UP).normalize();
       up2.crossVectors(side, dir);
       const color = ownerColor(f.owner);
       // A loose cloud, one sprite per ship (up to a point). Each ship has its own
       // spot and pace, so the cloud drifts and stragglers trail behind.
-      const n = Math.min(50, f.units);
+      const n = Math.min(50, Math.ceil(f.units));
       const spread = 1.2 + Math.sqrt(n) * 0.45;
       const p = progress(f);
       const grow = Math.min(1, p * 8, (1 - p) * 8); // gather at launch, close up on arrival
@@ -403,7 +421,7 @@ export function createView(canvas, labelRoot) {
       lbl.style.color = color;
       const left = Math.max(0, f.duration - f.t);
       const eta = !mine && intel >= 2 ? `<small>${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</small>` : '';
-      const text = `${f.units}${eta}`;
+      const text = `${Math.ceil(f.units)}${eta}`;
       if (lbl.innerHTML !== text) lbl.innerHTML = text;
       lbl.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * w}px, ${(-tmp.y * 0.5 + 0.5) * h - 22}px) translate(-50%, 0)`;
     });

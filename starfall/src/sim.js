@@ -10,10 +10,14 @@ export const RULES = {
   cap: [40, 70, 110, 160], // production stops at this garrison
   upgradeCost: [20, 40, 70], // cost to go from level n to n + 1
   upgradeTime: [12, 20, 30], // seconds to build each upgrade
-  // Battles: both sides lose ships at the same rate, so the outcome is the
-  // difference in ships, but big battles take a while to play out.
-  battleBase: 3, // ships lost per second per side, plus
-  battleScale: 0.1, // this fraction of the smaller side each second
+  // Battles follow Lanchester's square law: each side destroys ships in
+  // proportion to its own size, so overwhelming odds win cheaply and fast.
+  battleRate: 0.12, // ships destroyed per second, per firing ship
+  battleFloor: 1, // minimum losses per second, so even fights finish
+  defenseBase: 1.2, // a garrison ship fights like this many attackers...
+  defensePerLevel: 0.1, // ...plus this much per factory level above 1
+  engageRange: 6, // hostile fleets closer than this stop and fight in space
+  productionScale: 1, // multiplies every star's production
   maxLevel: 4,
   startUnits: 25,
 };
@@ -159,7 +163,21 @@ export function fleetPosition(game, f) {
   return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p, z: a.z + (b.z - a.z) * p };
 }
 
-export const rateOf = (s) => RULES.rate[s.level - 1];
+export const rateOf = (s) => RULES.rate[s.level - 1] * RULES.productionScale;
+/** How many attackers one of this star's defenders is worth. */
+export const defenseOf = (s) => RULES.defenseBase + RULES.defensePerLevel * (s.level - 1);
+
+// Settings exposed on the tuning page: [key, label, min, max, step].
+export const TUNABLES = [
+  ['battleRate', 'Battle speed', 0.03, 0.5, 0.01],
+  ['defenseBase', 'Defence bonus', 1, 2.5, 0.05],
+  ['defensePerLevel', 'Defence per level', 0, 0.5, 0.05],
+  ['fleetSpeed', 'Fleet speed', 1, 8, 0.1],
+  ['engageRange', 'Space engage range', 2, 30, 1],
+  ['productionScale', 'Production', 0.25, 3, 0.05],
+  ['startUnits', 'Starting ships', 5, 100, 1],
+];
+export const DEFAULTS = Object.fromEntries(TUNABLES.map(([k]) => [k, RULES[k]]));
 export const capOf = (s) => RULES.cap[s.level - 1];
 export const upgradeCost = (s) => (s.level < RULES.maxLevel ? RULES.upgradeCost[s.level - 1] : null);
 
@@ -208,21 +226,75 @@ function capture(s, owner, units) {
   for (const g of s.sieges) if (g.owner === owner) { s.units += g.units; g.units = 0; }
 }
 
+/**
+ * One step of a square-law exchange between two forces. Returns the losses
+ * [a, b]. Each side destroys ships in proportion to its size times its
+ * effectiveness, with a small floor so evenly matched fights still end.
+ */
+function exchange(a, ea, b, eb, dt) {
+  const floor = RULES.battleFloor * dt;
+  const la = Math.min(a, Math.max(RULES.battleRate * b * eb * dt, b > EPS ? floor : 0));
+  const lb = Math.min(b, Math.max(RULES.battleRate * a * ea * dt, a > EPS ? floor : 0));
+  return [la, lb];
+}
+
 function fight(s, dt) {
+  // The garrison splits its fire across the besieging fleets by size.
+  const total = s.sieges.reduce((n, g) => n + g.units, 0);
+  let garrisonLoss = 0;
   for (const g of s.sieges) {
-    if (g.units <= EPS) continue;
-    const rate = RULES.battleBase + RULES.battleScale * Math.min(g.units, s.units);
-    const loss = Math.min(rate * dt, g.units, s.units);
-    g.units -= loss;
-    s.units -= loss;
-    s.fighting = (s.fighting || 0) + loss;
-    if (s.units <= EPS && g.units > EPS) {
-      const units = g.units;
-      g.units = 0;
-      capture(s, g.owner, units);
+    const share = total > 0 ? g.units / total : 0;
+    const [lg, ls] = exchange(g.units, 1, s.units * share, defenseOf(s), dt);
+    g.units -= lg;
+    garrisonLoss += ls;
+    s.fighting = (s.fighting || 0) + lg + ls;
+  }
+  s.units = Math.max(0, s.units - garrisonLoss);
+  if (s.units <= EPS) {
+    // The largest surviving fleet takes the star.
+    const winner = s.sieges.filter((g) => g.units > EPS).sort((a, b) => b.units - a.units)[0];
+    if (winner) {
+      const units = winner.units;
+      winner.units = 0;
+      capture(s, winner.owner, units);
     }
   }
   s.sieges = s.sieges.filter((g) => g.units > EPS);
+}
+
+/** Pairs up hostile fleets that come within range; they stop and fight in space. */
+function spaceBattles(game, dt) {
+  const pos = new Map(game.fleets.map((f) => [f.id, fleetPosition(game, f)]));
+  const byId = new Map(game.fleets.map((f) => [f.id, f]));
+  for (const f of game.fleets) {
+    if (f.engaged && !byId.has(f.engaged)) f.engaged = null;
+  }
+  for (const f of game.fleets) {
+    if (f.engaged) continue;
+    let best = null;
+    let bestD = RULES.engageRange;
+    for (const o of game.fleets) {
+      if (o.owner === f.owner || o.engaged || o === f) continue;
+      const d = dist(pos.get(f.id), pos.get(o.id));
+      if (d < bestD) { bestD = d; best = o; }
+    }
+    if (best) { f.engaged = best.id; best.engaged = f.id; }
+  }
+  for (const f of game.fleets) {
+    if (!f.engaged || f.id > f.engaged) continue; // each pair once
+    const o = byId.get(f.engaged);
+    const [lf, lo] = exchange(f.units, 1, o.units, 1, dt);
+    f.units -= lf;
+    o.units -= lo;
+    f.fighting = (f.fighting || 0) + lf + lo;
+  }
+  game.fleets = game.fleets.filter((f) => f.units > EPS);
+  for (const f of game.fleets) {
+    if (f.engaged && !game.fleets.some((o) => o.id === f.engaged)) {
+      f.engaged = null;
+      f.units = Math.max(1, Math.round(f.units));
+    }
+  }
 }
 
 function arrive(game, fleet) {
@@ -252,7 +324,9 @@ export function step(game, dt) {
     if (s.units < cap) s.units = Math.min(cap, s.units + rateOf(s) * dt);
   }
   const arrived = [];
+  spaceBattles(game, dt);
   game.fleets = game.fleets.filter((f) => {
+    if (f.engaged) return true; // held in place while fighting
     f.t += dt;
     if (f.t < f.duration) return true;
     arrive(game, f);
