@@ -116,5 +116,13 @@ export function createHud({ actions = {} } = {}) {
     }, 500);
   }
 
-  return { hint, toggle, update, setSound, hideIntro, get visible() { return visible; } };
+  function showIntro() {
+    if (!el.intro) return;
+    el.intro.style.display = '';
+    requestAnimationFrame(() => {
+      el.intro.style.opacity = '1';
+    });
+  }
+
+  return { hint, toggle, update, setSound, hideIntro, showIntro, get visible() { return visible; } };
 }

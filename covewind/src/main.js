@@ -151,7 +151,7 @@ function boot() {
       smoke: cycleSmoke,
       hud: () => hud.toggle(),
       invertPitch: () => setInvertPitch(!controls.invertPitch),
-      escape: () => photo.set(false),
+      escape: () => (photo.active ? photo.set(false) : openMenu()),
       orbit: (dx, dy) => {
         if (photo.active) rig.orbit(dx, dy);
       },
@@ -222,7 +222,44 @@ function boot() {
   }
   document.querySelector('#photoLight')?.addEventListener('click', cycleLight);
 
+  // Full screen: on the first take-off on a phone, and from the ⛶ button.
+  // (iPhones only allow it for video; there, "Add to Home Screen" gives the
+  // same thing, since the game installs as an app.)
+  const root = document.documentElement;
+  const canFullscreen = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+  function toggleFullscreen(force) {
+    const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const want = force ?? !on;
+    try {
+      if (want && !on) (root.requestFullscreen || root.webkitRequestFullscreen).call(root)?.catch?.(() => {});
+      else if (!want && on) (document.exitFullscreen || document.webkitExitFullscreen).call(document)?.catch?.(() => {});
+    } catch {
+      /* not allowed here; the game works the same without it */
+    }
+  }
+  const fullBtn = document.querySelector('#fullBtn');
+  if (!canFullscreen) fullBtn?.remove();
+  fullBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    toggleFullscreen();
+  });
+
+  // The menu: back to the title card, where light, climbing and tilt can be
+  // changed. The aeroplane circles on autopilot meanwhile.
+  document.querySelector('#menuBtn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openMenu();
+  });
+  function openMenu() {
+    if (photo.active) photo.set(false);
+    started = false;
+    const start = document.querySelector('#start');
+    if (start) start.textContent = 'Back to flying';
+    hud.showIntro();
+  }
+
   document.querySelector('#start')?.addEventListener('click', () => {
+    if (matchMedia('(pointer: coarse)').matches && !started) toggleFullscreen(true);
     started = true;
     hud.hideIntro();
     audio.start();

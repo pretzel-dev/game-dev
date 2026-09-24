@@ -229,24 +229,38 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
   // switched on (or recentred) is "level"; tip it away from you to dive,
   // towards you to climb, and roll it like a steering wheel to bank.
   const tilt = { on: false, pitch: 0, roll: 0, base: null, raw: null };
-  const TILT_RANGE = 28; // degrees for full stick
+  const TILT_RANGE = 30; // degrees for full stick
 
   function screenAngle() {
     return (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
   }
 
   function onOrientation(event) {
-    if (event.beta == null) return;
-    // Rotate the device's beta/gamma into screen-relative pitch and roll.
+    if (event.beta == null || event.gamma == null) return;
+    // Work from the direction of "up" as the phone sees it rather than raw
+    // beta/gamma, which fold over on themselves when the phone is held
+    // upright — that fold was what made a straight-held phone climb.
+    const b = (event.beta * Math.PI) / 180;
+    const g = (event.gamma * Math.PI) / 180;
+    const ux = -Math.cos(b) * Math.sin(g);
+    const uy = Math.sin(b);
+    const uz = Math.cos(b) * Math.cos(g);
+    // Into screen axes, however the phone is turned.
     const angle = ((screenAngle() % 360) + 360) % 360;
-    let pitch = event.beta;
-    let roll = event.gamma;
-    if (angle === 90) [pitch, roll] = [-event.gamma, event.beta];
-    else if (angle === 270) [pitch, roll] = [event.gamma, -event.beta];
-    else if (angle === 180) [pitch, roll] = [-event.beta, -event.gamma];
+    let sx = ux;
+    let sy = uy;
+    if (angle === 90) [sx, sy] = [-uy, ux];
+    else if (angle === 270) [sx, sy] = [uy, -ux];
+    else if (angle === 180) [sx, sy] = [-ux, -uy];
+    // Pitch: how far the top of the screen is tipped up. Roll: how far the
+    // right-hand side has gone down, like a steering wheel.
+    const pitch = (Math.atan2(sy, uz) * 180) / Math.PI;
+    const roll = (Math.asin(Math.max(-1, Math.min(1, -sx))) * 180) / Math.PI;
     tilt.raw = { pitch, roll };
     if (!tilt.base) tilt.base = { pitch, roll };
-    const dp = pitch - tilt.base.pitch;
+    let dp = pitch - tilt.base.pitch;
+    if (dp > 180) dp -= 360;
+    if (dp < -180) dp += 360;
     const dr = roll - tilt.base.roll;
     tilt.pitch = clamp(dp / TILT_RANGE, -1, 1);
     tilt.roll = clamp(dr / TILT_RANGE, -1, 1);
@@ -301,9 +315,11 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     const tiltOn = tilt.on && !input.touching;
     // Tilting the top of the phone towards you (pull back) climbs, matching
     // the stick's "pull back" sense before any inversion is applied.
-    const tp = tiltOn ? shapeTilt(-tilt.pitch) : 0;
+    // Tipping the top of the phone towards you climbs in "pull back" mode;
+    // in "push forward" mode it is the other way round, like the stick.
+    const tp = tiltOn ? shapeTilt(invertPitch ? -tilt.pitch : tilt.pitch) : 0;
     const tr = tiltOn ? shapeTilt(tilt.roll) : 0;
-    input.pitch = clamp(keyPitch + stick.pitch + tp, -1, 1) * (invertPitch ? -1 : 1);
+    input.pitch = clamp(clamp(keyPitch + stick.pitch, -1, 1) * (invertPitch ? -1 : 1) + tp, -1, 1);
     input.roll = clamp(keyRoll + stick.roll + tr, -1, 1);
     input.yaw = clamp(keyYaw, -1, 1);
     input.throttleAxis = (keys.KeyR ? 1 : 0) - (keys.KeyF ? 1 : 0);
@@ -330,7 +346,7 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
   // A small dead zone so a phone held roughly still flies straight.
   function shapeTilt(v) {
     const m = Math.abs(v);
-    return m < 0.12 ? 0 : Math.sign(v) * ((m - 0.12) / 0.88);
+    return m < 0.15 ? 0 : Math.sign(v) * ((m - 0.15) / 0.85);
   }
 
   function setInvertPitch(value) {
