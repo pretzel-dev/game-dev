@@ -36,6 +36,23 @@ import { createAI, tickAI } from '../src/ai.js';
   console.log(`60 v 80 battle took ${t.toFixed(1)}s`);
 }
 
+// The AI acts like a player: at most one action (launch, upgrade or research) per turn.
+{
+  const g = createGame({ seed: 4, opponents: 1 });
+  const ai = createAI(1, 'hard', rng(1));
+  for (const s of g.systems) if (s.owner === 1) s.units = 150;
+  const snapshot = () => g.fleets.length + g.systems.reduce((n, s) => n + (s.upgrading > 0 ? 1 : 0), 0) + (g.tech[1].research ? 1 : 0);
+  let turns = 0;
+  for (let t = 0; t < 120; t += 0.1) {
+    const before = snapshot();
+    const clock = ai.clock;
+    tickAI(g, ai, 0.1);
+    if (ai.clock > clock) turns++;
+    assert.ok(snapshot() - before <= 1, 'one action per turn');
+  }
+  assert.ok(turns > 10);
+}
+
 // AI vs AI matches finish, with the "player" slot also run by an AI.
 let finished = 0;
 const runs = 30;
