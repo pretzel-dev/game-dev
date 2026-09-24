@@ -181,6 +181,7 @@ $('upgrade').addEventListener('click', () => {
   if (ui.selected !== null && upgrade(game, game.systems[ui.selected])) {
     const s = game.systems[ui.selected];
     toast(`Building level ${s.level + 1} · ${RULES.upgradeTime[s.level - 1]}s`, ownerColor(PLAYER));
+    ui.selected = ui.target = null;
   }
   updateActions();
 });

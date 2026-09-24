@@ -15,6 +15,9 @@ export const DIFFICULTY = {
 // Guess for a fleet whose size we can't read, and for stars we can't see.
 const UNKNOWN_FLEET = 25;
 const UNKNOWN_STAR = 30;
+// Never launch less than this (bar a weak neutral), so fleets matter.
+const MIN_FLEET = 15;
+const PLAN_TIMEOUT = 45;
 
 export function createAI(owner, difficulty, rand) {
   const d = DIFFICULTY[difficulty];
@@ -62,14 +65,14 @@ export function tickAI(game, ai, dt) {
   if (ai.plan) {
     const t = game.systems[ai.plan.target];
     const left = ai.plan.need - incoming(game, vis, t, ai.owner).friendly;
-    if (t.owner === ai.owner || left <= 0) {
+    if (t.owner === ai.owner || left <= 0 || game.time > ai.plan.until) {
       ai.plan = null;
     } else {
+      // Only stars with a real fleet to give join in; otherwise wait for them to build up.
       const src = mine
-        .filter((s) => spare(s) > 0 && s.id !== t.id)
+        .filter((s) => spare(s) >= Math.min(left, MIN_FLEET) && s.id !== t.id)
         .sort((a, b) => dist(a.pos, t.pos) - dist(b.pos, t.pos))[0];
-      if (src) { sendUnits(game, src, t, Math.min(spare(src), left)); return; }
-      ai.plan = null;
+      if (src) { sendUnits(game, src, t, Math.min(spare(src), Math.max(left, MIN_FLEET))); return; }
     }
   }
 
@@ -80,7 +83,10 @@ export function tickAI(game, ai, dt) {
     if (avail <= 0) continue;
     for (const t of others) {
       const d = dist(s.pos, t.pos);
-      const need = Math.ceil(expected(game, vis, t, d / speed) * ai.d.greed) + 2;
+      const guess = expected(game, vis, t, d / speed);
+      let need = Math.ceil(guess * ai.d.greed) + 2;
+      // A proper fleet, unless it's a weak neutral we can see.
+      if (!(t.owner === NEUTRAL && vis.systems.has(t.id))) need = Math.max(need, MIN_FLEET);
       if (need > avail || incoming(game, vis, t, ai.owner).friendly >= need) continue;
       const known = vis.systems.has(t.id);
       const score = (t.level + (t.owner === NEUTRAL ? 0 : 0.5) + (known ? 0 : -0.3)) / (need + d * 0.4);
@@ -117,7 +123,7 @@ export function tickAI(game, ai, dt) {
   if (best) return;
 
   // 4. Nothing one star can take: plan a strike from several, one launch per turn.
-  const total = mine.reduce((n, s) => n + Math.max(0, spare(s)), 0);
+  const total = mine.reduce((n, s) => n + (spare(s) >= MIN_FLEET ? spare(s) : 0), 0);
   let target = null;
   let need = Infinity;
   for (const t of others) {
@@ -126,7 +132,7 @@ export function tickAI(game, ai, dt) {
     if (n <= total && n < need) { target = t; need = n; }
   }
   if (target) {
-    ai.plan = { target: target.id, need };
+    ai.plan = { target: target.id, need, until: game.time + PLAN_TIMEOUT };
     ai.clock = 0.1; // the first launch goes out on the next turn
     return;
   }
