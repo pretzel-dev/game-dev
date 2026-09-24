@@ -13,6 +13,7 @@
   <body>
     <canvas id="scene"></canvas>
     <div id="labels"></div>
+    <div id="toast"></div>
 
     <div id="hud" hidden>
       <div id="share"></div>
@@ -20,17 +21,26 @@
     </div>
 
     <div id="actions" hidden>
-      <div class="seg" id="amount" role="radiogroup" aria-label="Units to send">
-        <button data-f="0.25">¼</button>
-        <button data-f="0.5">½</button>
-        <button data-f="1">All</button>
+      <div id="order" hidden>
+        <div id="order-info"></div>
+        <div class="bar">
+          <div class="seg" id="amount" role="radiogroup" aria-label="Ships to send">
+            <button data-f="0.25">¼</button>
+            <button data-f="0.5">½</button>
+            <button data-f="1">All</button>
+          </div>
+          <button id="launch">Launch</button>
+        </div>
       </div>
-      <button id="upgrade"></button>
+      <div class="bar" id="manage">
+        <span id="hint">Tap a target</span>
+        <button id="upgrade"></button>
+      </div>
     </div>
 
     <div id="menu" class="overlay">
       <h1>Starfall</h1>
-      <p class="how">Tap your star, then tap a target to send ships.<br />Or drag from star to star. Fleets can't be recalled.</p>
+      <p class="how">Select your star, pick a target, launch.<br />Fleets take a long time to arrive and can't be recalled.</p>
       <div class="row"><span>Rivals</span>
         <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div>
       </div>

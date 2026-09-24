@@ -1,4 +1,4 @@
-import { createGame, step, sendFraction, upgrade, upgradeCost, rng, PLAYER, NEUTRAL, RULES } from './sim.js';
+import { createGame, step, sendFraction, upgrade, upgradeCost, rng, dist, PLAYER, NEUTRAL, RULES } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -11,7 +11,7 @@ let ais = [];
 let running = false;
 
 // UI state shared with the renderer.
-const ui = { selected: null, hover: null, drag: null, dragging: false, fraction: prefs.fraction };
+const ui = { selected: null, target: null, hover: null, drag: null, dragging: false, fraction: prefs.fraction };
 
 function loadPrefs() {
   const d = { rivals: 2, difficulty: 'normal', fraction: 0.5 };
@@ -43,7 +43,7 @@ function start() {
   game = createGame({ seed, opponents: prefs.rivals, portrait: innerHeight > innerWidth });
   const r = rng(seed ^ 0x5eed);
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
-  ui.selected = ui.hover = ui.drag = null;
+  ui.selected = ui.target = ui.hover = ui.drag = null;
   view.build(game);
   // Start looking at the player's home.
   const home = game.systems.find((s) => s.owner === PLAYER).pos;
@@ -80,13 +80,36 @@ function pause() {
 }
 document.addEventListener('visibilitychange', () => document.hidden && pause());
 
-// ---- Actions --------------------------------------------------------------
+// ---- Orders ---------------------------------------------------------------
+// Select one of your stars, pick a target, then Launch. The two-step order
+// makes each fleet a deliberate commitment: it can't be recalled.
+
+const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
+
+function orderSize() {
+  const from = game.systems[ui.selected];
+  return Math.max(1, Math.floor(from.units * ui.fraction));
+}
 
 function updateActions() {
   const s = ui.selected !== null ? game.systems[ui.selected] : null;
   const show = !!s && s.owner === PLAYER && running;
   $('actions').hidden = !show;
   if (!show) return;
+  const hasTarget = ui.target !== null;
+  $('order').hidden = !hasTarget;
+  $('hint').hidden = hasTarget;
+  if (hasTarget) {
+    const t = game.systems[ui.target];
+    const n = orderSize();
+    const eta = dist(s.pos, t.pos) / RULES.fleetSpeed;
+    const who = t.owner === PLAYER ? 'reinforce' : t.owner === NEUTRAL ? 'neutral' : 'enemy';
+    const html = t.owner === PLAYER
+      ? `<b>${n}</b> ships to reinforce · arrive in <b>${fmtTime(eta)}</b>`
+      : `<b>${n}</b> ships vs <b>${Math.floor(t.units)}</b> ${who} · arrive in <b>${fmtTime(eta)}</b>`;
+    if ($('order-info').innerHTML !== html) $('order-info').innerHTML = html;
+    $('launch').disabled = s.units < 1;
+  }
   const cost = upgradeCost(s);
   const btn = $('upgrade');
   if (cost === null) {
@@ -100,52 +123,86 @@ function updateActions() {
 }
 
 $('upgrade').addEventListener('click', () => {
-  if (ui.selected !== null) upgrade(game, game.systems[ui.selected]);
+  if (ui.selected !== null && upgrade(game, game.systems[ui.selected])) {
+    toast(`Factory upgraded to level ${game.systems[ui.selected].level}`, ownerColor(PLAYER));
+  }
   updateActions();
 });
+$('launch').addEventListener('click', launch);
+$('amount').addEventListener('click', () => updateActions());
 
-function send(fromId, toId) {
-  const from = game.systems[fromId];
-  if (from.owner !== PLAYER || fromId === toId) return;
-  if (sendFraction(game, from, game.systems[toId], ui.fraction)) buzz(8);
+function launch() {
+  if (ui.selected === null || ui.target === null) return;
+  const from = game.systems[ui.selected];
+  if (from.owner !== PLAYER) return;
+  const f = sendFraction(game, from, game.systems[ui.target], ui.fraction);
+  if (f) {
+    buzz([20, 40, 30]);
+    toast(`Fleet of ${f.units} launched · arrives in ${fmtTime(f.duration)}`, ownerColor(PLAYER));
+  }
+  ui.target = null;
+  ui.selected = null;
+  updateActions();
 }
 
-function buzz(ms) {
-  if (navigator.vibrate) try { navigator.vibrate(ms); } catch { /* ignore */ }
+let toastTimer = 0;
+function toast(text, color) {
+  const el = $('toast');
+  el.textContent = text;
+  el.style.color = color;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function buzz(pattern) {
+  if (navigator.vibrate) try { navigator.vibrate(pattern); } catch { /* ignore */ }
 }
 
 function tap(id) {
   if (id === null) {
-    ui.selected = null;
+    // Tapping space backs out one step: target first, then selection.
+    if (ui.target !== null) ui.target = null;
+    else ui.selected = null;
+  } else if (ui.selected !== null && id === ui.target) {
+    launch();
+    return;
   } else if (ui.selected !== null && id !== ui.selected) {
-    // The source stays selected so several waves can go out quickly.
-    send(ui.selected, id);
+    ui.target = id;
   } else if (id === ui.selected) {
-    ui.selected = null;
+    ui.selected = ui.target = null;
   } else if (game.systems[id].owner === PLAYER) {
     ui.selected = id;
+    ui.target = null;
   }
   updateActions();
 }
 
 // ---- Touch & mouse input ---------------------------------------------------
+// One finger: tap to select/target; drag to rotate, except a drag that starts
+// on the selected star, which aims it. Two fingers: pinch to zoom, move to rotate.
 
 const canvas = $('scene');
 const pointers = new Map();
-let gesture = null; // { kind: 'tap' | 'orbit' | 'send' | 'pinch', ... }
+let gesture = null; // { kind: 'tap' | 'orbit' | 'aim' | 'pinch', ... }
+
+function beginPinch() {
+  const [a, b] = [...pointers.values()];
+  gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  ui.drag = null;
+  ui.hover = null;
+}
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!running) return;
-  canvas.setPointerCapture(e.pointerId);
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
     const id = view.pick(e.clientX, e.clientY);
-    gesture = { kind: 'tap', id, x0: e.clientX, y0: e.clientY, own: id !== null && game.systems[id].owner === PLAYER };
+    gesture = { kind: 'tap', id, x0: e.clientX, y0: e.clientY, aim: id !== null && id === ui.selected };
   } else if (pointers.size === 2) {
-    ui.drag = null;
-    ui.hover = null;
-    const [a, b] = [...pointers.values()];
-    gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+    beginPinch();
   }
   ui.dragging = true;
   view.orbit.vaz = view.orbit.vpol = 0;
@@ -158,12 +215,12 @@ canvas.addEventListener('pointermove', (e) => {
   const dy = e.clientY - p.y;
   p.x = e.clientX;
   p.y = e.clientY;
-  const o = view.orbit;
 
-  if (gesture.kind === 'pinch' && pointers.size >= 2) {
+  if (gesture.kind === 'pinch') {
+    if (pointers.size < 2) return;
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
-    o.dist *= gesture.d / Math.max(1, d);
+    view.orbit.dist *= gesture.d / Math.max(1, d);
     gesture.d = d;
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
@@ -174,11 +231,11 @@ canvas.addEventListener('pointermove', (e) => {
   }
 
   if (gesture.kind === 'tap' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 10) {
-    gesture.kind = gesture.own ? 'send' : 'orbit';
+    gesture.kind = gesture.aim ? 'aim' : 'orbit';
   }
   if (gesture.kind === 'orbit') {
     rotate(dx, dy);
-  } else if (gesture.kind === 'send') {
+  } else if (gesture.kind === 'aim') {
     const over = view.pick(e.clientX, e.clientY);
     ui.hover = over !== gesture.id ? over : null;
     ui.drag = { from: gesture.id, x: e.clientX, y: e.clientY };
@@ -196,9 +253,8 @@ function rotate(dx, dy) {
 function endPointer(e) {
   if (!pointers.delete(e.pointerId)) return;
   if (gesture?.kind === 'tap' && pointers.size === 0) tap(gesture.id);
-  if (gesture?.kind === 'send' && ui.hover !== null) {
-    send(gesture.id, ui.hover);
-    ui.selected = null;
+  if (gesture?.kind === 'aim' && ui.hover !== null) {
+    ui.target = ui.hover;
     updateActions();
   }
   if (pointers.size === 0) {
@@ -206,9 +262,11 @@ function endPointer(e) {
     ui.drag = null;
     ui.hover = null;
     ui.dragging = false;
-  } else if (gesture?.kind === 'pinch') {
-    // One finger lifted from a pinch: keep orbiting with the other, never tap.
+  } else if (pointers.size === 1) {
+    // One finger lifted from a pinch: carry on rotating with the other, never tap.
     gesture = { kind: 'orbit' };
+  } else {
+    beginPinch();
   }
 }
 canvas.addEventListener('pointerup', endPointer);
@@ -221,6 +279,12 @@ canvas.addEventListener('wheel', (e) => {
   view.orbit.dist *= Math.exp(e.deltaY * 0.001);
 }, { passive: false });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+// iOS Safari ignores user-scalable=no; stop its own pinch-zoom of the page.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('dblclick', (e) => e.preventDefault());
 
 // ---- HUD --------------------------------------------------------------------
 
@@ -238,7 +302,7 @@ function updateShare() {
 
 function finish() {
   running = false;
-  ui.selected = null;
+  ui.selected = ui.target = null;
   updateActions();
   const won = game.winner === PLAYER;
   $('end-title').textContent = won ? 'Victory' : 'Defeat';
@@ -261,7 +325,7 @@ function frame(now) {
       for (const ai of ais) tickAI(game, ai, dt);
       step(game, dt);
       // Lose a selected star? Drop the selection.
-      if (ui.selected !== null && game.systems[ui.selected].owner !== PLAYER) ui.selected = null;
+      if (ui.selected !== null && game.systems[ui.selected].owner !== PLAYER) ui.selected = ui.target = null;
       hudClock -= dt;
       if (hudClock <= 0) {
         hudClock = 0.2;

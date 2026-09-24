@@ -26,18 +26,52 @@ const ids = await page.evaluate(() => {
   const near = game.systems.filter((s) => s.owner === -1).sort((a, b) => d(a.pos, home.pos) - d(b.pos, home.pos))[0];
   return { home: home.id, target: near.id };
 });
+const orbit = () => page.evaluate(() => ({ ...window.__starfall.view.orbit }));
+const cdp = await page.context().newCDPSession(page);
+const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
+async function gesture(from, to, steps = 12) {
+  await touch('touchStart', from);
+  for (let i = 1; i <= steps; i++) {
+    await touch('touchMove', from.map(([x, y], k) => [x + ((to[k][0] - x) * i) / steps, y + ((to[k][1] - y) * i) / steps]));
+  }
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+}
+
+// One-finger drag, starting on your own (unselected) star, rotates the view.
 const h = await screenOf(ids.home);
-await page.touchscreen.tap(h.x, h.y);
+let o0 = await orbit();
+await gesture([[h.x, h.y]], [[h.x + 120, h.y - 40]]);
+let o1 = await orbit();
+const rotated = Math.abs(o1.az - o0.az) > 0.1;
+const noFleetFromDrag = (await page.evaluate(() => window.__starfall.game.fleets.filter((f) => f.owner === 0).length)) === 0;
+
+// Two-finger pinch outwards zooms in, inwards zooms out.
+o0 = await orbit();
+await gesture([[160, 400], [230, 480]], [[100, 330], [290, 560]]);
+o1 = await orbit();
+const zoomedIn = o1.dist < o0.dist * 0.8;
+await gesture([[100, 330], [290, 560]], [[160, 400], [230, 480]]);
+const o2 = await orbit();
+const zoomedOut = o2.dist > o1.dist * 1.2;
+await page.waitForTimeout(800);
+
+// Order: tap home, tap target, Launch.
+const h2 = await screenOf(ids.home);
+await page.touchscreen.tap(h2.x, h2.y);
 await page.waitForTimeout(300);
 const selected = await page.evaluate(() => !document.getElementById('actions').hidden);
 const t = await screenOf(ids.target);
 await page.touchscreen.tap(t.x, t.y);
+await page.waitForTimeout(300);
+const ordered = await page.evaluate(() => !document.getElementById('order').hidden);
+await page.screenshot({ path: `${out}/2-order.png` });
+await page.tap('#launch');
 await page.waitForTimeout(400);
 const fleets = await page.evaluate(() => window.__starfall.game.fleets.filter((f) => f.owner === 0).length);
-await page.screenshot({ path: `${out}/2-sent.png` });
-await page.waitForTimeout(12000);
-await page.screenshot({ path: `${out}/3-later.png` });
-const result = { selected, fleets, errors };
+await page.waitForTimeout(6000);
+await page.screenshot({ path: `${out}/3-in-flight.png` });
+const result = { rotated, noFleetFromDrag, zoomedIn, zoomedOut, selected, ordered, fleets, errors };
 console.log(JSON.stringify(result));
 await browser.close();
-if (!selected || fleets < 1 || errors.length) process.exit(1);
+if (!rotated || !noFleetFromDrag || !zoomedIn || !zoomedOut || !selected || !ordered || fleets < 1 || errors.length) process.exit(1);

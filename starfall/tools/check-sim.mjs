@@ -28,12 +28,12 @@ for (let seed = 1; seed <= runs; seed++) {
   const g = createGame({ seed, opponents });
   const r = rng(seed * 7);
   const ais = Array.from({ length: g.players }, (_, i) => createAI(i, i === 0 ? 'normal' : 'hard', r));
-  for (let t = 0; t < 1200 && g.winner === null; t += 0.1) {
-    for (const ai of ais) tickAI(g, ai, 0.1);
-    step(g, 0.1);
+  for (let t = 0; t < 3600 && g.winner === null; t += 0.25) {
+    for (const ai of ais) tickAI(g, ai, 0.25);
+    step(g, 0.25);
     for (const s of g.systems) assert.ok(s.units >= 0 && Number.isFinite(s.units));
   }
   if (g.winner !== null) finished++;
 }
-console.log(`sim ok: ${finished}/${runs} AI matches finished within 20 min of game time`);
+console.log(`sim ok: ${finished}/${runs} AI matches finished within 60 min of game time`);
 assert.ok(finished >= runs * 0.8, 'most AI matches should reach a winner');

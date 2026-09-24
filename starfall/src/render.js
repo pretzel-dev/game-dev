@@ -41,7 +41,7 @@ function starfield() {
   const col = new Float32Array(n * 3);
   const c = new THREE.Color();
   for (let i = 0; i < n; i++) {
-    const v = new THREE.Vector3().randomDirection().multiplyScalar(400 + Math.random() * 200);
+    const v = new THREE.Vector3().randomDirection().multiplyScalar(1500 + Math.random() * 600);
     pos.set([v.x, v.y, v.z], i * 3);
     c.setHSL(0.55 + Math.random() * 0.15, 0.4, 0.4 + Math.random() * 0.5);
     col.set([c.r, c.g, c.b], i * 3);
@@ -57,7 +57,7 @@ export function createView(canvas, labelRoot) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#05060d');
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 2000);
+  const camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
   scene.add(starfield());
 
   const glow = glowTexture();
@@ -66,7 +66,7 @@ export function createView(canvas, labelRoot) {
   scene.add(world);
 
   // Orbit camera state.
-  const orbit = { az: 0.6, pol: 1.05, dist: 90, minDist: 25, maxDist: 220, vaz: 0, vpol: 0 };
+  const orbit = { az: 0.6, pol: 1.05, dist: 300, minDist: 40, maxDist: 800, vaz: 0, vpol: 0 };
 
   let systems = [];
   let fleetSprites = [];
@@ -84,7 +84,7 @@ export function createView(canvas, labelRoot) {
 
   // Drag-to-send preview line.
   const dragGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-  const dragLine = new THREE.Line(dragGeo, new THREE.LineDashedMaterial({ color: OWNER_COLORS[0], dashSize: 1.2, gapSize: 0.8 }));
+  const dragLine = new THREE.Line(dragGeo, new THREE.LineDashedMaterial({ color: OWNER_COLORS[0], dashSize: 3, gapSize: 2 }));
   dragLine.frustumCulled = false;
   dragLine.visible = false;
   scene.add(dragLine);
@@ -92,7 +92,7 @@ export function createView(canvas, labelRoot) {
   function build(game) {
     world.clear();
     labelRoot.innerHTML = '';
-    fleetSprites = [];
+    fleetLabels = [];
     extent.x = Math.max(...game.systems.map((s) => Math.abs(s.pos.x)));
     extent.z = Math.max(...game.systems.map((s) => Math.abs(s.pos.z)));
     systems = game.systems.map((s) => {
@@ -153,6 +153,20 @@ export function createView(canvas, labelRoot) {
   }
 
   const tmp = new THREE.Vector3();
+  const head = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  const side = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+  let fleetLabels = [];
+  function fleetLabel(i) {
+    if (!fleetLabels[i]) {
+      const el = document.createElement('div');
+      el.className = 'lbl flbl';
+      labelRoot.appendChild(el);
+      fleetLabels[i] = el;
+    }
+    return fleetLabels[i];
+  }
   const tmpColor = new THREE.Color();
 
   function fleetPos(game, f, out) {
@@ -160,7 +174,7 @@ export function createView(canvas, labelRoot) {
     const b = game.systems[f.to].pos;
     const p = progress(f);
     // Slight arc so crossing fleets don't overlap.
-    const lift = Math.sin(p * Math.PI) * 1.5;
+    const lift = Math.sin(p * Math.PI) * 4;
     return out.set(a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p + lift, a.z + (b.z - a.z) * p);
   }
 
@@ -199,7 +213,7 @@ export function createView(canvas, labelRoot) {
         r.rotation.z += dt * (0.25 + i * 0.1);
       });
       const selected = ui.selected === s.id;
-      const hovered = ui.hover === s.id && !selected;
+      const hovered = (ui.hover === s.id || ui.target === s.id) && !selected;
       v.sel.visible = selected || hovered;
       v.sel.material.opacity = selected ? 0.9 : 0.45;
       v.sel.material.color.set(selected ? '#ffffff' : col);
@@ -223,32 +237,56 @@ export function createView(canvas, labelRoot) {
       }
     }
 
-    // Fleets.
+    // Fleets: a wedge of ships sized by the fleet, a trail to the target and a label.
+    let used = 0;
     const fleets = game.fleets.slice(0, MAX_FLEETS);
     fleets.forEach((f, i) => {
-      const sp = fleetSprite(i);
-      sp.visible = true;
-      fleetPos(game, f, sp.position);
-      sp.material.color.set(ownerColor(f.owner));
-      sp.scale.setScalar(1.6 + Math.sqrt(f.units) * 0.55);
+      const a = game.systems[f.from].pos;
       const b = game.systems[f.to].pos;
-      trailPos.set([sp.position.x, sp.position.y, sp.position.z, b.x, b.y, b.z], i * 6);
-      tmpColor.set(ownerColor(f.owner));
-      trailCol.set([tmpColor.r, tmpColor.g, tmpColor.b, tmpColor.r * 0.2, tmpColor.g * 0.2, tmpColor.b * 0.2], i * 6);
+      fleetPos(game, f, head);
+      dir.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
+      side.crossVectors(dir, UP).normalize();
+      const color = ownerColor(f.owner);
+      const ships = Math.min(15, Math.max(1, Math.ceil(f.units / 5)));
+      for (let j = 0; j < ships; j++) {
+        const sp = fleetSprite(used++);
+        const row = Math.ceil(j / 2);
+        const sign = j % 2 ? 1 : -1;
+        sp.visible = true;
+        sp.position.copy(head).addScaledVector(dir, -row * 2.4).addScaledVector(side, sign * row * 1.8);
+        sp.material.color.set(color);
+        sp.scale.setScalar(j === 0 ? 7 : 5);
+      }
+      trailPos.set([head.x, head.y, head.z, b.x, b.y, b.z], i * 6);
+      tmpColor.set(color);
+      trailCol.set([tmpColor.r, tmpColor.g, tmpColor.b, tmpColor.r * 0.15, tmpColor.g * 0.15, tmpColor.b * 0.15], i * 6);
+
+      const lbl = fleetLabel(i);
+      tmp.copy(head).project(camera);
+      if (tmp.z > 1) { lbl.style.visibility = 'hidden'; return; }
+      lbl.style.visibility = 'visible';
+      lbl.style.color = color;
+      const left = Math.max(0, f.duration - f.t);
+      const text = `${f.units}<small>${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</small>`;
+      if (lbl.innerHTML !== text) lbl.innerHTML = text;
+      lbl.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * w}px, ${(-tmp.y * 0.5 + 0.5) * h - 22}px) translate(-50%, 0)`;
     });
-    for (let i = fleets.length; i < fleetSprites.length; i++) fleetSprites[i].visible = false;
+    for (let i = used; i < fleetSprites.length; i++) fleetSprites[i].visible = false;
+    for (let i = fleets.length; i < fleetLabels.length; i++) fleetLabels[i].style.visibility = 'hidden';
     trailGeo.setDrawRange(0, fleets.length * 2);
     trailGeo.attributes.position.needsUpdate = true;
     trailGeo.attributes.color.needsUpdate = true;
 
-    // Drag preview.
-    if (ui.drag) {
+    // Order preview: while aiming by drag, or once a target is picked.
+    const aimAt = ui.drag ? ui.hover : ui.target;
+    const aimFrom = ui.drag ? ui.drag.from : ui.selected;
+    if (aimFrom !== null && (ui.drag || aimAt !== null)) {
       dragLine.visible = true;
-      const a = game.systems[ui.drag.from].pos;
+      const a = game.systems[aimFrom].pos;
       const p = dragGeo.attributes.position;
       p.setXYZ(0, a.x, a.y, a.z);
-      if (ui.hover !== null && ui.hover !== ui.drag.from) {
-        const b = game.systems[ui.hover].pos;
+      if (aimAt !== null && aimAt !== aimFrom) {
+        const b = game.systems[aimAt].pos;
         p.setXYZ(1, b.x, b.y, b.z);
       } else {
         // Unproject the finger onto the plane through the source star facing the camera.
