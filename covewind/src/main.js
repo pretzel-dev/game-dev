@@ -182,7 +182,20 @@ function boot() {
   // Tilt steering: needs a tap to ask permission on iOS, so it is switched
   // from the title card chips, and re-centred whenever you take off.
   async function setTilt(on) {
+    const note = document.querySelector('#tiltNote');
+    // Show it pressed straight away; the phone may take a moment to answer.
+    for (const chip of document.querySelectorAll('[data-tilt]')) {
+      chip.setAttribute('aria-pressed', String((chip.dataset.tilt === 'on') === on));
+    }
+    if (note) note.textContent = on ? 'Asking the phone for its tilt…' : '';
     const result = await controls.setTilt(on);
+    if (note) {
+      note.textContent = on
+        ? result
+          ? 'Tilt is on — how you hold it at take-off is level'
+          : 'This browser is not sharing the tilt sensor here. Try opening the game in its own tab.'
+        : '';
+    }
     settings.set('tilt', result);
     for (const chip of document.querySelectorAll('[data-tilt]')) {
       chip.setAttribute('aria-pressed', String((chip.dataset.tilt === 'on') === result));

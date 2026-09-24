@@ -268,8 +268,16 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
         }
       }
       tilt.base = null;
+      tilt.raw = null;
       addEventListener('deviceorientation', onOrientation);
       tilt.on = true;
+      // Some browsers (and pages embedded in another page) hand out the
+      // event but never send a reading. Give it a moment to prove itself.
+      await new Promise((r) => setTimeout(r, 900));
+      if (!tilt.raw) {
+        removeEventListener('deviceorientation', onOrientation);
+        return (tilt.on = false);
+      }
     } else {
       removeEventListener('deviceorientation', onOrientation);
       tilt.on = false;
