@@ -1,11 +1,22 @@
 import * as THREE from 'three';
-import { NEUTRAL, progress, capOf } from './sim.js';
+import { NEUTRAL, progress, capOf, upgradeProgress } from './sim.js';
 
 export const OWNER_COLORS = ['#4db4ff', '#ff5a6e', '#ffb347', '#b57bff'];
 export const NEUTRAL_COLOR = '#7d8398';
 export const ownerColor = (o) => (o === NEUTRAL ? NEUTRAL_COLOR : OWNER_COLORS[o]);
 
 const MAX_FLEETS = 512;
+const MAX_SHIPS = 1500; // individual ship sprites, shared by fleets and sieges
+const MAX_BOOMS = 260;
+
+/** Stable pseudo-random 0..1 for (a, b), so each ship keeps its own quirks. */
+function hash(a, b) {
+  let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35);
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x2c1b3c6d);
+  x ^= x >>> 12;
+  return (x >>> 0) / 4294967296;
+}
 
 function glowTexture() {
   const c = document.createElement('canvas');
@@ -66,7 +77,7 @@ export function createView(canvas, labelRoot) {
   scene.add(world);
 
   // Orbit camera state.
-  const orbit = { az: 0.6, pol: 1.05, dist: 300, minDist: 40, maxDist: 800, vaz: 0, vpol: 0 };
+  const orbit = { az: 0.6, pol: 1.05, dist: 300, minDist: 30, maxDist: 900, target: new THREE.Vector3(), vaz: 0, vpol: 0 };
 
   let systems = [];
   let fleetSprites = [];
@@ -143,7 +154,40 @@ export function createView(canvas, labelRoot) {
     camera.updateProjectionMatrix();
   }
 
+  // Explosions: short additive flashes that swell and fade.
+  const booms = [];
+  let boomNext = 0;
+  function boom(x, y, z, color, size, life) {
+    let b = booms[boomNext];
+    if (!b) {
+      b = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      b.userData = {};
+      scene.add(b);
+      booms[boomNext] = b;
+    }
+    boomNext = (boomNext + 1) % MAX_BOOMS;
+    b.position.set(x, y, z);
+    b.material.color.set(color);
+    b.userData.age = 0;
+    b.userData.life = life;
+    b.userData.size = size;
+    b.visible = true;
+  }
+  function updateBooms(dt) {
+    for (const b of booms) {
+      if (!b.visible) continue;
+      const d = b.userData;
+      d.age += dt;
+      const k = d.age / d.life;
+      if (k >= 1) { b.visible = false; continue; }
+      b.scale.setScalar(d.size * (0.4 + Math.sqrt(k)));
+      b.material.opacity = Math.min(1, (1 - k) * 1.6);
+    }
+  }
+  const BOOM_COLORS = ['#ffffff', '#ffd27a', '#ff9a4a', '#ff6a3a'];
+
   function fleetSprite(i) {
+    if (i >= MAX_SHIPS) return null;
     if (!fleetSprites[i]) {
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       scene.add(sp);
@@ -157,6 +201,7 @@ export function createView(canvas, labelRoot) {
   const dir = new THREE.Vector3();
   const side = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
+  const up2 = new THREE.Vector3();
   let fleetLabels = [];
   function fleetLabel(i) {
     if (!fleetLabels[i]) {
@@ -188,12 +233,17 @@ export function createView(canvas, labelRoot) {
     }
     orbit.pol = THREE.MathUtils.clamp(orbit.pol, 0.25, Math.PI - 0.25);
     orbit.dist = THREE.MathUtils.clamp(orbit.dist, orbit.minDist, orbit.maxDist);
-    camera.position.setFromSphericalCoords(orbit.dist, orbit.pol, orbit.az);
-    camera.lookAt(0, 0, 0);
+    orbit.target.x = THREE.MathUtils.clamp(orbit.target.x, -extent.x, extent.x);
+    orbit.target.z = THREE.MathUtils.clamp(orbit.target.z, -extent.z, extent.z);
+    orbit.target.y = 0;
+    camera.position.setFromSphericalCoords(orbit.dist, orbit.pol, orbit.az).add(orbit.target);
+    camera.lookAt(orbit.target);
     camera.updateMatrixWorld();
 
     const w = window.innerWidth;
     const h = window.innerHeight;
+    let used = 0; // ship sprites handed out this frame
+    updateBooms(dt);
 
     for (const v of systems) {
       const { s } = v;
@@ -208,10 +258,61 @@ export function createView(canvas, labelRoot) {
       v.pulse = Math.max(0, v.pulse - dt * 1.5);
       const full = s.owner !== NEUTRAL && s.units >= capOf(s) - 0.01;
       v.halo.scale.setScalar(s.size * (7 + v.pulse * 10 + (full ? Math.sin(time * 4) * 0.4 : 0)));
+      // Rings show the level; the next one fades in, spinning fast, while it's built.
+      const building = upgradeProgress(s);
       v.rings.forEach((r, i) => {
-        r.visible = i < s.level;
-        r.rotation.z += dt * (0.25 + i * 0.1);
+        const underway = building > 0 && i === s.level;
+        r.visible = i < s.level || underway;
+        r.material.opacity = underway ? 0.15 + building * 0.7 : 0.85;
+        r.rotation.z += dt * (underway ? 3 : 0.25 + i * 0.1);
       });
+      if (building > 0 && Math.random() < dt * 10) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = s.size * (1.9 + s.level * 0.55);
+        boom(s.pos.x + Math.cos(a) * rr, s.pos.y + (Math.random() - 0.5) * s.size, s.pos.z + Math.sin(a) * rr, '#bfe6ff', s.size * 2.4, 0.6);
+      }
+
+      // Sieges: attackers circle the star while explosions flicker through the fight.
+      for (const g of s.sieges) {
+        const gc = ownerColor(g.owner);
+        const n = Math.min(60, Math.ceil(g.units));
+        for (let j = 0; j < n; j++) {
+          const sp = fleetSprite(used++);
+          if (!sp) break;
+          const r1 = hash(g.owner * 7919 + s.id, j);
+          const r2 = hash(j, s.id * 31 + g.owner);
+          const rad = s.size * (3 + r1 * 3);
+          const ang = r2 * Math.PI * 2 + time * (0.25 + r1 * 0.35);
+          const tilt = (r1 - 0.5) * 1.2;
+          sp.visible = true;
+          sp.position.set(
+            s.pos.x + Math.cos(ang) * rad,
+            s.pos.y + Math.sin(ang) * rad * tilt,
+            s.pos.z + Math.sin(ang) * rad,
+          );
+          sp.material.color.set(gc);
+          sp.scale.setScalar(2.2);
+        }
+      }
+      if (s.fighting) {
+        // One flash per ship lost, split between the attackers and the defences.
+        let flashes = Math.min(14, s.fighting * 2 + Math.random());
+        s.fighting = 0;
+        for (; flashes >= 1; flashes--) {
+          const onShip = Math.random() < 0.6;
+          const a = Math.random() * Math.PI * 2;
+          const rad = s.size * (onShip ? 3 + Math.random() * 3 : 1.1 + Math.random() * 0.6);
+          boom(
+            s.pos.x + Math.cos(a) * rad,
+            s.pos.y + (Math.random() - 0.5) * rad * (onShip ? 0.6 : 1.4),
+            s.pos.z + Math.sin(a) * rad,
+            BOOM_COLORS[(Math.random() * BOOM_COLORS.length) | 0],
+            s.size * (2.2 + Math.random() * 3),
+            0.45 + Math.random() * 0.6,
+          );
+        }
+        v.pulse = Math.max(v.pulse, 0.15);
+      }
       const selected = ui.selected === s.id;
       const hovered = (ui.hover === s.id || ui.target === s.id) && !selected;
       v.sel.visible = selected || hovered;
@@ -222,9 +323,11 @@ export function createView(canvas, labelRoot) {
       // Screen-space label under the star.
       tmp.copy(v.g.position).project(camera);
       const units = Math.floor(s.units);
-      if (units !== v.shown) {
-        v.label.textContent = units;
-        v.shown = units;
+      const attackers = s.sieges.map((g) => `<span style="color:${ownerColor(g.owner)}"> ⚔ ${Math.ceil(g.units)}</span>`).join('');
+      const text = `${units}${attackers}`;
+      if (text !== v.shown) {
+        v.label.innerHTML = text;
+        v.shown = text;
       }
       if (tmp.z > 1) {
         v.label.style.visibility = 'hidden';
@@ -238,7 +341,6 @@ export function createView(canvas, labelRoot) {
     }
 
     // Fleets: a wedge of ships sized by the fleet, a trail to the target and a label.
-    let used = 0;
     const fleets = game.fleets.slice(0, MAX_FLEETS);
     fleets.forEach((f, i) => {
       const a = game.systems[f.from].pos;
@@ -246,16 +348,30 @@ export function createView(canvas, labelRoot) {
       fleetPos(game, f, head);
       dir.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
       side.crossVectors(dir, UP).normalize();
+      up2.crossVectors(side, dir);
       const color = ownerColor(f.owner);
-      const ships = Math.min(15, Math.max(1, Math.ceil(f.units / 5)));
-      for (let j = 0; j < ships; j++) {
+      // A loose cloud, one sprite per ship (up to a point). Each ship has its own
+      // spot and pace, so the cloud drifts and stragglers trail behind.
+      const n = Math.min(80, f.units);
+      const spread = 1.2 + Math.sqrt(n) * 0.45;
+      const p = progress(f);
+      const grow = Math.min(1, p * 8, (1 - p) * 8); // gather at launch, close up on arrival
+      for (let j = 0; j < n; j++) {
         const sp = fleetSprite(used++);
-        const row = Math.ceil(j / 2);
-        const sign = j % 2 ? 1 : -1;
+        if (!sp) break;
+        const r1 = hash(f.id, j * 3);
+        const r2 = hash(f.id, j * 3 + 1);
+        const r3 = hash(f.id, j * 3 + 2);
+        const ang = r1 * Math.PI * 2;
+        const rad = Math.sqrt(r2) * spread;
+        const lag = r3 * r3 * spread * 2.2 + Math.sin(time * (0.6 + r1) + r2 * 9) * 0.35;
         sp.visible = true;
-        sp.position.copy(head).addScaledVector(dir, -row * 2.4).addScaledVector(side, sign * row * 1.8);
+        sp.position.copy(head)
+          .addScaledVector(side, Math.cos(ang) * rad * grow)
+          .addScaledVector(up2, Math.sin(ang) * rad * 0.7 * grow)
+          .addScaledVector(dir, -lag * grow);
         sp.material.color.set(color);
-        sp.scale.setScalar(j === 0 ? 7 : 5);
+        sp.scale.setScalar(1.7 + r1 * 1.1);
       }
       trailPos.set([head.x, head.y, head.z, b.x, b.y, b.z], i * 6);
       tmpColor.set(color);
@@ -305,6 +421,31 @@ export function createView(canvas, labelRoot) {
     renderer.render(scene, camera);
   }
 
+  /** The point on the map's mid-plane under a screen position. */
+  function groundAt(x, y) {
+    const ndc = new THREE.Vector3((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1, 0.5).unproject(camera);
+    const ray = new THREE.Ray(camera.position, ndc.sub(camera.position).normalize());
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), orbit.target);
+    return ray.intersectPlane(plane, new THREE.Vector3());
+  }
+
+  /** Zooms by factor (<1 is in), keeping the point under (x, y) under the fingers. */
+  function zoomAt(x, y, factor) {
+    const before = groundAt(x, y);
+    const next = THREE.MathUtils.clamp(orbit.dist * factor, orbit.minDist, orbit.maxDist);
+    const k = next / orbit.dist;
+    orbit.dist = next;
+    if (before) orbit.target.lerp(before, 1 - k);
+  }
+
+  /** Slides the view by a screen-space drag in pixels. */
+  function pan(dx, dy) {
+    const perPx = (2 * orbit.dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / window.innerHeight;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const fwd = new THREE.Vector3().crossVectors(UP, right).normalize();
+    orbit.target.addScaledVector(right, -dx * perPx).addScaledVector(fwd, dy * perPx);
+  }
+
   /** Nearest system to a screen point, within a finger-sized radius. */
   function pick(x, y) {
     const w = window.innerWidth;
@@ -323,5 +464,5 @@ export function createView(canvas, labelRoot) {
     return best;
   }
 
-  return { build, render, resize, pick, orbit, fitDistance };
+  return { build, render, resize, pick, orbit, fitDistance, zoomAt, pan };
 }
