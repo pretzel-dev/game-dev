@@ -111,7 +111,12 @@ button {
   white-space: nowrap;
 }
 #toast.show { opacity: 1; }
-.flbl { font-size: 11px; font-weight: 600; opacity: 0.9; }
+.lbl:not(.flbl) { font-size: 14px; font-weight: 700; }
+.flbl {
+  font-size: 10px; font-weight: 600; line-height: 14px;
+  padding: 0 5px; border: 1px solid; border-radius: 7px;
+  background: rgba(5, 6, 13, 0.6); text-shadow: none; opacity: 0.85;
+}
 .flbl small { font-weight: 400; opacity: 0.7; margin-left: 3px; }
 #actions[hidden], .overlay[hidden], #hud[hidden] { display: none; }
 

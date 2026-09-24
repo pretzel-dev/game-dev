@@ -34,6 +34,26 @@ function glowTexture() {
   return t;
 }
 
+function arrowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.beginPath();
+  g.moveTo(58, 32);
+  g.lineTo(10, 12);
+  g.lineTo(20, 32);
+  g.lineTo(10, 52);
+  g.closePath();
+  g.fill();
+  return new THREE.CanvasTexture(c);
+}
+
+// Stars never shrink below this radius on screen; fleets simplify to one
+// arrowhead each once a ship would be smaller than FLEET_LOD px.
+const STAR_MIN_PX = 7;
+const FLEET_LOD = 2.2;
+
 function ringTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -72,6 +92,7 @@ export function createView(canvas, labelRoot) {
   scene.add(starfield());
 
   const glow = glowTexture();
+  const arrowTex = arrowTexture();
   const ringTex = ringTexture();
   const world = new THREE.Group();
   scene.add(world);
@@ -186,6 +207,19 @@ export function createView(canvas, labelRoot) {
   }
   const BOOM_COLORS = ['#ffffff', '#ffd27a', '#ff9a4a', '#ff6a3a'];
 
+  // Pixels per world unit at a point, for level-of-detail decisions.
+  const ppuAt = (pos) => window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.distanceTo(pos));
+
+  const arrows = [];
+  function arrowSprite(i) {
+    if (!arrows[i]) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: arrowTex, transparent: true, depthWrite: false }));
+      scene.add(sp);
+      arrows[i] = sp;
+    }
+    return arrows[i];
+  }
+
   function fleetSprite(i) {
     if (i >= MAX_SHIPS) return null;
     if (!fleetSprites[i]) {
@@ -197,6 +231,7 @@ export function createView(canvas, labelRoot) {
   }
 
   const tmp = new THREE.Vector3();
+  const tmp2 = new THREE.Vector3();
   const head = new THREE.Vector3();
   const dir = new THREE.Vector3();
   const side = new THREE.Vector3();
@@ -267,6 +302,9 @@ export function createView(canvas, labelRoot) {
       v.pulse = Math.max(0, v.pulse - dt * 1.5);
       const full = s.owner !== NEUTRAL && s.units >= capOf(s) - 0.01;
       v.halo.scale.setScalar(s.size * (7 + v.pulse * 10 + (full ? Math.sin(time * 4) * 0.4 : 0)));
+      // Zoomed far out, keep stars big enough to read (and tell from fleets).
+      v.boost = Math.max(1, STAR_MIN_PX / (s.size * ppuAt(v.g.position)));
+      v.g.scale.setScalar(v.boost);
       // Rings show the level; the next one fades in, spinning fast, while it's built.
       const building = upgradeProgress(s);
       v.rings.forEach((r, i) => {
@@ -344,7 +382,7 @@ export function createView(canvas, labelRoot) {
         v.label.style.visibility = 'visible';
         const x = (tmp.x * 0.5 + 0.5) * w;
         const y = (-tmp.y * 0.5 + 0.5) * h;
-        const px = (s.size * 2.2 * h) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.distanceTo(v.g.position));
+        const px = s.size * 2.2 * v.boost * ppuAt(v.g.position);
         v.label.style.transform = `translate(${x}px, ${y + px + 4}px) translate(-50%, 0)`;
       }
     }
@@ -354,6 +392,7 @@ export function createView(canvas, labelRoot) {
     const intel = vis ? vis.intel : 2;
     const fleets = game.fleets.slice(0, MAX_FLEETS);
     let trailCount = 0;
+    let arrowCount = 0;
     fleets.forEach((f, i) => {
       const a = game.systems[f.from].pos;
       const b = game.systems[f.to].pos;
@@ -383,9 +422,21 @@ export function createView(canvas, labelRoot) {
       side.crossVectors(dir, UP).normalize();
       up2.crossVectors(side, dir);
       const color = ownerColor(f.owner);
+      const far = ppuAt(head) < FLEET_LOD;
+      if (far) {
+        // Zoomed out: one small arrowhead pointing along the route, no label.
+        const ar = arrowSprite(arrowCount++);
+        ar.visible = true;
+        ar.position.copy(head);
+        ar.material.color.set(color);
+        ar.scale.setScalar(12 / ppuAt(head));
+        tmp.copy(head).project(camera);
+        tmp2.copy(head).add(dir).project(camera);
+        ar.material.rotation = Math.atan2((tmp2.y - tmp.y) * h, (tmp2.x - tmp.x) * w);
+      }
       // A loose cloud, one sprite per ship (up to a point). Each ship has its own
       // spot and pace, so the cloud drifts and stragglers trail behind.
-      const n = Math.min(50, Math.ceil(f.units));
+      const n = far ? 0 : Math.min(50, Math.ceil(f.units));
       const spread = 1.2 + Math.sqrt(n) * 0.45;
       const p = progress(f);
       const grow = Math.min(1, p * 8, (1 - p) * 8); // gather at launch, close up on arrival
@@ -416,16 +467,19 @@ export function createView(canvas, labelRoot) {
 
       // Labels stay small: our fleets show their size; enemy fleets need intel.
       tmp.copy(head).project(camera);
-      if (tmp.z > 1 || (!mine && intel < 1)) { lbl.style.visibility = 'hidden'; return; }
+      if (far || tmp.z > 1 || (!mine && intel < 1)) { lbl.style.visibility = 'hidden'; return; }
       lbl.style.visibility = 'visible';
       lbl.style.color = color;
       const left = Math.max(0, f.duration - f.t);
       const eta = !mine && intel >= 2 ? `<small>${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</small>` : '';
-      const text = `${Math.ceil(f.units)}${eta}`;
-      if (lbl.innerHTML !== text) lbl.innerHTML = text;
-      lbl.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * w}px, ${(-tmp.y * 0.5 + 0.5) * h - 22}px) translate(-50%, 0)`;
+      const text = `▸ ${Math.ceil(f.units)}${eta}`;
+      if (lbl._text !== text) { lbl._text = text; lbl.innerHTML = text; }
+      // A small tag beside the cloud, unlike a star's number centred beneath it.
+      lbl.style.borderColor = color;
+      lbl.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * w + 14}px, ${(-tmp.y * 0.5 + 0.5) * h - 9}px)`;
     });
     for (let i = used; i < fleetSprites.length; i++) fleetSprites[i].visible = false;
+    for (let i = arrowCount; i < arrows.length; i++) arrows[i].visible = false;
     for (let i = fleets.length; i < fleetLabels.length; i++) fleetLabels[i].style.visibility = 'hidden';
     trailGeo.setDrawRange(0, trailCount * 2);
     trailGeo.attributes.position.needsUpdate = true;
