@@ -1,10 +1,11 @@
-# Builds Covewind and publishes it to GitHub Pages.
-name: Deploy Covewind to GitHub Pages
+# Builds every game and publishes them together to GitHub Pages:
+# a landing page at the root, each game under its own folder.
+name: Deploy games to GitHub Pages
 
 on:
   push:
     branches: [main]
-    paths: ['covewind/**', '.github/workflows/pages.yml']
+    paths: ['covewind/**', 'starfall/**', 'site/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -19,23 +20,29 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: covewind
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: covewind/package-lock.json
-      - run: npm ci
-      - run: npm run check
-      - run: npm run build
+          cache-dependency-path: '*/package-lock.json'
+      - name: Build Covewind
+        working-directory: covewind
+        run: npm ci && npm run check && npm run build
+      - name: Build Starfall
+        working-directory: starfall
+        run: npm ci && npm run check && npm run build
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -r site/. _site/
+          cp -r covewind/dist _site/covewind
+          cp -r starfall/dist _site/starfall
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: covewind/dist
+          path: _site
 
   deploy:
     needs: build
