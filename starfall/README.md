@@ -5,13 +5,16 @@ rivals by sending ships between star systems.
 
 ## How to play
 
-- **Send ships:** tap one of your stars (blue), then tap any other star. Or
-  drag from your star to the target. The ¼ / ½ / All buttons choose how much
-  of the garrison goes. Fleets can't be recalled.
+- **Send a fleet:** tap one of your stars (blue), then tap a target. The panel
+  shows your fleet against the defenders and the travel time. Pick ¼, ½ or
+  All, then tap **Launch** (or tap the target again). Systems are far apart and
+  crossings take 30–90 seconds, so each launch is a big commitment. Fleets
+  can't be recalled.
 - **Upgrade:** with your star selected, tap **Upgrade**. It costs ships and
   raises the star's production and garrison cap (up to level 4; the rings
   show the level). A captured star drops one level.
-- **Camera:** drag empty space to orbit, pinch (or scroll) to zoom.
+- **Camera:** drag with one finger to rotate, pinch (or scroll) to zoom. Dragging
+  from your selected star aims it at another star instead.
 - The bar at the top shows each side's share of all ships.
 - You win when no rival holds a star or has a fleet in flight.
 

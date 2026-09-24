@@ -4,13 +4,13 @@ export const NEUTRAL = -1;
 export const PLAYER = 0;
 
 export const RULES = {
-  fleetSpeed: 7, // world units per second
+  fleetSpeed: 1.6, // world units per second: crossings take 30-90 seconds
   // Indexed by factory level - 1.
-  rate: [0.8, 1.4, 2.0, 2.6], // units produced per second
-  cap: [25, 40, 60, 85], // production stops at this garrison
-  upgradeCost: [12, 22, 35], // cost to go from level n to n + 1
+  rate: [1, 1.7, 2.4, 3.2], // units produced per second
+  cap: [40, 70, 110, 160], // production stops at this garrison
+  upgradeCost: [20, 40, 70], // cost to go from level n to n + 1
   maxLevel: 4,
-  startUnits: 10,
+  startUnits: 25,
 };
 
 /** Small seeded PRNG so a seed always makes the same map. */
@@ -30,8 +30,8 @@ export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 export function createGame({ seed = Date.now(), opponents = 2, portrait = false } = {}) {
   const rand = rng(seed);
   const players = opponents + 1;
-  const count = 10 + players * 4;
-  const radius = 22 + players * 4;
+  const count = 9 + players * 3;
+  const radius = 60 + players * 14;
   // Stretch the map along z to suit a portrait screen (z runs up the screen).
   const rx = portrait ? radius * 0.72 : radius * 1.15;
   const rz = portrait ? radius * 1.35 : radius * 0.85;
@@ -47,16 +47,16 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
       z: (rand() * 2 - 1) * rz,
     };
     if ((p.x / rx) ** 2 + (p.y / ry) ** 2 + (p.z / rz) ** 2 > 1) continue;
-    if (pts.every((q) => dist(p, q) > 9)) pts.push(p);
+    if (pts.every((q) => dist(p, q) > 26)) pts.push(p);
   }
 
   const systems = pts.map((pos, id) => ({
     id,
     pos,
     owner: NEUTRAL,
-    units: Math.round(4 + rand() * 14),
+    units: Math.round(10 + rand() * 25),
     level: rand() < 0.25 ? 2 : 1,
-    size: 0.8 + rand() * 0.6,
+    size: 1.6 + rand() * 1.2,
     hue: rand(),
   }));
 
@@ -76,7 +76,7 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
     s.owner = owner;
     s.units = RULES.startUnits;
     s.level = 1;
-    s.size = 1.3;
+    s.size = 2.6;
   });
 
   return { systems, fleets: [], players, time: 0, winner: null, nextFleetId: 1 };
