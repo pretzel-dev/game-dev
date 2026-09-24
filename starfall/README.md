@@ -10,11 +10,17 @@ rivals by sending ships between star systems.
   All, then tap **Launch** (or tap the target again). Systems are far apart and
   crossings take 30–90 seconds, so each launch is a big commitment. Fleets
   can't be recalled.
-- **Upgrade:** with your star selected, tap **Upgrade**. It costs ships and
-  raises the star's production and garrison cap (up to level 4; the rings
-  show the level). A captured star drops one level.
-- **Camera:** drag with one finger to rotate, pinch (or scroll) to zoom. Dragging
-  from your selected star aims it at another star instead.
+- **Battles:** a fleet reaching a hostile star lays siege. Attackers circle it
+  and both sides lose ships at the same rate until one runs out, so the bigger
+  force wins with the difference. Big battles take 10 seconds or more, and a
+  star under siege stops producing. The label shows `defenders ⚔ attackers`.
+- **Upgrade:** with your star selected, tap **Upgrade**. You pay the ships up
+  front, then the upgrade takes 12–30 seconds to build. It raises the star's
+  production and garrison cap, up to level 4; the rings show the level. A
+  captured star drops one level and loses any upgrade it was building.
+- **Camera:** drag with one finger to rotate. Pinch (or scroll) to zoom
+  toward your fingers, and move two fingers to pan. Dragging from your selected
+  star aims it at another star instead.
 - The bar at the top shows each side's share of all ships.
 - You win when no rival holds a star or has a fleet in flight.
 

@@ -1,4 +1,4 @@
-import { createGame, step, sendFraction, upgrade, upgradeCost, rng, dist, PLAYER, NEUTRAL, RULES } from './sim.js';
+import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -49,6 +49,7 @@ function start() {
   const home = game.systems.find((s) => s.owner === PLAYER).pos;
   view.orbit.az = Math.abs(home.z) > Math.abs(home.x) || innerHeight > innerWidth ? (home.z >= 0 ? 0 : Math.PI) : Math.atan2(home.x, home.z);
   view.orbit.pol = 0.7;
+  view.orbit.target.set(0, 0, 0);
   view.orbit.dist = view.fitDistance();
   view.orbit.vaz = view.orbit.vpol = 0;
   $('menu').hidden = true;
@@ -112,7 +113,11 @@ function updateActions() {
   }
   const cost = upgradeCost(s);
   const btn = $('upgrade');
-  if (cost === null) {
+  if (s.upgrading > 0) {
+    const html = `Building<small>${Math.floor(upgradeProgress(s) * 100)}%</small>`;
+    if (btn.innerHTML !== html) btn.innerHTML = html;
+    btn.disabled = true;
+  } else if (cost === null) {
     btn.innerHTML = `Lv ${RULES.maxLevel}<small>max</small>`;
     btn.disabled = true;
   } else {
@@ -124,7 +129,8 @@ function updateActions() {
 
 $('upgrade').addEventListener('click', () => {
   if (ui.selected !== null && upgrade(game, game.systems[ui.selected])) {
-    toast(`Factory upgraded to level ${game.systems[ui.selected].level}`, ownerColor(PLAYER));
+    const s = game.systems[ui.selected];
+    toast(`Building level ${s.level + 1} · ${RULES.upgradeTime[s.level - 1]}s`, ownerColor(PLAYER));
   }
   updateActions();
 });
@@ -180,7 +186,7 @@ function tap(id) {
 
 // ---- Touch & mouse input ---------------------------------------------------
 // One finger: tap to select/target; drag to rotate, except a drag that starts
-// on the selected star, which aims it. Two fingers: pinch to zoom, move to rotate.
+// on the selected star, which aims it. Two fingers: pinch to zoom, move to pan.
 
 const canvas = $('scene');
 const pointers = new Map();
@@ -220,11 +226,11 @@ canvas.addEventListener('pointermove', (e) => {
     if (pointers.size < 2) return;
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
-    view.orbit.dist *= gesture.d / Math.max(1, d);
-    gesture.d = d;
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
-    rotate(mx - gesture.mx, my - gesture.my);
+    view.pan(mx - gesture.mx, my - gesture.my);
+    view.zoomAt(mx, my, gesture.d / Math.max(1, d));
+    gesture.d = d;
     gesture.mx = mx;
     gesture.my = my;
     return;
@@ -276,7 +282,7 @@ canvas.addEventListener('pointercancel', (e) => {
 });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  view.orbit.dist *= Math.exp(e.deltaY * 0.001);
+  view.zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY * 0.001));
 }, { passive: false });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 // iOS Safari ignores user-scalable=no; stop its own pinch-zoom of the page.

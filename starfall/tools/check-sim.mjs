@@ -14,10 +14,26 @@ import { createAI, tickAI } from '../src/ai.js';
   assert.equal(home.units, before - f.units);
   home.units = 100;
   assert.ok(upgrade(g, home));
+  assert.equal(home.level, 1, 'upgrades take time to build');
+  for (let t = 0; t < 13; t += 0.1) step(g, 0.1);
   assert.equal(home.level, 2);
   target.units = 1;
-  step(g, f.duration + 0.01);
+  for (let t = 0; t < f.duration + 0.05; t += 0.05) step(g, 0.05);
   assert.equal(target.owner, 0, 'fleet captures a weak system');
+}
+
+// Battles take time and play out as a difference in ships.
+{
+  const g = createGame({ seed: 2, opponents: 1 });
+  const s = g.systems.find((x) => x.owner === NEUTRAL);
+  s.units = 60;
+  s.sieges.push({ owner: 1, units: 80 });
+  let t = 0;
+  while (s.owner === NEUTRAL && t < 60) { step(g, 0.05); t += 0.05; }
+  assert.equal(s.owner, 1);
+  assert.ok(Math.abs(s.units - 20) < 1e-6);
+  assert.ok(t > 5, `a 60 v 80 battle should take a while (took ${t.toFixed(1)}s)`);
+  console.log(`60 v 80 battle took ${t.toFixed(1)}s`);
 }
 
 // AI vs AI matches finish, with the "player" slot also run by an AI.

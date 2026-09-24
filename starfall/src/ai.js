@@ -20,6 +20,10 @@ function incoming(game, s, owner) {
     if (f.owner === owner) friendly += f.units;
     else hostile += f.units;
   }
+  for (const g of s.sieges) {
+    if (g.owner === owner) friendly += g.units;
+    else if (s.owner === owner) hostile += g.units;
+  }
   return { friendly, hostile };
 }
 
@@ -31,6 +35,7 @@ export function tickAI(game, ai, dt) {
   const mine = game.systems.filter((s) => s.owner === ai.owner);
   const others = game.systems.filter((s) => s.owner !== ai.owner);
 
+  let attacked = false;
   for (const s of mine) {
     const threat = incoming(game, s, ai.owner).hostile;
     const reserve = threat + 3;
@@ -40,8 +45,7 @@ export function tickAI(game, ai, dt) {
     // Invest when safe, and always rather than sit at a full cap.
     const cost = upgradeCost(s);
     if (cost !== null && avail >= cost && (ai.rand() < ai.d.upgradeBias || s.units >= capOf(s) * 0.9)) {
-      upgrade(game, s);
-      continue;
+      if (upgrade(game, s)) continue;
     }
 
     // Attack the cheapest, closest, most valuable target we can afford.
@@ -53,26 +57,53 @@ export function tickAI(game, ai, dt) {
       const eta = d / RULES.fleetSpeed;
       const inc = incoming(game, t, ai.owner);
       const grown = t.owner === NEUTRAL ? t.units : Math.min(capOf(t), t.units + rateOf(t) * eta);
-      const need = Math.ceil((grown - inc.friendly) * ai.d.greed) + 2;
-      if (need <= 0 || need > avail) continue;
+      const need = Math.ceil(grown * ai.d.greed) + 2;
+      // Already on its way? Leave it; no trickles of reinforcements.
+      if (inc.friendly >= need || need > avail) continue;
       const score = (t.level + (t.owner === NEUTRAL ? 0 : 0.5)) / (need + d * 0.4);
       if (score > bestScore) { bestScore = score; best = t; bestNeed = need; }
     }
     if (best) {
       sendUnits(game, s, best, bestNeed);
+      attacked = true;
       continue;
     }
 
-    // Nothing to take: move surplus from a full system to the most threatened ally.
-    if (s.units >= capOf(s) * 0.95 && mine.length > 1) {
-      let target = null;
-      let worst = 0;
+    // Nothing to take: move a full star's surplus to our star nearest the enemy.
+    if (s.units >= capOf(s) * 0.95 && avail >= 20) {
+      let front = null;
+      let frontD = Infinity;
       for (const m of mine) {
-        if (m === s) continue;
-        const danger = incoming(game, m, ai.owner).hostile - m.units + 1 / (1 + dist(s.pos, m.pos));
-        if (target === null || danger > worst) { worst = danger; target = m; }
+        const d = Math.min(...others.map((o) => dist(m.pos, o.pos)));
+        if (d < frontD) { frontD = d; front = m; }
       }
-      sendUnits(game, s, target, avail * 0.5);
+      if (front && front !== s) sendUnits(game, s, front, avail * 0.6);
     }
+  }
+
+  if (!attacked) combinedStrike(game, ai, mine, others);
+}
+
+/** When no single star can take anything, several launch together at one target. */
+function combinedStrike(game, ai, mine, others) {
+  const spare = mine
+    .map((s) => ({ s, avail: Math.floor(s.units - incoming(game, s, ai.owner).hostile - 5) }))
+    .filter((x) => x.avail > 0);
+  const total = spare.reduce((n, x) => n + x.avail, 0);
+  let best = null;
+  let bestNeed = Infinity;
+  for (const t of others) {
+    const need = Math.ceil(Math.max(t.units, capOf(t)) * ai.d.greed) + 5;
+    if (incoming(game, t, ai.owner).friendly >= need) continue;
+    if (need <= total && need < bestNeed) { best = t; bestNeed = need; }
+  }
+  if (!best) return;
+  spare.sort((a, b) => dist(a.s.pos, best.pos) - dist(b.s.pos, best.pos));
+  let left = bestNeed;
+  for (const x of spare) {
+    if (left <= 0) break;
+    const n = Math.min(x.avail, left);
+    sendUnits(game, x.s, best, n);
+    left -= n;
   }
 }
