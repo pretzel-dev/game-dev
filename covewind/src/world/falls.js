@@ -13,15 +13,20 @@ import {
   Group,
   IcosahedronGeometry,
   Mesh,
-  MeshStandardMaterial,
+  CircleGeometry,
   PlaneGeometry,
   ShaderMaterial,
 } from 'three';
-import { PLACES, terrainHeightAt } from './terrain.js';
+import { PLACES, terrainHeightAt as heightCut } from './terrain.js';
+
+// The falls pour over the roof of the grotto, so everything here stands on the
+// rock as it was before the tunnel was cut.
+const terrainHeightAt = (x, z) => heightCut(x, z, true);
 import { createTree } from './props.js';
 import { MAT, mat } from '../core/materials.js';
 import { QUALITY } from '../core/quality.js';
 import { chance, rand, TAU } from '../core/utils.js';
+import { bakeStatic } from '../core/merge.js';
 
 const WATER_TOP = new Color(0xbfe9f2);
 const WATER_DEEP = new Color(0x5fb6c9);
@@ -40,20 +45,27 @@ const fallFragment = /* glsl */ `
   uniform vec3 deepColor;
   varying vec2 vUv;
 
+  float hash(float n) { return fract(sin(n) * 43758.5453); }
+
   void main() {
-    // Streaks falling at slightly different speeds, breaking up as they go.
-    float lane = floor(vUv.x * 9.0);
-    float speed = 1.4 + fract(sin(lane * 12.9898) * 43758.5453) * 0.8;
-    float v = vUv.y * 3.0 + time * speed;
-    float streak = 0.55 + 0.45 * sin(v * 6.2831 + lane);
-    float broken = smoothstep(0.15, 0.9, fract(v * 0.5 + sin(lane) * 0.3));
+    // Drawn water: long ribbons of light and shade falling at their own
+    // pace, with white streaks breaking through, the way a waterfall is
+    // painted in a background rather than simulated.
+    float lanes = 22.0;
+    float lane = floor(vUv.x * lanes);
+    float speed = 1.2 + hash(lane) * 1.1;
+    float v = vUv.y * 2.4 + time * speed + hash(lane + 7.0) * 10.0;
+    float ribbon = step(0.5, fract(v * 0.7 + hash(lane + 3.0)));
+    float streak = step(0.86, fract(v * 1.3 + hash(lane + 11.0) * 3.0));
 
-    vec3 col = mix(deepColor, topColor, streak * 0.7 + broken * 0.3);
-    // Whiter where it has fallen furthest and is all foam.
-    col = mix(col, vec3(1.0), smoothstep(0.55, 0.0, vUv.y) * 0.65);
+    vec3 col = mix(deepColor, topColor, 0.35 + ribbon * 0.4);
+    col = mix(col, vec3(1.0), streak * 0.85);
+    // All foam near the bottom, where it has fallen furthest.
+    float foam = smoothstep(0.32, 0.0, vUv.y + (hash(lane) - 0.5) * 0.08);
+    col = mix(col, vec3(1.0), foam * 0.9);
 
-    float alpha = 0.55 + streak * 0.35;
-    alpha *= smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
+    float edge = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+    float alpha = (0.72 + ribbon * 0.2 + streak * 0.1) * edge;
     gl_FragColor = vec4(col, alpha);
 
     #include <tonemapping_fragment>
@@ -87,17 +99,7 @@ function river(parent, points, width) {
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  const mesh = new Mesh(
-    geometry,
-    new MeshStandardMaterial({
-      color: 0x74c4d6,
-      roughness: 0.35,
-      flatShading: true,
-      transparent: true,
-      opacity: 0.88,
-      side: DoubleSide,
-    })
-  );
+  const mesh = new Mesh(geometry, mat(0x6cc6d4, { transparent: true, opacity: 0.9, side: DoubleSide, emissive: 0x0d2a33 }));
   mesh.renderOrder = 2;
   parent.add(mesh);
   return mesh;
@@ -113,27 +115,13 @@ export function createFalls(scene) {
   const tarn = PLACES.fallsTarn;
   const lipHeight = terrainHeightAt(top.x, top.z);
 
-  // The tarn on the shelf behind the lip.
-  const pool = new Mesh(
-    new PlaneGeometry(118, 96, 1, 1),
-    new MeshStandardMaterial({
-      color: 0x63b6cc,
-      roughness: 0.3,
-      transparent: true,
-      opacity: 0.9,
-      flatShading: true,
-    })
-  );
-  pool.rotation.x = -Math.PI / 2;
-  pool.position.set(tarn.x, terrainHeightAt(tarn.x, tarn.z) + 1.4, tarn.z);
-  pool.renderOrder = 2;
-  group.add(pool);
+  // The tarn itself is one of the lakes (see `island.js`).
 
   // The river from the tarn to the lip.
   river(
     group,
     [
-      { x: tarn.x + 6, z: tarn.z + 18, y: terrainHeightAt(tarn.x, tarn.z) + 1 },
+      { x: tarn.x + 6, z: tarn.z + 30, y: lipHeight + 0.4 },
       { x: tarn.x + 10, z: tarn.z + 44, y: lipHeight + 2 },
       { x: top.x, z: top.z - 8, y: lipHeight + 1.5 },
       { x: top.x, z: top.z + 6, y: lipHeight + 1 },
@@ -161,6 +149,7 @@ export function createFalls(scene) {
     const sheet = new Mesh(new PlaneGeometry(34 - i * 8, drop, 1, 1), material);
     sheet.position.set(top.x + i * 3, drop / 2 - 2, top.z + 12 + offset * -1);
     sheet.renderOrder = 3;
+    sheet.userData.dynamic = true;
     sheets.push(sheet);
     group.add(sheet);
   }
@@ -168,27 +157,25 @@ export function createFalls(scene) {
   // Spray where it lands, and a plunge pool of foam.
   const mistMaterial = mat(0xf4fbff, { flat: false, roughness: 1 });
   mistMaterial.transparent = true;
-  mistMaterial.opacity = 0.5;
+  mistMaterial.opacity = 0.4;
   mistMaterial.emissive = new Color(0x5a6a70);
   const mist = [];
   for (let i = 0; i < (QUALITY.tier === 'low' ? 5 : 9); i++) {
-    const puff = new Mesh(new IcosahedronGeometry(rand(7, 14), 1), mistMaterial);
-    puff.position.set(top.x + rand(-22, 22), rand(2, 26), top.z + 18 + rand(-16, 16));
+    // Spray to either side of the plunge, leaving the way in behind the
+    // fall clear for anyone who knows it is there.
+    const side = i % 2 ? 1 : -1;
+    const puff = new Mesh(new IcosahedronGeometry(rand(5, 9), 1), mistMaterial);
+    puff.position.set(top.x + side * rand(20, 34), rand(2, 16), top.z + 24 + rand(-6, 12));
     puff.scale.set(rand(1, 1.6), rand(0.6, 1), rand(1, 1.5));
     puff.renderOrder = 4;
+    puff.userData.dynamic = true;
     mist.push({ mesh: puff, phase: rand(0, TAU), base: puff.position.y });
     group.add(puff);
   }
 
   const foam = new Mesh(
-    new PlaneGeometry(86, 70, 1, 1),
-    new MeshStandardMaterial({
-      color: 0xf2fbff,
-      roughness: 0.6,
-      transparent: true,
-      opacity: 0.72,
-      flatShading: true,
-    })
+    new CircleGeometry(40, 24),
+    mat(0xf2fbff, { transparent: true, opacity: 0.7, emissive: 0x44555a })
   );
   foam.rotation.x = -Math.PI / 2;
   foam.position.set(top.x + 2, 0.7, top.z + 24);
@@ -205,6 +192,8 @@ export function createFalls(scene) {
       chance(0.6) ? 'cypress' : 'round'
     );
   }
+
+  bakeStatic(group);
 
   return {
     group,

@@ -20,6 +20,8 @@ function detectTier() {
 
 const TIERS = {
   low: {
+    msaa: 0,
+    halation: false,
     pixelRatio: 1.25,
     shadows: true,
     shadowMap: 1024,
@@ -30,7 +32,7 @@ const TIERS = {
     clouds: 9,
     birds: 14,
     boats: 8,
-    trees: 44,
+    trees: 240,
     villagers: 12,
     coveRocks: 12,
     contrails: true,
@@ -40,6 +42,8 @@ const TIERS = {
     anisotropy: 1,
   },
   medium: {
+    msaa: 2,
+    halation: true,
     pixelRatio: 1.5,
     shadows: true,
     shadowMap: 1536,
@@ -50,7 +54,7 @@ const TIERS = {
     clouds: 13,
     birds: 22,
     boats: 11,
-    trees: 72,
+    trees: 460,
     villagers: 18,
     coveRocks: 18,
     contrails: true,
@@ -60,6 +64,8 @@ const TIERS = {
     anisotropy: 2,
   },
   high: {
+    msaa: 4,
+    halation: true,
     pixelRatio: 2,
     shadows: true,
     shadowMap: 2048,
@@ -70,7 +76,7 @@ const TIERS = {
     clouds: 18,
     birds: 30,
     boats: 14,
-    trees: 110,
+    trees: 760,
     villagers: 26,
     coveRocks: 24,
     contrails: true,

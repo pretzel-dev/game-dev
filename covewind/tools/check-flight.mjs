@@ -7,8 +7,7 @@
  * off again, and that nothing can put it through the island.
  */
 import { createFlight, updateFlight } from '../src/flight/flight-model.js';
-import { terrainHeightAt } from '../src/world/terrain.js';
-import { PLACES } from '../src/world/terrain.js';
+import { LAKES, OVERHANGS, PLACES, ceilingAt, terrainHeightAt } from '../src/world/terrain.js';
 
 let failures = 0;
 const check = (name, ok, detail) => {
@@ -158,6 +157,123 @@ console.log('\nHands off, it flies itself');
   check('stays in the air', flight.pos.y > 20 && !flight.waterborne, `${flight.pos.y.toFixed(0)}m`);
   check('wings level themselves', Math.abs(flight.roll) < 0.06, `roll ${flight.roll.toFixed(3)}`);
   check('stays near the island', Math.hypot(flight.pos.x, flight.pos.z) < 1400, 'drifted away');
+}
+
+console.log('\nAerobatics');
+{
+  // Full back stick, full power: it should go right over the top and come
+  // round, not stop at the vertical.
+  const flight = levelAt(600, 160, -600, 0, 1);
+  flight.speed = 70;
+  let did = null;
+  let maxY = 0;
+  let wentOver = false;
+  fly(flight, 9, { pitch: 1, boost: true }, (f) => {
+    if (f.justDid) did = f.justDid;
+    maxY = Math.max(maxY, f.pos.y);
+    if (Math.cos(f.bank) < -0.5 && f.climb > -0.3 && f.climb < 0.3) wentOver = true;
+  });
+  check('holding back goes over the top', wentOver, 'never got inverted at the top');
+  check('a loop is recognised', did === 'loop', `justDid was ${did}`);
+  check('the loop clears the sea', flight.pos.y > 20, `${flight.pos.y.toFixed(0)}m`);
+  console.log(`  info loop peak ${maxY.toFixed(0)}m`);
+
+  // A double-tap roll goes all the way round and comes back upright.
+  const roll = levelAt(600, 160, -600, 0, 0.8);
+  let rolled = null;
+  let sawInverted = false;
+  fly(roll, 0.1, { roll: 1, trick: 1 });
+  fly(roll, 3, {}, (f) => {
+    if (f.justDid) rolled = f.justDid;
+    if (Math.cos(f.bank) < -0.8) sawInverted = true;
+  });
+  check('a double-tap rolls right round', sawInverted && rolled === 'roll', `inverted ${sawInverted}, justDid ${rolled}`);
+  check('and comes out upright', Math.abs(roll.bank) < 0.1, `bank ${roll.bank.toFixed(2)}`);
+  check('without falling out of the sky', roll.pos.y > 140, `${roll.pos.y.toFixed(0)}m`);
+
+  // Hold the second tap for half a roll and it stays upside down.
+  const inverted = levelAt(600, 200, -600, 0, 0.8);
+  fly(inverted, 0.7, { roll: 1, trick: 1 });
+  fly(inverted, 2, {});
+  check('hold the roll and it stays inverted', Math.cos(inverted.bank) < -0.9, `bank ${inverted.bank.toFixed(2)}`);
+  check('inverted flight sinks', inverted.pos.y < 200, `${inverted.pos.y.toFixed(0)}m`);
+
+  // Keep a hand on it and it stays inverted down to the sea, where the
+  // cushion rolls it back; let go entirely and it rights itself anyway.
+  const low = levelAt(600, 60, -600, 0, 0.8);
+  fly(low, 0.7, { roll: 1, trick: 1 });
+  fly(low, 20, { yaw: 0.2 });
+  check('upside down near the sea, it rights itself', Math.cos(low.bank) > 0.9, `bank ${low.bank.toFixed(2)}`);
+  check('and never touches the water', low.pos.y > 1 && !low.waterborne, `${low.pos.y.toFixed(1)}m`);
+  fly(inverted, 8, {});
+  check('hands off, upside down, it rolls upright', Math.cos(inverted.bank) > 0.9, `bank ${inverted.bank.toFixed(2)}`);
+  check('without ever touching the water', inverted.pos.y > 1 && !inverted.waterborne, `${inverted.pos.y.toFixed(1)}m`);
+
+  // A loop started low still gets caught by the sea cushion.
+  const lowLoop = levelAt(600, 40, -600, 0, 0.3);
+  let lowest = Infinity;
+  fly(lowLoop, 12, { pitch: 1 }, (f) => {
+    lowest = Math.min(lowest, f.pos.y - Math.max(0, terrainHeightAt(f.pos.x, f.pos.z)));
+  });
+  check('a low loop never goes into the sea', lowest > 0.5, `lowest ${lowest.toFixed(1)}m`);
+}
+
+console.log('\nUnder the rock');
+for (const o of OVERHANGS) {
+  if (o.from.x === o.to.x && o.from.z === o.to.z) continue; // a cavern, not a passage
+  // Line up outside one end and fly straight through at a sensible height.
+  const dx = o.to.x - o.from.x;
+  const dz = o.to.z - o.from.z;
+  const len = Math.hypot(dx, dz);
+  const ux = dx / len;
+  const uz = dz / len;
+  // Bridges are flown under along the canyon, square to the span.
+  const [ax, az] = o.bridge ? [uz, -ux] : [ux, uz];
+  const mid = { x: (o.from.x + o.to.x) / 2, z: (o.from.z + o.to.z) / 2 };
+  const half = o.bridge ? 0 : len / 2;
+  // Start out in open water if the passage opens onto the sea, or in the
+  // cavern it leads from; finish likewise at the far end.
+  const open = (x, z) => terrainHeightAt(x, z) < -1 && !ceilingAt(x, z);
+  const before = half + 70;
+  const after = half + 70;
+  const startOut = open(mid.x - ax * before, mid.z - az * before);
+  const endOut = open(mid.x + ax * after, mid.z + az * after);
+  const from = startOut ? before : half;
+  const to = endOut ? after : half;
+  const height = Math.min(o.bottom - 12, 16);
+  const flight = levelAt(mid.x - ax * from, height, mid.z - az * from, Math.atan2(ax, az), 0.6);
+  flight.speed = 42;
+  let highest = -Infinity;
+  let lowest = Infinity;
+  let passed = false;
+  fly(flight, (from + to) / 42, {}, (f) => {
+    const roof = f.underRoof;
+    if (roof != null) {
+      passed = true;
+      highest = Math.max(highest, f.pos.y - roof);
+    }
+    lowest = Math.min(lowest, f.pos.y - Math.max(0, terrainHeightAt(f.pos.x, f.pos.z)));
+  });
+  check(`${o.name}: you can fly through`, passed, 'never got under it');
+  check(`${o.name}: the roof holds you under it`, highest < -1, `${highest.toFixed(1)}m into the roof`);
+  check(`${o.name}: and the water under you`, lowest > 0.5, `lowest ${lowest.toFixed(1)}m`);
+}
+
+console.log('\nLanding on a lake');
+for (const lake of LAKES) {
+  const flight = levelAt(lake.x - lake.radius * 0.6, lake.level + 9, lake.z, Math.PI / 2, 0.1);
+  flight.speed = 27;
+  fly(flight, 1.2, { pitch: -0.15 });
+  fly(flight, 5, {});
+  check(`${lake.name}: sets down on it`, flight.waterborne && flight.onLake, `${(flight.pos.y - lake.level).toFixed(1)}m above, ${flight.speed.toFixed(0)}kt`);
+  check(`${lake.name}: floats at the lake's level`, Math.abs(flight.pos.y - lake.level - 3) < 1.5, `${flight.pos.y.toFixed(1)}m`);
+  // Turn to face the long way across, then open up.
+  flight.heading = Math.atan2(lake.x - flight.pos.x, lake.z - flight.pos.z) + Math.PI * 0.0;
+  flight.pos.x = lake.x - Math.sin(flight.heading) * lake.radius * 0.7;
+  flight.pos.z = lake.z - Math.cos(flight.heading) * lake.radius * 0.7;
+  flight.throttle = 1;
+  fly(flight, 8, { boost: true });
+  check(`${lake.name}: and gets off again`, !flight.waterborne, `still on the water at ${flight.speed.toFixed(0)}kt`);
 }
 
 console.log(failures ? `\n${failures} flight check(s) failed\n` : '\nAll flight checks passed\n');

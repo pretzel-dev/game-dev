@@ -38,6 +38,8 @@ export function createCloth(
   const segY = mode === 'flag' ? 3 : 5;
   const geometry = new PlaneGeometry(width, height, segX, segY);
   const mesh = new Mesh(geometry, clothMaterial(material));
+  // Animated every frame, so never baked into the static village mesh.
+  mesh.userData.dynamic = true;
   mesh.castShadow = true;
   parent.add(mesh);
 

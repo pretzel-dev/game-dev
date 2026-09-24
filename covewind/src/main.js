@@ -23,6 +23,7 @@ import { clamp } from './core/utils.js';
 
 import * as terrain from './world/terrain.js';
 import { createSky } from './world/sky.js';
+import { createClouds } from './world/clouds.js';
 import { createWater } from './world/water.js';
 import { createLighting } from './world/lighting.js';
 import { createWorld } from './world/world.js';
@@ -31,12 +32,13 @@ import { createPlaneModel, setControlSurfaces } from './world/aircraft.js';
 import { createFlight, updateFlight } from './flight/flight-model.js';
 import { createWind } from './flight/wind.js';
 import { createCameraRig, CAMERA_MODES } from './flight/camera-rig.js';
-import { createContrails, createSpray } from './flight/effects.js';
+import { createContrails, createSmoke, createSpray, SMOKE_MODES } from './flight/effects.js';
 import { createInput } from './flight/input.js';
 
 import { createHud } from './ui/hud.js';
 import { createPhotoMode } from './ui/photo-mode.js';
 import { createAudio } from './audio/audio.js';
+import { createPost } from './render/post.js';
 
 function boot() {
   /* ------------------------------------------------------------ renderer --- */
@@ -60,9 +62,11 @@ function boot() {
 
   /* --------------------------------------------------------------- world --- */
   const sky = createSky(scene);
+  const clouds = createClouds(scene);
   const water = createWater(scene);
-  const lighting = createLighting(scene, renderer, sky, water);
-  const world = createWorld(scene);
+  const lighting = createLighting(scene, renderer, sky, water, clouds);
+  const world = createWorld(scene, clouds);
+  const post = createPost(renderer);
 
   const plane = createPlaneModel(0xc9473d, false);
   plane.rotation.order = 'YXZ';
@@ -73,6 +77,7 @@ function boot() {
   const rig = createCameraRig(camera, { mode: settings.get('camera') ?? 0 });
   const contrails = createContrails(scene);
   const spray = createSpray(scene);
+  const smoke = createSmoke(scene);
   const audio = createAudio();
 
   plane.position.copy(flight.pos);
@@ -89,6 +94,12 @@ function boot() {
       sound: () => toggleSound(),
     },
   });
+
+  function cycleSmoke() {
+    const mode = smoke.cycle();
+    hud.hint(SMOKE_MODES[mode], 1.3);
+    document.querySelector('#smokeBtn')?.classList.toggle('off', mode === 0);
+  }
 
   const photo = createPhotoMode({
     rig,
@@ -137,6 +148,7 @@ function boot() {
       light: cycleLight,
       photo: togglePhoto,
       sound: toggleSound,
+      smoke: cycleSmoke,
       hud: () => hud.toggle(),
       invertPitch: () => setInvertPitch(!controls.invertPitch),
       escape: () => photo.set(false),
@@ -167,6 +179,38 @@ function boot() {
     chip.setAttribute('aria-pressed', String((chip.dataset.pitch === 'inverted') === !!settings.get('invertPitch')));
     chip.addEventListener('click', () => setInvertPitch(chip.dataset.pitch === 'inverted'));
   }
+  // Tilt steering: needs a tap to ask permission on iOS, so it is switched
+  // from the title card chips, and re-centred whenever you take off.
+  async function setTilt(on) {
+    const note = document.querySelector('#tiltNote');
+    // Show it pressed straight away; the phone may take a moment to answer.
+    for (const chip of document.querySelectorAll('[data-tilt]')) {
+      chip.setAttribute('aria-pressed', String((chip.dataset.tilt === 'on') === on));
+    }
+    if (note) note.textContent = on ? 'Asking the phone for its tilt…' : '';
+    const result = await controls.setTilt(on);
+    if (note) {
+      note.textContent = on
+        ? result
+          ? 'Tilt is on — how you hold it at take-off is level'
+          : 'This browser is not sharing the tilt sensor here. Try opening the game in its own tab.'
+        : '';
+    }
+    settings.set('tilt', result);
+    for (const chip of document.querySelectorAll('[data-tilt]')) {
+      chip.setAttribute('aria-pressed', String((chip.dataset.tilt === 'on') === result));
+    }
+    if (on && !result) hud.hint('This phone would not share its tilt', 2.4);
+    return result;
+  }
+  for (const chip of document.querySelectorAll('[data-tilt]')) {
+    chip.addEventListener('click', () => setTilt(chip.dataset.tilt === 'on'));
+  }
+  if (settings.get('tilt')) {
+    // Android needs no permission, so it can come straight back on;
+    // iOS will ask again from the chip.
+    if (typeof window.DeviceOrientationEvent?.requestPermission !== 'function') setTilt(true);
+  }
   if (settings.get('sound') === false) audio.setEnabled(false);
   hud.setSound(audio.enabled);
 
@@ -182,7 +226,11 @@ function boot() {
     started = true;
     hud.hideIntro();
     audio.start();
-    hud.hint('Follow the coast — there is a cove hiding past the lighthouse', 5);
+    if (controls.tilt) {
+      controls.recentreTilt();
+      hud.hint('Tilt to fly — hold the phone how you like, that is level', 3);
+    }
+    if (!controls.tilt) hud.hint('Follow the coast — there is a cove hiding past the lighthouse, and a lot more besides', 5);
   });
 
   /* ------------------------------------------------------- discoveries --- */
@@ -206,6 +254,14 @@ function boot() {
     { key: 'canyonEnd', at: () => world.landmarks.canyonEnd, radius: 90, below: 60, text: 'Out the other side' },
     { key: 'falls', at: () => world.landmarks.falls, radius: 170, below: 190, text: 'The waterfall' },
     { key: 'lagoon', at: () => world.landmarks.lagoon, radius: 130, below: 120, text: 'The lagoon — shallow enough to land in' },
+    { key: 'campanile', at: () => world.landmarks.campanile, radius: 60, below: 130, text: 'Round the campanile — mind the bells' },
+    { key: 'lido', at: () => world.landmarks.lido, radius: 70, below: 45, text: 'The lido — somebody waves from under an umbrella' },
+    { key: 'chapel', at: () => world.landmarks.chapel, radius: 110, below: 90, text: 'The chapel on the rock' },
+    { key: 'fortress', at: () => world.landmarks.fortress, radius: 140, below: 160, text: 'The old fortress — there is an arch through the headland' },
+    { key: 'stacks', at: () => world.landmarks.stacks, radius: 150, below: 160, text: 'The sea stacks — one of them has a hole right through it' },
+    { key: 'wreck', at: () => world.landmarks.wreck, radius: 60, below: 60, text: 'A wreck in the shallows' },
+    { key: 'pines', at: () => world.landmarks.pines, radius: 160, below: 110, text: 'The pine island — is that water between the trees?' },
+    { key: 'grotto', at: () => world.landmarks.grotto, radius: 70, below: 60, text: 'There is a way in, behind the falling water…' },
   ];
 
   // One nudge, the first time you are slow and low over the water, so the
@@ -231,6 +287,39 @@ function boot() {
     }
   }
 
+  /* ---------------------------------------------------------- flourishes --- */
+  // A word when you pull off something pretty. Nothing is counted; the first
+  // time is a small cheer, after that just a nod.
+  const done = new Set();
+  let flourishCooldown = 0;
+  let invertedNoted = false;
+  let tunnelNoted = 0;
+  const FLOURISH = {
+    loop: ['A loop! The whole sky went round', 'Loop'],
+    'outside loop': ['An outside loop — brave', 'Outside loop'],
+    roll: ['A barrel roll! Double-tap a bank to roll again', 'Roll'],
+  };
+  function celebrate(dt) {
+    flourishCooldown = Math.max(0, flourishCooldown - dt);
+    if (!started || photo.active) return;
+    if (flight.justDid && FLOURISH[flight.justDid] && flourishCooldown <= 0) {
+      const [first, again] = FLOURISH[flight.justDid];
+      hud.hint(done.has(flight.justDid) ? again : first, done.has(flight.justDid) ? 1 : 2.6);
+      done.add(flight.justDid);
+      flourishCooldown = 1.2;
+    }
+    if (flight.invertedTime > 2.5 && !invertedNoted) {
+      invertedNoted = true;
+      hud.hint('Upside down over the Adriatic — let go and it rolls back', 2.8);
+    }
+    tunnelNoted = Math.max(0, tunnelNoted - dt);
+    if (flight.underRoof && tunnelNoted <= 0) {
+      tunnelNoted = 10;
+      const roof = terrain.ceilingAt(flight.pos.x, flight.pos.z);
+      if (roof?.name) hud.hint(roof.name, 2);
+    }
+  }
+
   /* ------------------------------------------------------------- events --- */
   let paused = false;
   addEventListener(
@@ -240,6 +329,7 @@ function boot() {
       camera.updateProjectionMatrix();
       renderer.setPixelRatio(Math.min(devicePixelRatio || 1, QUALITY.pixelRatio));
       renderer.setSize(innerWidth, innerHeight);
+      post.setSize();
     },
     { passive: true }
   );
@@ -267,6 +357,7 @@ function boot() {
   let groundedCooldown = 0;
   let landedOnce = false;
   let fps = 60;
+  let cloudNoted = false;
 
   // A small hatch for tinkering from the console — drop yourself over the cove,
   // check the frame rate, poke at the flight model.
@@ -278,6 +369,8 @@ function boot() {
     camera,
     rig,
     quality: QUALITY,
+    renderer,
+    scene,
     get fps() {
       return Math.round(fps);
     },
@@ -319,14 +412,17 @@ function boot() {
         offerLanding();
       } else {
         // Attract mode: a slow left-hand circuit over the bay.
-        updateFlight(flight, { pitch: 0, roll: -0.22, yaw: 0, boost: false }, windState, dt, t);
+        updateFlight(flight, { pitch: 0, roll: -0.22, yaw: 0, boost: false, trick: 0 }, windState, dt, t);
       }
     }
 
     if (flight.justLanded) {
+      const lake = terrain.lakeAt(flight.pos.x, flight.pos.z);
+      const roof = flight.underRoof != null;
+      const where = roof ? 'Down in the grotto — nobody will find you here' : lake ? `Down on ${lake.name}` : 'Down on the water';
       hud.hint(
-        landedOnce ? 'Down on the water' : 'Down on the water — open the throttle to take off again',
-        landedOnce ? 1.6 : 4
+        landedOnce ? where : `${where} — open the throttle to take off again`,
+        landedOnce ? 2 : 4
       );
       landedOnce = true;
     } else if (flight.justTookOff) {
@@ -336,22 +432,29 @@ function boot() {
       hud.hint('The floats are nudging the sand', 1.8);
     }
     groundedCooldown = Math.max(0, groundedCooldown - dt);
+    celebrate(dt);
 
     plane.position.copy(flight.pos);
-    plane.rotation.set(-flight.pitch, flight.heading, flight.roll);
+    plane.quaternion.copy(flight.quat);
     plane.userData.propeller.rotation.z += dt * (16 + flight.speed * 0.8);
+    plane.userData.strobe.visible = t % 1.4 < 0.12;
     setControlSurfaces(
       plane,
       photo.active ? { roll: 0, pitch: 0, yaw: 0 } : input,
-      dt
+      dt,
+      flight.speed
     );
 
     lighting.follow(flight.pos);
     lighting.update(dt);
     water.uniforms.time.value = t;
+    sky.uniforms.time.value = t;
 
     world.update(t, dt, flight, windState, {
       beamOpacity: lighting.beam,
+      onDolphins: () => {
+        if (started && !photo.active) hud.hint('Dolphins! They have come to race you', 2.6);
+      },
       onBirdScatter: () => {
         if (scatterCooldown > 0) return;
         scatterCooldown = 14;
@@ -361,6 +464,7 @@ function boot() {
 
     contrails.update(dt, plane, flight, camera);
     spray.update(dt, flight, t);
+    smoke.update(dt, plane, flight, renderer.domElement.height);
 
     rig.update(dt, flight, plane, { boosting: flight.boosting });
     _lookAt.copy(rig.lookAt);
@@ -385,13 +489,24 @@ function boot() {
     audio.update(dt, flight, windState, camera, _lookAt);
     hud.update(dt, flight, photo.active ? 99 : input.lastActivity);
 
-    renderer.render(scene, camera);
+    sky.follow(camera.position);
+    clouds.follow(camera.position);
+    // Fly into a cloud and the world goes soft and white.
+    const inCloud = clouds.inside(camera.position);
+    post.uniforms.mist.value += (inCloud - post.uniforms.mist.value) * Math.min(1, dt * 4);
+    post.uniforms.mistColor.value.copy(clouds.materials[0].uniforms.litColor.value).lerp(clouds.materials[0].uniforms.shadeColor.value, 0.25);
+    if (inCloud > 0.5 && !cloudNoted && started) {
+      cloudNoted = true;
+      hud.hint('Inside a cloud — keep climbing and you will come out on top', 2.6);
+    }
+    post.render(scene, camera);
     photo.flush(renderer);
 
     // If the device is struggling, shed load once rather than stutter forever.
     if (!QUALITY.degraded && dt > 0.042) {
       slowFrames++;
       if (slowFrames > 260 && degrade(renderer, scene)) {
+        post.setSize();
         hud.hint('Easing off the detail so this stays smooth', 2.4);
       }
     } else if (slowFrames > 0) {

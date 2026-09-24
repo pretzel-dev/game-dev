@@ -24,66 +24,81 @@ Prioritise, in order:
 
 ## What exists
 
-- Arcade flight model with bank-to-turn, pitch, rudder, throttle and boost.
-  Speed trades against height, hard turns cost a little lift, and a stall is a
-  soft nose-drop that recovers itself. Pull back to climb by default, as on a
-  stick; `I` or the chips on the title card swap it, because people disagree.
-- It is a **floatplane**: throttle back under about 30 knots and it settles onto
-  the sea, taxis under throttle and rudder, and unsticks again at full power.
-  Landing in the cove is the closest thing to a destination.
-- Forgiving collision: the ground and the sea are cushions (a low one over
-  water so you can properly skim, a rooftop-high one over land), a look-ahead
-  sample lifts you over cliffs, and slopes nudge you away from the rock. There
-  is no fail state.
-- Wind: a slowly turning breeze with gusts, plus ridge lift along the cliffs.
-  It drives the aeroplane, the flags, the laundry and the wind audio together.
-- 3 cameras (chase, close, postcard) plus a photo mode: one button hides the
-  interface, holds the aeroplane and orbits it, with a shutter that saves a PNG.
-- 3 light presets (sunrise, noon, golden hour) as a *choice*, cross-faded.
-  Never a forced cycle. Remembered in `localStorage`.
-- Desktop keyboard controls and purpose-built touch controls.
-- Procedural audio: engine and wind, plus spatial ambience — gulls over the
-  harbour and cove, surf on the nearest shore, a village murmur, church and fog
-  bells. No audio files.
-- Procedural archipelago from one analytic height field — five islands with
-  water between them, all reachable in a couple of minutes of flying:
-  **harbour** (village on a hillside shelf with lanes and laundry, piers and
-  boats, lighthouse on a headland, the flyable rock arch, the summit), **cove**
-  (two cliff arms round a beach, with somebody's afternoon left on the sand —
-  deck chair, drinks, a newspaper stirring in the same wind as the laundry, and
-  a radio that is actually playing: `world/beach-camp.js`, tune in
-  `audio/ambience.js`), **canyon** (a flooded slot cut right through, flyable
-  end to end at sea level), **falls** (a tarn over a high lip down the sea
-  cliff, `world/falls.js`) and **atoll** (a sand ring round a shallow lagoon
-  you can land in).
-- Whale pods in the deep channels (`world/whales.js`): a slow circuit, a rise,
-  a blow, an arch and back down. They do not react to you.
-- Cliffs, sea stacks, trees, villagers, gulls that scatter when you buzz them,
-  clouds and 3 AI aeroplanes that follow the terrain instead of going through
-  it.
-- Wingtip contrails under boost and spray when you skim the water.
-- PWA: installable, offline, Three.js bundled into the build.
-- Vite project, `three@0.186.0` the only runtime dependency, no art assets.
+- **Look**: cel shading everywhere (a stepped light ramp in
+  `core/materials.js`), and one finishing pass (`render/post.js`) that inks
+  silhouettes from depth, grades the colour (warm lights, blue-violet
+  shadows), adds halation and paper grain, and tone-maps. Gouache sky with
+  cirrus (`world/sky.js`), flat-bottomed cel cumulus plus towers on the horizon
+  (`world/clouds.js`), a sea with caustics, sparkles and drawn foam lines that
+  glows blue in the grotto (`world/water.js`), and wind shimmer over the
+  meadows. Palette is the Adriatic: limestone, maquis, golden grass, umbrella
+  pines, terracotta, turquoise.
+- **Flight**: quaternion attitude, so pitch has no limit (hold back to loop).
+  The stick banks to an angle and holds it; hands off it levels. Double-tap a
+  bank (or flick the touch stick twice) for an aileron roll; hold the second
+  tap to stop inverted. Inverted flight sinks; let go for `invertedPatience`
+  seconds or get near the sea and it rolls upright. Speed trades against
+  height, a stall is a soft nose-drop. Pull back to climb by default; `I` or
+  the title-card chips swap it.
+- **Display smoke** (`X` / ☁): white or tricolore, long-lived puffs from the
+  wingtips and tail. First loop/roll/inverted flight gets a one-off word.
+- It is a **floatplane**: under about 30 knots it settles onto the sea — or a
+  lake (`LAKES`: the tarn over the falls, the hidden pine lake) — taxis, and
+  unsticks at full power.
+- Forgiving collision: ground and sea are cushions, a look-ahead lifts you
+  over cliffs, slopes nudge you away. **Overhangs** (`OVERHANGS` in
+  `terrain.js`): tunnels and the canyon bridge have a soft lid underneath and
+  count as ground on top. **Obstacles** (`OBSTACLES`): upright cylinders for
+  the campanile, lighthouse, chapel and fortress keep. No fail state.
+- Wind: breeze, gusts, ridge lift; drives flags, laundry, trees and audio.
+- Cameras (chase, close, postcard) follow the aeroplane's own axes through
+  aerobatics; photo mode with a PNG shutter.
+- Light presets: sunrise, noon, golden hour, dusk — a *choice*, cross-faded.
+- **Nine islands** from one analytic height field: harbour (stone town with a
+  Venetian campanile, piazza, lido, piers, lighthouse), cove (beach camp,
+  rock arch), canyon (flooded slot, stone bridge), falls (tarn you can land
+  on, a tunnel behind the waterfall into the blue grotto and out the far
+  side), atoll (sand ring, beach bar), chapel rock, fortress (sea arch through
+  the headland), pine island (wreck in the bay, hidden lake), sea stacks
+  (spires, one pierced by a tunnel). See `world/landmarks.js`.
+- Life: whales, a dolphin pod that races you when you skim open water
+  (`world/dolphins.js`), a regatta of painted sails, fishing boats, gulls that
+  scatter, villagers, sheep, three AI aeroplanes.
+- Models are procedural but shaped: the floatplane is lathed and extruded
+  (`world/aircraft.js`), houses are Dalmatian stone with hipped roofs and
+  shutters (`world/architecture.js`, `props.js`), boats are lofted gozzo
+  hulls, trees are instanced crowns of soft lumps (`world/forest.js`).
+- Procedural audio, PWA, Vite, `three@0.186.0` the only runtime dependency,
+  no art assets.
 
 ## Architecture notes
 
 - `src/world/terrain.js` is the single source of truth for the archipelago
-  (`ISLANDS`, `PLACES`, `terrainHeightAt`) and is
-  deliberately free of Three.js so it can be tested in Node (`npm run check`)
-  and shared with the water shader.
+  (`ISLANDS`, `PLACES`, `terrainHeightAt`, plus `OVERHANGS`, `LAKES`,
+  `OBSTACLES`) and is deliberately free of Three.js so it can be tested in
+  Node (`npm run check`) and shared with the water shader.
+  `terrainHeightAt(x, z, true)` gives the ground *before* tunnels were cut —
+  use it for anything built on a tunnel roof.
 - `src/flight/tuning.js` holds every number that decides how the aeroplane
-  feels. Tune there, not in the model.
-- `src/core/quality.js` holds the device tiers and the one-shot degrade path.
+  feels. Tune there, not in the model. `flight.heading/pitch/roll` are derived
+  from `flight.quat` every frame; setting them by hand still works (the model
+  notices and rebuilds the quaternion).
+- `src/core/quality.js` holds the device tiers (including MSAA and halation
+  for the post pass) and the one-shot degrade path.
+- Draw calls: build static things from as many parts as you like, then
+  `bakeStatic(group)` (world space) or `bakeLocal(group)` (for things that
+  move as a whole). Mark animated parts `userData.dynamic = true`. Trees go
+  through `createTree` → `forest.js`, never as individual meshes.
 - Do not introduce React. This is a realtime 3D toy, not an app UI.
 
 ## Good next improvements
 
 - A grass strip or beach to settle onto, for the wheels the floats replaced.
-- A cave you can fly into, in the canyon walls or under the falls.
-- A sixth island with a different character — somewhere wooded, or a wreck.
-- More weather as a choice alongside the light presets (light haze, high cloud).
-- Gentle multiplayer-free "postcards": save the photo with the light and place.
-- Richer boat behaviour — fishing boats that actually leave the harbour.
+- Weather as a choice alongside the light (haze, high cloud, a summer shower).
+- Gentle "postcards": save the photo with the light and the place's name.
+- Fishing boats that leave the harbour in the morning and come back at dusk.
+- Instanced gulls and villagers (they are still a few meshes each).
+- The AI aeroplanes could fly the occasional loop, trailing smoke.
 
 ## Things to avoid
 

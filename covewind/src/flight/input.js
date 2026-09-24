@@ -11,6 +11,21 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
   const keys = Object.create(null);
   const stick = { pitch: 0, roll: 0 };
   let touchBoost = false;
+  // A double-tap on a bank direction (or a double flick of the stick) asks
+  // for an aileron roll. It is an event: sampled once, then cleared.
+  let pendingTrick = 0;
+  const lastTap = { dir: 0, at: -1 };
+  const DOUBLE_TAP = 0.32;
+  function tapRoll(dir) {
+    const now = performance.now() / 1000;
+    if (lastTap.dir === dir && now - lastTap.at < DOUBLE_TAP) {
+      pendingTrick = dir;
+      lastTap.at = -1;
+    } else {
+      lastTap.dir = dir;
+      lastTap.at = now;
+    }
+  }
   // Half the world expects "up" to climb and half expects it to push the nose
   // down. Neither is wrong, so it is a preference rather than a decision.
   let invertPitch = false;
@@ -24,6 +39,8 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     throttleSet: null,
     touching: false,
     lastActivity: 0,
+    /** ±1 on the frame a roll is asked for. */
+    trick: 0,
   };
 
   let awoken = false;
@@ -43,6 +60,7 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     KeyP: 'photo',
     KeyL: 'light',
     KeyI: 'invertPitch',
+    KeyX: 'smoke',
     Escape: 'escape',
   };
 
@@ -53,6 +71,8 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     }
     keys[event.code] = true;
     wake();
+    if (event.code === 'KeyA' || event.code === 'ArrowLeft') tapRoll(-1);
+    if (event.code === 'KeyD' || event.code === 'ArrowRight') tapRoll(1);
     const action = ACTION_KEYS[event.code];
     if (action && actions[action]) {
       actions[action]();
@@ -91,7 +111,10 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
         dy = (dy / length) * max;
       }
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
-      stick.roll = clamp(dx / max, -1, 1);
+      const roll = clamp(dx / max, -1, 1);
+      // A flick to the edge counts as a tap: two quick ones roll.
+      if (Math.abs(roll) > 0.85 && Math.abs(stick.roll) <= 0.85) tapRoll(Math.sign(roll));
+      stick.roll = roll;
       stick.pitch = clamp(-dy / max, -1, 1);
     };
     joy.addEventListener('pointerdown', (event) => {
@@ -137,6 +160,13 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     throttle.addEventListener('pointerup', release);
     throttle.addEventListener('pointercancel', release);
   }
+
+  const smokeBtn = document.querySelector('#smokeBtn');
+  smokeBtn?.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    wake();
+    actions.smoke?.();
+  });
 
   if (boostBtn) {
     const press = (event) => {
@@ -193,6 +223,73 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     }, { passive: false });
   }
 
+  /* ---------------------------------------------------------------- tilt --- */
+
+  // Fly by tilting the phone. Whatever angle it is held at when tilt is
+  // switched on (or recentred) is "level"; tip it away from you to dive,
+  // towards you to climb, and roll it like a steering wheel to bank.
+  const tilt = { on: false, pitch: 0, roll: 0, base: null, raw: null };
+  const TILT_RANGE = 28; // degrees for full stick
+
+  function screenAngle() {
+    return (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+  }
+
+  function onOrientation(event) {
+    if (event.beta == null) return;
+    // Rotate the device's beta/gamma into screen-relative pitch and roll.
+    const angle = ((screenAngle() % 360) + 360) % 360;
+    let pitch = event.beta;
+    let roll = event.gamma;
+    if (angle === 90) [pitch, roll] = [-event.gamma, event.beta];
+    else if (angle === 270) [pitch, roll] = [event.gamma, -event.beta];
+    else if (angle === 180) [pitch, roll] = [-event.beta, -event.gamma];
+    tilt.raw = { pitch, roll };
+    if (!tilt.base) tilt.base = { pitch, roll };
+    const dp = pitch - tilt.base.pitch;
+    const dr = roll - tilt.base.roll;
+    tilt.pitch = clamp(dp / TILT_RANGE, -1, 1);
+    tilt.roll = clamp(dr / TILT_RANGE, -1, 1);
+    // A quick flick of the wrist counts as a tap, so two of them roll.
+    if (Math.abs(tilt.roll) > 0.95 && Math.abs(tilt.lastRoll ?? 0) <= 0.95) tapRoll(Math.sign(tilt.roll));
+    tilt.lastRoll = tilt.roll;
+  }
+
+  /** Switch tilt steering; asks permission on iOS. Resolves to the new state. */
+  async function setTilt(on) {
+    if (on) {
+      const DOE = window.DeviceOrientationEvent;
+      if (!DOE) return (tilt.on = false);
+      if (typeof DOE.requestPermission === 'function') {
+        try {
+          if ((await DOE.requestPermission()) !== 'granted') return (tilt.on = false);
+        } catch {
+          return (tilt.on = false);
+        }
+      }
+      tilt.base = null;
+      tilt.raw = null;
+      addEventListener('deviceorientation', onOrientation);
+      tilt.on = true;
+      // Some browsers (and pages embedded in another page) hand out the
+      // event but never send a reading. Give it a moment to prove itself.
+      await new Promise((r) => setTimeout(r, 900));
+      if (!tilt.raw) {
+        removeEventListener('deviceorientation', onOrientation);
+        return (tilt.on = false);
+      }
+    } else {
+      removeEventListener('deviceorientation', onOrientation);
+      tilt.on = false;
+      tilt.pitch = tilt.roll = 0;
+    }
+    return tilt.on;
+  }
+
+  function recentreTilt() {
+    if (tilt.raw) tilt.base = { ...tilt.raw };
+  }
+
   /* -------------------------------------------------------------- frame --- */
 
   function sample(dt) {
@@ -200,12 +297,20 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     const keyRoll = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
     const keyYaw = (keys.KeyE ? 1 : 0) - (keys.KeyQ ? 1 : 0);
 
-    input.pitch = clamp(keyPitch + stick.pitch, -1, 1) * (invertPitch ? -1 : 1);
-    input.roll = clamp(keyRoll + stick.roll, -1, 1);
+    // Tilt stands in for the thumb stick while your thumb is off it.
+    const tiltOn = tilt.on && !input.touching;
+    // Tilting the top of the phone towards you (pull back) climbs, matching
+    // the stick's "pull back" sense before any inversion is applied.
+    const tp = tiltOn ? shapeTilt(-tilt.pitch) : 0;
+    const tr = tiltOn ? shapeTilt(tilt.roll) : 0;
+    input.pitch = clamp(keyPitch + stick.pitch + tp, -1, 1) * (invertPitch ? -1 : 1);
+    input.roll = clamp(keyRoll + stick.roll + tr, -1, 1);
     input.yaw = clamp(keyYaw, -1, 1);
     input.throttleAxis = (keys.KeyR ? 1 : 0) - (keys.KeyF ? 1 : 0);
     input.boost = !!keys.Space || touchBoost;
-    if (keyPitch || keyRoll || keyYaw || input.throttleAxis || stick.pitch || stick.roll) {
+    input.trick = pendingTrick;
+    pendingTrick = 0;
+    if (keyPitch || keyRoll || keyYaw || input.throttleAxis || stick.pitch || stick.roll || Math.abs(tp) + Math.abs(tr) > 0.1) {
       input.lastActivity = 0;
     } else {
       input.lastActivity += dt;
@@ -222,6 +327,12 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     touchBoost = value;
   }
 
+  // A small dead zone so a phone held roughly still flies straight.
+  function shapeTilt(v) {
+    const m = Math.abs(v);
+    return m < 0.12 ? 0 : Math.sign(v) * ((m - 0.12) / 0.88);
+  }
+
   function setInvertPitch(value) {
     invertPitch = !!value;
     return invertPitch;
@@ -233,6 +344,11 @@ export function createInput({ canvas, actions = {}, onFirstInput } = {}) {
     clearThrottleSet,
     setBoost,
     setInvertPitch,
+    setTilt,
+    recentreTilt,
+    get tilt() {
+      return tilt.on;
+    },
     get invertPitch() {
       return invertPitch;
     },

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
   <meta name="theme-color" content="#8cc9dd" />
-  <meta name="description" content="A tiny free-flight holiday above a warm fishing island. No missions, no score, just fly." />
+  <meta name="description" content="A tiny free-flight holiday over a painted Adriatic archipelago. No missions, no score, just fly." />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -24,6 +24,13 @@
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* Holding a control must never start a text selection or the long-press
+       menu. The title card keeps ordinary text behaviour. */
+    body, #ui, button, .joyBase, #throttle, #mobile, #tools, canvas {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
 
     html, body {
       margin: 0;
@@ -234,6 +241,17 @@
       touch-action: none;
     }
     #boostBtn:active { background: rgba(255, 236, 176, .9); }
+    #smokeBtn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid var(--edge);
+      background: rgba(255, 247, 219, .5);
+      color: #173d47;
+      font-size: 17px;
+      touch-action: none;
+    }
+    #smokeBtn.off { opacity: .55; }
     #throttle {
       width: 58px;
       height: 136px;
@@ -361,8 +379,8 @@
 
     <div id="keyhints">
       S/W climb, dive · A/D bank · Q/E rudder<br />
-      R/F throttle · SPACE boost<br />
-      C camera · L light · P photo · I pitch · H hud · M sound
+      R/F throttle · SPACE boost · double-tap A/D to roll<br />
+      X smoke · C camera · L light · P photo · I pitch · H hud · M sound
     </div>
 
     <div id="hint" role="status" aria-live="polite"></div>
@@ -377,6 +395,7 @@
     <div id="mobile">
       <div class="joyBase" id="joy"><div class="joyKnob" id="knob"></div></div>
       <div id="mobileRight">
+        <button id="smokeBtn" class="off" aria-label="Smoke">☁</button>
         <button id="boostBtn" aria-label="Boost">⚡</button>
         <div id="throttle" role="slider" aria-label="Throttle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64">
           <div id="throttleFill"></div>
@@ -400,7 +419,8 @@
       <div id="card">
         <h1>COVEWIND</h1>
         <div class="sub">
-          A tiny free-flight holiday above a warm fishing island.<br />
+          A tiny free-flight holiday over a painted Adriatic archipelago.<br />
+          Loop over the campanile, thread the sea stacks, find the grotto behind the falls.<br />
           No missions. No score. Just fly.
         </div>
         <button id="start">Take off</button>
@@ -409,15 +429,24 @@
           <button class="chip" data-light="sunrise">Sunrise</button>
           <button class="chip" data-light="noon">Noon</button>
           <button class="chip" data-light="golden" aria-pressed="true">Golden hour</button>
+          <button class="chip" data-light="dusk">Dusk</button>
+          <button class="chip" data-light="night">Night</button>
         </div>
         <div class="lightRow" id="pitchRow">
           <div class="label">Climbing</div>
           <button class="chip" data-pitch="normal">Push forward</button>
           <button class="chip" data-pitch="inverted" aria-pressed="true">Pull back</button>
         </div>
+        <div class="lightRow" id="tiltRow">
+          <div class="label">Steering (phones)</div>
+          <button class="chip" data-tilt="off" aria-pressed="true">Thumb stick</button>
+          <button class="chip" data-tilt="on">Tilt the phone</button>
+          <div class="label" id="tiltNote" style="text-transform:none;letter-spacing:0;opacity:.7;margin-top:6px"></div>
+        </div>
         <div class="keys">
-          Desktop: S climbs, W dives · A/D bank · R/F throttle · SPACE boost · C camera · P photo<br />
-          Mobile: left stick flies · right slider is the throttle · ⚡ boosts<br />
+          Desktop: S climbs, W dives · A/D bank · double-tap A/D to roll · R/F throttle · SPACE boost · X smoke<br />
+          Mobile: left stick flies (or tilt the phone), flick it twice to roll · right slider is the throttle · ⚡ boosts · ☁ smoke<br />
+          Hold the stick back to loop. Hold the second tap of a roll to stop upside down.<br />
           It's a floatplane — throttle back over the water and you can land on it.
         </div>
       </div>

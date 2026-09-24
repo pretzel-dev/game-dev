@@ -15,6 +15,7 @@ import { createHouse, createTree } from './props.js';
 import { createCloth } from './cloth.js';
 import { MAT, CLOTH } from '../core/materials.js';
 import { pick, rand } from '../core/utils.js';
+import { bakeStatic } from '../core/merge.js';
 
 export function createLighthouse(scene) {
   const { x, z } = PLACES.lighthouse;
@@ -52,6 +53,7 @@ export function createLighthouse(scene) {
   group.add(lampRoom);
 
   const lamp = new Mesh(new CylinderGeometry(2.6, 2.6, 4, 10), new MeshBasicMaterial({ color: 0xfff2c0 }));
+  lamp.userData.dynamic = true;
   lamp.position.y = 38.4;
   group.add(lamp);
 
@@ -75,6 +77,7 @@ export function createLighthouse(scene) {
     fog: false,
   });
   const beams = new Group();
+  beams.userData.dynamic = true;
   beams.position.y = 38.4;
   group.add(beams);
   for (const dir of [1, -1]) {
@@ -95,6 +98,8 @@ export function createLighthouse(scene) {
   for (let i = 0; i < 7; i++) {
     createTree(scene, x + rand(-70, 40), z + rand(-70, 70), rand(0.55, 0.85), 'cypress');
   }
+
+  bakeStatic(group);
 
   return {
     group,

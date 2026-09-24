@@ -7,7 +7,7 @@
  * turquoise over the sand.
  */
 import { Color, DoubleSide, Mesh, PlaneGeometry, ShaderMaterial, Vector3 } from 'three';
-import { coastlineGLSL } from './terrain.js';
+import { OVERHANGS, coastlineGLSL } from './terrain.js';
 import { QUALITY } from '../core/quality.js';
 
 /** Wave field, in world space. Keep in sync with `WAVE_GLSL` below. */
@@ -60,62 +60,122 @@ const fragmentShader = /* glsl */ `
   uniform vec3 foamColor;
   uniform vec3 sunDir;
   uniform vec3 sunColor;
+  uniform vec3 skyColor;
   uniform vec3 fogColor;
   uniform float fogNear;
   uniform float fogFar;
   varying vec3 vWorld;
   varying float vWave;
   ${WAVE_GLSL}
-  ${/* coastDistance(), shared with the terrain */ ''}
   __COASTLINE__
+  __ROOFS__
+
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+  }
+
+  // Cel caustics: the bright net of light on a sandy bottom, drawn as lines.
+  float caustic(vec2 p, float t) {
+    vec2 q = p * 0.09;
+    float a = sin(q.x + sin(q.y * 1.3 + t * 0.7) * 1.4 + t * 0.4);
+    float b = sin(q.y * 1.1 + sin(q.x * 0.9 - t * 0.6) * 1.4 - t * 0.3);
+    float c = abs(a + b);
+    return smoothstep(0.22, 0.0, c);
+  }
 
   void main() {
     vec2 p = vWorld.xz;
-    // Distance to the nearest island's shore, out of all of them.
     float coast = coastDistance(p);
+    float dist = length(cameraPosition - vWorld);
 
-    // Depth banding: turquoise over the sand, ink out in the channel.
-    float depth = smoothstep(-20.0, 430.0, coast);
-    vec3 col = mix(shallowColor, deepColor, depth);
+    // Depth bands, the way the Adriatic sits over white stone: glassy
+    // turquoise in the shallows, a clean step to blue, ink out in the channel.
+    float depth = smoothstep(-20.0, 380.0, coast);
+    float stepped = floor(depth * 4.0 + noise(p * 0.01) * 0.6) / 4.0;
+    depth = mix(depth, stepped, 0.45);
+    vec3 col = mix(shallowColor * 1.08, deepColor, depth);
 
-    // Painterly current stripes, stretched along the swell.
-    float stripe = 0.5 + 0.5 * sin(p.x * 0.021 + p.y * 0.016 + vWave * 1.7 + time * 0.12);
-    col += (foamColor - col) * stripe * 0.035;
+    // Sea floor showing through the shallows.
+    float shallow = 1.0 - smoothstep(0.0, 90.0, coast);
+    col += vec3(0.85, 1.0, 0.95) * caustic(p, time) * shallow * 0.22 * (1.0 - smoothstep(300.0, 900.0, dist));
 
     vec3 normal = waveNormal(p, time);
+    // Small ripples on top of the swell, for the glitter.
+    normal = normalize(normal + vec3(noise(p * 0.12 + time * 0.4) - 0.5, 0.0, noise(p * 0.12 - time * 0.35 + 7.0) - 0.5) * 0.35);
     vec3 viewDir = normalize(cameraPosition - vWorld);
 
-    // Glitter path towards the sun, plus a soft sheen.
+    // Sky in the surface at grazing angles.
+    float fres = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
+    col = mix(col, skyColor, fres * 0.35);
+
+    // Sun glitter, drawn as hard white sparks rather than a smooth sheen.
     vec3 halfDir = normalize(normalize(sunDir) + viewDir);
-    float spec = pow(max(dot(normal, halfDir), 0.0), 90.0);
-    float sheen = pow(max(dot(normal, halfDir), 0.0), 12.0);
-    col += sunColor * (spec * 0.85 + sheen * 0.10);
+    float nh = max(dot(normal, halfDir), 0.0);
+    float sheen = pow(nh, 40.0);
+    col += sunColor * sheen * 0.18;
+    float sparkle = step(0.997, nh) * step(0.72, noise(p * 1.7 + time * 1.3));
+    col += vec3(1.0) * sparkle * 1.6;
 
-    // Fresnel: the sea goes pale and skyish at grazing angles.
-    float fres = pow(1.0 - max(dot(normal, viewDir), 0.0), 4.0);
-    col = mix(col, fogColor, fres * 0.15);
+    // Whitecaps: little brush flecks on the swell crests, out in open water.
+    float crest = smoothstep(1.4, 2.2, vWave) * step(0.8, noise(p * 0.22 + vec2(time * 0.5, 0.0)));
+    col = mix(col, foamColor, crest * 0.55 * smoothstep(20.0, 120.0, coast) * (1.0 - smoothstep(500.0, 1400.0, dist)));
 
-    // Surf. Two ragged bands that crawl up the beach with the swell.
+    // Surf: a clean ribbon on the shore, then drawn foam lines that roll in
+    // parallel to the coast, the way waves are drawn in a picture book.
     float swell = sin(time * 0.55 + coast * 0.09) * 3.0;
     float edge = coast + swell;
-    // Ragged edge to the surf, from position rather than bearing — bearing
-    // only works when there is one island and it is at the origin.
-    float ripple = 0.5 + 0.5 * sin((p.x + p.y) * 0.085 + time * 0.7)
-                       * sin((p.x - p.y) * 0.061 - time * 0.4);
-    float surf = smoothstep(15.0 + ripple * 7.0, 1.0, edge) * smoothstep(-9.0, -1.0, edge);
-    float wash = smoothstep(36.0, 6.0, edge) * 0.08;
-    col = mix(col, foamColor, clamp(surf * 0.85 + wash, 0.0, 1.0));
+    float ripple = noise(p * 0.08 + time * 0.2);
+    float surf = smoothstep(9.0 + ripple * 6.0, 5.0 + ripple * 4.0, edge) * smoothstep(-9.0, -1.0, edge);
+    float lines = fract((coast - time * 5.0) / 16.0 + ripple * 0.35);
+    float line = smoothstep(0.08, 0.0, abs(lines - 0.5) - 0.02);
+    line *= smoothstep(64.0, 14.0, coast) * step(0.0, coast) * step(0.35, noise(p * 0.05 + 3.0));
+    col = mix(col, foamColor, clamp(surf * 0.95 + line * 0.7, 0.0, 1.0));
 
-    float fogAmount = smoothstep(fogNear, fogFar, length(cameraPosition - vWorld));
+    // Under rock the sea is in shade — except in the grotto, where sunlight
+    // coming up through the water turns it an impossible, glowing blue.
+    vec2 cave = roofShade(p);
+    float glint = 0.6 + 0.4 * noise(p * 0.15 + time * 0.6);
+    col = mix(col, col * vec3(0.3, 0.36, 0.48), cave.x * (1.0 - cave.y));
+    col = mix(col, vec3(0.12, 0.62, 1.25) * glint + caustic(p * 2.0, time) * 0.3, cave.y);
+
+    float fogAmount = smoothstep(fogNear, fogFar, dist);
     col = mix(col, fogColor, fogAmount);
 
-    float alpha = mix(0.86, 1.0, smoothstep(0.0, 70.0, coast));
+    float alpha = mix(0.82, 1.0, smoothstep(0.0, 60.0, coast));
     gl_FragColor = vec4(col, alpha);
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
 `;
+
+/** Shade (x) and grotto glow (y) from the rock overhead, as GLSL. */
+function roofGLSL() {
+  const f = (n) => n.toFixed(3);
+  const body = OVERHANGS.filter((o) => o.top == null)
+    .map((o) => {
+      const d = `cw_segment(p, vec2(${f(o.from.x)}, ${f(o.from.z)}), vec2(${f(o.to.x)}, ${f(o.to.z)}))`;
+      const inside = `smoothstep(${f(o.width)}, ${f(o.width - 10)}, ${d})`;
+      return o.glow ? `glow = max(glow, ${inside});` : `shade = max(shade, ${inside});`;
+    })
+    .join('\n    ');
+  return `
+  float cw_segment(vec2 p, vec2 a, vec2 b) {
+    vec2 v = b - a;
+    float t = clamp(dot(p - a, v) / max(dot(v, v), 1e-3), 0.0, 1.0);
+    return length(p - a - v * t);
+  }
+  vec2 roofShade(vec2 p) {
+    float shade = 0.0;
+    float glow = 0.0;
+    ${body}
+    return vec2(max(shade, glow), glow);
+  }`;
+}
 
 export function createWater(scene) {
   const size = 6400;
@@ -130,12 +190,13 @@ export function createWater(scene) {
       foamColor: { value: new Color(0xfdf6e3) },
       sunDir: { value: new Vector3(-0.55, 0.34, 0.72) },
       sunColor: { value: new Color(0xffe0ae) },
+      skyColor: { value: new Color(0xbfe7f5) },
       fogColor: { value: new Color(0xd7ceb4) },
       fogNear: { value: 540 },
       fogFar: { value: 1270 },
     },
     vertexShader,
-    fragmentShader: fragmentShader.replace('__COASTLINE__', coastlineGLSL()),
+    fragmentShader: fragmentShader.replace('__COASTLINE__', coastlineGLSL()).replace('__ROOFS__', roofGLSL()),
   });
 
   const segments = QUALITY.waterSegments;

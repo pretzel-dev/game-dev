@@ -206,6 +206,87 @@ export const ISLANDS = [
     lagoon: { from: 0.34, depth: 6 },
     seed: 313,
   },
+  {
+    key: 'chapel',
+    name: 'the chapel on the rock',
+    centre: { x: 0, z: -820 },
+    base: 82,
+    waves: [
+      [6, 3, 0.4],
+      [4, 5, 1.9],
+    ],
+    // A little stone quay faces the harbour; the rest is rock.
+    cliffs: [{ theta: -1.57, strength: 0.7, sigma: 1.2 }],
+    beaches: [{ theta: 1.57, strength: 0.9, sigma: 0.35 }],
+    rise: 10,
+    peak: 12,
+    cliffHeight: 16,
+    roughness: 0.35,
+    seed: 401,
+  },
+  {
+    key: 'fortress',
+    name: 'the fortress island',
+    centre: { x: 1050, z: 0 },
+    base: 150,
+    waves: [
+      [12, 3, 2.6],
+      [8, 5, 0.3],
+      [5, 9, 1.1],
+    ],
+    // A long headland out to the east, with the sea cut clean through it.
+    bumps: [{ theta: 0, size: 56, sigma: 0.17 }],
+    cliffs: [
+      { theta: 0, strength: 1, sigma: 0.5 },
+      { theta: 1.9, strength: 0.85, sigma: 0.7 },
+      { theta: -1.8, strength: 0.85, sigma: 0.7 },
+    ],
+    beaches: [{ theta: 3.14, strength: 0.85, sigma: 0.3 }],
+    rise: 30,
+    peak: 26,
+    cliffHeight: 58,
+    roughness: 0.6,
+    seed: 503,
+  },
+  {
+    key: 'pines',
+    name: 'the pine island',
+    centre: { x: -1050, z: 80 },
+    base: 170,
+    waves: [
+      [16, 3, 1.1],
+      [10, 5, -2.2],
+      [6, 8, 0.5],
+    ],
+    // A sheltered bay on the far side, with something in it.
+    bumps: [{ theta: -2.5, size: -58, sigma: 0.24 }],
+    cliffs: [{ theta: 0.4, strength: 0.6, sigma: 0.6 }],
+    beaches: [{ theta: -2.5, strength: 0.95, sigma: 0.32 }],
+    rise: 22,
+    peak: 40,
+    roughness: 0.9,
+    ridge: { x: -1080, z: 120, direction: [0.6, 0.8], along: 120, across: 70, height: 20 },
+    seed: 607,
+  },
+  {
+    key: 'stacks',
+    name: 'the sea stacks',
+    centre: { x: 120, z: 880 },
+    // Not an island so much as three towers of rock standing in the sea, the
+    // middle one pierced right through at water level.
+    spires: [
+      { dx: -74, dz: 12, radius: 24, height: 92 },
+      { dx: 0, dz: -10, radius: 31, height: 118 },
+      { dx: 74, dz: 18, radius: 21, height: 78 },
+      { dx: 28, dz: 66, radius: 9, height: 20 },
+    ],
+    base: 70,
+    waves: [],
+    rise: 0,
+    peak: 0,
+    roughness: 0.6,
+    seed: 709,
+  },
 ];
 
 const byKey = Object.fromEntries(ISLANDS.map((i) => [i.key, i]));
@@ -219,6 +300,25 @@ function along(key, theta, fraction) {
   const r = islandRadiusAt(spec, theta) * fraction;
   return { x: spec.centre.x + Math.cos(theta) * r, z: spec.centre.z + Math.sin(theta) * r };
 }
+
+/**
+ * Rock and stone you can fly *under*: arches, cave roofs, bridge spans. The
+ * height field cannot hold an overhang, so these are kept alongside it. Each
+ * is a capsule in plan (a segment and a half-width) with a roof from
+ * `bottom` up to `top` (or up to the uncut ground, for tunnels). Below the
+ * bottom you are in the tunnel; above it the roof counts as ground.
+ *
+ * @type {{from:{x:number,z:number}, to:{x:number,z:number}, width:number, bottom:number, top?:number, name?:string, island?:string}[]}
+ */
+export const OVERHANGS = [];
+
+/**
+ * Tall things that are not ground — towers, the lighthouse, the fortress keep,
+ * bridge piers — as upright cylinders. The island meshes ignore them; the
+ * aeroplane and the camera treat them as solid, so the cushion lifts you
+ * over a bell tower rather than through it. Each is `{x, z, radius, top}`.
+ */
+export const OBSTACLES = [];
 
 /** World-space anchors. Everything that gets built looks itself up here. */
 export const PLACES = {
@@ -242,6 +342,27 @@ export const PLACES = {
   fallsFoot: along('falls', 1.6, 1.22),
 
   lagoon: { x: 700, z: 560 },
+
+  // Behind the waterfall: a tunnel in the foot of the cliff and a cavern
+  // under the tarn, with water on its floor.
+  grottoMouth: along('falls', 1.6, 1.02),
+  grottoCavern: along('falls', 1.6, 0.5),
+  grottoExit: along('falls', 2.75, 1.02),
+
+  chapel: { x: 0, z: -838 },
+  chapelQuay: along('chapel', 1.57, 1.08),
+
+  fortress: { x: 1030, z: 0 },
+  fortressArch: { x: 1228, z: 0 },
+
+  pinesBay: along('pines', -2.5, 0.84),
+  wreck: along('pines', -2.5, 1.1),
+  pinesLake: { x: -1020, z: 110 },
+
+  stacks: { x: 120, z: 870 },
+
+  // The bridge across the middle of the canyon.
+  bridge: { x: -700, z: -465 },
 };
 
 // Shelves that belong to the main island, kept beside the places they flatten.
@@ -256,12 +377,97 @@ island('falls').shelves = [
   { ...PLACES.fallsTarn, radius: 58, height: 92, strength: 0.9 }, // the tarn
   { ...PLACES.fallsTop, radius: 26, height: 90, strength: 0.85 }, // the lip
 ];
+island('chapel').shelves = [{ ...PLACES.chapel, radius: 36, height: 13, strength: 0.9 }];
+island('fortress').shelves = [{ ...PLACES.fortress, radius: 78, height: 54, strength: 0.92 }];
+island('pines').shelves = [{ ...PLACES.pinesBay, radius: 40, height: 2.6, strength: 0.9 }];
+
+// The tall buildings (heights measured from the ground they stand on).
+for (const [place, radius, height] of [
+  [PLACES.church, 8, 72],
+  [PLACES.lighthouse, 9, 50],
+]) {
+  OBSTACLES.push({ x: place.x, z: place.z, radius, top: 0, height, pending: true });
+}
+
+/* -------------------------------------------------- tunnels and lakes --- */
+
+/**
+ * Tunnels are trenches in the height field with a roof put back over them
+ * (see OVERHANGS below): the grotto behind the falls, the arch through the
+ * fortress headland, and the hole through the middle sea stack.
+ */
+function tunnel(key, from, to, { width, wall = 10, floor = -6, roof, name, glow = false }) {
+  const spec = island(key);
+  spec.carves ??= [];
+  spec.carves.push({ from, to, width, wall, floor, roofed: true });
+  OVERHANGS.push({ from, to, width: width + wall * 0.6, bottom: roof, name, island: key, glow });
+}
+
+/**
+ * Still water above sea level that you can land on. The ground under each is
+ * dished below `level`, and the flight model floats on `level` instead of the
+ * sea.
+ */
+export const LAKES = [
+  { ...PLACES.fallsTarn, radius: 44, level: 90, name: 'the tarn above the falls' },
+  { ...PLACES.pinesLake, radius: 40, level: 24, name: 'a lake hidden in the pines' },
+];
+
+// In behind the waterfall, through a blue cavern big enough to land in,
+// and out through the cliffs on the far side of the island.
+tunnel('falls', along('falls', 1.6, 1.0), PLACES.grottoCavern, {
+  width: 22,
+  wall: 10,
+  roof: 27,
+  name: 'Behind the waterfall — the grotto',
+});
+tunnel('falls', PLACES.grottoCavern, PLACES.grottoCavern, {
+  width: 54,
+  wall: 12,
+  roof: 34,
+  name: 'The blue grotto — land if you like',
+  glow: true,
+});
+tunnel('falls', PLACES.grottoCavern, PLACES.grottoExit, {
+  width: 20,
+  wall: 10,
+  roof: 26,
+  name: 'Daylight at the end of the tunnel',
+});
+tunnel('fortress', { x: 1228, z: -62 }, { x: 1228, z: 62 }, { width: 17, wall: 8, roof: 30, name: 'Through the sea arch' });
+{
+  // The middle stack is pierced north to south, clear of its neighbours.
+  const c = island('stacks').centre;
+  tunnel('stacks', { x: c.x, z: c.z - 58 }, { x: c.x, z: c.z + 42 }, {
+    width: 13,
+    wall: 6,
+    roof: 32,
+    name: 'Threading the needle',
+  });
+}
+{
+  // The bridge spans the canyon square across the channel.
+  const { x, z } = PLACES.bridge;
+  const nx = 0.6;
+  const nz = 0.8;
+  const half = 52;
+  OVERHANGS.push({
+    from: { x: x - nx * half, z: z - nz * half },
+    to: { x: x + nx * half, z: z + nz * half },
+    width: 8,
+    bottom: 46,
+    top: 66,
+    name: 'Under the old bridge',
+    bridge: true,
+  });
+}
 
 // Precompute the reach of each island, for early-outs.
 for (const spec of ISLANDS) {
   let max = spec.base;
   for (const [amp] of spec.waves) max += Math.abs(amp);
   for (const bump of spec.bumps ?? []) max += Math.max(0, bump.size);
+  for (const spire of spec.spires ?? []) max = Math.max(max, Math.hypot(spire.dx, spire.dz) + spire.radius);
   spec.reach = max + 12;
   spec.reachSq = spec.reach * spec.reach;
 }
@@ -270,6 +476,7 @@ for (const spec of ISLANDS) {
 
 /** Coast radius of one island at a bearing from its centre. */
 export function islandRadiusAt(spec, theta) {
+  // Sea stacks have no single coastline; `base` is a notional one.
   let r = spec.base;
   for (const [amp, freq, phase] of spec.waves) r += amp * Math.sin(theta * freq + phase);
   for (const bump of spec.bumps ?? []) r += bump.size * gauss(dAngle(theta, bump.theta), bump.sigma);
@@ -339,7 +546,31 @@ function smoothstep(e0, e1, x) {
  * sea. The second return channel — the shallow sea floor around the island —
  * comes back as a negative number so callers can take the highest of them.
  */
-function heightOfIsland(spec, x, z) {
+/** Sea stacks: steep towers, stepped a little so they read as strata. */
+function heightOfSpires(spec, x, z) {
+  let best = -Infinity;
+  for (const spire of spec.spires) {
+    const d = Math.hypot(x - spec.centre.x - spire.dx, z - spec.centre.z - spire.dz);
+    const wobble = fbm((x + spec.seed) * 0.05, (z - spec.seed) * 0.05) * 3;
+    const edge = spire.radius + wobble;
+    if (d >= edge + 6) {
+      best = Math.max(best, -2 - Math.min(30, (d - edge) * 0.4));
+      continue;
+    }
+    const wall = 1 - smoothstep(edge - 3, edge + 4, d);
+    const crown = 1 - Math.pow(d / (edge + 4), 3) * 0.28;
+    const ledges = Math.floor(spire.height * crown * 0.2) / 0.2;
+    best = Math.max(best, (ledges * 0.3 + spire.height * crown * 0.7) * wall - 2 * (1 - wall));
+  }
+  return best;
+}
+
+function heightOfIsland(spec, x, z, uncut = false) {
+  if (spec.spires) {
+    let h = heightOfSpires(spec, x, z);
+    if (!uncut) for (const carve of spec.carves ?? []) h = carveTrench(h, x, z, carve);
+    return h;
+  }
   const dx = x - spec.centre.x;
   const dz = z - spec.centre.z;
   const r = Math.hypot(dx, dz);
@@ -357,7 +588,10 @@ function heightOfIsland(spec, x, z) {
 
   // Coastal profile: beaches ramp gently, cliff faces snap up almost vertically.
   const ramp = 1 - Math.exp(-t * (6 + cliff * 150));
-  let h = (spec.rise * t + spec.peak * t * t + cliff * (spec.cliffHeight ?? 44)) * ramp;
+  // The peak term is eased at the top, so summits are rounded hills rather
+  // than the point of a cone.
+  const crown = t * t * (2.2 - 1.2 * t);
+  let h = (spec.rise * t + spec.peak * crown + cliff * (spec.cliffHeight ?? 44)) * ramp;
 
   h += ridgeAt(spec, x, z) * ramp;
 
@@ -374,32 +608,113 @@ function heightOfIsland(spec, x, z) {
   }
 
   for (const shelf of spec.shelves ?? []) h = flattenTo(h, x, z, shelf);
-  for (const carve of spec.carves ?? []) h = carveTrench(h, x, z, carve);
+  for (const lake of LAKES) h = dishLake(h, x, z, lake);
+  for (const carve of spec.carves ?? []) {
+    if (uncut && carve.roofed) continue;
+    h = carveTrench(h, x, z, carve);
+  }
 
   return h;
 }
 
+/** Dish the ground under a lake so its water has somewhere to sit. */
+function dishLake(h, x, z, lake) {
+  const d = Math.hypot(x - lake.x, z - lake.z);
+  if (d > lake.radius * 1.8) return h;
+  if (d > lake.radius) {
+    // A low rim of rock holds the water in, the way a tarn sits in a hollow.
+    const rim = lake.level + 1.6 - Math.max(0, d - lake.radius * 1.25) * 0.55;
+    return Math.max(h, rim);
+  }
+  // Banks rise just past the shoreline; the bed shelves to a few metres deep.
+  const bank = lake.level + 1.2 + (d - lake.radius) * 0.5;
+  const bed = lake.level - 5 * smoothstep(lake.radius, lake.radius * 0.85, d);
+  return Math.min(h, Math.max(bed, Math.min(bank, lake.level - 0.8 + smoothstep(lake.radius - 2, lake.radius + 6, d) * 3)));
+}
+
 /**
  * Ground height at a world position: the highest island at that point, or the
- * sea floor between them. Below `SEA_LEVEL` means water.
+ * sea floor between them. Below the water level (see `waterLevelAt`) means
+ * water. `uncut` gives the ground as it was before tunnels were dug through
+ * it, which is where their roofs are.
  */
-export function terrainHeightAt(x, z) {
+export function terrainHeightAt(x, z, uncut = false) {
   let best = OCEAN_FLOOR;
   for (const spec of ISLANDS) {
     const dx = x - spec.centre.x;
     const dz = z - spec.centre.z;
     if (dx * dx + dz * dz > spec.reachSq) continue;
-    const h = heightOfIsland(spec, x, z);
+    const h = heightOfIsland(spec, x, z, uncut);
     if (h > best) best = h;
   }
   return best;
+}
+
+/** The lake at a point, if there is one. */
+export function lakeAt(x, z) {
+  for (const lake of LAKES) {
+    const dx = x - lake.x;
+    const dz = z - lake.z;
+    if (dx * dx + dz * dz < lake.radius * lake.radius * 1.2) return lake;
+  }
+  return null;
+}
+
+/** Height of the water surface at a point: a lake's level, or the sea's. */
+export function waterLevelAt(x, z) {
+  return lakeAt(x, z)?.level ?? SEA_LEVEL;
+}
+
+/* ------------------------------------------------------------ obstacles --- */
+
+
+export function obstacleHeightAt(x, z) {
+  let best = -Infinity;
+  for (const o of OBSTACLES) {
+    const dx = x - o.x;
+    const dz = z - o.z;
+    if (dx * dx + dz * dz < o.radius * o.radius && o.top > best) best = o.top;
+  }
+  return best;
+}
+
+/** Ground or building, whichever is higher. */
+export function solidHeightAt(x, z) {
+  return Math.max(terrainHeightAt(x, z), obstacleHeightAt(x, z));
+}
+
+/* ------------------------------------------------------------ overhangs --- */
+
+/** The roof over a point, or null if the sky is open. */
+export function ceilingAt(x, z) {
+  for (const o of OVERHANGS) {
+    if (distanceToSegment(x, z, o.from, o.to) < o.width) return o;
+  }
+  return null;
+}
+
+/** Height of the top of an overhang at a point: the rock as it was before
+ * the tunnel was cut, or the bridge deck. */
+export function roofTopAt(roof, x, z) {
+  return roof.top ?? terrainHeightAt(x, z, true);
 }
 
 /* --------------------------------------------------------------- queries --- */
 
 /** Height of whatever you would hit — ground above water, otherwise the sea. */
 export function surfaceHeightAt(x, z) {
-  return Math.max(terrainHeightAt(x, z), SEA_LEVEL);
+  return Math.max(terrainHeightAt(x, z), waterLevelAt(x, z), obstacleHeightAt(x, z));
+}
+
+/**
+ * What is underneath something at a height: inside a tunnel that is the
+ * tunnel floor (or the sea in it), not the rock and the lake on the roof.
+ */
+export function surfaceBelow(x, y, z) {
+  const roof = ceilingAt(x, z);
+  if (roof && y < roof.bottom) return Math.max(terrainHeightAt(x, z), SEA_LEVEL);
+  if (roof) return Math.max(surfaceHeightAt(x, z), roofTopAt(roof, x, z));
+  return surfaceHeightAt(x, z);
 }
 
 const _grad = { x: 0, z: 0 };
@@ -420,7 +735,13 @@ export function nearestCoast(x, z) {
     const dz = z - spec.centre.z;
     const r = Math.hypot(dx, dz);
     const theta = Math.atan2(dz, dx);
-    const distance = r - islandRadiusAt(spec, theta);
+    let distance = r - islandRadiusAt(spec, theta);
+    if (spec.spires) {
+      distance = Infinity;
+      for (const spire of spec.spires) {
+        distance = Math.min(distance, Math.hypot(dx - spire.dx, dz - spire.dz) - spire.radius);
+      }
+    }
     if (!best || distance < best.distance) best = { spec, distance, theta, r };
   }
   return best;
@@ -451,6 +772,17 @@ export const ARCHIPELAGO_RADIUS = ISLANDS.reduce(
 export function coastlineGLSL() {
   const f = (n) => n.toFixed(4);
   const bodies = ISLANDS.map((spec, index) => {
+    if (spec.spires) {
+      const towers = spec.spires
+        .map((t) => `best = min(best, length(p - vec2(${f(spec.centre.x + t.dx)}, ${f(spec.centre.z + t.dz)})) - ${f(t.radius)});`)
+        .join('\n    ');
+      return `
+  float coast${index}(vec2 p) {
+    float best = 1.0e6;
+    ${towers}
+    return best;
+  }`;
+    }
     const waves = spec.waves
       .map(([amp, freq, phase]) => `r += ${f(amp)} * sin(th * ${f(freq)} + ${f(phase)});`)
       .join('\n      ');
@@ -481,4 +813,13 @@ export function coastlineGLSL() {
 ${calls}
     return best;
   }`;
+}
+
+// Obstacles registered by height above ground get their tops once the
+// height field is ready.
+for (const o of OBSTACLES) {
+  if (o.pending) {
+    o.top = terrainHeightAt(o.x, o.z) + o.height;
+    delete o.pending;
+  }
 }

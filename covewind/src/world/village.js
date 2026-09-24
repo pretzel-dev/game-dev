@@ -10,7 +10,6 @@ import {
   Float32BufferAttribute,
   Group,
   Mesh,
-  MeshStandardMaterial,
   SphereGeometry,
   TorusGeometry,
 } from 'three';
@@ -18,19 +17,18 @@ import { PLACES, terrainHeightAt } from './terrain.js';
 import { HOUSE_SITES, LANES, lanePoint, laundryLines } from './village-plan.js';
 import { createBoat, createHouse, createPier, createTree, createVillager } from './props.js';
 import { createCloth } from './cloth.js';
-import { MAT, CLOTH } from '../core/materials.js';
+import { MAT, CLOTH, mat } from '../core/materials.js';
+import { archedDoor, campanile, gableRoofGeometry } from './architecture.js';
+import { bakeStatic } from '../core/merge.js';
 import { QUALITY } from '../core/quality.js';
 import { chance, pick, rand, TAU } from '../core/utils.js';
 
-const ROAD_MATERIAL = new MeshStandardMaterial({
-  color: 0xd9c095,
-  roughness: 0.98,
-  metalness: 0,
-  flatShading: true,
-  polygonOffset: true,
-  polygonOffsetFactor: -2,
-  polygonOffsetUnits: -2,
-});
+// Pale stone paving, a shade lighter than the hillside it runs across.
+const ROAD_MATERIAL = mat(0xe8d8b6);
+ROAD_MATERIAL.polygonOffset = true;
+ROAD_MATERIAL.polygonOffsetFactor = -2;
+ROAD_MATERIAL.polygonOffsetUnits = -2;
+const PAVING = mat(0xe2cfa9);
 
 /** A ribbon that follows the ground — used for the lanes and the quayside. */
 function ribbon(parent, points, width) {
@@ -66,44 +64,81 @@ function ribbon(parent, points, width) {
   return mesh;
 }
 
+/**
+ * The church: a Venetian campanile over a little piazza, with the nave
+ * beside it and a fountain in the square.
+ */
 function churchTower(parent) {
   const { x, z } = PLACES.church;
+  const ground = terrainHeightAt(x, z);
   const group = new Group();
-  group.position.set(x, terrainHeightAt(x, z) - 0.5, z);
+  group.position.set(x, ground - 0.5, z);
   group.rotation.y = 0.3;
   parent.add(group);
 
-  const base = new Mesh(new BoxGeometry(15, 26, 15), MAT.cream);
-  base.position.y = 13;
-  base.castShadow = true;
-  base.receiveShadow = true;
-  group.add(base);
+  const tower = campanile(group, { height: 44, width: 9 });
+  tower.group.position.set(0, 0, 0);
 
-  const belfry = new Mesh(new BoxGeometry(11.5, 7, 11.5), MAT.plaster);
-  belfry.position.y = 29.5;
-  belfry.castShadow = true;
-  group.add(belfry);
+  // The nave: pale stone, a gable facing the square, a rose window.
+  const nave = new Group();
+  nave.position.set(-17, 0, -2);
+  group.add(nave);
+  const body = new Mesh(new BoxGeometry(14, 13, 26), MAT.stone);
+  body.position.y = 6.5;
+  nave.add(body);
+  const roof = new Mesh(gableRoofGeometry(26, 14, 5.5, 0.8), MAT.roof);
+  roof.rotation.y = Math.PI / 2;
+  roof.position.y = 13;
+  nave.add(roof);
+  const rose = new Mesh(new CylinderGeometry(1.9, 1.9, 0.4, 16), MAT.dark);
+  rose.rotation.x = Math.PI / 2;
+  rose.position.set(0, 9.5, 13.1);
+  nave.add(rose);
+  const roseRing = new Mesh(new TorusGeometry(2.1, 0.35, 6, 18), MAT.stoneDark);
+  roseRing.position.set(0, 9.5, 13.2);
+  nave.add(roseRing);
+  archedDoor(nave, 0, 13, { w: 3.2, h: 5.4, material: MAT.woodDark });
+  const apse = new Mesh(new CylinderGeometry(6, 6, 10, 14, 1, false, Math.PI / 2, Math.PI), MAT.stone);
+  apse.position.set(0, 5, -13);
+  nave.add(apse);
+  const apseRoof = new Mesh(new ConeGeometry(6.6, 4, 14, 1, false, Math.PI / 2, Math.PI), MAT.roof);
+  apseRoof.position.set(0, 12, -13);
+  nave.add(apseRoof);
 
-  // The bell you can hear from the air.
-  const bell = new Mesh(new ConeGeometry(1.7, 3, 8), MAT.yellow);
-  bell.position.y = 29;
-  group.add(bell);
+  // The piazza in front, and a fountain.
+  const square = new Mesh(new CylinderGeometry(20, 20, 0.6, 24), PAVING);
+  square.position.set(-8, 0.2, 22);
+  group.add(square);
+  const basin = new Mesh(new CylinderGeometry(3.4, 3.8, 1.2, 12), MAT.stone);
+  basin.position.set(-8, 0.9, 22);
+  group.add(basin);
+  const water = new Mesh(new CylinderGeometry(3, 3, 0.2, 12), mat(0x62c4d6, { emissive: 0x10333a }));
+  water.position.set(-8, 1.45, 22);
+  group.add(water);
+  const spout = new Mesh(new CylinderGeometry(0.4, 0.6, 3, 8), MAT.stone);
+  spout.position.set(-8, 2.4, 22);
+  group.add(spout);
 
-  const roof = new Mesh(new ConeGeometry(9.5, 10, 4), MAT.red);
-  roof.position.y = 38;
-  roof.rotation.y = Math.PI / 4;
-  roof.castShadow = true;
-  group.add(roof);
+  // Café tables with parasols round the edge of the square.
+  for (let i = 0; i < 5; i++) {
+    const a = 0.6 + i * 0.42;
+    const tx = -8 + Math.cos(a) * 14;
+    const tz = 22 + Math.sin(a) * 14;
+    const table = new Mesh(new CylinderGeometry(0.8, 0.8, 0.15, 8), MAT.white);
+    table.position.set(tx, 1.4, tz);
+    group.add(table);
+    const pole = new Mesh(new CylinderGeometry(0.08, 0.08, 3.4, 4), MAT.woodDark);
+    pole.position.set(tx, 2.2, tz);
+    group.add(pole);
+    const shade = new Mesh(new ConeGeometry(2, 0.9, 8), i % 2 ? MAT.cream : MAT.red);
+    shade.position.set(tx, 4, tz);
+    group.add(shade);
+  }
 
-  const clock = new Mesh(new TorusGeometry(2.4, 0.4, 6, 14), MAT.dark);
-  clock.position.set(0, 20, 7.7);
-  group.add(clock);
-  const face = new Mesh(new CylinderGeometry(2.2, 2.2, 0.3, 14), MAT.cream);
-  face.rotation.x = Math.PI / 2;
-  face.position.set(0, 20, 7.6);
-  group.add(face);
-
-  return { group, bellPosition: { x, y: terrainHeightAt(x, z) + 29, z } };
+  group.traverse((o) => {
+    if (o.isMesh) o.castShadow = o.receiveShadow = true;
+  });
+  return { group, bellPosition: { x, y: ground + tower.bellHeight, z } };
 }
 
 function harbour(parent, moorings) {
@@ -244,6 +279,9 @@ export function createVillage(scene) {
     const v = createVillager(group, PLACES.villageCentre.x + Math.cos(a) * r, PLACES.villageCentre.z + Math.sin(a) * r);
     if (v) villagers.push(v);
   }
+
+  // Everything that stays put becomes a handful of meshes.
+  bakeStatic(group);
 
   return { group, villagers, moorings, bellPosition };
 }

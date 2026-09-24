@@ -11,6 +11,7 @@ import { createBeachCamp } from './beach-camp.js';
 import { MAT, CLOTH } from '../core/materials.js';
 import { QUALITY } from '../core/quality.js';
 import { chance, pick, rand, TAU } from '../core/utils.js';
+import { bakeStatic } from '../core/merge.js';
 
 export function createCove(scene) {
   const group = new Group();
@@ -64,5 +65,6 @@ export function createCove(scene) {
   const flag = createCloth(group, { width: 3, height: 2, material: pick(CLOTH) });
   flag.position.set(dock.x + 1.6, 7.2, dock.z);
 
+  bakeStatic(group);
   return { group, moorings: [], camp };
 }
