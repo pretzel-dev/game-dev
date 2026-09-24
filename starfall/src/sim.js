@@ -94,7 +94,7 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
     s.size = 2.6;
   });
 
-  const tech = Array.from({ length: players }, () => ({ sensors: 0, intel: 0, drives: 0, research: null }));
+  const tech = Array.from({ length: players }, () => ({ sensors: 0, intel: 0, drives: 0, labs: 0, projects: [] }));
   return { systems, fleets: [], players, tech, time: 0, winner: null, nextFleetId: 1 };
 }
 
@@ -118,6 +118,13 @@ export const TECH = {
       { cost: 60, time: 40, text: 'Enemy targets and arrival times' },
     ],
   },
+  labs: {
+    name: 'Labs',
+    tiers: [
+      { cost: 50, time: 40, text: 'Second research slot' },
+      { cost: 90, time: 60, text: 'Third research slot' },
+    ],
+  },
   drives: {
     name: 'Drives',
     tiers: [
@@ -136,12 +143,28 @@ export function nextTier(game, owner, key) {
   return TECH[key].tiers[game.tech[owner][key]] ?? null;
 }
 
-export function research(game, from, key) {
+/** Research slots: one, plus one per level of Labs. */
+export const researchSlots = (game, owner) => 1 + game.tech[owner].labs;
+
+/**
+ * Whether a star can start researching key: a free slot, nothing else under
+ * way at that star, the same tech not already in progress, and the ships.
+ */
+export function canResearch(game, from, key) {
   const t = game.tech[from.owner];
   const tier = nextTier(game, from.owner, key);
-  if (!tier || t.research || from.units < tier.cost || game.winner !== null) return false;
+  return !!tier && game.winner === null
+    && t.projects.length < researchSlots(game, from.owner)
+    && !t.projects.some((p) => p.key === key || p.at === from.id)
+    && from.units >= tier.cost;
+}
+
+/** Starts research at a star; the project is lost if the star falls. */
+export function research(game, from, key) {
+  if (!canResearch(game, from, key)) return false;
+  const tier = nextTier(game, from.owner, key);
   from.units -= tier.cost;
-  t.research = { key, left: tier.time, total: tier.time };
+  game.tech[from.owner].projects.push({ key, at: from.id, left: tier.time, total: tier.time });
   return true;
 }
 
@@ -153,6 +176,8 @@ export function visibility(game, owner) {
   const range = sensorRange(game, owner);
   const eyes = game.systems.filter((s) => s.owner === owner).map((s) => ({ pos: s.pos, r: range }));
   for (const f of game.fleets) if (f.owner === owner) eyes.push({ pos: fleetPosition(game, f), r: 40 });
+  // A fleet besieging a star sees the battle it's in.
+  for (const s of game.systems) if (s.sieges.some((g) => g.owner === owner)) eyes.push({ pos: s.pos, r: 40 });
   const sees = (pos) => eyes.some((e) => dist(e.pos, pos) <= e.r);
   const systems = new Set(game.systems.filter((s) => s.owner === owner || sees(s.pos)).map((s) => s.id));
   return { owner, sees, systems, intel: game.tech[owner].intel };
@@ -221,12 +246,13 @@ export const upgradeProgress = (s) =>
 
 const EPS = 1e-6;
 
-function capture(s, owner, units) {
+function capture(game, s, owner, units) {
   s.owner = owner;
   s.units = units;
   // A captured factory is damaged in the fighting, and any build is lost.
   s.level = Math.max(1, s.level - 1);
   s.upgrading = 0;
+  for (const t of game.tech) t.projects = t.projects.filter((p) => p.at !== s.id);
   // Fleets of the new owner already here join the garrison.
   for (const g of s.sieges) if (g.owner === owner) { s.units += g.units; g.units = 0; }
 }
@@ -262,7 +288,7 @@ function exchange(a, ea, b, eb, dt) {
 /** Ships needed to beat n defenders worth e each (the break-even force). */
 export const shipsToBeat = (n, e) => n * e ** (1 / (2 - RULES.battleIntensity));
 
-function fight(s, dt) {
+function fight(game, s, dt) {
   // The garrison splits its fire across the besieging fleets by size.
   const total = s.sieges.reduce((n, g) => n + g.units, 0);
   let garrisonLoss = 0;
@@ -280,7 +306,7 @@ function fight(s, dt) {
     if (winner) {
       const units = winner.units;
       winner.units = 0;
-      capture(s, winner.owner, units);
+      capture(game, s, winner.owner, units);
     }
   }
   s.sieges = s.sieges.filter((g) => g.units > EPS);
@@ -357,11 +383,14 @@ export function step(game, dt) {
     arrived.push(f);
     return false;
   });
-  for (const s of game.systems) if (s.sieges.length) fight(s, dt);
+  for (const s of game.systems) if (s.sieges.length) fight(game, s, dt);
   for (const t of game.tech) {
-    if (!t.research) continue;
-    t.research.left -= dt;
-    if (t.research.left <= 0) { t[t.research.key] += 1; t.research = null; }
+    t.projects = t.projects.filter((p) => {
+      p.left -= dt;
+      if (p.left > 0) return true;
+      t[p.key] += 1;
+      return false;
+    });
   }
 
   const alive = new Set();
