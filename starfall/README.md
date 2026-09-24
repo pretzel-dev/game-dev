@@ -11,11 +11,12 @@ rivals by sending ships between star systems.
   crossings take 30–90 seconds, so each launch is a big commitment. Fleets
   can't be recalled.
 - **Battles:** a fleet reaching a hostile star lays siege, and the fight plays
-  out over a few seconds. Battles follow Lanchester's square law: each side
-  destroys ships in proportion to its own size. Overwhelming odds win fast and
-  cheaply (80 vs 20 leaves about 77), even fights wipe out both sides, and fleets
-  that arrive one after another get beaten one at a time. Each garrison ship is
-  worth 1.2 attackers, +0.1 per factory level. A star under siege stops
+  out over several seconds. Battles blend Lanchester's laws (the *battle
+  intensity* setting, default 0.5): bigger forces win more cheaply than the
+  plain difference (80 vs 20 leaves about 72; 60 vs 50 leaves about 18), and
+  fleets that arrive one after another are beaten one at a time. Even
+  lopsided fights take several seconds. Each garrison ship is worth 1.1
+  attackers, +0.05 per factory level. A star under siege stops
   producing. The label shows `defenders ⚔ attackers`.
 - **Space battles:** hostile fleets that pass very close to each other stop and
   fight where they are. The survivors carry on to their target.
@@ -44,7 +45,8 @@ rivals by sending ships between star systems.
 
 ## Settings
 
-**Settings** on the menu has sliders for playtesting: battle speed, defence
+**Settings** on the menu has sliders for playtesting: battle intensity
+(0 = winner keeps the difference, 1 = full square law), battle speed and pace, defence
 bonus, fleet speed, space engagement range, production, starting ships, and the
 AI's minimum fleet and pace. Changes are saved on the device.
 

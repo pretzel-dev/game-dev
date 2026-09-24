@@ -1,6 +1,6 @@
 import {
   NEUTRAL, TECH, dist, rateOf, capOf, upgradeCost, sendUnits, upgrade, research, nextTier,
-  speedOf, visibility, fleetPosition, defenseOf,
+  speedOf, visibility, fleetPosition, defenseOf, shipsToBeat,
 } from './sim.js';
 
 // The AI plays like a person: one action at a time (a single launch from a
@@ -48,10 +48,8 @@ function incoming(game, vis, s, owner) {
 /** Garrison we expect at t on arrival, from what we can see. */
 function expected(game, vis, t, eta) {
   if (!vis.systems.has(t.id)) return UNKNOWN_STAR;
-  // Under the square law, beating D defenders worth e each takes sqrt(e) * D.
-  const k = Math.sqrt(defenseOf(t));
-  if (t.owner === NEUTRAL) return t.units * k;
-  return Math.min(capOf(t), t.units + rateOf(t) * eta) * k;
+  const n = t.owner === NEUTRAL ? t.units : Math.min(capOf(t), t.units + rateOf(t) * eta);
+  return shipsToBeat(n, defenseOf(t));
 }
 
 export function tickAI(game, ai, dt) {
@@ -138,7 +136,7 @@ export function tickAI(game, ai, dt) {
   let need = Infinity;
   for (const t of others) {
     if (!vis.systems.has(t.id)) continue;
-    const n = Math.ceil(Math.max(t.units, capOf(t)) * Math.sqrt(defenseOf(t)) * ai.d.greed) + 5;
+    const n = Math.ceil(shipsToBeat(Math.max(t.units, capOf(t)), defenseOf(t)) * ai.d.greed) + 5;
     if (n <= total && n < need) { target = t; need = n; }
   }
   if (target) {
