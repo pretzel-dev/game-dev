@@ -54,6 +54,20 @@ bonus, fleet speed, space engagement range, production, starting ships, and the
 AI's minimum fleet and pace. Changes are saved on the device. **Copy settings**
 copies every value as one line of JSON, to paste back as new defaults.
 
+The **Map** section sets up the next game's layout: a fixed map seed (0 for a
+new map each game), the shape (scatter, ring, spiral or core & rim), how many
+stars there are, the map's size and height, the minimum spacing between stars,
+clusters (how many clumps the stars form and how big each is), neutral garrison
+sizes and the level of each home star.
+
+## End of game
+
+The end screen shows your headline numbers, a territory chart (share of stars
+over time) and a fleet-strength chart (every ship each empire has). Drag
+across a chart to read the values at that moment. A table compares every
+empire: ships built, destroyed and lost, stars taken and lost, peaks, fleets,
+upgrades and research.
+
 ## The main choice
 
 Stars stop producing once full, so idle ships are wasted. Each ship can
@@ -78,3 +92,4 @@ or install it yourself.
 - `src/ai.js`: AI opponents
 - `src/render.js`: Three.js scene, labels, picking
 - `src/main.js`: touch input, UI, game loop
+- `src/stats.js`: end-of-game stats and charts

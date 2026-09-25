@@ -1,4 +1,5 @@
-import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES, TECH, nextTier, research, canResearch, researchSlots, visibility, speedOf, sensorRange, TUNABLES, DEFAULTS } from './sim.js';
+import { createGame, step, sendFraction, upgrade, upgradeCost, upgradeProgress, rng, dist, PLAYER, NEUTRAL, RULES, TECH, nextTier, research, canResearch, researchSlots, visibility, speedOf, sensorRange, TUNABLES, MAP_TUNABLES, DEFAULTS } from './sim.js';
+import { renderStats } from './stats.js';
 import { createAI, tickAI, AI_TUNING } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -26,10 +27,12 @@ function savePrefs() {
 // ---- Settings (tuning parameters for playtesting) ----------------------------
 
 const AI_DEFAULTS = { ...AI_TUNING };
+const tunable = (group) => ([key, label, min, max, step, names]) => ({ key, label, min, max, step, names, group, obj: RULES, def: DEFAULTS[key] });
 const SETTINGS = [
-  ...TUNABLES.map(([key, label, min, max, step]) => ({ key, label, min, max, step, obj: RULES, def: DEFAULTS[key] })),
-  { key: 'minFleet', label: 'AI minimum fleet', min: 1, max: 60, step: 1, obj: AI_TUNING, def: AI_DEFAULTS.minFleet },
-  { key: 'thinkScale', label: 'AI pause between actions', min: 0.25, max: 4, step: 0.05, obj: AI_TUNING, def: AI_DEFAULTS.thinkScale },
+  ...TUNABLES.map(tunable('Rules')),
+  { key: 'minFleet', label: 'AI minimum fleet', min: 1, max: 60, step: 1, obj: AI_TUNING, def: AI_DEFAULTS.minFleet, group: 'Rules' },
+  { key: 'thinkScale', label: 'AI pause between actions', min: 0.25, max: 4, step: 0.05, obj: AI_TUNING, def: AI_DEFAULTS.thinkScale, group: 'Rules' },
+  ...MAP_TUNABLES.map(tunable('Map (from the next game)')),
 ];
 function loadSettings() {
   let saved = {};
@@ -41,12 +44,12 @@ function saveSettings() {
   for (const t of SETTINGS) if (t.obj[t.key] !== t.def) out[t.key] = t.obj[t.key];
   try { localStorage.setItem('starfall-settings', JSON.stringify(out)); } catch { /* ignore */ }
 }
-const fmtSetting = (t) => (t.step >= 1 ? String(t.obj[t.key]) : t.obj[t.key].toFixed(2));
+const fmtSetting = (t) => (t.names ? t.names[t.obj[t.key]] : t.step >= 1 ? String(t.obj[t.key]) : t.obj[t.key].toFixed(2));
 /** Every setting as one line of JSON, for pasting back to be made the defaults. */
 const settingsJSON = () => JSON.stringify(Object.fromEntries(SETTINGS.map((t) => [t.key, t.obj[t.key]])));
 function renderSettings() {
   $('settings-json').value = settingsJSON();
-  $('settings-list').innerHTML = SETTINGS.map((t, i) => `
+  $('settings-list').innerHTML = SETTINGS.map((t, i) => `${t.group !== SETTINGS[i - 1]?.group ? `<h3>${t.group}</h3>` : ''}
     <div class="set ${t.obj[t.key] !== t.def ? 'changed' : ''}">
       <label for="set-${i}">${t.label}</label><output>${fmtSetting(t)}</output>
       <input id="set-${i}" data-i="${i}" type="range" min="${t.min}" max="${t.max}" step="${t.step}" value="${t.obj[t.key]}" />
@@ -122,7 +125,7 @@ $('amount').addEventListener('input', (e) => {
 });
 
 function start() {
-  const seed = (Math.random() * 2 ** 31) | 0;
+  const seed = RULES.mapSeed || (Math.random() * 2 ** 31) | 0;
   game = createGame({ seed, opponents: prefs.rivals, portrait: innerHeight > innerWidth });
   const r = rng(seed ^ 0x5eed);
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
@@ -457,6 +460,7 @@ function finish() {
   const m = Math.floor(game.time / 60);
   const s = String(Math.floor(game.time % 60)).padStart(2, '0');
   $('end-sub').textContent = won ? `The sector is yours in ${m}:${s}.` : `Your last star fell at ${m}:${s}.`;
+  renderStats($('end-stats'), game);
   setTimeout(() => ($('end').hidden = false), 900);
 }
 
