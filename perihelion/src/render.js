@@ -806,7 +806,7 @@ export function createView(canvas, labelRoot) {
   /** Nearest fleet (of `owner`) to a screen point, within a finger's reach. */
   function pickFleet(game, x, y, owner) {
     let best = null;
-    let bestD = 30;
+    let bestD = 24;
     for (const f of game.fleets) {
       if (f.owner !== owner) continue;
       const s = fleetState(f, game.time);

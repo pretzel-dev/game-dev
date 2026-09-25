@@ -151,8 +151,9 @@ function toast(text, color) {
 }
 
 function tap(id, x, y) {
-  // Tapping one of your fleets in flight shows where it's going.
-  if (id === null && ui.selected === null) {
+  // Tapping one of your fleets in flight shows where it's going (fleets win
+  // over the world behind them, unless you're picking a target).
+  if (ui.selected === null) {
     const f = view.pickFleet(game, x, y, PLAYER);
     if (f !== null) {
       ui.fleet = f;
@@ -325,4 +326,4 @@ view.orbit.dist = 330;
 requestAnimationFrame(frame);
 
 // Hook for the headless smoke test.
-window.__perihelion = { get game() { return game; }, view, ui };
+window.__perihelion = { get game() { return game; }, view, ui, sim: { launch } };
