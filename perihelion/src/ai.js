@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip } from './sim.js';
+import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
@@ -82,6 +82,15 @@ function economy(game, ai, mine) {
   // 2. Mines on every moon and asteroid we hold.
   const rock = mine.find((b) => (b.kind === 'asteroid' || b.kind === 'moon') && !b.structures.some((x) => x.type === 'mine') && free(b, 'mine'));
   if (rock) return buildStructure(game, rock, 'mine');
+  // 2b. Upgrade mines when there's money to spare; guns where trouble is coming.
+  const credits = game.credits[ai.owner];
+  for (const b of mine) {
+    for (const x of b.structures) {
+      if (cantUpgrade(game, b, x)) continue;
+      if (x.type === 'mine' && credits > upgradeCost(x) + RULES.ship.cost) return upgrade(game, b, x);
+      if (x.type === 'defence' && (threatened(b) || credits > upgradeCost(x) + 200)) return upgrade(game, b, x);
+    }
+  }
   // 3. A second shipyard, on the planet with the most room.
   const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
   if (yards.length < 2 && ai.rand() < 0.5) {
@@ -93,6 +102,6 @@ function economy(game, ai, mine) {
   if (yard && ai.rand() < 0.8) return orderShip(game, yard);
   // 5. More guns at home once things are running.
   const home = mine.find((b) => b.home) || mine[0];
-  if (home && game.credits[ai.owner] > 150 && free(home, 'defence')) return buildStructure(game, home, 'defence');
+  if (home && game.credits[ai.owner] > 300 && free(home, 'defence')) return buildStructure(game, home, 'defence');
   return false;
 }

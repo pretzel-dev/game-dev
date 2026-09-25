@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -116,7 +116,9 @@ function updateActions() {
     // What's here: slots, structures (and their progress), the ship queue.
     const parts = s.structures.map((x) => {
       const def = RULES.structures[x.type];
-      return x.left > 0 ? `${def.name} ${Math.floor((1 - x.left / def.time) * 100)}%` : def.name;
+      const lvl = def.maxLevel ? ` ${x.level}` : '';
+      if (x.next) return `${def.name}${lvl}→${x.next} ${Math.floor((1 - x.left / upgradeTime({ ...x, level: x.next - 1 })) * 100)}%`;
+      return x.left > 0 ? `${def.name} ${Math.floor((1 - x.left / def.time) * 100)}%` : `${def.name}${lvl}`;
     });
     const queue = s.queue ? ` · building ${s.queue} ship${s.queue === 1 ? '' : 's'} (${Math.floor(s.build * 100)}%)` : '';
     setHTML($('info'), `<b>${s.name}</b> · ${s.ships} ship${s.ships === 1 ? '' : 's'}${queue}<br>`
@@ -145,10 +147,24 @@ function renderBuildRow(s) {
     // Hide what can never go here; grey out what can't be afforded yet.
     if (why && why !== 'not enough credits' && b.key !== 'ship' && why !== 'no free slots') return '';
     return `<button data-b="${b.key}" ${why ? 'disabled' : ''} title="${why || ''}">${b.label}<small>${b.cost()}</small></button>`;
+  }).join('') + s.structures.map((x, i) => {
+    // Upgrades for what's already here.
+    const why = cantUpgrade(game, s, x);
+    if (why && why !== 'not enough credits') return '';
+    const name = x.type === 'mine' ? 'Mine' : 'Guns';
+    return `<button data-u="${i}" ${why ? 'disabled' : ''}>${name} ${x.level}→${x.level + 1}<small>${upgradeCost(x)}</small></button>`;
   }).join('');
   setHTML($('buildrow'), html);
 }
 $('buildrow').addEventListener('click', (e) => {
+  const up = e.target.closest('button[data-u]');
+  if (up && ui.selected !== null) {
+    const s = game.bodies[ui.selected];
+    const x = s.structures[Number(up.dataset.u)];
+    if (x && upgrade(game, s, x)) toast(`Upgrading ${RULES.structures[x.type].name} to level ${x.next} · ${Math.round(upgradeTime({ ...x, level: x.next - 1 }))}s`, ownerColor(PLAYER));
+    updateActions();
+    return;
+  }
   const btn = e.target.closest('button[data-b]');
   if (!btn || ui.selected === null) return;
   const s = game.bodies[ui.selected];
