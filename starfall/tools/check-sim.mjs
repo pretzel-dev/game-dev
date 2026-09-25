@@ -1,6 +1,6 @@
 // Headless sanity check: AI-only matches must finish, and the rules must hold.
 import assert from 'node:assert/strict';
-import { createGame, step, sendFraction, sendUnits, upgrade, rng, NEUTRAL } from '../src/sim.js';
+import { createGame, step, sendFraction, sendUnits, upgrade, rng, NEUTRAL, RULES, MAP_SHAPES, DEFAULTS } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 
 // Rules.
@@ -112,3 +112,36 @@ for (let seed = 1; seed <= runs; seed++) {
 }
 console.log(`sim ok: ${finished}/${runs} AI matches finished within 60 min of game time`);
 assert.ok(finished >= runs * 0.8, 'most AI matches should reach a winner');
+
+// Map settings: every shape, with and without clusters, makes a full, playable
+// map, and a fixed seed repeats it.
+for (let shape = 0; shape < MAP_SHAPES.length; shape++) {
+  for (const clusters of [0, 4]) {
+    Object.assign(RULES, { mapShape: shape, clusters });
+    const g = createGame({ seed: 11, opponents: 3 });
+    const want = RULES.starsBase + g.players * RULES.starsPerPlayer;
+    assert.equal(g.systems.length, want, `${MAP_SHAPES[shape]} x${clusters}: ${g.systems.length}/${want} stars`);
+    assert.equal(new Set(g.systems.filter((s) => s.owner !== NEUTRAL).map((s) => s.owner)).size, g.players);
+    assert.deepEqual(createGame({ seed: 11, opponents: 3 }).systems.map((s) => s.pos), g.systems.map((s) => s.pos));
+  }
+}
+for (const k of Object.keys(DEFAULTS)) RULES[k] = DEFAULTS[k];
+console.log(`map ok: ${MAP_SHAPES.length} shapes, clustered and not`);
+
+// Stats add up over a full AI match.
+{
+  const g = createGame({ seed: 5, opponents: 2 });
+  const r = rng(35);
+  const ais = Array.from({ length: g.players }, (_, i) => createAI(i, 'hard', r));
+  for (let t = 0; t < 3600 && g.winner === null; t += 0.25) {
+    for (const ai of ais) tickAI(g, ai, 0.25);
+    step(g, 0.25);
+  }
+  const st = g.stats;
+  const w = st.owners[g.winner];
+  assert.ok(w.produced > 0 && w.killed > 0 && w.captured > 0 && w.fleets > 0);
+  assert.ok(st.history.length > 10 && st.history.at(-1).stars[g.winner] > 0);
+  assert.ok(st.biggestBattle && st.biggestBattle.losses > 0);
+  assert.ok(st.owners.every((o) => o.lost > 0), 'everyone lost ships');
+  console.log(`stats ok: winner made ${Math.round(w.produced)}, killed ${Math.round(w.killed)}, biggest battle ${Math.round(st.biggestBattle.losses)}`);
+}

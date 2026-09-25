@@ -23,7 +23,22 @@ export const RULES = {
   productionScale: 1, // multiplies every star's production
   maxLevel: 4,
   startUnits: 25,
+  // Map generation.
+  mapSeed: 0, // 0 = a new map each game; anything else repeats that map
+  mapShape: 0, // index into MAP_SHAPES
+  starsBase: 9, // stars on every map...
+  starsPerPlayer: 3, // ...plus this many per empire
+  mapScale: 1, // multiplies the map's size
+  mapFlatness: 0.4, // height of the map as a share of its width
+  starSpacing: 52, // minimum distance between stars
+  clusters: 0, // 0 = spread out; otherwise stars group into this many clumps
+  clusterSize: 0.3, // radius of each clump, as a share of the map's size
+  neutralMin: 6, // neutral garrisons range from this...
+  neutralRange: 12, // ...to this much more
+  homeLevel: 1, // factory level of each home star
 };
+
+export const MAP_SHAPES = ['Scatter', 'Ring', 'Spiral', 'Core & rim'];
 
 /** Small seeded PRNG so a seed always makes the same map. */
 export function rng(seed) {
@@ -42,32 +57,20 @@ export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 export function createGame({ seed = Date.now(), opponents = 2, portrait = false } = {}) {
   const rand = rng(seed);
   const players = opponents + 1;
-  const count = 9 + players * 3;
-  const radius = 130 + players * 28;
+  const count = Math.round(RULES.starsBase + players * RULES.starsPerPlayer);
+  const radius = (130 + players * 28) * RULES.mapScale;
   // Stretch the map along z to suit a portrait screen (z runs up the screen).
   const rx = portrait ? radius * 0.72 : radius * 1.15;
   const rz = portrait ? radius * 1.35 : radius * 0.85;
-  const ry = radius * 0.4;
-
-  // Scatter systems in a flattened ellipsoid, keeping them apart so each is
-  // an easy touch target.
-  const pts = [];
-  for (let tries = 0; pts.length < count && tries < 5000; tries++) {
-    const p = {
-      x: (rand() * 2 - 1) * rx,
-      y: (rand() * 2 - 1) * ry,
-      z: (rand() * 2 - 1) * rz,
-    };
-    if ((p.x / rx) ** 2 + (p.y / ry) ** 2 + (p.z / rz) ** 2 > 1) continue;
-    if (pts.every((q) => dist(p, q) > 52)) pts.push(p);
-  }
+  const ry = radius * RULES.mapFlatness;
+  const pts = scatterStars(rand, count, rx, ry, rz);
 
   const systems = pts.map((pos, id) => ({
     id,
     pos,
     owner: NEUTRAL,
     // Neutrals are modest, never produce and never upgrade.
-    units: Math.round(6 + rand() * 12),
+    units: Math.round(RULES.neutralMin + rand() * RULES.neutralRange),
     level: 1,
     size: 1.6 + rand() * 1.2,
     hue: rand(),
@@ -90,12 +93,146 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
   homes.forEach((s, owner) => {
     s.owner = owner;
     s.units = RULES.startUnits;
-    s.level = 1;
+    s.level = RULES.homeLevel;
     s.size = 2.6;
   });
 
   const tech = Array.from({ length: players }, () => ({ sensors: 0, intel: 0, drives: 0, labs: 0, projects: [] }));
-  return { systems, fleets: [], players, tech, time: 0, winner: null, nextFleetId: 1 };
+  const game = { systems, fleets: [], players, tech, time: 0, winner: null, nextFleetId: 1 };
+  game.stats = createStats(game);
+  return game;
+}
+
+/**
+ * Picks star positions in a flattened volume of radii rx, ry, rz, keeping
+ * them apart so each is an easy touch target. With the default settings this
+ * makes the same maps as before map settings existed.
+ */
+function scatterStars(rand, count, rx, ry, rz) {
+  const shape = MAP_SHAPES[RULES.mapShape] ?? MAP_SHAPES[0];
+  // A point in the unit shape (x, z across; y up), or null to try again.
+  const unit = () => {
+    if (shape === 'Ring') {
+      const a = rand() * Math.PI * 2;
+      const r = 0.65 + rand() * 0.35;
+      return { x: Math.cos(a) * r, y: (rand() * 2 - 1) * 0.5, z: Math.sin(a) * r };
+    }
+    if (shape === 'Spiral') {
+      const t = rand();
+      const a = (rand() < 0.5 ? 0 : Math.PI) + t * Math.PI * 2.4;
+      const r = 0.12 + t * 0.88;
+      const j = () => (rand() * 2 - 1) * 0.12;
+      return { x: Math.cos(a) * r + j(), y: (rand() * 2 - 1) * 0.5 * (1 - t * 0.6), z: Math.sin(a) * r + j() };
+    }
+    if (shape === 'Core & rim') {
+      const a = rand() * Math.PI * 2;
+      const r = rand() < 0.35 ? rand() * 0.3 : 0.75 + rand() * 0.25;
+      return { x: Math.cos(a) * r, y: (rand() * 2 - 1) * 0.5, z: Math.sin(a) * r };
+    }
+    const p = { x: rand() * 2 - 1, y: rand() * 2 - 1, z: rand() * 2 - 1 };
+    return p.x ** 2 + p.y ** 2 + p.z ** 2 > 1 ? null : p;
+  };
+  const scale = (p) => ({ x: p.x * rx, y: p.y * ry, z: p.z * rz });
+  const spacing = RULES.starSpacing;
+  const pts = [];
+  const add = (p) => { if (pts.every((q) => dist(p, q) > spacing)) pts.push(p); };
+
+  const n = Math.round(RULES.clusters);
+  if (n < 1) {
+    for (let tries = 0; pts.length < count && tries < 20000; tries++) {
+      const p = unit();
+      if (p) add(scale(p));
+    }
+    return pts;
+  }
+  // Clusters: pick centres from the shape, well apart, then fill around them.
+  const centres = [];
+  for (let tries = 0; centres.length < n && tries < 5000; tries++) {
+    const p = unit();
+    if (!p) continue;
+    const c = scale(p);
+    const apart = Math.min(rx, rz) * 0.5 / Math.sqrt(n);
+    if (tries > 2000 || centres.every((q) => dist(c, q) > apart)) centres.push(c);
+  }
+  const cr = Math.max(rx, rz) * RULES.clusterSize;
+  for (let tries = 0; pts.length < count && tries < 20000; tries++) {
+    const c = centres[pts.length % centres.length];
+    const a = rand() * Math.PI * 2;
+    const b = Math.acos(rand() * 2 - 1);
+    const r = cr * Math.cbrt(rand());
+    add({ x: c.x + Math.sin(b) * Math.cos(a) * r, y: c.y + Math.cos(b) * r * (ry / Math.max(rx, rz)), z: c.z + Math.sin(b) * Math.sin(a) * r });
+  }
+  return pts;
+}
+
+// ---- Stats --------------------------------------------------------------
+// Tallies for the end screen. Ships are fractional in battle, so totals are
+// rounded when shown.
+
+export const STATS_EVERY = 2; // seconds between history samples
+
+function createStats(game) {
+  const per = () => ({
+    produced: 0, lost: 0, killed: 0, captured: 0, starsLost: 0, launched: 0, fleets: 0,
+    biggestFleet: 0, spentUpgrades: 0, spentResearch: 0, upgrades: 0, research: 0, peakStars: 0, peakShips: 0,
+  });
+  return {
+    owners: Array.from({ length: game.players }, per),
+    history: [], // { t, stars: [...], ships: [...] } per sample, one entry per owner
+    battles: new Map(), // battles in progress by key
+    biggestBattle: null, // { losses, t, star, owners }
+    nextSample: 0,
+  };
+}
+
+const ownerStats = (game, o) => (o >= 0 ? game.stats?.owners[o] : null);
+
+/** Records that `victim` lost n ships to `killer` in battle `key` at pos. */
+function casualty(game, key, where, victim, killer, n) {
+  if (!game.stats || n <= 0) return;
+  const v = ownerStats(game, victim);
+  const k = ownerStats(game, killer);
+  if (v) v.lost += n;
+  if (k) k.killed += n;
+  let b = game.stats.battles.get(key);
+  if (!b) game.stats.battles.set(key, (b = { losses: 0, t: game.time, star: where, owners: new Set(), seen: true }));
+  b.losses += n;
+  b.seen = true;
+  b.owners.add(victim).add(killer);
+}
+
+function endBattles(game) {
+  const st = game.stats;
+  if (!st) return;
+  for (const [key, b] of st.battles) {
+    if (b.seen) { b.seen = false; continue; }
+    st.battles.delete(key);
+    if (!st.biggestBattle || b.losses > st.biggestBattle.losses) st.biggestBattle = { losses: b.losses, t: b.t, star: b.star, owners: [...b.owners] };
+  }
+}
+
+/** Ships each empire has: garrisons, fleets in flight and sieges. */
+export function shipsByOwner(game) {
+  const ships = new Array(game.players).fill(0);
+  for (const s of game.systems) {
+    if (s.owner !== NEUTRAL) ships[s.owner] += s.units;
+    for (const g of s.sieges) ships[g.owner] += g.units;
+  }
+  for (const f of game.fleets) ships[f.owner] += f.units;
+  return ships;
+}
+
+function sample(game) {
+  const st = game.stats;
+  if (!st) return;
+  const stars = new Array(game.players).fill(0);
+  for (const s of game.systems) if (s.owner !== NEUTRAL) stars[s.owner] += 1;
+  const ships = shipsByOwner(game).map((n) => Math.round(n));
+  st.history.push({ t: game.time, stars, ships });
+  st.owners.forEach((o, i) => {
+    o.peakStars = Math.max(o.peakStars, stars[i]);
+    o.peakShips = Math.max(o.peakShips, ships[i]);
+  });
 }
 
 // ---- Tech ---------------------------------------------------------------
@@ -164,6 +301,8 @@ export function research(game, from, key) {
   if (!canResearch(game, from, key)) return false;
   const tier = nextTier(game, from.owner, key);
   from.units -= tier.cost;
+  const st = ownerStats(game, from.owner);
+  if (st) { st.spentResearch += tier.cost; st.research += 1; }
   game.tech[from.owner].projects.push({ key, at: from.id, left: tier.time, total: tier.time });
   return true;
 }
@@ -207,7 +346,22 @@ export const TUNABLES = [
   ['productionScale', 'Production', 0.25, 3, 0.05],
   ['startUnits', 'Starting ships', 5, 100, 1],
 ];
-export const DEFAULTS = Object.fromEntries(TUNABLES.map(([k]) => [k, RULES[k]]));
+// Map settings, [key, label, min, max, step, names?]; they apply from the next game.
+export const MAP_TUNABLES = [
+  ['mapSeed', 'Map seed (0 = new each game)', 0, 999, 1],
+  ['mapShape', 'Shape', 0, MAP_SHAPES.length - 1, 1, MAP_SHAPES],
+  ['starsBase', 'Stars (base)', 3, 40, 1],
+  ['starsPerPlayer', 'Extra stars per empire', 0, 12, 1],
+  ['mapScale', 'Map size', 0.4, 2.5, 0.05],
+  ['mapFlatness', 'Height (0 flat, 1 round)', 0, 1, 0.05],
+  ['starSpacing', 'Min star spacing', 15, 120, 1],
+  ['clusters', 'Clusters (0 = none)', 0, 10, 1],
+  ['clusterSize', 'Cluster size', 0.05, 0.6, 0.01],
+  ['neutralMin', 'Neutral garrison min', 0, 60, 1],
+  ['neutralRange', 'Neutral garrison spread', 0, 60, 1],
+  ['homeLevel', 'Home star level', 1, 4, 1],
+];
+export const DEFAULTS = Object.fromEntries([...TUNABLES, ...MAP_TUNABLES].map(([k]) => [k, RULES[k]]));
 export const capOf = (s) => RULES.cap[s.level - 1];
 export const upgradeCost = (s) => (s.level < RULES.maxLevel ? RULES.upgradeCost[s.level - 1] : null);
 
@@ -226,6 +380,8 @@ export function sendUnits(game, from, to, n) {
     duration: dist(from.pos, to.pos) / speedOf(game, from.owner),
   };
   game.fleets.push(fleet);
+  const st = ownerStats(game, from.owner);
+  if (st) { st.launched += n; st.fleets += 1; st.biggestFleet = Math.max(st.biggestFleet, n); }
   return fleet;
 }
 
@@ -237,6 +393,8 @@ export function upgrade(game, s) {
   if (cost === null || s.upgrading > 0 || s.units < cost || game.winner !== null) return false;
   s.units -= cost;
   s.upgrading = RULES.upgradeTime[s.level - 1];
+  const st = ownerStats(game, s.owner);
+  if (st) { st.spentUpgrades += cost; st.upgrades += 1; }
   return true;
 }
 
@@ -247,6 +405,10 @@ export const upgradeProgress = (s) =>
 const EPS = 1e-6;
 
 function capture(game, s, owner, units) {
+  const was = ownerStats(game, s.owner);
+  if (was) was.starsLost += 1;
+  const now = ownerStats(game, owner);
+  if (now) now.captured += 1;
   s.owner = owner;
   s.units = units;
   // A captured factory is damaged in the fighting, and any build is lost.
@@ -297,6 +459,8 @@ function fight(game, s, dt) {
     const [lg, ls] = exchange(g.units, 1, s.units * share, defenseOf(s), dt);
     g.units -= lg;
     garrisonLoss += ls;
+    casualty(game, `s${s.id}`, s.id, g.owner, s.owner, lg);
+    casualty(game, `s${s.id}`, s.id, s.owner, g.owner, Math.min(ls, s.units));
     s.fighting = (s.fighting || 0) + lg + ls;
   }
   s.units = Math.max(0, s.units - garrisonLoss);
@@ -336,6 +500,8 @@ function spaceBattles(game, dt) {
     const [lf, lo] = exchange(f.units, 1, o.units, 1, dt);
     f.units -= lf;
     o.units -= lo;
+    casualty(game, `f${f.id}`, null, f.owner, o.owner, lf);
+    casualty(game, `f${f.id}`, null, o.owner, f.owner, lo);
     f.fighting = (f.fighting || 0) + lf + lo;
   }
   game.fleets = game.fleets.filter((f) => f.units > EPS);
@@ -371,7 +537,12 @@ export function step(game, dt) {
     // A system under siege can't produce.
     if (s.owner === NEUTRAL || s.sieges.length) continue;
     const cap = capOf(s);
-    if (s.units < cap) s.units = Math.min(cap, s.units + rateOf(s) * dt);
+    if (s.units < cap) {
+      const made = Math.min(cap - s.units, rateOf(s) * dt);
+      s.units += made;
+      const st = ownerStats(game, s.owner);
+      if (st) st.produced += made;
+    }
   }
   const arrived = [];
   spaceBattles(game, dt);
@@ -384,6 +555,7 @@ export function step(game, dt) {
     return false;
   });
   for (const s of game.systems) if (s.sieges.length) fight(game, s, dt);
+  endBattles(game);
   for (const t of game.tech) {
     t.projects = t.projects.filter((p) => {
       p.left -= dt;
@@ -399,6 +571,11 @@ export function step(game, dt) {
   for (const s of game.systems) for (const g of s.sieges) alive.add(g.owner);
   if (!alive.has(PLAYER)) game.winner = [...alive][0] ?? NEUTRAL;
   else if (alive.size === 1) game.winner = PLAYER;
+  if (game.stats && (game.time >= game.stats.nextSample || game.winner !== null)) {
+    game.stats.nextSample = game.time + STATS_EVERY;
+    sample(game);
+    if (game.winner !== null) { for (const b of game.stats.battles.values()) b.seen = false; endBattles(game); }
+  }
   return arrived;
 }
 
