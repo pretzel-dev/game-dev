@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost } from './sim.js';
+import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
@@ -30,7 +30,7 @@ export function tickAI(game, ai, dt) {
       const { T } = plan(game, s, t);
       // What will be waiting: garrison and guns, plus what it builds meanwhile.
       const growth = t.owner === NEUTRAL || !has(t, 'shipyard') ? 0 : Math.min(t.queue, T / RULES.ship.time);
-      const need = Math.ceil((t.ships + t.guns + growth) * ai.d.margin) + 1 - coming(t, true);
+      const need = Math.ceil((t.ships + t.guns + coverOf(game, t) + growth) * ai.d.margin) + 1 - coming(t, true);
       if (need < 1 || need > spare) continue;
       const value = t.kind === 'planet' ? 3 : t.kind === 'station' ? 2 : 1;
       const score = value / (need + T / 30);
@@ -63,7 +63,7 @@ export function tickAI(game, ai, dt) {
   let need = Infinity;
   for (const t of game.bodies) {
     if (t.owner === ai.owner) continue;
-    const n = Math.ceil((Math.max(t.ships, 6) + t.guns) * ai.d.margin) + 2;
+    const n = Math.ceil((Math.max(t.ships, 6) + t.guns + coverOf(game, t)) * ai.d.margin) + 2;
     if (n <= total && n < need) { target = t; need = n; }
   }
   if (target && mine.length > 1) {

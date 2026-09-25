@@ -39,6 +39,9 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
 - **Incoming:** hostile fleets heading for a world show on its label as
   `▼5 0:42` (ships, time to arrival) in the attacker's colour, and their
   arrival points pulse.
+- **Planetary cover:** a planet's guns also fire, at half strength, on
+  anyone attacking a moon or station held by the same side. Take the planet
+  (or knock out its guns) and its satellites get much easier.
 - **Battles:** ships arriving at a hostile site circle it and trade fire with
   its docked ships and surface guns until one side is gone. Rounds streak
   between actual ships in the shooter's colour, and each ship lost goes up

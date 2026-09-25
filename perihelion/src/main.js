@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -129,7 +129,9 @@ function updateActions() {
     const t = game.bodies[ui.target];
     ui.preview = plan(game, s, t);
     const defence = t.owner === PLAYER ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
-    setHTML($('info'), `<b>${ui.count}</b> → <b>${t.name}</b> (${defence}) · arrive in <b>${fmt(ui.preview.T)}</b>`);
+    const cover = t.owner === PLAYER ? 0 : coverOf(game, t);
+    const defenceText = cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
+    setHTML($('info'), `<b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>`);
     $('launch').disabled = s.ships < 1;
   }
 }

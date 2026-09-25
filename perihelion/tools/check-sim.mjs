@@ -111,6 +111,29 @@ import { rng } from '../src/sim.js';
   assert.equal(m2.owner, NEUTRAL);
 }
 
+// Planetary cover: a planet's guns help defend its moons and stations.
+{
+  const g = createGame({ seed: 5 });
+  const planet = g.bodies.find((b) => g.bodies.some((c) => c.parent === b.id && c.kind === 'moon'));
+  const moon = g.bodies.find((c) => c.parent === planet.id && c.kind === 'moon');
+  const fightFor = (covered) => {
+    const h = createGame({ seed: 5 });
+    const p = h.bodies[planet.id];
+    const m = h.bodies[moon.id];
+    p.owner = m.owner = 1;
+    p.guns = covered ? 7 : 0;
+    m.guns = 1; m.ships = 2;
+    m.sieges.push({ owner: 0, n: 6 });
+    for (let t = 0; t < 80 && m.sieges.length; t += 0.1) step(h, 0.1);
+    return m.owner === 0 ? m.ships : -m.ships;
+  };
+  const alone = fightFor(false);
+  const covered = fightFor(true);
+  assert.ok(alone > 0, 'without cover 6 attackers take the moon');
+  assert.ok(covered < alone, 'cover costs the attacker more (or holds the moon)');
+  console.log(`cover: 6 attackers vs moon alone -> ${alone} left; with planet cover -> ${covered > 0 ? covered + ' left' : 'repelled'}`);
+}
+
 // AI-only matches finish.
 let finished = 0;
 const lengths = [];
@@ -119,11 +142,11 @@ for (let seed = 1; seed <= 20; seed++) {
   const r = rng(seed);
   const ais = Array.from({ length: g.players }, (_, i) => createAI(i, i ? 'hard' : 'normal', r));
   let t = 0;
-  for (; t < 7200 && g.winner === null; t += 0.5) {
+  for (; t < 14400 && g.winner === null; t += 0.5) {
     for (const ai of ais) tickAI(g, ai, 0.5);
     step(g, 0.5);
   }
   if (g.winner !== null) { finished++; lengths.push(Math.round(t / 60)); }
 }
 console.log(`sim ok: ${finished}/20 AI matches finished; minutes: ${lengths.join(' ')}`);
-assert.ok(finished >= 16);
+assert.ok(finished >= 18);
