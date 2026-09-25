@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { NEUTRAL, posAt, fleetState, rng } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
@@ -11,11 +12,15 @@ const MAX_BOOMS = 120;
 
 // ---- Procedural textures ----------------------------------------------------
 
-function canvasTex(w, h, draw) {
+function canvasTex(w, h, draw, scale = 1) {
   const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  draw(c.getContext('2d'), w, h);
+  c.width = w * scale;
+  c.height = h * scale;
+  const g = c.getContext('2d');
+  // Draw in w x h coordinates but at `scale` times the pixels, so worlds stay
+  // crisp up close.
+  g.scale(scale, scale);
+  draw(g, w, h);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -39,11 +44,50 @@ const ringTex = canvasTex(128, 128, (g) => {
   g.stroke();
 });
 
+/** Fine speckle over a whole texture, so surfaces have grain when close. */
+function grain(g, w, h, r, amount) {
+  for (let i = 0; i < 6000; i++) {
+    g.fillStyle = r() < 0.5 ? `rgba(0,0,0,${amount})` : `rgba(255,255,255,${amount * 0.6})`;
+    g.fillRect(r() * w, r() * h, 0.35, 0.35);
+  }
+}
+
 /** Gas giant: soft horizontal bands. Rocky world: mottled continents and craters. */
 function surfaceTex(b) {
   const r = rng(Math.floor(b.hue * 1e6) + b.id);
   const col = new THREE.Color();
   return canvasTex(256, 128, (g, w, h) => {
+    drawSurface(g, w, h);
+    grain(g, w, h, r, b.giant ? 0.05 : 0.12);
+  }, b.kind === 'planet' ? 4 : 2);
+
+  function drawSurface(g, w, h) {
+    if (b.home) {
+      // A living world: deep oceans, green and ochre continents, ice caps, cloud.
+      g.fillStyle = '#1d4f86';
+      g.fillRect(0, 0, w, h);
+      for (let c = 0; c < 7; c++) {
+        const cx = r() * w;
+        const cy = h * (0.2 + r() * 0.6);
+        for (let i = 0; i < 26; i++) {
+          col.setHSL(0.22 + r() * 0.12 - (r() < 0.3 ? 0.14 : 0), 0.45, 0.3 + r() * 0.1);
+          g.fillStyle = `#${col.getHexString()}`;
+          g.beginPath();
+          g.arc((cx + (r() - 0.5) * 50 + w) % w, cy + (r() - 0.5) * 26, 3 + r() * 9, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.fillStyle = 'rgba(240,248,255,0.9)';
+      g.fillRect(0, 0, w, 6);
+      g.fillRect(0, h - 6, w, 6);
+      g.fillStyle = 'rgba(255,255,255,0.35)';
+      for (let i = 0; i < 40; i++) {
+        g.beginPath();
+        g.ellipse(r() * w, r() * h, 8 + r() * 20, 2 + r() * 3, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+      return;
+    }
     if (b.kind === 'planet' && b.giant) {
       const base = 0.05 + b.hue * 0.12;
       for (let y = 0; y < h; y++) {
@@ -90,36 +134,97 @@ function surfaceTex(b) {
         g.fillRect(0, h - 5, w, 5);
       }
     }
-  });
+  }
+}
+
+/** City lights: warm specks clustered into towns and cities (black elsewhere). */
+function lightsTex(b) {
+  const r = rng(b.id * 131 + 7);
+  const t = canvasTex(256, 128, (g, w, h) => {
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    const cities = b.giant ? 6 : b.kind === 'moon' ? 5 : 18;
+    for (let c = 0; c < cities; c++) {
+      const cx = r() * w;
+      const cy = h * (0.15 + r() * 0.7);
+      const n = 20 + Math.floor(r() * 60);
+      for (let i = 0; i < n; i++) {
+        // Dense cores thinning out to suburbs.
+        const k = r() ** 2;
+        g.fillStyle = r() < 0.2 ? '#fff4d0' : '#ffb95a';
+        g.globalAlpha = 0.4 + r() * 0.6;
+        g.fillRect((cx + (r() - 0.5) * 30 * k + w) % w, cy + (r() - 0.5) * 14 * k, 0.45, 0.45);
+      }
+    }
+    g.globalAlpha = 1;
+  }, 4);
+  return t;
+}
+
+// Sun position in view space, shared by every material that glows at night.
+const sunView = { value: new THREE.Vector3() };
+
+/** Makes a material's emissive map (city lights) show only on the night side. */
+function nightOnly(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uSunView = sunView;
+    sh.fragmentShader = `uniform vec3 uSunView;\n${sh.fragmentShader}`.replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+      {
+        float day = dot(normal, normalize(uSunView + vViewPosition));
+        totalEmissiveRadiance *= smoothstep(0.12, -0.25, day);
+      }`,
+    );
+  };
+  return mat;
 }
 
 // ---- Meshes -------------------------------------------------------------------
 
-function shipGeometry() {
-  // A slim hull along +Z with a nose, drive bell at the back.
-  const hull = new THREE.CylinderGeometry(0.07, 0.09, 0.5, 8).rotateX(Math.PI / 2);
-  const nose = new THREE.ConeGeometry(0.07, 0.18, 8).rotateX(Math.PI / 2).translate(0, 0, 0.34);
-  const bell = new THREE.ConeGeometry(0.1, 0.12, 8, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.3);
-  const g = new THREE.BufferGeometry();
-  const parts = [hull, nose, bell].map((x) => x.toNonIndexed());
-  const count = parts.reduce((n, p) => n + p.attributes.position.count, 0);
-  const pos = new Float32Array(count * 3);
-  const nor = new Float32Array(count * 3);
-  let o = 0;
-  for (const p of parts) {
-    pos.set(p.attributes.position.array, o * 3);
-    nor.set(p.attributes.normal.array, o * 3);
-    o += p.attributes.position.count;
-  }
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  return g;
+/**
+ * Three hull types, all built along +Z (nose forward, drive at the back):
+ * a lean corvette with radiator fins, a frigate with a spin ring, and a
+ * gunship with side pods. Each is a single merged geometry.
+ */
+function shipGeometries() {
+  const X = Math.PI / 2;
+  const cyl = (r1, r2, l, z, seg = 8) => new THREE.CylinderGeometry(r1, r2, l, seg).rotateX(X).translate(0, 0, z);
+  const cone = (r, l, z, seg = 8) => new THREE.ConeGeometry(r, l, seg).rotateX(X).translate(0, 0, z);
+  const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+  const bell = () => new THREE.CylinderGeometry(0.05, 0.1, 0.12, 10, 1, true).rotateX(-X).translate(0, 0, -0.36);
+  const corvette = mergeGeometries([
+    cyl(0.06, 0.08, 0.55, 0), cone(0.06, 0.2, 0.37), box(0.3, 0.01, 0.16, 0, 0, -0.12), box(0.01, 0.22, 0.12, 0, 0, -0.12),
+    cyl(0.09, 0.09, 0.08, -0.25), bell(),
+  ].map((g) => g.toNonIndexed()));
+  const frigate = mergeGeometries([
+    cyl(0.08, 0.1, 0.6, 0), cone(0.08, 0.16, 0.38), new THREE.TorusGeometry(0.16, 0.025, 6, 20).translate(0, 0, 0.05),
+    box(0.34, 0.012, 0.1, 0, 0, -0.18), cyl(0.11, 0.11, 0.1, -0.26), bell(),
+  ].map((g) => g.toNonIndexed()));
+  const gunship = mergeGeometries([
+    box(0.12, 0.08, 0.6, 0, 0, 0), cone(0.07, 0.2, 0.38, 4), cyl(0.035, 0.035, 0.4, 0).translate(0.11, 0, 0),
+    cyl(0.035, 0.035, 0.4, 0).translate(-0.11, 0, 0), box(0.02, 0.18, 0.14, 0, 0.08, -0.2), bell(),
+  ].map((g) => g.toNonIndexed()));
+  return [corvette, frigate, gunship];
 }
 
 function stationMesh(size) {
   const m = new THREE.MeshStandardMaterial({ color: '#c9ced8', metalness: 0.6, roughness: 0.4 });
   const g = new THREE.Group();
   g.add(new THREE.Mesh(new THREE.TorusGeometry(size, size * 0.12, 8, 32), m));
+  // Lit windows around the ring, shown once someone runs the station.
+  const pts = [];
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    pts.push(new THREE.Vector3(Math.cos(a) * size * 1.13, Math.sin(a) * size * 1.13, (i % 3 - 1) * size * 0.05));
+  }
+  const windows = new THREE.Points(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.PointsMaterial({ color: '#ffd08a', size: 2, sizeAttenuation: false, transparent: true, opacity: 0.9 }),
+  );
+  windows.name = 'windows';
+  windows.visible = false;
+  g.add(windows);
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(size * 0.15, size * 0.15, size * 1.4, 12).rotateX(Math.PI / 2), m));
   for (let i = 0; i < 4; i++) {
     const spoke = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.04, size * 0.04, size * 2, 6), m);
@@ -199,7 +304,7 @@ export function createView(canvas, labelRoot) {
   scene.add(new THREE.PointLight('#fff1dd', 3, 0, 0));
   scene.add(new THREE.AmbientLight('#26304a', 0.35));
 
-  const shipGeo = shipGeometry();
+  const shipGeos = shipGeometries();
   const world = new THREE.Group();
   scene.add(world);
   let views = [];
@@ -209,6 +314,7 @@ export function createView(canvas, labelRoot) {
   function build(game) {
     world.clear();
     labelRoot.innerHTML = '';
+    fleetLabels.length = 0;
     views = game.bodies.map((b) => {
       const g = new THREE.Group();
       let body;
@@ -217,7 +323,10 @@ export function createView(canvas, labelRoot) {
       else {
         body = new THREE.Mesh(
           new THREE.SphereGeometry(b.size, 48, 32),
-          new THREE.MeshStandardMaterial({ map: surfaceTex(b), roughness: 1, metalness: 0 }),
+          nightOnly(new THREE.MeshStandardMaterial({
+            map: surfaceTex(b), roughness: 1, metalness: 0,
+            emissiveMap: lightsTex(b), emissive: '#ffd08a', emissiveIntensity: 0,
+          })),
         );
         body.rotation.z = 0.2 + b.hue * 0.3;
         if (b.giant && b.hue > 0.4) {
@@ -252,9 +361,9 @@ export function createView(canvas, labelRoot) {
   function ship(i) {
     if (i >= MAX_SHIPS) return null;
     if (!ships[i]) {
-      const mesh = new THREE.Mesh(shipGeo, new THREE.MeshStandardMaterial({ color: '#d7dce6', metalness: 0.5, roughness: 0.45, emissive: '#000' }));
+      const mesh = new THREE.Mesh(shipGeos[0], new THREE.MeshStandardMaterial({ color: '#d7dce6', metalness: 0.6, roughness: 0.4, emissive: '#000' }));
       const plume = new THREE.Mesh(
-        new THREE.ConeGeometry(0.08, 1, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.85),
+        new THREE.ConeGeometry(0.07, 1, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.92),
         new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
       mesh.add(plume);
@@ -355,14 +464,32 @@ export function createView(canvas, labelRoot) {
   }
 
   const bodyPos = [];
+  const fleetLabels = [];
+  function fleetLabel(i) {
+    if (!fleetLabels[i]) {
+      const el = document.createElement('div');
+      el.className = 'flbl';
+      labelRoot.appendChild(el);
+      fleetLabels[i] = el;
+    }
+    return fleetLabels[i];
+  }
 
-  /** Places a ship mesh (with glint and plume) at p, nose along n. */
-  function placeShip(sh, p, n, color, burning, t, seed) {
+  /**
+   * Places a ship mesh (with glint and plume) at p, nose along n. `id` picks
+   * its hull and small variations (length, paint), stable for that ship.
+   */
+  function placeShip(sh, p, n, color, burning, t, seed, id = seed) {
     sh.mesh.visible = true;
+    const v = Math.floor(hash(id, 3) * shipGeos.length);
+    if (sh.mesh.geometry !== shipGeos[v]) sh.mesh.geometry = shipGeos[v];
+    const k = 0.9 + hash(id, 5) * 0.25;
+    sh.mesh.scale.set(1, 1, k);
+    sh.mesh.material.color.setHSL(0.58 + hash(id, 7) * 0.08, 0.05 + hash(id, 9) * 0.1, 0.62 + hash(id, 11) * 0.2);
     sh.mesh.position.copy(p);
     tmp2.copy(p).add(n);
     sh.mesh.lookAt(tmp2);
-    sh.mesh.material.emissive.set(color).multiplyScalar(0.25);
+    sh.mesh.material.emissive.set(color).multiplyScalar(0.18);
     sh.plume.visible = burning;
     if (burning) sh.plume.scale.set(1, 1, 0.8 + Math.sin(t * 40 + seed) * 0.15);
     // Visible from afar as a point of light; brighter while the drive burns.
@@ -400,6 +527,25 @@ export function createView(canvas, labelRoot) {
     const w = window.innerWidth;
     const h = window.innerHeight;
     let used = 0;
+    sunView.value.set(0, 0, 0).applyMatrix4(camera.matrixWorldInverse);
+
+    // Moons and stations crowded against their planet on screen hide their
+    // label; their ship counts ride on the planet's label instead.
+    const crowded = new Set();
+    const extras = new Map();
+    for (const v of views) {
+      const b = v.b;
+      if (b.parent === null || ui.selected === b.id || ui.target === b.id || b.sieges.length) continue;
+      const q = bodyPos[b.parent];
+      tmp.copy(v.g.position).project(camera);
+      tmp2.set(q.x, q.y, q.z).project(camera);
+      if (Math.hypot((tmp.x - tmp2.x) * w, (tmp.y - tmp2.y) * h) / 2 >= 46) continue;
+      crowded.add(b.id);
+      if (b.owner !== NEUTRAL && b.ships > 0) {
+        if (!extras.has(b.parent)) extras.set(b.parent, []);
+        extras.get(b.parent).push(`<span class="kid" style="color:${ownerColor(b.owner)}">+${b.ships}</span>`);
+      }
+    }
 
     for (const v of views) {
       const { b } = v;
@@ -418,6 +564,12 @@ export function createView(canvas, labelRoot) {
       if (v.owner !== b.owner) {
         if (v.owner !== null) v.pulse = 1;
         v.owner = b.owner;
+        // Signs of life: city lights on the night side of worlds someone holds.
+        if (v.body.material && v.body.material.emissiveMap) {
+          v.body.material.emissiveIntensity = b.owner === NEUTRAL ? 0 : 1.6;
+        }
+        const windows = v.body.getObjectByName && v.body.getObjectByName('windows');
+        if (windows) windows.visible = b.owner !== NEUTRAL;
         v.mark.material.color.set(col);
         v.label.style.color = col;
       }
@@ -429,6 +581,8 @@ export function createView(canvas, labelRoot) {
       const markPx = Math.max(b.size * 3.2 * ppu, 22);
       v.mark.scale.setScalar((markPx / ppu) * (1 + v.pulse * 0.6 + (selected ? Math.sin(t * 5) * 0.06 : 0)));
       v.mark.material.opacity = selected ? 1 : targeted ? 0.9 : b.owner === NEUTRAL ? 0.25 : 0.7;
+      // Up close the world itself is the marker: fade the ring out of the way.
+      if (b.size * ppu > 70) v.mark.material.opacity *= 0.25;
       if (selected || targeted) v.mark.material.color.set(selected ? '#ffffff' : col);
       else v.mark.material.color.set(col);
 
@@ -445,7 +599,7 @@ export function createView(canvas, labelRoot) {
           const rr = radius * (1 + hash(j, seed) * 0.3);
           tmp.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
           dir.set(-Math.sin(a), 0, Math.cos(a));
-          placeShip(sh, tmp, dir, ownerColor(owner), false, t, j);
+          placeShip(sh, tmp, dir, ownerColor(owner), false, t, j, seed * 131 + j);
           sh.glint.material.opacity *= 0.6;
           if (out) out.push({ p: tmp.clone(), owner });
         }
@@ -493,16 +647,12 @@ export function createView(canvas, labelRoot) {
       // Label: ship count big, name small. Moons and stations hide their label
       // while they're crowded against their planet on screen (unless busy).
       tmp.copy(v.g.position).project(camera);
-      let hide = tmp.z > 1;
-      if (!hide && b.parent !== null && !selected && !targeted && !b.sieges.length) {
-        const q = bodyPos[b.parent];
-        tmp2.set(q.x, q.y, q.z).project(camera);
-        hide = Math.hypot((tmp.x - tmp2.x) * w, (tmp.y - tmp2.y) * h) / 2 < 46;
-      }
+      const hide = tmp.z > 1 || crowded.has(b.id);
       if (hide) { v.label.style.visibility = 'hidden'; continue; }
       const attackers = b.sieges.map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
       const count = b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : `<b>${b.ships}</b>`;
-      const text = `${count}${attackers}<small>${b.name}</small>`;
+      const kids = (extras.get(b.id) || []).join('');
+      const text = `<span class="row1">${count}${kids}</span>${attackers}<small>${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
       v.label.style.visibility = 'visible';
       const x = (tmp.x * 0.5 + 0.5) * w;
@@ -532,7 +682,7 @@ export function createView(canvas, labelRoot) {
           .addScaledVector(perp, (hash(f.id, j) - 0.5) * 1.2)
           .addScaledVector(UP, (hash(j, f.id) - 0.5) * 0.6)
           .addScaledVector(dir, -hash(f.id + 7, j) * 0.8);
-        placeShip(sh, tmp, nose, color, s.burning, t, j);
+        placeShip(sh, tmp, nose, color, s.burning, t, j, f.id * 97 + j);
       }
       if (routeN < 200 * SEGS) {
         // The rest of the route, sampled along the (curved) path.
@@ -555,6 +705,25 @@ export function createView(canvas, labelRoot) {
       }
     }
     for (let i = used; i < ships.length; i++) { ships[i].mesh.visible = false; ships[i].glint.visible = false; }
+
+    // Ship counts on fleets in flight: a small tag beside each one.
+    let fl = 0;
+    for (const f of game.fleets) {
+      const s = fleetState(f, now);
+      tmp.set(s.x, s.y, s.z).project(camera);
+      const el = fleetLabel(fl++);
+      if (tmp.z > 1) { el.style.visibility = 'hidden'; continue; }
+      const mine = f.owner === 0;
+      const text = `▸ ${f.n}`;
+      if (el._t !== text) { el._t = text; el.textContent = text; }
+      el.style.color = ownerColor(f.owner);
+      el.style.borderColor = ownerColor(f.owner);
+      el.style.opacity = mine ? (ui.fleet === f.id ? 1 : 0.85) : 0.6;
+      el.classList.toggle('sel', ui.fleet === f.id);
+      el.style.visibility = 'visible';
+      el.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * w + 12}px, ${(-tmp.y * 0.5 + 0.5) * h - 9}px)`;
+    }
+    for (let i = fl; i < fleetLabels.length; i++) fleetLabels[i].style.visibility = 'hidden';
     for (let i = ghostN; i < ghosts.length; i++) ghosts[i].visible = false;
     routeGeo.setDrawRange(0, routeN * 2);
     routeGeo.attributes.position.needsUpdate = true;
@@ -634,6 +803,21 @@ export function createView(canvas, labelRoot) {
     return best;
   }
 
+  /** Nearest fleet (of `owner`) to a screen point, within a finger's reach. */
+  function pickFleet(game, x, y, owner) {
+    let best = null;
+    let bestD = 30;
+    for (const f of game.fleets) {
+      if (f.owner !== owner) continue;
+      const s = fleetState(f, game.time);
+      tmp.set(s.x, s.y, s.z).project(camera);
+      if (tmp.z > 1) continue;
+      const d = Math.hypot((tmp.x * 0.5 + 0.5) * window.innerWidth - x, (-tmp.y * 0.5 + 0.5) * window.innerHeight - y);
+      if (d < bestD) { bestD = d; best = f.id; }
+    }
+    return best;
+  }
+
   function groundAt(x, y) {
     const ndc = new THREE.Vector3((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1, 0.5).unproject(camera);
     const ray = new THREE.Ray(camera.position, ndc.sub(camera.position).normalize());
@@ -641,7 +825,9 @@ export function createView(canvas, labelRoot) {
     return ray.intersectPlane(plane, new THREE.Vector3());
   }
   function zoomAt(x, y, factor) {
-    const before = orbit.follow === null ? groundAt(x, y) : null;
+    // Zoom toward the fingers, wherever they are.
+    orbit.follow = null;
+    const before = groundAt(x, y);
     const next = THREE.MathUtils.clamp(orbit.dist * factor, orbit.minDist, orbit.maxDist);
     const k = next / orbit.dist;
     orbit.dist = next;
@@ -654,9 +840,9 @@ export function createView(canvas, labelRoot) {
     const fwd = new THREE.Vector3().crossVectors(UP, right).normalize();
     orbit.target.addScaledVector(right, -dx * perPx).addScaledVector(fwd, dy * perPx);
   }
-  function focus(game, id) {
+  function focus(game, id, zoom = true) {
     orbit.follow = id;
-    if (id === null) return;
+    if (id === null || !zoom) return;
     const b = game.bodies[id];
     orbit.dist = Math.max(orbit.minDist, b.size * 9 + 3);
   }
@@ -667,5 +853,5 @@ export function createView(canvas, labelRoot) {
     return { x: (tmp.x * 0.5 + 0.5) * window.innerWidth, y: (-tmp.y * 0.5 + 0.5) * window.innerHeight };
   }
 
-  return { build, render, resize, pick, orbit, zoomAt, pan, focus, screenOf };
+  return { build, render, resize, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf };
 }
