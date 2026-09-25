@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, dist, fleetState, NEUTRAL } from '../src/sim.js';
+import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, NEUTRAL, RULES } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -20,28 +20,44 @@ import { rng } from '../src/sim.js';
   console.log(`intercepts: worst miss ${worst.toFixed(3)} units`);
 }
 
-// Flight: accelerate, flip at the midpoint, decelerate; arrive at rest on p1.
+// Flight: burn, flip at the midpoint, burn again; arrive matching the
+// target's position AND velocity, within the drive's limit, clear of the sun.
 {
   const g = createGame({ seed: 4 });
   const home = g.bodies.find((b) => b.owner === 0);
+  let worstV = 0;
+  let worstA = 0;
+  let closestSun = Infinity;
+  for (const t of g.bodies) {
+    if (t === home) continue;
+    const f = { ...plan(g, home, t), t0: g.time };
+    const end = fleetState(f, f.t0 + f.T);
+    const v1 = velAt(g, t, f.t0 + f.T);
+    worstV = Math.max(worstV, Math.hypot(end.vx - v1.x, end.vy - v1.y, end.vz - v1.z));
+    worstA = Math.max(worstA, Math.hypot(f.a1.x, f.a1.y, f.a1.z), Math.hypot(f.a2.x, f.a2.y, f.a2.z));
+    for (let k = 0; k <= 200; k++) {
+      const s = fleetState(f, f.t0 + (k / 200) * f.T);
+      closestSun = Math.min(closestSun, Math.hypot(s.x, s.y, s.z));
+    }
+  }
+  assert.ok(worstV < 0.01, `arrival speed mismatch ${worstV}`);
+  assert.ok(worstA <= RULES.accel + 1e-6, `burn ${worstA} over the drive limit`);
+  assert.ok(closestSun > 12, `a route passes ${closestSun.toFixed(1)} from the sun`);
+  console.log(`rendezvous: speed mismatch ${worstV.toExponential(1)}, closest to sun ${closestSun.toFixed(1)}`);
+
   const t = g.bodies.find((b) => b.owner === NEUTRAL && b.kind === 'moon');
   const f = launch(g, home, t, 2);
-  const early = fleetState(f, f.t0 + f.T * 0.2);
   const mid = fleetState(f, f.t0 + f.T * 0.5);
-  const late = fleetState(f, f.t0 + f.T * 0.8);
-  assert.equal(early.facing, 1);
-  assert.ok(Math.abs(mid.facing) < 0.2 && !mid.burning, 'flipping at the midpoint');
-  assert.equal(late.facing, -1);
-  const end = fleetState(f, f.t0 + f.T);
-  assert.ok(dist(end, f.p1) < 1e-6);
-  // A hop to a moon of your own planet is short: the ship keeps the planet's speed.
-  const moon = g.bodies.find((b) => b.parent === home.id);
-  if (moon) {
-    const { T } = plan(g, home, moon);
-    assert.ok(T < 60, `hop to own moon ${moon.name} should be quick (took ${T.toFixed(0)}s)`);
-    console.log(`hop to own moon ${moon.name}: ${T.toFixed(0)}s`);
+  assert.ok(mid.flipping && !mid.burning, 'flipping at the midpoint');
+  assert.ok(fleetState(f, f.t0 + f.T * 0.2).burning && fleetState(f, f.t0 + f.T * 0.8).burning);
+  assert.ok(dist(fleetState(f, f.t0 + f.T), f.p1) < 1e-6);
+  // A hop to a moon or station of your own planet is short.
+  const own = g.bodies.find((b) => b.parent === home.id);
+  if (own) {
+    const { T } = plan(g, home, own);
+    assert.ok(T < 60, `hop to ${own.name} should be quick (took ${T.toFixed(0)}s)`);
+    console.log(`hop to own ${own.kind} ${own.name}: ${T.toFixed(0)}s; to ${t.name}: ${f.T.toFixed(0)}s`);
   }
-  console.log(`flight to ${t.name}: ${f.T.toFixed(0)}s`);
 }
 
 // Battle: 6 attackers take a neutral moon with 1 gun; 1 attacker fails vs 4.
