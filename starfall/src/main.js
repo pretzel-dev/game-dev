@@ -42,7 +42,10 @@ function saveSettings() {
   try { localStorage.setItem('starfall-settings', JSON.stringify(out)); } catch { /* ignore */ }
 }
 const fmtSetting = (t) => (t.step >= 1 ? String(t.obj[t.key]) : t.obj[t.key].toFixed(2));
+/** Every setting as one line of JSON, for pasting back to be made the defaults. */
+const settingsJSON = () => JSON.stringify(Object.fromEntries(SETTINGS.map((t) => [t.key, t.obj[t.key]])));
 function renderSettings() {
+  $('settings-json').value = settingsJSON();
   $('settings-list').innerHTML = SETTINGS.map((t, i) => `
     <div class="set ${t.obj[t.key] !== t.def ? 'changed' : ''}">
       <label for="set-${i}">${t.label}</label><output>${fmtSetting(t)}</output>
@@ -57,6 +60,7 @@ $('settings-list').addEventListener('input', (e) => {
   e.target.parentElement.querySelector('output').textContent = fmtSetting(t);
   e.target.parentElement.classList.toggle('changed', t.obj[t.key] !== t.def);
   saveSettings();
+  $('settings-json').value = settingsJSON();
 });
 $('settings-btn').addEventListener('click', () => {
   renderSettings();
@@ -74,6 +78,20 @@ $('settings-done').addEventListener('click', () => {
   $('settings').hidden = true;
   if (pausedForSettings && $('menu').hidden) running = true;
   pausedForSettings = false;
+});
+$('settings-copy').addEventListener('click', async () => {
+  const text = settingsJSON();
+  const el = $('settings-json');
+  el.value = text;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fall back below */ }
+  if (!ok) {
+    el.focus();
+    el.select();
+    try { ok = document.execCommand('copy'); } catch { /* ignore */ }
+  }
+  $('settings-copy').textContent = ok ? 'Copied ✓' : 'Select the text below to copy';
+  setTimeout(() => ($('settings-copy').textContent = 'Copy settings'), 2000);
 });
 $('settings-reset').addEventListener('click', () => {
   for (const t of SETTINGS) t.obj[t.key] = t.def;
@@ -96,7 +114,12 @@ function segmented(el, attr, get, set) {
 }
 segmented($('rivals'), 'v', () => prefs.rivals, (v) => (prefs.rivals = Number(v)));
 segmented($('difficulty'), 'v', () => prefs.difficulty, (v) => (prefs.difficulty = v));
-segmented($('amount'), 'f', () => ui.fraction, (v) => (prefs.fraction = ui.fraction = Number(v)));
+$('amount').value = Math.round(ui.fraction * 100);
+$('amount').addEventListener('input', (e) => {
+  prefs.fraction = ui.fraction = Number(e.target.value) / 100;
+  savePrefs();
+  updateActions();
+});
 
 function start() {
   const seed = (Math.random() * 2 ** 31) | 0;
@@ -172,10 +195,10 @@ function updateActions() {
     const known = ui.vis.systems.has(t.id);
     const who = t.owner === NEUTRAL ? 'neutral' : 'enemy';
     const html = t.owner === PLAYER
-      ? `<b>${n}</b> ships to reinforce · arrive in <b>${fmtTime(eta)}</b>`
+      ? `<b>${n}</b> <span class="pct">(${Math.round(ui.fraction * 100)}%)</span> ships to reinforce · arrive in <b>${fmtTime(eta)}</b>`
       : known
-        ? `<b>${n}</b> ships vs <b>${Math.floor(t.units)}</b> ${who} · arrive in <b>${fmtTime(eta)}</b>`
-        : `<b>${n}</b> ships into the unknown · arrive in <b>${fmtTime(eta)}</b>`;
+        ? `<b>${n}</b> <span class="pct">(${Math.round(ui.fraction * 100)}%)</span> ships vs <b>${Math.floor(t.units)}</b> ${who} · arrive in <b>${fmtTime(eta)}</b>`
+        : `<b>${n}</b> <span class="pct">(${Math.round(ui.fraction * 100)}%)</span> ships into the unknown · arrive in <b>${fmtTime(eta)}</b>`;
     setHTML($('order-info'), html);
     $('launch').disabled = s.units < 1;
   }
@@ -241,6 +264,7 @@ $('tech-list').addEventListener('click', (e) => {
   if (research(game, game.systems[ui.selected], key)) {
     toast(`Researching ${TECH[key].name} ${ROMAN[game.tech[PLAYER][key] + 1]}`, ownerColor(PLAYER));
     $('tech').hidden = true;
+    ui.selected = ui.target = null;
     updateActions();
   }
 });
@@ -254,7 +278,6 @@ $('upgrade').addEventListener('click', () => {
   updateActions();
 });
 $('launch').addEventListener('click', launch);
-$('amount').addEventListener('click', () => updateActions());
 
 function launch() {
   if (ui.selected === null || ui.target === null) return;

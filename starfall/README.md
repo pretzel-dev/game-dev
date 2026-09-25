@@ -6,8 +6,8 @@ rivals by sending ships between star systems.
 ## How to play
 
 - **Send a fleet:** tap one of your stars (blue), then tap a target. The panel
-  shows your fleet against the defenders and the travel time. Pick ¼, ½ or
-  All, then tap **Launch** (or tap the target again). Systems are far apart and
+  shows your fleet against the defenders and the travel time. Drag the slider
+  to choose how many ships go (5–100%), then tap **Launch** (or tap the target again). Systems are far apart and
   crossings take 30–90 seconds, so each launch is a big commitment. Fleets
   can't be recalled.
 - **Battles:** a fleet reaching a hostile star lays siege, and the fight plays
@@ -51,7 +51,8 @@ rivals by sending ships between star systems.
 **Settings** (the ⚙ button in game, or on the menu) has sliders for playtesting: battle intensity
 (0 = winner keeps the difference, 1 = full square law), battle speed and pace, defence
 bonus, fleet speed, space engagement range, production, starting ships, and the
-AI's minimum fleet and pace. Changes are saved on the device.
+AI's minimum fleet and pace. Changes are saved on the device. **Copy settings**
+copies every value as one line of JSON, to paste back as new defaults.
 
 ## The main choice
 

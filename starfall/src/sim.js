@@ -52,14 +52,19 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
   // Scatter systems in a flattened ellipsoid, keeping them apart so each is
   // an easy touch target.
   const pts = [];
-  for (let tries = 0; pts.length < count && tries < 5000; tries++) {
+  for (let tries = 0; pts.length < count && tries < 20000; tries++) {
     const p = {
       x: (rand() * 2 - 1) * rx,
       y: (rand() * 2 - 1) * ry,
       z: (rand() * 2 - 1) * rz,
     };
     if ((p.x / rx) ** 2 + (p.y / ry) ** 2 + (p.z / rz) ** 2 > 1) continue;
-    if (pts.every((q) => dist(p, q) > 52)) pts.push(p);
+    if (!pts.every((q) => dist(p, q) > 52)) continue;
+    // Each new star lands within basic sensor range of one already placed, so
+    // every star has a neighbour you can see from it (and the map is connected).
+    const reach = SENSOR_RANGE[0] * 0.92;
+    if (pts.length && !pts.some((q) => dist(p, q) <= reach)) continue;
+    pts.push(p);
   }
 
   const systems = pts.map((pos, id) => ({
