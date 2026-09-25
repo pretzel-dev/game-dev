@@ -9,7 +9,7 @@ export const PLAYER = 0;
 
 export const RULES = {
   accel: 0.03, // ship acceleration, world units / s^2
-  outerPeriod: 1500, // seconds for the outermost planet to orbit the sun
+  outerPeriod: 2400, // seconds for the outermost planet to orbit the sun
   outerRadius: 200,
   buildTime: { planet: 40, moon: 60, station: 50, asteroid: 70 }, // seconds per ship
   cap: 12, // ships a site builds up to
@@ -71,7 +71,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     const count = i === 0 ? 0 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
     const moons = [];
     for (let m = 0; m < count; m++) {
-      moons.push({ r: size * 1.8 + 3 + m * 3.2 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 50 + m * 30 + rand() * 30 });
+      moons.push({ r: size * 1.8 + 3 + m * 3.2 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 300 + m * 150 + rand() * 120 });
     }
     specs.push({ giant, size, moons, station: false });
   }
@@ -118,7 +118,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     if (sp.station) {
       add({
         kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.size * 1.9,
-        period: 30 + rand() * 10, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45, hue: 0,
+        period: 200 + rand() * 60, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45, hue: 0,
       });
     }
   }
@@ -150,6 +150,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     h.owner = owner;
     h.ships = RULES.startShips;
     h.guns = RULES.guns.planet;
+    h.home = true;
   });
   return game;
 }

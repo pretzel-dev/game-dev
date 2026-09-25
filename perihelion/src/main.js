@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, buildTime, rng, PLAYER, NEUTRAL, RULES } from './sim.js';
+import { createGame, step, launch, plan, buildTime, fleetState, rng, PLAYER, NEUTRAL, RULES } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -18,7 +18,7 @@ let running = false;
 const WARPS = [1, 2, 4, 8];
 let warp = 1;
 
-const ui = { selected: null, target: null, count: 1, preview: null, dragging: false };
+const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -43,13 +43,14 @@ function start() {
   game = createGame({ seed, opponents: prefs.rivals });
   const r = rng(seed ^ 0xabc);
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
-  ui.selected = ui.target = ui.preview = null;
+  ui.selected = ui.target = ui.preview = ui.fleet = null;
   view.build(game);
-  // Open on the whole system, then the player sees their home ring.
-  view.orbit.follow = null;
+  // Open on the homeworld, far enough out to see its moons and neighbours.
+  const home = game.bodies.find((b) => b.owner === PLAYER);
+  view.focus(game, home.id, false);
   view.orbit.target.set(0, 0, 0);
-  view.orbit.dist = 380;
-  view.orbit.pol = 0.75;
+  view.orbit.dist = home.size * 12 + 40;
+  view.orbit.pol = 0.9;
   $('menu').hidden = true;
   $('end').hidden = true;
   $('hud').hidden = false;
@@ -81,12 +82,27 @@ $('warp').addEventListener('click', () => {
 $('system').addEventListener('click', () => {
   view.orbit.follow = null;
   view.orbit.target.set(0, 0, 0);
-  view.orbit.dist = 380;
+  view.orbit.dist = 650;
 });
 
 // ---- Orders ---------------------------------------------------------------
 
+function updateFleetInfo() {
+  const f = ui.fleet !== null && game ? game.fleets.find((x) => x.id === ui.fleet) : null;
+  if (!f) ui.fleet = null;
+  $('fleet').hidden = !f || !running || ui.selected !== null;
+  if ($('fleet').hidden) return;
+  const s = fleetState(f, game.time);
+  const left = f.T - (game.time - f.t0);
+  const phase = s.flipping ? 'flipping' : s.phase === 1 ? 'burning toward' : 'braking for';
+  const to = game.bodies[f.to];
+  const speed = Math.hypot(s.vx, s.vy, s.vz);
+  setHTML($('fleet'), `<b>${f.n} ship${f.n === 1 ? '' : 's'}</b> from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
+    + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s`);
+}
+
 function updateActions() {
+  updateFleetInfo();
   const s = ui.selected !== null && game ? game.bodies[ui.selected] : null;
   const show = !!s && s.owner === PLAYER && running;
   $('actions').hidden = !show;
@@ -134,13 +150,25 @@ function toast(text, color) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
 }
 
-function tap(id) {
+function tap(id, x, y) {
+  // Tapping one of your fleets in flight shows where it's going (fleets win
+  // over the world behind them, unless you're picking a target).
+  if (ui.selected === null) {
+    const f = view.pickFleet(game, x, y, PLAYER);
+    if (f !== null) {
+      ui.fleet = f;
+      updateActions();
+      return;
+    }
+  }
+  ui.fleet = null;
+  // The camera locks onto whatever you tap.
+  if (id !== null) view.focus(game, id, false);
   if (id === null) {
     if (ui.target !== null) ui.target = null;
     else ui.selected = null;
   } else if (ui.selected !== null && id === ui.target) {
-    doLaunch();
-    return;
+    // Launching only ever happens from the Launch button.
   } else if (ui.selected !== null && id !== ui.selected) {
     ui.target = id;
   } else if (id === ui.selected) {
@@ -187,8 +215,8 @@ canvas.addEventListener('pointermove', (e) => {
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
-    // Following a body, two fingers only zoom; otherwise they pan too.
-    if (view.orbit.follow === null) view.pan(mx - gesture.mx, my - gesture.my);
+    // Two fingers drag the map and zoom toward themselves.
+    view.pan(mx - gesture.mx, my - gesture.my);
     view.zoomAt(mx, my, gesture.d / Math.max(1, d));
     gesture.d = d;
     gesture.mx = mx;
@@ -217,7 +245,7 @@ function endPointer(e) {
       updateActions();
     } else {
       lastTap = { t: now, id };
-      tap(id);
+      tap(id, e.clientX, e.clientY);
     }
   }
   if (pointers.size === 0) { gesture = null; ui.dragging = false; }
@@ -260,6 +288,7 @@ function frame(now) {
         left -= h;
       }
       if (ui.selected !== null && game.bodies[ui.selected].owner !== PLAYER) ui.selected = ui.target = null;
+      if (ui.fleet !== null) updateFleetInfo();
       uiClock -= dt;
       if (uiClock <= 0) {
         uiClock = 0.25;
@@ -297,4 +326,4 @@ view.orbit.dist = 330;
 requestAnimationFrame(frame);
 
 // Hook for the headless smoke test.
-window.__perihelion = { get game() { return game; }, view, ui };
+window.__perihelion = { get game() { return game; }, view, ui, sim: { launch } };

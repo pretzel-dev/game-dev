@@ -11,7 +11,7 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
   have room, with a separate lane for the asteroid belt. A base that was safely distant can swing close to the
   enemy.
 - **Send ships:** tap one of your worlds (blue ring), tap a target, set how
-  many ships with − / +, then **Launch** (or tap the target again). The dashed
+  many ships with − / +, then **Launch** (only the button launches). The dashed
   curve shows the route to where the target *will be* when the ships arrive,
   and the panel shows what's defending it and the flight time.
 - **Flight:** a torch-ship rendezvous. Ships start with their launch world's
@@ -27,8 +27,16 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
   its docked ships and surface guns until one side is gone. Rounds streak
   between actual ships in the shooter's colour, and each ship lost goes up
   in a flash and fireball where it was.
-- **Camera:** drag to rotate, pinch to zoom, two fingers to pan. Double-tap
-  anything (or ◎) to fly to it and follow it; ⊙ returns to the whole system.
+- **Camera:** the game opens on your homeworld. Tapping a world locks the
+  camera onto it; double-tap (or ◎) also zooms in. Drag to rotate; two
+  fingers drag the map and pinch-zoom toward your fingers. ⊙ shows the whole
+  system.
+- **Reading the map:** worlds show their ship count; when a moon or station
+  is too close to its planet to label, its ships show on the planet's label
+  (`3 +10`). Fleets in flight carry a `▸ n` tag; tap one of yours for its
+  destination, arrival time and whether it's burning, flipping or braking.
+- **Life:** homeworlds are ocean-and-continent worlds, and every held world
+  shows city lights on its night side (stations light their windows).
 - **Time:** the 1× button cycles 1×, 2×, 4× and 8×.
 
 ## Run
