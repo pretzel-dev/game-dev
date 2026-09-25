@@ -236,3 +236,12 @@ button {
 #research-bar i { font-style: normal; font-variant-numeric: tabular-nums; }
 .overlay { overflow-y: auto; justify-content: safe center; }
 #toast { top: calc(var(--safe-t) + 80px); }
+
+#amount { flex: 1; min-width: 150px; height: 44px; accent-color: var(--accent); }
+#order .bar { width: 100%; }
+#order-info .pct { color: var(--dim); }
+#settings-json {
+  width: min(420px, 100%); font: 12px/1.4 ui-monospace, monospace; color: var(--dim);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px;
+  resize: none; user-select: text; -webkit-user-select: text;
+}

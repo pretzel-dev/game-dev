@@ -26,11 +26,7 @@
       <div id="order" hidden>
         <div id="order-info"></div>
         <div class="bar">
-          <div class="seg" id="amount" role="radiogroup" aria-label="Ships to send">
-            <button data-f="0.25">¼</button>
-            <button data-f="0.5">½</button>
-            <button data-f="1">All</button>
-          </div>
+          <input id="amount" type="range" min="5" max="100" step="5" aria-label="Share of ships to send" />
           <button id="launch">Launch</button>
         </div>
       </div>
@@ -66,7 +62,11 @@
       <p class="how">For playtesting. Saved on this device; most apply from the next game.</p>
       <div id="settings-list"></div>
       <div class="row">
+        <button id="settings-copy" class="link">Copy settings</button>
         <button id="settings-reset" class="link">Reset to defaults</button>
+      </div>
+      <textarea id="settings-json" readonly rows="3" aria-label="Settings to copy"></textarea>
+      <div class="row">
         <button id="settings-done" class="primary small">Done</button>
       </div>
     </div>
