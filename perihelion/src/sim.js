@@ -24,6 +24,7 @@ export const RULES = {
   },
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
+  coverShare: 0.5, // a planet's guns also fire on attackers at its moons and stations
   fire: 0.12, // ships destroyed per second, per firing ship (or gun)
   gunRegen: 0.02, // guns rebuilt per second after a fight
   flipTime: 4, // seconds spent turning around at the midpoint
@@ -402,9 +403,18 @@ export function fleetState(f, t) {
 
 
 /** Ships attacking b in orbit: resolve a round of fire (ships and guns on both sides). */
+/** Supporting fire from the parent planet's guns, if the same side holds it. */
+export function coverOf(game, b) {
+  if (b.parent === null) return 0;
+  const p = game.bodies[b.parent];
+  return p.owner === b.owner ? p.guns * RULES.coverShare : 0;
+}
+
 function fight(game, b, dt) {
   const attackers = b.sieges.reduce((n, g) => n + g.n, 0);
-  const defenders = b.ships + b.guns;
+  // Cover adds firepower but can't be destroyed here: only the planet's own
+  // fight can knock out its guns.
+  const defenders = b.ships + b.guns + coverOf(game, b);
   for (const g of b.sieges) {
     const share = attackers > 0 ? g.n / attackers : 0;
     g.dmg = (g.dmg || 0) + RULES.fire * defenders * share * dt;
