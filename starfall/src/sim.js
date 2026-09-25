@@ -59,12 +59,30 @@ export function createGame({ seed = Date.now(), opponents = 2, portrait = false 
       z: (rand() * 2 - 1) * rz,
     };
     if ((p.x / rx) ** 2 + (p.y / ry) ** 2 + (p.z / rz) ** 2 > 1) continue;
-    if (!pts.every((q) => dist(p, q) > 52)) continue;
-    // Each new star lands within basic sensor range of one already placed, so
-    // every star has a neighbour you can see from it (and the map is connected).
-    const reach = SENSOR_RANGE[0] * 0.92;
-    if (pts.length && !pts.some((q) => dist(p, q) <= reach)) continue;
-    pts.push(p);
+    if (pts.every((q) => dist(p, q) > 52)) pts.push(p);
+  }
+
+  // Stars spread across the whole map; any left with no neighbour inside basic
+  // sensor range is pulled toward its nearest one until it has one.
+  const reach = SENSOR_RANGE[0] * 0.9;
+  for (let pass = 0; pass < 10; pass++) {
+    let moved = false;
+    for (const p of pts) {
+      let near = null;
+      let nearD = Infinity;
+      for (const q of pts) {
+        if (q === p) continue;
+        const d = dist(p, q);
+        if (d < nearD) { nearD = d; near = q; }
+      }
+      if (!near || nearD <= reach) continue;
+      const k = 1 - (reach * 0.95) / nearD;
+      p.x += (near.x - p.x) * k;
+      p.y += (near.y - p.y) * k;
+      p.z += (near.z - p.z) * k;
+      moved = true;
+    }
+    if (!moved) break;
   }
 
   const systems = pts.map((pos, id) => ({
