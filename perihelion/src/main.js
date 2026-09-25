@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, buildTime, fleetState, rng, PLAYER, NEUTRAL, RULES } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -110,11 +110,19 @@ function updateActions() {
   if (!show) { ui.preview = null; return; }
   ui.count = Math.max(1, Math.min(ui.count, s.ships));
   $('count').textContent = s.ships ? ui.count : 0;
-  const next = s.ships >= RULES.cap ? 'full' : `next in ${fmt((1 - s.build) * buildTime(s))}`;
+  $('buildrow').hidden = ui.target !== null;
   if (ui.target === null) {
     ui.preview = null;
-    setHTML($('info'), `<b>${s.name}</b> · ${s.ships} ship${s.ships === 1 ? '' : 's'} · ${next}<br>Tap a target`);
+    // What's here: slots, structures (and their progress), the ship queue.
+    const parts = s.structures.map((x) => {
+      const def = RULES.structures[x.type];
+      return x.left > 0 ? `${def.name} ${Math.floor((1 - x.left / def.time) * 100)}%` : def.name;
+    });
+    const queue = s.queue ? ` · building ${s.queue} ship${s.queue === 1 ? '' : 's'} (${Math.floor(s.build * 100)}%)` : '';
+    setHTML($('info'), `<b>${s.name}</b> · ${s.ships} ship${s.ships === 1 ? '' : 's'}${queue}<br>`
+      + `${parts.join(', ') || 'Nothing built'} · slots ${s.structures.length}/${slotsOf(s)}`);
     $('launch').disabled = true;
+    renderBuildRow(s);
   } else {
     const t = game.bodies[ui.target];
     ui.preview = plan(game, s, t);
@@ -123,6 +131,33 @@ function updateActions() {
     $('launch').disabled = s.ships < 1;
   }
 }
+// ---- Building ----------------------------------------------------------------
+
+const BUILD = [
+  { key: 'ship', label: 'Ship', cost: () => RULES.ship.cost },
+  { key: 'shipyard', label: 'Yard', cost: () => RULES.structures.shipyard.cost },
+  { key: 'mine', label: 'Mine', cost: () => RULES.structures.mine.cost },
+  { key: 'defence', label: 'Guns', cost: () => RULES.structures.defence.cost },
+];
+function renderBuildRow(s) {
+  const html = BUILD.map((b) => {
+    const why = b.key === 'ship' ? cantOrderShip(game, s) : cantBuild(game, s, b.key);
+    // Hide what can never go here; grey out what can't be afforded yet.
+    if (why && why !== 'not enough credits' && b.key !== 'ship' && why !== 'no free slots') return '';
+    return `<button data-b="${b.key}" ${why ? 'disabled' : ''} title="${why || ''}">${b.label}<small>${b.cost()}</small></button>`;
+  }).join('');
+  setHTML($('buildrow'), html);
+}
+$('buildrow').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-b]');
+  if (!btn || ui.selected === null) return;
+  const s = game.bodies[ui.selected];
+  const k = btn.dataset.b;
+  const ok = k === 'ship' ? orderShip(game, s) : buildStructure(game, s, k);
+  if (ok) toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(PLAYER));
+  updateActions();
+});
+
 $('less').addEventListener('click', () => { ui.count = Math.max(1, ui.count - 1); updateActions(); });
 $('more').addEventListener('click', () => { ui.count += 1; updateActions(); });
 $('launch').addEventListener('click', doLaunch);
@@ -293,7 +328,7 @@ function frame(now) {
       if (uiClock <= 0) {
         uiClock = 0.25;
         updateActions();
-        $('clock').textContent = `T+${fmt(game.time)}`;
+        $('clock').innerHTML = `<b>₵ ${Math.floor(game.credits[PLAYER])}</b> +${income(game, PLAYER).toFixed(1)}/s · T+${fmt(game.time)}`;
         for (const b of game.bodies) {
           const was = seenOwner.get(b.id);
           if (was !== undefined && was !== b.owner && (was === PLAYER || b.owner === PLAYER)) {

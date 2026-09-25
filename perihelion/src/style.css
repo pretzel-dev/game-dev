@@ -134,3 +134,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 #fleet[hidden] { display: none; }
 #fleet b { color: var(--fg); font-weight: 600; }
+
+#clock b { color: var(--fg); font-weight: 600; letter-spacing: 0.02em; }
+.bar.build { gap: 6px; flex-wrap: wrap; }
+.bar.build[hidden] { display: none; }
+.bar.build button {
+  height: 40px; padding: 0 12px; border-radius: 20px;
+  background: var(--panel); border: 1px solid var(--line); font-size: 13px;
+}
+.bar.build button small { color: var(--accent); margin-left: 5px; font-variant-numeric: tabular-nums; }
+.bar.build button:disabled { opacity: 0.4; }

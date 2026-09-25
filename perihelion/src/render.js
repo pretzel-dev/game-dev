@@ -271,6 +271,56 @@ function orbitLine(b) {
   );
 }
 
+// ---- Structures -------------------------------------------------------------
+
+const structMat = new THREE.MeshStandardMaterial({ color: '#b9c0cc', metalness: 0.6, roughness: 0.45 });
+const ghostMat = new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.35, wireframe: true });
+
+/** A structure's mesh, sized to the world: yards orbit, guns and mines sit on the surface. */
+function structureMesh(type, b, k, done) {
+  const mat = done ? structMat : ghostMat;
+  const s = Math.max(0.25, b.size * 0.14);
+  const g = new THREE.Group();
+  if (type === 'shipyard') {
+    // An open gantry ring in low orbit with a docking spine.
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.12, 6, 48), mat));
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(s * 0.25, s * 0.25, s * 1.2), mat);
+      truss.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
+      truss.lookAt(0, 0, 0);
+      g.add(truss);
+    }
+    g.rotation.x = Math.PI / 2 + 0.35;
+    return g;
+  }
+  // Surface structures at a fixed spot, standing out from the ground.
+  const r = rng(b.id * 17 + k * 101 + (type === 'mine' ? 5 : 0));
+  const dir = new THREE.Vector3(r() - 0.5, (r() - 0.5) * 0.9, r() - 0.5).normalize();
+  if (type === 'defence') {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.5, s * 0.6, s * 0.35, 8), mat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.08, s * 0.9, 6), mat);
+    barrel.position.set(0, s * 0.45, s * 0.25);
+    barrel.rotation.x = 0.7;
+    g.add(base, barrel);
+  } else {
+    // Mine: a rig with a tall derrick and a work light.
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(s * 0.9, s * 0.4, s * 0.7), mat));
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.14, s * 1.4, 5), mat);
+    tower.position.y = s * 0.7;
+    g.add(tower);
+    if (done) {
+      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffc070', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      light.position.y = s * 1.5;
+      light.scale.setScalar(s * 1.6);
+      g.add(light);
+    }
+  }
+  g.position.copy(dir).multiplyScalar(b.size * (b.kind === 'asteroid' ? 1.1 : 1));
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  return g;
+}
+
 // ---- View ---------------------------------------------------------------------
 
 export function createView(canvas, labelRoot) {
@@ -339,6 +389,8 @@ export function createView(canvas, labelRoot) {
         }
       }
       g.add(body);
+      const surface = new THREE.Group();
+      body.add(surface);
       // Owner marker: a thin ring that always faces the camera.
       const mark = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, transparent: true, depthWrite: false, depthTest: false, opacity: 0.8 }));
       mark.scale.setScalar(b.size * 3.2);
@@ -352,7 +404,7 @@ export function createView(canvas, labelRoot) {
       const label = document.createElement('div');
       label.className = 'lbl';
       labelRoot.appendChild(label);
-      return { b, g, body, mark, lineHolder, label, shown: '', owner: null, pulse: 0 };
+      return { b, g, body, surface, mark, lineHolder, label, shown: '', owner: null, pulse: 0, sig: null, structs: null };
     });
   }
 
@@ -574,6 +626,22 @@ export function createView(canvas, labelRoot) {
         v.label.style.color = col;
       }
       v.pulse = Math.max(0, v.pulse - dt);
+
+      // Structures: rebuilt when anything is added, finished or lost.
+      const sig = b.structures.map((x) => x.type + (x.left > 0 ? '~' : '')).join();
+      if (sig !== v.sig) {
+        v.sig = sig;
+        if (v.structs) v.structs.removeFromParent();
+        v.surface.clear();
+        v.structs = new THREE.Group();
+        b.structures.forEach((x, k) => {
+          if (b.kind === 'station' && x.type === 'shipyard') return; // the station is the yard
+          const m = structureMesh(x.type, b, k, x.left <= 0);
+          // Surface structures turn with the world; yards orbit on their own.
+          (x.type === 'shipyard' ? v.structs : v.surface).add(m);
+        });
+        v.g.add(v.structs);
+      }
       const selected = ui.selected === b.id;
       const targeted = ui.target === b.id;
       const ppu = ppuAt(v.g.position);

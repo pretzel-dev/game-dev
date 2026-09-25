@@ -11,11 +11,20 @@ export const RULES = {
   accel: 0.03, // ship acceleration, world units / s^2
   outerPeriod: 2400, // seconds for the outermost planet to orbit the sun
   outerRadius: 200,
-  buildTime: { planet: 40, moon: 60, station: 50, asteroid: 70 }, // seconds per ship
-  cap: 12, // ships a site builds up to
   startShips: 4,
+  startCredits: 120,
+  // Credits per second from each world you hold, plus each finished mine.
+  income: { planet: 1, moon: 0.5, station: 0.6, asteroid: 0.3 },
+  mineIncome: 1.5,
+  ship: { cost: 25, time: 20 }, // built one at a time at a shipyard
+  structures: {
+    shipyard: { name: 'Shipyard', cost: 80, time: 40 },
+    mine: { name: 'Mine', cost: 40, time: 25, only: ['asteroid', 'moon'] },
+    defence: { name: 'Defences', cost: 50, time: 30 },
+  },
+  baseGuns: 1, // guns any held world has
+  gunsPerDefence: 2,
   fire: 0.12, // ships destroyed per second, per firing ship (or gun)
-  guns: { planet: 3, moon: 1, station: 2, asteroid: 1 }, // defences when owned
   gunRegen: 0.02, // guns rebuilt per second after a fight
   flipTime: 4, // seconds spent turning around at the midpoint
 };
@@ -55,7 +64,9 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     b.id = bodies.length;
     b.owner = NEUTRAL;
     b.ships = 0;
-    b.build = 0;
+    b.build = 0; // progress on the ship being built (0..1)
+    b.queue = 0; // ships ordered and paid for, waiting to be built
+    b.structures = []; // { type, left } (left > 0 while under construction)
     b.guns = b.kind === 'planet' ? 2 : 1 + Math.floor(rand() * 2); // neutral defences
     b.sieges = [];
     bodies.push(b);
@@ -146,13 +157,62 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     }
     homes.push(best);
   }
+  // Stations are shipyards; independents keep theirs until someone takes them.
+  for (const b of bodies) if (b.kind === 'station') b.structures.push({ type: 'shipyard', left: 0 });
   homes.forEach((h, owner) => {
     h.owner = owner;
     h.ships = RULES.startShips;
-    h.guns = RULES.guns.planet;
     h.home = true;
+    h.structures.push({ type: 'shipyard', left: 0 }, { type: 'defence', left: 0 });
+    h.guns = maxGuns(h);
   });
+  game.credits = Array.from({ length: game.players }, () => RULES.startCredits);
   return game;
+}
+
+// ---- Economy ----------------------------------------------------------------
+
+/** Build slots grow with the size of the world. */
+export function slotsOf(b) {
+  if (b.kind === 'station') return 2;
+  if (b.kind === 'asteroid') return 1;
+  if (b.kind === 'moon') return b.size > 0.8 ? 2 : 1;
+  return b.giant ? 4 : b.size > 2.2 ? 3 : 2;
+}
+export const has = (b, type) => b.structures.some((x) => x.type === type && x.left <= 0);
+const count = (b, type) => b.structures.filter((x) => x.type === type && x.left <= 0).length;
+export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
+export const incomeOf = (b) => (b.owner === NEUTRAL ? 0 : RULES.income[b.kind] + RULES.mineIncome * count(b, 'mine'));
+export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b) : 0), 0);
+
+/** Why a structure can't be built here, or null if it can. */
+export function cantBuild(game, b, type) {
+  const def = RULES.structures[type];
+  if (b.owner === NEUTRAL) return 'not yours';
+  if (def.only && !def.only.includes(b.kind)) return `${b.kind}s can't have one`;
+  if (type === 'shipyard' && b.structures.some((x) => x.type === 'shipyard')) return 'already has one';
+  if (b.structures.length >= slotsOf(b)) return 'no free slots';
+  if (game.credits[b.owner] < def.cost) return 'not enough credits';
+  return null;
+}
+export function buildStructure(game, b, type) {
+  if (cantBuild(game, b, type)) return false;
+  const def = RULES.structures[type];
+  game.credits[b.owner] -= def.cost;
+  b.structures.push({ type, left: def.time });
+  return true;
+}
+export function cantOrderShip(game, b) {
+  if (b.owner === NEUTRAL) return 'not yours';
+  if (!has(b, 'shipyard')) return 'needs a shipyard';
+  if (game.credits[b.owner] < RULES.ship.cost) return 'not enough credits';
+  return null;
+}
+export function orderShip(game, b) {
+  if (cantOrderShip(game, b)) return false;
+  game.credits[b.owner] -= RULES.ship.cost;
+  b.queue += 1;
+  return true;
 }
 
 /** A body's position at time t (moons ride along with their planet). */
@@ -192,6 +252,8 @@ export function velAt(game, b, t) {
 // thrusts it's small next to the drive.)
 
 const SUN_CLEAR = 14;
+/** Where ships hold station around a body (matches what the renderer draws). */
+export const parkRadius = (b) => b.size * 1.8 + 0.4;
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const len = (a) => Math.hypot(a.x, a.y, a.z);
 
@@ -236,7 +298,12 @@ export function plan(game, from, to, now = game.time) {
   const p0 = posAt(game, from, now);
   const v0 = velAt(game, from, now);
   const make = (T) => {
-    const p1 = posAt(game, to, now + T);
+    // Aim for a parking orbit beside the target, on the side we come in from.
+    const c = posAt(game, to, now + T);
+    const away = sub(p0, c);
+    const l = len(away) || 1;
+    const park = parkRadius(to);
+    const p1 = { x: c.x + (away.x / l) * park, y: c.y + (away.y / l) * park, z: c.z + (away.z / l) * park };
     const v1 = velAt(game, to, now + T);
     return { p0, v0, p1, v1, T, ...burns(p0, v0, p1, v1, T) };
   };
@@ -310,7 +377,6 @@ export function fleetState(f, t) {
   };
 }
 
-export const buildTime = (b) => RULES.buildTime[b.kind];
 
 /** Ships attacking b in orbit: resolve a round of fire (ships and guns on both sides). */
 function fight(game, b, dt) {
@@ -340,6 +406,8 @@ function fight(game, b, dt) {
     b.guns = 0;
     b.dmg = 0;
     b.build = 0;
+    b.queue = 0;
+    b.structures = b.structures.filter((x) => x.left <= 0);
     b.sieges = b.sieges.filter((g) => g !== win);
     b.captured = true;
   }
@@ -351,15 +419,16 @@ export function step(game, dt) {
   game.time += dt;
 
   for (const b of game.bodies) {
-    if (b.owner === NEUTRAL || b.sieges.length) continue;
-    if (b.ships < RULES.cap) {
-      b.build += dt / buildTime(b);
-      if (b.build >= 1) { b.build -= 1; b.ships += 1; }
-    } else {
-      b.build = 0;
+    if (b.owner === NEUTRAL) continue;
+    game.credits[b.owner] += incomeOf(b) * dt;
+    if (b.sieges.length) continue; // nothing gets built under fire
+    for (const x of b.structures) if (x.left > 0) x.left = Math.max(0, x.left - dt);
+    if (b.queue > 0 && has(b, 'shipyard')) {
+      b.build += dt / RULES.ship.time;
+      if (b.build >= 1) { b.build = 0; b.queue -= 1; b.ships += 1; }
     }
-    const maxGuns = RULES.guns[b.kind];
-    if (b.guns < maxGuns) b.guns = Math.min(maxGuns, b.guns + RULES.gunRegen * dt);
+    const top = maxGuns(b);
+    if (b.guns < top) b.guns = Math.min(top, b.guns + RULES.gunRegen * dt);
   }
 
   game.fleets = game.fleets.filter((f) => {

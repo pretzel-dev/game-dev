@@ -16,13 +16,24 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
   and the panel shows what's defending it and the flight time.
 - **Flight:** a torch-ship rendezvous. Ships start with their launch world's
   orbital velocity, burn with one thrust vector for the first half, flip, and
-  burn with a second, arriving at the target's position *and* speed (they
-  don't overshoot). The planner picks the fastest transfer the drive allows
+  burn with a second, arriving in a parking orbit beside the target at its
+  speed (they don't overshoot or fly into it). The planner picks the fastest transfer the drive allows
   that stays clear of the sun; the sun's gravity is ignored during burns.
   A hop to your own moon takes under a minute; crossing the system takes
   minutes. Drive plumes are visible from far away. Ships can't be recalled.
-- **Sites** (planets, moons, stations, asteroids) build ships slowly, up to 12,
-  and have guns that rebuild after a fight. Neutral sites show their guns (◆).
+- **Credits:** every world you hold earns credits (planets 1/s, stations
+  0.6, moons 0.5, asteroids 0.3), plus 1.5/s per mine. They show top left.
+- **Building:** select one of your worlds for its build row. Worlds have
+  build slots by size (asteroids and small moons 1, small planets and larger
+  moons 2, rocky planets 3, gas giants 4, stations 2):
+  - **Shipyard** (80, 40 s): needed to build ships there. Stations come with one.
+  - **Mine** (40, 25 s): asteroids and moons only; +1.5 credits/s.
+  - **Guns** (50, 30 s): +2 guns (every held world has 1).
+  - **Ship** (25, 20 s): ordered at a shipyard and built one at a time.
+  Ships are never built automatically. Your homeworld starts with a shipyard
+  and guns, 4 ships and 120 credits. A captured world keeps its finished
+  structures; anything unfinished and any queued ships are lost. Nothing is
+  built while a world is under attack.
 - **Battles:** ships arriving at a hostile site circle it and trade fire with
   its docked ships and surface guns until one side is gone. Rounds streak
   between actual ships in the shooter's colour, and each ship lost goes up
