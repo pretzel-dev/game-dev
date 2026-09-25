@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, NEUTRAL, RULES } from '../src/sim.js';
+import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, NEUTRAL, RULES } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -13,11 +13,13 @@ import { rng } from '../src/sim.js';
     if (t === home) continue;
     const pl = plan(g, home, t);
     const f = { ...pl, t0: g.time };
-    // The ship's own path ends exactly where the target is at that moment.
-    worst = Math.max(worst, dist(fleetState(f, g.time + pl.T), posAt(g, t, g.time + pl.T)));
+    // The ship's path ends in parking orbit beside the target: never inside it.
+    const d = dist(fleetState(f, g.time + pl.T), posAt(g, t, g.time + pl.T));
+    worst = Math.max(worst, Math.abs(d - parkRadius(t)));
+    assert.ok(d > t.size, `arrived inside ${t.name}`);
   }
-  assert.ok(worst < 0.5, `intercept miss ${worst.toFixed(2)}`);
-  console.log(`intercepts: worst miss ${worst.toFixed(3)} units`);
+  assert.ok(worst < 0.5, `parking miss ${worst.toFixed(2)}`);
+  console.log(`arrivals: in parking orbit, worst miss ${worst.toFixed(3)} units`);
 }
 
 // Flight: burn, flip at the midpoint, burn again; arrive matching the
@@ -58,6 +60,32 @@ import { rng } from '../src/sim.js';
     assert.ok(T < 60, `hop to ${own.name} should be quick (took ${T.toFixed(0)}s)`);
     console.log(`hop to own ${own.kind} ${own.name}: ${T.toFixed(0)}s; to ${t.name}: ${f.T.toFixed(0)}s`);
   }
+}
+
+// Economy: ships only come from shipyards, paid in credits; slots are limited.
+{
+  const g = createGame({ seed: 6 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  const ships = home.ships;
+  for (let t = 0; t < 60; t += 0.5) step(g, 0.5);
+  assert.equal(home.ships, ships, 'no ships without orders');
+  const before = g.credits[0];
+  assert.ok(before > 120 && Math.abs(before - (120 + income(g, 0) * 60)) < 1, 'income accrues');
+  assert.ok(orderShip(g, home));
+  assert.equal(g.credits[0], before - RULES.ship.cost);
+  for (let t = 0; t < RULES.ship.time + 1; t += 0.5) step(g, 0.5);
+  assert.equal(home.ships, ships + 1, 'a ship is built after its build time');
+  const rock = g.bodies.find((b) => b.kind === 'asteroid');
+  rock.owner = 0;
+  assert.equal(slotsOf(rock), 1);
+  g.credits[0] = 1000;
+  assert.ok(buildStructure(g, rock, 'mine'));
+  assert.equal(cantBuild(g, rock, 'defence'), 'no free slots');
+  assert.equal(cantBuild(g, home, 'mine'), "planets can't have one");
+  const inc = income(g, 0);
+  for (let t = 0; t < 26; t += 0.5) step(g, 0.5);
+  assert.ok(income(g, 0) > inc + 1, 'a finished mine adds income');
+  console.log(`economy: income ${income(g, 0).toFixed(1)}/s with a mine`);
 }
 
 // Battle: 6 attackers take a neutral moon with 1 gun; 1 attacker fails vs 4.
