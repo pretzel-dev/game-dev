@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#03040a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Perihelion</title>
+    <link rel="icon" href="favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="labels"></div>
+    <div id="toast"></div>
+
+    <div id="hud" hidden>
+      <span id="clock"></span>
+      <span class="grow"></span>
+      <button id="system" aria-label="System view" hidden>⊙</button>
+      <button id="warp" aria-label="Time speed">1×</button>
+      <button id="pause" aria-label="Pause">❚❚</button>
+    </div>
+
+    <div id="actions" hidden>
+      <div id="info"></div>
+      <div class="bar">
+        <div class="stepper">
+          <button id="less" aria-label="Fewer ships">−</button>
+          <span id="count"></span>
+          <button id="more" aria-label="More ships">+</button>
+        </div>
+        <button id="launch">Launch</button>
+        <button id="focus" aria-label="Zoom to">◎</button>
+      </div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <h1>Perihelion</h1>
+      <p class="how">One sun, a handful of worlds, very few ships.<br />Tap your world, tap a target, launch. Ships fly to where the target
+        <em>will</em> be, flipping halfway to brake. Double-tap anything to look closer.</p>
+      <div class="row"><span>Rivals</span>
+        <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button></div>
+      </div>
+      <div class="row"><span>AI</span>
+        <div class="seg" id="difficulty"><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button></div>
+      </div>
+      <button id="play" class="primary">Play</button>
+      <button id="resume" class="primary" hidden>Resume</button>
+    </div>
+
+    <div id="end" class="overlay" hidden>
+      <h1 id="end-title"></h1>
+      <p id="end-sub" class="how"></p>
+      <button id="again" class="primary">Play again</button>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
