@@ -6,21 +6,27 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
 
 ## How to play
 
-- **Worlds orbit.** Inner planets circle the sun in about two minutes, outer
-  ones in about 25. A base that was safely distant can swing close to the
+- **Worlds orbit.** Inner planets circle the sun in about a minute and a half,
+  outer ones in 25–40. Orbits are spaced so each planet's moons and stations
+  have room, with a separate lane for the asteroid belt. A base that was safely distant can swing close to the
   enemy.
 - **Send ships:** tap one of your worlds (blue ring), tap a target, set how
   many ships with − / +, then **Launch** (or tap the target again). The dashed
   curve shows the route to where the target *will be* when the ships arrive,
   and the panel shows what's defending it and the flight time.
-- **Flight:** ships keep their launch world's orbital velocity, burn toward
-  the intercept, flip at the midpoint and burn to brake. Drive plumes are
-  visible from far away. A hop to your own moon takes seconds; crossing the
-  system takes minutes. Ships can't be recalled.
+- **Flight:** a torch-ship rendezvous. Ships start with their launch world's
+  orbital velocity, burn with one thrust vector for the first half, flip, and
+  burn with a second, arriving at the target's position *and* speed (they
+  don't overshoot). The planner picks the fastest transfer the drive allows
+  that stays clear of the sun; the sun's gravity is ignored during burns.
+  A hop to your own moon takes under a minute; crossing the system takes
+  minutes. Drive plumes are visible from far away. Ships can't be recalled.
 - **Sites** (planets, moons, stations, asteroids) build ships slowly, up to 12,
   and have guns that rebuild after a fight. Neutral sites show their guns (◆).
 - **Battles:** ships arriving at a hostile site circle it and trade fire with
-  its docked ships and guns until one side is gone.
+  its docked ships and surface guns until one side is gone. Rounds streak
+  between actual ships in the shooter's colour, and each ship lost goes up
+  in a flash and fireball where it was.
 - **Camera:** drag to rotate, pinch to zoom, two fingers to pan. Double-tap
   anything (or ◎) to fly to it and follow it; ⊙ returns to the whole system.
 - **Time:** the 1× button cycles 1×, 2×, 4× and 8×.

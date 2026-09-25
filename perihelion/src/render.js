@@ -308,10 +308,30 @@ export function createView(canvas, labelRoot) {
     Object.assign(s.userData, { age: 0, life, size });
     s.visible = true;
   }
+  const MAX_SHOTS = 240;
+  const shots = [];
+  function shoot(a, b, color) {
+    let sh = shots.find((x) => !x.live);
+    if (!sh) {
+      if (shots.length >= MAX_SHOTS) return;
+      sh = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Color() };
+      shots.push(sh);
+    }
+    sh.live = true;
+    sh.a.copy(a);
+    sh.b.copy(b);
+    sh.color = color;
+    // Light the shooter's colour towards white so rounds read as hot.
+    sh.c.set(color).lerp(new THREE.Color('#ffffff'), 0.45);
+    sh.age = 0;
+    sh.life = THREE.MathUtils.clamp(a.distanceTo(b) / 14, 0.12, 0.7);
+  }
   const tracerGeo = new THREE.BufferGeometry();
-  const tracerPos = new Float32Array(64 * 6);
+  const tracerPos = new Float32Array(MAX_SHOTS * 6);
+  const tracerCol = new Float32Array(MAX_SHOTS * 6);
   tracerGeo.setAttribute('position', new THREE.BufferAttribute(tracerPos, 3));
-  const tracers = new THREE.LineSegments(tracerGeo, new THREE.LineBasicMaterial({ color: '#ffe3a0', transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending }));
+  tracerGeo.setAttribute('color', new THREE.BufferAttribute(tracerCol, 3));
+  const tracers = new THREE.LineSegments(tracerGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
   tracers.frustumCulled = false;
   scene.add(tracers);
 
@@ -413,7 +433,10 @@ export function createView(canvas, labelRoot) {
       else v.mark.material.color.set(col);
 
       // Docked ships in a parking orbit; attackers circle wider.
-      const park = (n, owner, radius, speed, seed) => {
+      const fighting = b.sieges.length > 0;
+      const defPts = [];
+      const atkPts = [];
+      const park = (n, owner, radius, speed, seed, out) => {
         for (let j = 0; j < n; j++) {
           const sh = ship(used++);
           if (!sh) return;
@@ -424,19 +447,47 @@ export function createView(canvas, labelRoot) {
           dir.set(-Math.sin(a), 0, Math.cos(a));
           placeShip(sh, tmp, dir, ownerColor(owner), false, t, j);
           sh.glint.material.opacity *= 0.6;
+          if (out) out.push({ p: tmp.clone(), owner });
         }
       };
-      park(Math.min(b.ships, 20), b.owner, b.size * 1.8 + 0.4, 0.25, b.id * 13);
-      for (const g of b.sieges) park(Math.min(g.n, 20), g.owner, b.size * 2.6 + 0.8, -0.18, b.id * 29 + g.owner);
+      park(Math.min(b.ships, 20), b.owner, b.size * 1.8 + 0.4, 0.25, b.id * 13, fighting ? defPts : null);
+      for (const g of b.sieges) park(Math.min(g.n, 20), g.owner, b.size * 2.6 + 0.8, -0.18, b.id * 29 + g.owner, atkPts);
 
-      // Battle: flashes on losses, tracers while fighting.
-      if (b.losses) {
-        for (let k = 0; k < Math.min(4, b.losses); k++) {
-          tmp.set(p.x + (Math.random() - 0.5) * b.size * 5, p.y + (Math.random() - 0.5) * b.size * 2, p.z + (Math.random() - 0.5) * b.size * 5);
-          boom(tmp, ['#ffffff', '#ffd27a', '#ff8a4a'][k % 3], 0.8 + b.size * 0.8, 0.8);
+      if (fighting) {
+        // Gun emplacements: fixed points on the surface that turn with the body.
+        for (let k = 0; k < Math.ceil(b.guns); k++) {
+          const th = hash(b.id, k * 2) * Math.PI * 2 + t * 0.05;
+          const ph = (hash(k * 2 + 1, b.id) - 0.5) * 1.6;
+          const r = b.size * 1.02;
+          defPts.push({ p: new THREE.Vector3(p.x + Math.cos(th) * Math.cos(ph) * r, p.y + Math.sin(ph) * r, p.z + Math.sin(th) * Math.cos(ph) * r), owner: b.owner });
         }
-        b.losses = 0;
+        // Rounds fly between real ships and guns, both ways, in the shooter's colour.
+        const total = atkPts.length + defPts.length;
+        let n = total * dt * 1.6;
+        while (n > 0 && atkPts.length && defPts.length) {
+          if (Math.random() < n) {
+            const fromAtk = Math.random() < atkPts.length / total;
+            const src = (fromAtk ? atkPts : defPts)[(Math.random() * (fromAtk ? atkPts : defPts).length) | 0];
+            const dst = (fromAtk ? defPts : atkPts)[(Math.random() * (fromAtk ? defPts : atkPts).length) | 0];
+            shoot(src.p, dst.p, ownerColor(src.owner));
+          }
+          n -= 1;
+        }
+        // Each ship lost goes up where it was.
+        for (const [lost, pts] of [[b.lostDef, defPts], [b.lostAtk, atkPts]]) {
+          for (let k = 0; k < Math.min(3, lost || 0); k++) {
+            const at = pts.length ? pts[(Math.random() * pts.length) | 0].p : tmp.set(p.x, p.y, p.z);
+            // A white flash, a fireball, and burning debris drifting apart.
+            boom(at, '#ffffff', 3, 0.3);
+            boom(at, '#ffc070', 5, 1.2);
+            for (let d = 0; d < 4; d++) {
+              tmp2.set(at.x + (Math.random() - 0.5) * 1.6, at.y + (Math.random() - 0.5) * 1.6, at.z + (Math.random() - 0.5) * 1.6);
+              boom(tmp2, '#ff8a40', 1.4, 1 + Math.random() * 0.8);
+            }
+          }
+        }
       }
+      b.lostDef = b.lostAtk = 0;
       if (b.captured) { v.pulse = 1; b.captured = false; }
 
       // Label: ship count big, name small. Moons and stations hide their label
@@ -465,11 +516,14 @@ export function createView(canvas, labelRoot) {
     for (const f of game.fleets) {
       const s = fleetState(f, now);
       const color = ownerColor(f.owner);
-      dir.set(s.bx, s.by, s.bz);
-      perp.crossVectors(dir, UP).normalize();
-      // Nose: toward the target, flipping over (through perp) to face back.
-      const phi = Math.acos(THREE.MathUtils.clamp(s.facing, -1, 1));
-      const nose = new THREE.Vector3().copy(dir).multiplyScalar(Math.cos(phi)).addScaledVector(perp, Math.sin(phi));
+      // Nose along the thrust; the formation spreads across the direction of travel.
+      const nose = new THREE.Vector3(s.nx, s.ny, s.nz);
+      dir.set(s.vx, s.vy, s.vz);
+      if (dir.lengthSq() < 1e-9) dir.copy(nose);
+      dir.normalize();
+      perp.crossVectors(dir, UP);
+      if (perp.lengthSq() < 1e-6) perp.set(1, 0, 0);
+      perp.normalize();
       for (let j = 0; j < f.n; j++) {
         const sh = ship(used++);
         if (!sh) break;
@@ -506,21 +560,29 @@ export function createView(canvas, labelRoot) {
     routeGeo.attributes.position.needsUpdate = true;
     routeGeo.attributes.color.needsUpdate = true;
 
-    // Tracers flicker between attackers and the defended body.
+    // Rounds in flight: a short bright streak moving from gun to target, with
+    // a spark where it lands.
     let tn = 0;
-    for (const v of views) {
-      if (!v.b.sieges.length) continue;
-      for (let k = 0; k < 4 && tn < 64; k++) {
-        if (Math.random() > dt * 12) continue;
-        const p = bodyPos[v.b.id];
-        const a = Math.random() * Math.PI * 2;
-        const rr = v.b.size * 2.8 + 0.8;
-        tracerPos.set([p.x + Math.cos(a) * rr, p.y, p.z + Math.sin(a) * rr, p.x + (Math.random() - 0.5) * v.b.size * 2, p.y, p.z + (Math.random() - 0.5) * v.b.size * 2], tn * 6);
-        tn++;
+    for (const sh of shots) {
+      if (!sh.live) continue;
+      sh.age += dt;
+      const k = sh.age / sh.life;
+      if (k >= 1) {
+        sh.live = false;
+        boom(sh.b, sh.color, 0.5, 0.25);
+        continue;
       }
+      if (tn >= MAX_SHOTS) continue;
+      tmp.lerpVectors(sh.a, sh.b, Math.max(0, k - 0.18));
+      tmp2.lerpVectors(sh.a, sh.b, k);
+      tracerPos.set([tmp.x, tmp.y, tmp.z, tmp2.x, tmp2.y, tmp2.z], tn * 6);
+      const c = sh.c;
+      tracerCol.set([c.r * 0.2, c.g * 0.2, c.b * 0.2, c.r, c.g, c.b], tn * 6);
+      tn++;
     }
     tracerGeo.setDrawRange(0, tn * 2);
     tracerGeo.attributes.position.needsUpdate = true;
+    tracerGeo.attributes.color.needsUpdate = true;
 
     for (const s of booms) {
       if (!s.visible) continue;
@@ -528,7 +590,7 @@ export function createView(canvas, labelRoot) {
       const k = s.userData.age / s.userData.life;
       if (k >= 1) { s.visible = false; continue; }
       s.scale.setScalar(s.userData.size * (0.4 + Math.sqrt(k)));
-      s.material.opacity = (1 - k) ** 1.5;
+      s.material.opacity = Math.min(1, (1 - k) * 1.6);
     }
 
     // Order preview.

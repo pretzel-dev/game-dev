@@ -10,7 +10,7 @@ export const PLAYER = 0;
 export const RULES = {
   accel: 0.03, // ship acceleration, world units / s^2
   outerPeriod: 1500, // seconds for the outermost planet to orbit the sun
-  outerRadius: 160,
+  outerRadius: 200,
   buildTime: { planet: 40, moon: 60, station: 50, asteroid: 70 }, // seconds per ship
   cap: 12, // ships a site builds up to
   startShips: 4,
@@ -62,59 +62,79 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     return b;
   };
 
-  const radii = [30, 48, 72, 98, 128, 160];
-  for (const [i, r0] of radii.entries()) {
-    const r = r0 * (0.92 + rand() * 0.16);
+  // Plan each planet's family first (its moons and any station), so orbits can
+  // be spaced to give every family room: neighbours never come close.
+  const specs = [];
+  for (let i = 0; i < 6; i++) {
     const giant = i >= 3 && rand() < 0.7;
+    const size = giant ? 3.2 + rand() * 1.2 : 1.6 + rand() * 1.1;
+    const count = i === 0 ? 0 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
+    const moons = [];
+    for (let m = 0; m < count; m++) {
+      moons.push({ r: size * 1.8 + 3 + m * 3.2 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 50 + m * 30 + rand() * 30 });
+    }
+    specs.push({ giant, size, moons, station: false });
+  }
+  const hostIdx = [1, 2, 3, 4, 5].sort(() => rand() - 0.5).slice(0, 2);
+  for (const i of hostIdx) specs[i].station = true;
+  for (const sp of specs) {
+    sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.size * 1.9 + 1 : 0, ...sp.moons.map((m) => m.r + m.size));
+  }
+
+  // Orbits outward from the sun, each at least both families' reach plus a gap
+  // apart; the asteroid belt gets its own lane after the fourth planet.
+  const GAP = 16;
+  let beltR = 0;
+  let prev = null;
+  for (const [i, sp] of specs.entries()) {
+    if (!prev) sp.r = 30;
+    else sp.r = prev.r + prev.reach + sp.reach + GAP + rand() * 10;
+    if (i === 4) {
+      beltR = prev.r + prev.reach + GAP;
+      sp.r = beltR + 6 + GAP + sp.reach + rand() * 10;
+    }
+    prev = sp;
+  }
+
+  for (const sp of specs) {
     const planet = add({
       kind: 'planet',
       name: pick(PLANET_NAMES, names),
       parent: null,
-      r,
-      period: periodAt(r),
+      r: sp.r,
+      period: periodAt(sp.r),
       phase: rand() * Math.PI * 2,
       incl: (rand() - 0.5) * 0.06,
-      size: giant ? 3.6 + rand() * 1.4 : 1.6 + rand() * 1.2,
-      giant,
+      size: sp.size,
+      giant: sp.giant,
       hue: rand(),
     });
-    const moons = i === 0 ? 0 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
-    for (let m = 0; m < moons; m++) {
-      const mr = planet.size * (2.6 + m * 1.6 + rand() * 0.6);
+    for (const m of sp.moons) {
       add({
-        kind: 'moon',
-        name: pick(MOON_NAMES, names),
-        parent: planet.id,
-        r: mr,
-        period: 50 + m * 30 + rand() * 30,
-        phase: rand() * Math.PI * 2,
-        incl: (rand() - 0.5) * 0.3,
-        size: 0.5 + rand() * 0.5,
-        hue: rand(),
+        kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: m.r, period: m.period,
+        phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.3, size: m.size, hue: rand(),
+      });
+    }
+    if (sp.station) {
+      add({
+        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.size * 1.9,
+        period: 30 + rand() * 10, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45, hue: 0,
       });
     }
   }
-  // An asteroid belt between the 4th and 5th planets.
+  // The asteroid belt, in its own lane.
   for (let k = 0; k < 4; k++) {
-    const r = 110 + rand() * 8;
+    const r = beltR + rand() * 6;
     add({
       kind: 'asteroid', name: pick(ROCK_NAMES, names), parent: null, r, period: periodAt(r),
       phase: (k / 4) * Math.PI * 2 + rand() * 0.8, incl: (rand() - 0.5) * 0.1, size: 0.5 + rand() * 0.4, hue: rand(),
     });
   }
-  // Stations in orbit around two of the planets.
-  const hosts = bodies.filter((b) => b.kind === 'planet' && b.r > 40);
-  for (let k = 0; k < 2; k++) {
-    const host = hosts[Math.floor(rand() * hosts.length)];
-    add({
-      kind: 'station', name: pick(STATION_NAMES, names), parent: host.id, r: host.size * 1.9,
-      period: 30 + rand() * 10, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45, hue: 0,
-    });
-  }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
   const game = { bodies, fleets: [], players: opponents + 1, time: 0, winner: null, nextId: 1 };
-  const candidates = bodies.filter((b) => b.kind === 'planet' && b.r > 40 && b.r < 140);
+  const planets = bodies.filter((b) => b.kind === 'planet');
+  const candidates = planets.slice(1, 5);
   const homes = [candidates[Math.floor(rand() * candidates.length)]];
   while (homes.length < game.players) {
     let best = null;
@@ -158,76 +178,134 @@ export function velAt(game, b, t) {
   return { x: (c.x - a.x) / (2 * e), y: (c.y - a.y) / (2 * e), z: (c.z - a.z) / (2 * e) };
 }
 
-/** Where a ship that left p0 with velocity v0 would drift to after T with no burn. */
-const drift = (p0, v0, T) => ({ x: p0.x + v0.x * T, y: p0.y + v0.y * T, z: p0.z + v0.z * T });
+// ---- Transfers --------------------------------------------------------------
+//
+// A torch-ship rendezvous: burn with one constant thrust vector for the first
+// half, flip, burn with a second for the rest, so the ship arrives exactly at
+// the target's position AND velocity. For a flight time T, with start state
+// (p0, v0) and arrival state (p1, v1):
+//   dp = p1 - p0 - v0*T,  dv = v1 - v0
+//   a1 = 4*dp/T^2 - dv/T,  a2 = 3*dv/T - 4*dp/T^2
+// The planner picks the shortest T whose larger burn fits the drive and whose
+// path stays clear of the sun. (Gravity is ignored while burning: at these
+// thrusts it's small next to the drive.)
 
-/**
- * Plans a transfer from `from` (now) to where `to` will be on arrival. Ships
- * keep their launch body's orbital velocity, so the burn only has to cover
- * the difference between where they'd drift to and where the target will be.
- * Returns { p0, v0, p1, T }.
- */
+const SUN_CLEAR = 14;
+const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const len = (a) => Math.hypot(a.x, a.y, a.z);
+
+function burns(p0, v0, p1, v1, T) {
+  const dp = { x: p1.x - p0.x - v0.x * T, y: p1.y - p0.y - v0.y * T, z: p1.z - p0.z - v0.z * T };
+  const dv = sub(v1, v0);
+  const k1 = 4 / (T * T);
+  const a1 = { x: k1 * dp.x - dv.x / T, y: k1 * dp.y - dv.y / T, z: k1 * dp.z - dv.z / T };
+  const a2 = { x: (3 * dv.x) / T - k1 * dp.x, y: (3 * dv.y) / T - k1 * dp.y, z: (3 * dv.z) / T - k1 * dp.z };
+  return { a1, a2, need: Math.max(len(a1), len(a2)) };
+}
+
+/** Position and velocity along a transfer, tau seconds after launch. */
+function along(f, tau) {
+  const h = f.T / 2;
+  const t1 = Math.min(tau, h);
+  let x = f.p0.x + f.v0.x * t1 + 0.5 * f.a1.x * t1 * t1;
+  let y = f.p0.y + f.v0.y * t1 + 0.5 * f.a1.y * t1 * t1;
+  let z = f.p0.z + f.v0.z * t1 + 0.5 * f.a1.z * t1 * t1;
+  let vx = f.v0.x + f.a1.x * t1;
+  let vy = f.v0.y + f.a1.y * t1;
+  let vz = f.v0.z + f.a1.z * t1;
+  if (tau > h) {
+    const t2 = tau - h;
+    x += vx * t2 + 0.5 * f.a2.x * t2 * t2;
+    y += vy * t2 + 0.5 * f.a2.y * t2 * t2;
+    z += vz * t2 + 0.5 * f.a2.z * t2 * t2;
+    vx += f.a2.x * t2;
+    vy += f.a2.y * t2;
+    vz += f.a2.z * t2;
+  }
+  return { x, y, z, vx, vy, vz };
+}
+
+function clearOfSun(f) {
+  for (let k = 1; k < 64; k++) if (len(along(f, (k / 64) * f.T)) < SUN_CLEAR) return false;
+  return true;
+}
+
+/** Plans a transfer from `from` (now) to meet `to`. Returns { p0, v0, p1, v1, a1, a2, T }. */
 export function plan(game, from, to, now = game.time) {
   const p0 = posAt(game, from, now);
   const v0 = velAt(game, from, now);
-  // Find the first T where the burn needed to reach the target's position at T
-  // takes exactly T. Scan forward (moons move fast, so simple iteration can
-  // oscillate), then bisect.
-  const gap = (T) => burnTime(dist(drift(p0, v0, T), posAt(game, to, now + T))) - T;
-  let lo = 0.5;
-  let hi = lo;
-  for (let T = 0.5; T < 20000; T += 2) {
-    if (gap(T) <= 0) { hi = T; break; }
-    lo = T;
+  const make = (T) => {
+    const p1 = posAt(game, to, now + T);
+    const v1 = velAt(game, to, now + T);
+    return { p0, v0, p1, v1, T, ...burns(p0, v0, p1, v1, T) };
+  };
+  // Scan forward for the first flight time the drive can manage (moons move
+  // fast, so the answer isn't monotonic), bisect it down, then make sure the
+  // path misses the sun; if not, keep looking at longer transfers.
+  let prev = 1;
+  for (let T = 2; T < 20000; T += 2) {
+    let f = make(T);
+    if (f.need > RULES.accel) { prev = T; continue; }
+    let lo = prev;
+    let hi = T;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (make(mid).need > RULES.accel) lo = mid;
+      else hi = mid;
+    }
+    f = make(hi);
+    if (clearOfSun(f)) return f;
+    prev = T;
   }
-  for (let i = 0; i < 40; i++) {
-    const mid = (lo + hi) / 2;
-    if (gap(mid) > 0) lo = mid;
-    else hi = mid;
-  }
-  const T = hi;
-  return { p0, v0, p1: posAt(game, to, now + T), T };
+  return make(20000);
 }
 
 export function launch(game, from, to, n) {
   n = Math.min(Math.floor(n), from.ships);
   if (n < 1 || from === to || game.winner !== null) return null;
-  const { p0, v0, p1, T } = plan(game, from, to);
+  const p = plan(game, from, to);
   from.ships -= n;
-  const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, p0, v0, p1, t0: game.time, T };
+  const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time };
   game.fleets.push(f);
   return f;
 }
 
 /**
- * A fleet's state at time t: position, direction of travel, progress, and
- * whether its drive is burning (and which way the nose points).
+ * A fleet's state at time t: position, progress, whether its drive is lit,
+ * and where the nose points (along the thrust: the first burn, turning over
+ * during the flip, then the second burn).
  */
 export function fleetState(f, t) {
   const tau = Math.min(f.T, Math.max(0, t - f.t0));
-  // The burn runs along the line from the drift point to the intercept; the
-  // ship's actual path is that plus its inherited drift, so it curves.
-  const end = drift(f.p0, f.v0, f.T);
-  const d = { x: f.p1.x - end.x, y: f.p1.y - end.y, z: f.p1.z - end.z };
-  const D = Math.hypot(d.x, d.y, d.z);
-  const a = (4 * D) / (f.T * f.T);
-  const half = f.T / 2;
-  const s = tau < half ? 0.5 * a * tau * tau : D - 0.5 * a * (f.T - tau) ** 2;
-  const k = D > 0 ? s / D : 1;
-  const flip = Math.abs(tau - half) < RULES.flipTime / 2;
+  const s = along(f, tau);
+  const h = f.T / 2;
+  const flipStart = h - RULES.flipTime / 2;
+  const flipping = Math.abs(tau - h) < RULES.flipTime / 2;
+  const u1 = len(f.a1) > 1e-9 ? { x: f.a1.x / len(f.a1), y: f.a1.y / len(f.a1), z: f.a1.z / len(f.a1) } : { x: 0, y: 0, z: 1 };
+  const u2 = len(f.a2) > 1e-9 ? { x: f.a2.x / len(f.a2), y: f.a2.y / len(f.a2), z: f.a2.z / len(f.a2) } : u1;
+  let n = tau < h ? u1 : u2;
+  if (flipping) {
+    // Turn smoothly from the first burn direction to the second.
+    const k = (1 - Math.cos(((tau - flipStart) / RULES.flipTime) * Math.PI)) / 2;
+    n = { x: u1.x + (u2.x - u1.x) * k, y: u1.y + (u2.y - u1.y) * k, z: u1.z + (u2.z - u1.z) * k };
+    const l = len(n);
+    // Nearly opposite burns pass through zero: turn over via a sideways axis.
+    if (l < 0.3) {
+      const side = { x: -u1.z, y: 0, z: u1.x };
+      const w = Math.sin(k * Math.PI) * 0.8;
+      n = { x: n.x + side.x * w, y: n.y + side.y * w, z: n.z + side.z * w };
+    }
+    const l2 = len(n) || 1;
+    n = { x: n.x / l2, y: n.y / l2, z: n.z / l2 };
+  }
   return {
-    x: f.p0.x + f.v0.x * tau + d.x * k,
-    y: f.p0.y + f.v0.y * tau + d.y * k,
-    z: f.p0.z + f.v0.z * tau + d.z * k,
-    // Direction the drive pushes along (the burn line).
-    bx: D > 0 ? d.x / D : 0,
-    by: D > 0 ? d.y / D : 0,
-    bz: D > 0 ? d.z / D : 1,
+    x: s.x, y: s.y, z: s.z,
+    vx: s.vx, vy: s.vy, vz: s.vz,
+    nx: n.x, ny: n.y, nz: n.z,
     progress: tau / f.T,
-    burning: !flip && tau < f.T,
-    // 1 = nose toward the target (accelerating), -1 = flipped (decelerating);
-    // in between during the flip.
-    facing: flip ? Math.cos(((tau - (half - RULES.flipTime / 2)) / RULES.flipTime) * Math.PI) : tau < half ? 1 : -1,
+    burning: !flipping && tau < f.T,
+    flipping,
+    phase: tau < h ? 1 : 2,
   };
 }
 
@@ -248,10 +326,10 @@ function fight(game, b, dt) {
     b.dmg -= 1;
     if (b.ships > 0) b.ships -= 1;
     else b.guns = Math.max(0, b.guns - 1);
-    b.losses = (b.losses || 0) + 1;
+    b.lostDef = (b.lostDef || 0) + 1;
   }
   for (const g of b.sieges) {
-    while (g.dmg >= 1 && g.n > 0) { g.dmg -= 1; g.n -= 1; b.losses = (b.losses || 0) + 1; }
+    while (g.dmg >= 1 && g.n > 0) { g.dmg -= 1; g.n -= 1; b.lostAtk = (b.lostAtk || 0) + 1; }
   }
   b.sieges = b.sieges.filter((g) => g.n > 0);
   if (b.ships + b.guns <= 0 && b.sieges.length) {
