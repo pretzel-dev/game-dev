@@ -12,15 +12,15 @@ export const RULES = {
   outerPeriod: 2400, // seconds for the outermost planet to orbit the sun
   outerRadius: 200,
   startShips: 4,
-  startCredits: 120,
+  startCredits: 300,
   // Credits per second from each world you hold, plus each finished mine.
   income: { planet: 1, moon: 0.5, station: 0.6, asteroid: 0.3 },
   mineIncome: 1.5,
-  ship: { cost: 25, time: 20 }, // built one at a time at a shipyard
+  ship: { cost: 60, time: 30 }, // built one at a time at a shipyard
   structures: {
-    shipyard: { name: 'Shipyard', cost: 80, time: 40 },
-    mine: { name: 'Mine', cost: 40, time: 25, only: ['asteroid', 'moon'] },
-    defence: { name: 'Defences', cost: 50, time: 30 },
+    shipyard: { name: 'Shipyard', cost: 200, time: 60 },
+    mine: { name: 'Mine', cost: 100, time: 30, only: ['asteroid', 'moon'], maxLevel: 3 },
+    defence: { name: 'Guns', cost: 120, time: 35, maxLevel: 3 },
   },
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
@@ -66,7 +66,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     b.ships = 0;
     b.build = 0; // progress on the ship being built (0..1)
     b.queue = 0; // ships ordered and paid for, waiting to be built
-    b.structures = []; // { type, left } (left > 0 while under construction)
+    b.structures = []; // { type, level, left, next? } (left > 0 while building or upgrading)
     b.guns = b.kind === 'planet' ? 2 : 1 + Math.floor(rand() * 2); // neutral defences
     b.sieges = [];
     bodies.push(b);
@@ -158,12 +158,12 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     homes.push(best);
   }
   // Stations are shipyards; independents keep theirs until someone takes them.
-  for (const b of bodies) if (b.kind === 'station') b.structures.push({ type: 'shipyard', left: 0 });
+  for (const b of bodies) if (b.kind === 'station') b.structures.push({ type: 'shipyard', level: 1, left: 0 });
   homes.forEach((h, owner) => {
     h.owner = owner;
     h.ships = RULES.startShips;
     h.home = true;
-    h.structures.push({ type: 'shipyard', left: 0 }, { type: 'defence', left: 0 });
+    h.structures.push({ type: 'shipyard', level: 1, left: 0 }, { type: 'defence', level: 1, left: 0 });
     h.guns = maxGuns(h);
   });
   game.credits = Array.from({ length: game.players }, () => RULES.startCredits);
@@ -179,8 +179,11 @@ export function slotsOf(b) {
   if (b.kind === 'moon') return b.size > 0.8 ? 2 : 1;
   return b.giant ? 4 : b.size > 2.2 ? 3 : 2;
 }
-export const has = (b, type) => b.structures.some((x) => x.type === type && x.left <= 0);
-const count = (b, type) => b.structures.filter((x) => x.type === type && x.left <= 0).length;
+/** A structure works once built; while upgrading it keeps working at its old level. */
+const working = (x) => x.left <= 0 || x.next;
+export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
+/** Total working levels of a type (a level-3 mine counts 3). */
+const count = (b, type) => b.structures.reduce((n, x) => n + (x.type === type && working(x) ? x.level : 0), 0);
 export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
 export const incomeOf = (b) => (b.owner === NEUTRAL ? 0 : RULES.income[b.kind] + RULES.mineIncome * count(b, 'mine'));
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b) : 0), 0);
@@ -199,7 +202,27 @@ export function buildStructure(game, b, type) {
   if (cantBuild(game, b, type)) return false;
   const def = RULES.structures[type];
   game.credits[b.owner] -= def.cost;
-  b.structures.push({ type, left: def.time });
+  b.structures.push({ type, level: 1, left: def.time });
+  return true;
+}
+
+/** Upgrading costs more at each level and takes longer. */
+export const upgradeCost = (x) => Math.round(RULES.structures[x.type].cost * (x.level + 1) * 0.75);
+export const upgradeTime = (x) => RULES.structures[x.type].time * (1 + x.level * 0.5);
+export function cantUpgrade(game, b, x) {
+  const def = RULES.structures[x.type];
+  if (b.owner === NEUTRAL) return 'not yours';
+  if (!def.maxLevel) return "can't be upgraded";
+  if (x.left > 0) return 'busy';
+  if (x.level >= def.maxLevel) return 'at max level';
+  if (game.credits[b.owner] < upgradeCost(x)) return 'not enough credits';
+  return null;
+}
+export function upgrade(game, b, x) {
+  if (cantUpgrade(game, b, x)) return false;
+  game.credits[b.owner] -= upgradeCost(x);
+  x.next = x.level + 1;
+  x.left = upgradeTime(x);
   return true;
 }
 export function cantOrderShip(game, b) {
@@ -407,7 +430,8 @@ function fight(game, b, dt) {
     b.dmg = 0;
     b.build = 0;
     b.queue = 0;
-    b.structures = b.structures.filter((x) => x.left <= 0);
+    b.structures = b.structures.filter((x) => x.left <= 0 || x.next);
+    for (const x of b.structures) { if (x.next) { delete x.next; x.left = 0; } }
     b.sieges = b.sieges.filter((g) => g !== win);
     b.captured = true;
   }
@@ -422,7 +446,11 @@ export function step(game, dt) {
     if (b.owner === NEUTRAL) continue;
     game.credits[b.owner] += incomeOf(b) * dt;
     if (b.sieges.length) continue; // nothing gets built under fire
-    for (const x of b.structures) if (x.left > 0) x.left = Math.max(0, x.left - dt);
+    for (const x of b.structures) {
+      if (x.left <= 0) continue;
+      x.left = Math.max(0, x.left - dt);
+      if (x.left === 0 && x.next) { x.level = x.next; delete x.next; }
+    }
     if (b.queue > 0 && has(b, 'shipyard')) {
       b.build += dt / RULES.ship.time;
       if (b.build >= 1) { b.build = 0; b.queue -= 1; b.ships += 1; }

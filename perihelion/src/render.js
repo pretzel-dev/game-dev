@@ -583,11 +583,28 @@ export function createView(canvas, labelRoot) {
 
     // Moons and stations crowded against their planet on screen hide their
     // label; their ship counts ride on the planet's label instead.
+    // Hostile fleets on their way to each world: count and soonest arrival.
+    const incoming = new Map();
+    for (const f of game.fleets) {
+      const tb = game.bodies[f.to];
+      if (f.owner === tb.owner) continue;
+      const left = f.T - (now - f.t0);
+      const k = `${f.to}:${f.owner}`;
+      const cur = incoming.get(k) || { to: f.to, owner: f.owner, n: 0, eta: Infinity };
+      cur.n += f.n;
+      cur.eta = Math.min(cur.eta, left);
+      incoming.set(k, cur);
+    }
+    const incomingTo = new Map();
+    for (const x of incoming.values()) {
+      if (!incomingTo.has(x.to)) incomingTo.set(x.to, []);
+      incomingTo.get(x.to).push(x);
+    }
     const crowded = new Set();
     const extras = new Map();
     for (const v of views) {
       const b = v.b;
-      if (b.parent === null || ui.selected === b.id || ui.target === b.id || b.sieges.length) continue;
+      if (b.parent === null || ui.selected === b.id || ui.target === b.id || b.sieges.length || game.fleets.some((f) => f.to === b.id && f.owner !== b.owner)) continue;
       const q = bodyPos[b.parent];
       tmp.copy(v.g.position).project(camera);
       tmp2.set(q.x, q.y, q.z).project(camera);
@@ -720,7 +737,11 @@ export function createView(canvas, labelRoot) {
       const attackers = b.sieges.map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
       const count = b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : `<b>${b.ships}</b>`;
       const kids = (extras.get(b.id) || []).join('');
-      const text = `<span class="row1">${count}${kids}</span>${attackers}<small>${b.name}</small>`;
+      const warn = (incomingTo.get(b.id) || []).map((x) => {
+        const e = Math.max(0, x.eta);
+        return `<span class="inc" style="color:${ownerColor(x.owner)}">▼${x.n} ${Math.floor(e / 60)}:${String(Math.floor(e % 60)).padStart(2, '0')}</span>`;
+      }).join('');
+      const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}<small>${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
       v.label.style.visibility = 'visible';
       const x = (tmp.x * 0.5 + 0.5) * w;
@@ -769,7 +790,11 @@ export function createView(canvas, labelRoot) {
         gh.visible = true;
         gh.position.set(f.p1.x, f.p1.y, f.p1.z);
         gh.material.color.set(color);
-        gh.scale.setScalar(14 / ppuAt(gh.position));
+        // Enemy landing points pulse so they stand out.
+        const hostile = f.owner !== 0;
+        const pulse = hostile ? 1 + 0.35 * Math.sin(t * 6) : 1;
+        gh.material.opacity = hostile ? 0.9 : 0.5;
+        gh.scale.setScalar((hostile ? 22 : 14) * pulse / ppuAt(gh.position));
       }
     }
     for (let i = used; i < ships.length; i++) { ships[i].mesh.visible = false; ships[i].glint.visible = false; }
@@ -847,6 +872,7 @@ export function createView(canvas, labelRoot) {
       gh.visible = true;
       gh.position.set(p1.x, p1.y, p1.z);
       gh.material.color.set('#ffffff');
+      gh.material.opacity = 0.6;
       gh.scale.setScalar(22 / ppuAt(gh.position));
     } else {
       preview.visible = false;

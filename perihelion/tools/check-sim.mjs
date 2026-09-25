@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, NEUTRAL, RULES } from '../src/sim.js';
+import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -70,7 +70,7 @@ import { rng } from '../src/sim.js';
   for (let t = 0; t < 60; t += 0.5) step(g, 0.5);
   assert.equal(home.ships, ships, 'no ships without orders');
   const before = g.credits[0];
-  assert.ok(before > 120 && Math.abs(before - (120 + income(g, 0) * 60)) < 1, 'income accrues');
+  assert.ok(Math.abs(before - (RULES.startCredits + income(g, 0) * 60)) < 1, 'income accrues');
   assert.ok(orderShip(g, home));
   assert.equal(g.credits[0], before - RULES.ship.cost);
   for (let t = 0; t < RULES.ship.time + 1; t += 0.5) step(g, 0.5);
@@ -83,9 +83,17 @@ import { rng } from '../src/sim.js';
   assert.equal(cantBuild(g, rock, 'defence'), 'no free slots');
   assert.equal(cantBuild(g, home, 'mine'), "planets can't have one");
   const inc = income(g, 0);
-  for (let t = 0; t < 26; t += 0.5) step(g, 0.5);
+  for (let t = 0; t < RULES.structures.mine.time + 1; t += 0.5) step(g, 0.5);
   assert.ok(income(g, 0) > inc + 1, 'a finished mine adds income');
-  console.log(`economy: income ${income(g, 0).toFixed(1)}/s with a mine`);
+  // Upgrades: the mine keeps paying while it's upgraded, then pays more.
+  const m = rock.structures[0];
+  const inc1 = income(g, 0);
+  assert.ok(upgrade(g, rock, m));
+  assert.equal(income(g, 0), inc1, 'still mining during the upgrade');
+  for (let t = 0; t < upgradeTime({ ...m, level: 1 }) + 1; t += 0.5) step(g, 0.5);
+  assert.equal(m.level, 2);
+  assert.ok(Math.abs(income(g, 0) - inc1 - RULES.mineIncome) < 1e-9, 'level 2 mine pays more');
+  console.log(`economy: income ${income(g, 0).toFixed(1)}/s with a level-2 mine`);
 }
 
 // Battle: 6 attackers take a neutral moon with 1 gun; 1 attacker fails vs 4.

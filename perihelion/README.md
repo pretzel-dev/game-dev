@@ -26,14 +26,19 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
 - **Building:** select one of your worlds for its build row. Worlds have
   build slots by size (asteroids and small moons 1, small planets and larger
   moons 2, rocky planets 3, gas giants 4, stations 2):
-  - **Shipyard** (80, 40 s): needed to build ships there. Stations come with one.
-  - **Mine** (40, 25 s): asteroids and moons only; +1.5 credits/s.
-  - **Guns** (50, 30 s): +2 guns (every held world has 1).
-  - **Ship** (25, 20 s): ordered at a shipyard and built one at a time.
+  - **Shipyard** (200, 60 s): needed to build ships there. Stations come with one.
+  - **Mine** (100, 30 s): asteroids and moons only; +1.5 credits/s per level.
+  - **Guns** (120, 35 s): +2 guns per level (every held world has 1).
+  - **Upgrades:** mines and guns go up to level 3 (cost 0.75 × base × next
+    level; they keep working at the old level while upgrading).
+  - **Ship** (60, 30 s): ordered at a shipyard and built one at a time.
   Ships are never built automatically. Your homeworld starts with a shipyard
-  and guns, 4 ships and 120 credits. A captured world keeps its finished
+  and guns, 4 ships and 300 credits. A captured world keeps its finished
   structures; anything unfinished and any queued ships are lost. Nothing is
   built while a world is under attack.
+- **Incoming:** hostile fleets heading for a world show on its label as
+  `▼5 0:42` (ships, time to arrival) in the attacker's colour, and their
+  arrival points pulse.
 - **Battles:** ships arriving at a hostile site circle it and trade fire with
   its docked ships and surface guns until one side is gone. Rounds streak
   between actual ships in the shooter's colour, and each ship lost goes up
