@@ -168,6 +168,25 @@ import { rng } from '../src/sim.js';
   console.log(`cover: 6 attackers vs moon alone -> ${alone} left; with planet cover -> ${covered > 0 ? covered + ' left' : 'repelled'}`);
 }
 
+// Veterancy and events: a won battle makes veterans; they carry into fleets.
+{
+  const g = createGame({ seed: 5 });
+  const m = g.bodies.find((b) => b.owner === NEUTRAL && b.kind === 'moon');
+  m.guns = 1;
+  m.sieges.push({ owner: 0, n: 6, vet: 0, name: 'Test' });
+  for (let t = 0; t < 60 && m.owner !== 0; t += 0.1) step(g, 0.1);
+  assert.equal(m.owner, 0);
+  assert.equal(m.vet, 1, 'survivors of a capture gain a star');
+  assert.ok(g.events.some((e) => e.type === 'captured' && e.at === m.id));
+  const home = g.bodies.find((b) => b.owner === 0 && b.home);
+  const f = launch(g, m, home, 2);
+  assert.ok(f.name && f.vet === 1, 'fleets are named and carry veterancy');
+  const before = home.ships;
+  for (let t = 0; t < f.T + 1; t += 0.5) step(g, 0.5);
+  assert.ok(home.vet > 0 && home.vet < 1 && home.ships === before + 2, 'veterancy mixes into the garrison');
+  console.log(`veterancy: TF ${f.name} carried ${f.vet} star; garrison now ${home.vet.toFixed(2)}`);
+}
+
 // AI-only matches finish.
 let finished = 0;
 const lengths = [];

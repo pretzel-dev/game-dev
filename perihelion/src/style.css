@@ -89,12 +89,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #launch:disabled { opacity: 0.35; }
 #focus { width: 48px; height: 48px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); font-size: 18px; color: var(--dim); }
 
-#toast {
-  position: fixed; top: calc(var(--safe-t) + 86px); left: 50%; transform: translateX(-50%);
-  font-size: 13px; letter-spacing: 0.05em; text-shadow: 0 0 6px #000;
-  opacity: 0; transition: opacity 0.4s; pointer-events: none; white-space: nowrap;
-}
-#toast.show { opacity: 1; }
 
 .overlay {
   position: fixed; inset: 0;
@@ -214,7 +208,8 @@ table.totals th { font-weight: 600; }
 #buildrow { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 #buildrow > * { width: 100%; }
 #buildrow[hidden] { display: none; }
-.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; }
+.cells { display: flex; flex-direction: row; gap: 4px; }
+.cells .cell { flex: 1 1 0; min-width: 0; max-width: 84px; }
 .cell {
   position: relative; height: 40px; overflow: hidden;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
@@ -253,8 +248,23 @@ table.totals th { font-weight: 600; }
 .tech-row { border-radius: 0; min-height: 48px; padding: 6px 12px; border-left: 2px solid var(--line); }
 .tech-row .t b { letter-spacing: 0.06em; text-transform: uppercase; font-size: 14px; }
 .sheet-head span:first-child, .overlay h1 { font-weight: 600; }
-#rbar, #toast { letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+#rbar { letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
 #rbar { top: calc(var(--safe-t) + 50px); }
-#toast { top: calc(var(--safe-t) + 74px); }
 .seg, .seg button, .primary { border-radius: 0; }
 .primary { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); letter-spacing: 0.2em; text-transform: uppercase; }
+
+/* Event feed: small notes stacked in the top-right corner. */
+#feed {
+  position: fixed; top: calc(var(--safe-t) + 52px); right: 10px; width: min(230px, 52vw);
+  display: flex; flex-direction: column; gap: 4px; pointer-events: none; z-index: 5;
+}
+.note {
+  font-size: 11px; line-height: 1.25; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 4px 8px 4px 9px; background: rgba(6, 10, 18, 0.78); border-left: 2px solid var(--c);
+  color: var(--fg); animation: slidein 0.25s ease-out; transition: opacity 0.6s;
+}
+.note.gone { opacity: 0; }
+@keyframes slidein { from { transform: translateX(14px); opacity: 0; } }
+.vet { color: #ffd479; font-size: 11px; letter-spacing: 1px; }
+.tech-row .t em { display: block; font-style: normal; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+#rbar { right: auto; max-width: 42vw; }

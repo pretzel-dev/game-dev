@@ -45,7 +45,8 @@ function start() {
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
   ui.selected = ui.target = ui.preview = ui.fleet = null;
   ui.slot = null;
-  lastTech = {};
+  game.events.length = 0;
+  $('feed').innerHTML = '';
   $('research').hidden = true;
   view.build(game);
   ui.vis = visibility(game, PLAYER);
@@ -94,14 +95,14 @@ $('system').addEventListener('click', () => {
 function updateFleetInfo() {
   const f = ui.fleet !== null && game ? game.fleets.find((x) => x.id === ui.fleet) : null;
   if (!f) ui.fleet = null;
-  $('fleet').hidden = !f || !running || ui.selected !== null;
+  $('fleet').hidden = !f || !running || ui.selected !== null || !$('research').hidden;
   if ($('fleet').hidden) return;
   const s = fleetState(f, game.time);
   const left = f.T - (game.time - f.t0);
   const phase = s.flipping ? 'flipping' : s.phase === 1 ? 'burning toward' : 'braking for';
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
-  setHTML($('fleet'), `<b>${f.n} ship${f.n === 1 ? '' : 's'}</b> from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
+  setHTML($('fleet'), `<b>${tf(f.name)}</b> <span class="vet">${stars(f.vet)}</span> · <b>${f.n} ship${f.n === 1 ? '' : 's'}</b> from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
     + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s`);
 }
 
@@ -119,7 +120,7 @@ function updateActions() {
   if (ui.target === null) {
     ui.preview = null;
     const kind = s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
-    setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span><span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>`);
+    setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `<span class="vet">${stars(s.vet)}</span><span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`);
     $('launch').disabled = true;
     renderBuildRow(s);
   } else {
@@ -247,7 +248,7 @@ function renderResearch() {
   if (p) {
     const pct = Math.floor((1 - p.left / p.total) * 100);
     const eta = fmt(p.left / researchSpeed(game, PLAYER));
-    setHTML($('rbar'), `Researching <b>${TECH[p.key].name} ${ROMAN[t[p.key] + 1]}</b> · ${pct}% · ${eta}`);
+    setHTML($('rbar'), `Researching <b>${TECH[p.key].levels[t[p.key]]}</b> · ${pct}% · ${eta}`);
   }
   if ($('research').hidden) return;
   $('rstatus').textContent = `speed ×${researchSpeed(game, PLAYER).toFixed(1)}`;
@@ -255,11 +256,11 @@ function renderResearch() {
     const lvl = t[key];
     const pips = '●'.repeat(lvl) + '○'.repeat(d.cost.length - lvl);
     const next = nextTech(game, PLAYER, key);
-    if (!next) return `<button class="tech-row" disabled><span class="t"><b>${d.name}<span class="pips">${pips}</span></b><small>Complete</small></span></button>`;
+    if (!next) return `<button class="tech-row" disabled><span class="t"><em>${d.name}</em><b>${d.levels.at(-1)}<span class="pips">${pips}</span></b><small>Complete</small></span></button>`;
     const running = p && p.key === key;
     const why = cantResearch(game, PLAYER, key);
     const note = running ? `Researching · ${Math.floor((1 - p.left / p.total) * 100)}%` : `${next.text} · ${fmt(next.time / researchSpeed(game, PLAYER))}`;
-    return `<button class="tech-row" data-k="${key}" ${why ? 'disabled' : ''}><span class="t"><b>${d.name} ${ROMAN[next.level]}<span class="pips">${pips}</span></b><small>${note}</small></span><span class="c">${running ? '' : next.cost}</span></button>`;
+    return `<button class="tech-row" data-k="${key}" ${why ? 'disabled' : ''}><span class="t"><em>${d.name} ${ROMAN[next.level]}</em><b>${next.title}<span class="pips">${pips}</span></b><small>${note}</small></span><span class="c">${running ? '' : next.cost}</span></button>`;
   }).join(''));
 }
 $('rnd').addEventListener('click', () => {
@@ -269,11 +270,18 @@ $('rnd').addEventListener('click', () => {
   renderResearch();
 });
 $('rclose').addEventListener('click', () => { $('research').hidden = true; });
+// Tapping anywhere outside the sheet closes it too.
+const closeResearch = (e) => {
+  if ($('research').hidden || e.target.closest('#research, #rnd')) return;
+  $('research').hidden = true;
+  updateFleetInfo();
+};
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.addEventListener(ev, closeResearch, { capture: true, passive: true });
 $('rlist').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-k]');
   if (!b) return;
   if (research(game, PLAYER, b.dataset.k)) {
-    toast(`Researching ${TECH[b.dataset.k].name}`, ownerColor(PLAYER));
+    toast(`Researching ${TECH[b.dataset.k].levels[game.tech[PLAYER][b.dataset.k]]}`, ownerColor(PLAYER));
     $('research').hidden = true;
   }
   renderResearch();
@@ -292,19 +300,63 @@ $('focus').addEventListener('click', () => {
 function doLaunch() {
   if (ui.selected === null || ui.target === null || ui.count < 1) return;
   const f = launch(game, game.bodies[ui.selected], game.bodies[ui.target], ui.count);
-  if (f) toast(`${f.n} ship${f.n === 1 ? '' : 's'} burning for ${game.bodies[f.to].name} · ${fmt(f.T)}`, ownerColor(PLAYER));
+  if (f) toast(`${tf(f.name)} · ${f.n} ship${f.n === 1 ? '' : 's'} → ${game.bodies[f.to].name} · ${fmt(f.T)}`, ownerColor(PLAYER));
   ui.selected = ui.target = null;
   updateActions();
 }
 
 let toastTimer = 0;
+// Notifications: a small stack in the top corner; each fades after a while.
 function toast(text, color) {
-  const el = $('toast');
+  const feed = $('feed');
+  const el = document.createElement('div');
+  el.className = 'note';
+  el.style.setProperty('--c', color);
   el.textContent = text;
-  el.style.color = color;
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  feed.prepend(el);
+  while (feed.children.length > 4) feed.lastChild.remove();
+  setTimeout(() => el.classList.add('gone'), 5200);
+  setTimeout(() => el.remove(), 5800);
+}
+const stars = (v) => '★'.repeat(Math.floor(v || 0));
+const tf = (name) => `TF ${name}`;
+
+/** Turns the simulation's events into notes, filtered by what we can know. */
+function drainEvents() {
+  const evs = game.events.splice(0);
+  const vis = ui.vis;
+  const nm = (id) => game.bodies[id].name;
+  const mine = ownerColor(PLAYER);
+  for (const e of evs) {
+    const c = ownerColor(e.owner);
+    switch (e.type) {
+      case 'launch':
+        if (e.owner === PLAYER || !vis || vis.intel < 1 || !vis.bodies.has(e.from)) break;
+        toast(`Launch detected at ${nm(e.from)} · ${e.n} ship${e.n === 1 ? '' : 's'}${vis.intel >= 2 ? ` → ${nm(e.to)}` : ''}`, c);
+        break;
+      case 'arrived':
+        if (e.owner === PLAYER) toast(`${tf(e.name)} arrived at ${nm(e.at)}`, mine);
+        break;
+      case 'engaged':
+        if (e.owner === PLAYER) toast(`${tf(e.name)} engaging ${nm(e.at)}`, mine);
+        else if (e.vs === PLAYER) toast(`${nm(e.at)} under attack`, c);
+        break;
+      case 'wiped':
+        if (e.owner === PLAYER) toast(`${tf(e.name)} lost with all hands at ${nm(e.at)}`, ownerColor(e.vs));
+        else if (e.vs === PLAYER) toast(`Enemy ${tf(e.name)} destroyed at ${nm(e.at)}`, mine);
+        break;
+      case 'captured':
+        if (e.owner === PLAYER) toast(`${nm(e.at)} taken by ${tf(e.name)}`, mine);
+        else if (e.from === PLAYER) toast(`${nm(e.at)} lost`, c);
+        break;
+      case 'held':
+        if (e.owner === PLAYER) toast(`${nm(e.at)} held · garrison ${stars(game.bodies[e.at].vet)}`, mine);
+        break;
+      case 'research':
+        if (e.owner === PLAYER) toast(`${TECH[e.key].levels[e.level - 1]} complete`, mine);
+        break;
+    }
+  }
 }
 
 function tap(id, x, y) {
@@ -503,8 +555,6 @@ function finish() {
 
 let last = performance.now();
 let uiClock = 0;
-let lastTech = {};
-const seenOwner = new Map();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -519,6 +569,7 @@ function frame(now) {
         left -= h;
       }
       if (ui.selected !== null && game.bodies[ui.selected].owner !== PLAYER) ui.selected = ui.target = null;
+      drainEvents();
       if (ui.fleet !== null) updateFleetInfo();
       uiClock -= dt;
       if (uiClock <= 0) {
@@ -526,18 +577,7 @@ function frame(now) {
         ui.vis = visibility(game, PLAYER);
         updateActions();
         renderResearch();
-        const t = game.tech[PLAYER];
-        const done = Object.keys(TECH).find((k) => t[k] > (lastTech[k] ?? 0));
-        if (done) toast(`${TECH[done].name} ${ROMAN[t[done]]} complete`, ownerColor(PLAYER));
-        lastTech = { ...t };
         $('clock').innerHTML = `<b>₵ ${Math.floor(game.credits[PLAYER])}</b> +${income(game, PLAYER).toFixed(1)}/s · T+${fmt(game.time)}`;
-        for (const b of game.bodies) {
-          const was = seenOwner.get(b.id);
-          if (was !== undefined && was !== b.owner && (was === PLAYER || b.owner === PLAYER)) {
-            toast(b.owner === PLAYER ? `${b.name} taken` : `${b.name} lost`, ownerColor(b.owner));
-          }
-          seenOwner.set(b.id, b.owner);
-        }
       }
       if (game.winner !== null) finish();
     }
