@@ -181,11 +181,24 @@ export const FLEET_NAMES = ['Resolute', 'Tenacity', 'Wayfarer', 'Undaunted', 'Ni
   'Umbra', 'Viper', 'Wyvern Wing', 'Auk', 'Bittern', 'Curlew', 'Dunlin', 'Egret', 'Fieldfare', 'Gannet', 'Heron', 'Ibis', 'Jay', 'Kite',
   'Lapwing', 'Merlin', 'Nuthatch', 'Oriole', 'Plover', 'Redshank', 'Skua', 'Tanager', 'Veery', 'Whimbrel', 'Stoic', 'Candle', 'Hearthguard'];
 export const VET_BONUS = 0.08; // firepower per veterancy level (max 3)
-/** Veterancy is experience (0..3); only whole levels count in battle. */
-export const vetLevel = (v) => Math.min(3, Math.floor(v || 0));
-/** Experience for a win: an even fight is half a level, a long-odds win up to
- * more than a level, a walkover almost nothing. */
-const winXP = (foe, own) => 0.5 * Math.min(2.5, Math.max(0.1, foe / Math.max(own, 0.5))) ** 1.3;
+/**
+ * Veterancy is experience. Levels need more each time: 1 at 1 XP, 2 at 2.5,
+ * elite at 4.5. Only whole levels count in battle.
+ */
+export const VET_STEPS = [1, 2.5, 4.5];
+export const vetLevel = (v) => VET_STEPS.filter((x) => (v || 0) >= x).length;
+/**
+ * Experience for surviving a battle on the winning side:
+ * - a little just for coming through it (0.15),
+ * - more for the damage dealt, relative to your own size (up to 0.35),
+ * - more again for the odds you faced (even fight 0.3, long odds up to ~0.75).
+ * An even fight is ~0.7 XP, a walkover ~0.2: a level takes a couple of real
+ * fights, elite takes half a dozen.
+ */
+const winXP = (foe, own, kills) => {
+  const odds = Math.min(2, Math.max(0, foe / Math.max(own, 0.5)));
+  return Math.min(4.5, 0.15 + 0.35 * Math.min(1, kills / Math.max(own, 1)) + 0.3 * odds ** 1.3);
+};
 
 /** Something the player might want to hear about; the UI drains these. */
 function note(game, e) {
@@ -628,6 +641,8 @@ function fight(game, b, dt) {
       tally(game, b.owner, 'lost');
       tally(game, b.sieges.slice().sort((x, y) => y.n - x.n)[0].owner, 'killed');
     } else b.guns = Math.max(0, b.guns - 1);
+    const top = b.sieges.slice().sort((x, y) => y.n - x.n)[0];
+    top.kills = (top.kills || 0) + 1;
     b.lostDef = (b.lostDef || 0) + 1;
   }
   for (const g of b.sieges) {
@@ -635,6 +650,7 @@ function fight(game, b, dt) {
       g.dmg -= 1; g.n -= 1; b.lostAtk = (b.lostAtk || 0) + 1;
       tally(game, g.owner, 'lost');
       tally(game, b.owner, 'killed');
+      b.kills = (b.kills || 0) + 1;
     }
   }
   for (const g of b.sieges) if (g.n <= 0) note(game, { type: 'wiped', owner: g.owner, name: g.name, at: b.id, vs: b.owner });
@@ -648,7 +664,7 @@ function fight(game, b, dt) {
     b.owner = win.owner;
     b.ships = win.n;
     // Survivors gain experience, more for winning against the odds.
-    b.vet = Math.min(3, (win.vet || 0) + winXP(win.foe0 || 1, win.n0 || win.n));
+    b.vet = Math.min(4.5, (win.vet || 0) + winXP(win.foe0 || 1, win.n0 || win.n, win.kills || 0));
     b.tf = win.name;
     if (vetLevel(b.vet) > vetLevel(win.vet)) note(game, { type: 'promoted', owner: b.owner, at: b.id, name: b.tf, v: b.vet });
     b.guns = 0;
@@ -666,11 +682,11 @@ function fight(game, b, dt) {
     // Held: the garrison that saw it through gains a star.
     if (b.fighting && !taken && b.ships > 0) {
       const was = b.vet;
-      b.vet = Math.min(3, (b.vet || 0) + winXP(b.foe0 || 1, b.own0 || 1));
+      b.vet = Math.min(4.5, (b.vet || 0) + winXP(b.foe0 || 1, b.own0 || 1, b.kills || 0));
       if (vetLevel(b.vet) > vetLevel(was)) note(game, { type: 'promoted', owner: b.owner, at: b.id, name: b.tf, v: b.vet });
       note(game, { type: 'held', owner: b.owner, at: b.id });
     }
-    b.dmg = 0; b.fighting = false; b.foe0 = b.own0 = 0;
+    b.dmg = 0; b.fighting = false; b.foe0 = b.own0 = b.kills = 0;
   }
 }
 
