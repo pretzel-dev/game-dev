@@ -1,11 +1,14 @@
-import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel } from './sim.js';
+import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
+// Difficulty: how often it thinks, how much margin it wants before attacking,
+// and `skill`, the chance it follows through on each smart move it spots
+// (defending, rescuing credits, tech and upgrades).
 export const DIFFICULTY = {
-  easy: { think: 8, margin: 1.8 },
-  normal: { think: 5, margin: 1.5 },
-  hard: { think: 3, margin: 1.3 },
+  easy: { think: 9, margin: 1.6, skill: 0.35 },
+  normal: { think: 5, margin: 1.6, skill: 0.7 },
+  hard: { think: 3, margin: 1.6, skill: 1 },
 };
 
 export function createAI(owner, difficulty, rand) {
@@ -28,18 +31,22 @@ export function tickAI(game, ai, dt) {
   // Worlds out of sensor range: guess a modest garrison.
   const shipsAt = (t) => (vis.bodies.has(t.id) ? t.ships * (1 + VET_BONUS * vetLevel(t.vet)) : 4);
   const gunsAt = (t) => (vis.bodies.has(t.id) ? t.guns + coverOf(game, t) : 3);
-  if (economy(game, ai, mine, coming)) return;
+  const will = () => ai.rand() < ai.d.skill;
+  const power = (b) => b.ships * (1 + VET_BONUS * vetLevel(b.vet));
+  if (defend(game, ai, mine, vis, known, sizeOf, power, will)) return;
+  if (economy(game, ai, mine, coming, will)) return;
 
   let best = null;
   for (const s of mine) {
     const spare = s.ships - Math.ceil(coming(s, false) * 1.2) - 1;
     if (spare < 2) continue;
+    const vetK = 1 + VET_BONUS * vetLevel(s.vet); // veterans need fewer hulls
     for (const t of game.bodies) {
       if (t.owner === ai.owner) continue;
       const { T } = plan(game, s, t);
       // What will be waiting: garrison and guns, plus what it builds meanwhile.
       const growth = t.owner === NEUTRAL || !has(t, 'shipyard') ? 0 : Math.min(t.queue, T / RULES.ship.time);
-      const need = Math.ceil((shipsAt(t) + gunsAt(t) + growth) * ai.d.margin) + 1 - coming(t, true);
+      const need = Math.ceil(((shipsAt(t) + gunsAt(t) + growth) * ai.d.margin) / vetK) + 1 - coming(t, true);
       if (need < 1 || need > spare) continue;
       const value = t.kind === 'planet' ? 3 : t.kind === 'station' ? 2 : 1;
       const score = value / (need + T / 30);
@@ -82,22 +89,67 @@ export function tickAI(game, ai, dt) {
 }
 
 /** One economic action if there's something worth doing; returns true if it acted. */
-function economy(game, ai, mine, coming) {
+/**
+ * Defence, before anything else: reinforce a world that can't hold against a
+ * force it can see coming (in time to arrive first), or, if it can't be saved,
+ * cancel its ship orders and get the credits back before it falls.
+ */
+function defend(game, ai, mine, vis, known, sizeOf, power, will) {
+  for (const b of mine) {
+    const threats = game.fleets.filter((f) => f.to === b.id && f.owner !== ai.owner && known(f));
+    if (!threats.length) continue;
+    const eta = Math.min(...threats.map((f) => f.t0 + f.T - game.time));
+    const enemy = threats.reduce((n, f) => n + sizeOf(f), 0) * 1.2;
+    const held = power(b) + b.guns + coverOf(game, b);
+    if (held >= enemy) continue;
+    const gap = Math.ceil(enemy - held) + 1;
+    // Sources that can get there first and still keep a garrison of their own.
+    const help = mine.filter((s) => s !== b && s.ships >= 3 && !game.fleets.some((f) => f.to === s.id && f.owner !== ai.owner && known(f)))
+      .map((s) => ({ s, T: plan(game, s, b).T }))
+      .filter((x) => x.T < eta - 5)
+      .sort((x, y) => x.T - y.T);
+    const src = help.find((x) => x.s.ships - 1 >= gap) || help[0];
+    if (src && will()) {
+      launch(game, src.s, b, Math.min(src.s.ships - 1, gap));
+      return true;
+    }
+    // Lost cause: take the refund on queued ships rather than hand them over.
+    if (!src && b.queue > 0 && held * 2 < enemy && will()) {
+      while (b.queue > 0) cancelShip(game, b);
+      return true;
+    }
+  }
+  return false;
+}
+
+function economy(game, ai, mine, coming, will) {
   const threatened = (b) => coming(b, false) > 0 || b.sieges.length;
   const free = (b, type) => !cantBuild(game, b, type);
   // 1. Guns for a world about to be hit.
   const hit = mine.find((b) => threatened(b) && free(b, 'defence') && b.structures.filter((x) => x.type === 'defence').length < 2);
   if (hit) return buildStructure(game, hit, 'defence');
   // 2. Mines on every moon and asteroid we hold.
-  const rock = mine.find((b) => (b.kind === 'asteroid' || b.kind === 'moon') && !b.structures.some((x) => x.type === 'mine') && free(b, 'mine'));
-  if (rock) return buildStructure(game, rock, 'mine');
+  // Mines pay for themselves: if one is waiting for credits, save up for it
+  // rather than spending on ships (a smart player does; weaker AIs don't).
+  const rock = mine.find((b) => (b.kind === 'asteroid' || b.kind === 'moon') && !b.structures.some((x) => x.type === 'mine')
+    && (free(b, 'mine') || cantBuild(game, b, 'mine') === 'not enough credits'));
+  if (rock) {
+    if (free(rock, 'mine')) return buildStructure(game, rock, 'mine');
+    if (!threatened(rock) && will()) return true;
+  }
   // 2b. Upgrade mines when there's money to spare; guns where trouble is coming.
   const credits = game.credits[ai.owner];
+  // Save for the next mine upgrade too: extra income compounds.
+  const nextMine = mine.flatMap((b) => b.structures.filter((x) => x.type === 'mine' && cantUpgrade(game, b, x) === 'not enough credits').map((x) => [b, x]))[0];
+  if (nextMine && !threatened(nextMine[0]) && mine.reduce((n, b) => n + b.ships, 0) >= 6 && will()) {
+    if (credits < upgradeCost(nextMine[1])) return true;
+  }
   for (const b of mine) {
     for (const x of b.structures) {
       if (cantUpgrade(game, b, x)) continue;
-      if (x.type === 'mine' && credits > upgradeCost(x) + RULES.ship.cost) return upgrade(game, b, x);
-      if (x.type === 'defence' && (threatened(b) || credits > upgradeCost(x) + 200)) return upgrade(game, b, x);
+      if (x.type === 'mine' && credits >= upgradeCost(x) && will()) return upgrade(game, b, x);
+      if (x.type === 'lab' && game.tech[ai.owner].project && credits > upgradeCost(x) + 300 && will()) return upgrade(game, b, x);
+      if (x.type === 'defence' && threatened(b) && will()) return upgrade(game, b, x);
     }
   }
   // 2c. Research, in a sensible order, when it can afford it and still build.
@@ -106,11 +158,16 @@ function economy(game, ai, mine, coming) {
   if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost) {
     return research(game, ai.owner, key);
   }
-  // 2d. One research station once things are comfortable.
+  // 2d. Research stations once things are comfortable: one, then a second.
   const labs = mine.reduce((n, b) => n + b.structures.filter((x) => x.type === 'lab').length, 0);
-  if (!labs && credits > 700) {
+  if (labs < 2 && credits > 700 + labs * 500 && mine.length > 2 + labs * 2 && will()) {
     const site = mine.find((b) => free(b, 'lab') && b.kind !== 'asteroid');
     if (site) return buildStructure(game, site, 'lab');
+    // No room: scrap a spare gun battery at a safe inner world to make some.
+    const safe = mine.find((b) => b.kind !== 'asteroid' && !threatened(b)
+      && b.structures.filter((x) => x.type === 'defence').length > 1);
+    const x = safe && safe.structures.find((y) => y.type === 'defence' && y.level === 1 && !cantDemolish(game, safe, y));
+    if (x && credits > 900) return demolish(game, safe, x);
   }
   // 3. A second shipyard, on the planet with the most room.
   const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
@@ -123,6 +180,6 @@ function economy(game, ai, mine, coming) {
   if (yard && ai.rand() < 0.8) return orderShip(game, yard);
   // 5. More guns at home once things are running.
   const home = mine.find((b) => b.home) || mine[0];
-  if (home && game.credits[ai.owner] > 300 && free(home, 'defence')) return buildStructure(game, home, 'defence');
+  if (home && game.credits[ai.owner] > 600 && free(home, 'defence') && home.structures.filter((x) => x.type === 'defence').length < 2) return buildStructure(game, home, 'defence');
   return false;
 }
