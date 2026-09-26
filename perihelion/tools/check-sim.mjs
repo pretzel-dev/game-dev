@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES } from '../src/sim.js';
+import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -109,6 +109,40 @@ import { rng } from '../src/sim.js';
   m2.sieges.push({ owner: 0, n: 1 });
   for (let t = 0; t < 60; t += 0.1) step(g, 0.1);
   assert.equal(m2.owner, NEUTRAL);
+}
+
+// Research, fog, parallel yards, demolish, cancel.
+{
+  const g = createGame({ seed: 7 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  g.credits[0] = 5000;
+  // Two yards build two ships at once.
+  home.structures = home.structures.filter((x) => x.type !== 'defence');
+  assert.ok(buildStructure(g, home, 'shipyard'));
+  home.structures.forEach((x) => (x.left = 0));
+  assert.equal(yardsOf(home), 2);
+  const ships = home.ships;
+  orderShip(g, home); orderShip(g, home);
+  for (let t = 0; t < RULES.ship.time + 1; t += 0.5) step(g, 0.5);
+  assert.equal(home.ships, ships + 2, 'two yards build two ships in one build time');
+  // Cancel refunds; demolish costs a fee and frees the slot.
+  orderShip(g, home);
+  const c = g.credits[0];
+  assert.ok(cancelShip(g, home));
+  assert.equal(g.credits[0], c + RULES.ship.cost * RULES.cancelRefund);
+  const slots = home.structures.length;
+  assert.ok(demolish(g, home, home.structures[1]));
+  assert.equal(home.structures.length, slots - 1);
+  // Research: drives raise thrust; research stations speed it up.
+  const a0 = accelOf(g, 0);
+  assert.ok(research(g, 0, 'drives'));
+  for (let t = 0; t < TECH.drives.time[0] + 1; t += 0.5) step(g, 0.5);
+  assert.ok(accelOf(g, 0) > a0 * 1.2, 'drives research raises thrust');
+  // Fog: far worlds are unseen at the start; sensors widen the view.
+  const v0 = visibility(g, 0).bodies.size;
+  g.tech[0].sensors = 3;
+  assert.ok(visibility(g, 0).bodies.size > v0, 'sensors show more');
+  console.log(`research: thrust ${a0}->${accelOf(g, 0)}; visible worlds ${v0} -> ${visibility(g, 0).bodies.size} of ${g.bodies.length}`);
 }
 
 // Planetary cover: a planet's guns help defend its moons and stations.

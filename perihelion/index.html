@@ -19,13 +19,23 @@
       <span id="clock"></span>
       <span class="grow"></span>
       <button id="system" aria-label="System view" hidden>⊙</button>
+      <button id="rnd" aria-label="Research">R&amp;D</button>
       <button id="warp" aria-label="Time speed">1×</button>
       <button id="pause" aria-label="Pause">❚❚</button>
+    </div>
+
+    <div id="rbar" hidden></div>
+
+    <div id="research" hidden>
+      <div class="sheet-head"><span>Research</span><span id="rstatus"></span><button id="rclose" aria-label="Close">✕</button></div>
+      <div id="rlist"></div>
+      <p class="sheet-foot">Paid in credits; one project at a time. Research stations speed it up.</p>
     </div>
 
     <div id="actions" hidden>
       <div id="info"></div>
       <div class="bar build" id="buildrow"></div>
+      <div class="bar build" id="demorow" hidden></div>
       <div class="bar">
         <div class="stepper">
           <button id="less" aria-label="Fewer ships">−</button>

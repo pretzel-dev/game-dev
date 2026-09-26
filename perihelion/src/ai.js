@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf } from './sim.js';
+import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
@@ -18,8 +18,17 @@ export function tickAI(game, ai, dt) {
   ai.clock = ai.d.think * (0.7 + ai.rand() * 0.6);
 
   const mine = game.bodies.filter((b) => b.owner === ai.owner);
-  if (economy(game, ai, mine)) return;
-  const coming = (b, own) => game.fleets.filter((f) => f.to === b.id && (f.owner === ai.owner) === own).reduce((n, f) => n + f.n, 0);
+  // Same limits as the player: only what its sensors show. Enemy fleets it
+  // can see but can't read (no intel) are assumed to be a medium force; their
+  // destinations are only known with intel II.
+  const vis = visibility(game, ai.owner);
+  const known = (f) => f.owner === ai.owner || (vis.intel >= 2 && vis.sees(fleetState(f, game.time)));
+  const sizeOf = (f) => (f.owner === ai.owner || vis.intel >= 1 ? f.n : 5);
+  const coming = (b, own) => game.fleets.filter((f) => f.to === b.id && (f.owner === ai.owner) === own && known(f)).reduce((n, f) => n + sizeOf(f), 0);
+  // Worlds out of sensor range: guess a modest garrison.
+  const shipsAt = (t) => (vis.bodies.has(t.id) ? t.ships : 4);
+  const gunsAt = (t) => (vis.bodies.has(t.id) ? t.guns + coverOf(game, t) : 3);
+  if (economy(game, ai, mine, coming)) return;
 
   let best = null;
   for (const s of mine) {
@@ -30,7 +39,7 @@ export function tickAI(game, ai, dt) {
       const { T } = plan(game, s, t);
       // What will be waiting: garrison and guns, plus what it builds meanwhile.
       const growth = t.owner === NEUTRAL || !has(t, 'shipyard') ? 0 : Math.min(t.queue, T / RULES.ship.time);
-      const need = Math.ceil((t.ships + t.guns + coverOf(game, t) + growth) * ai.d.margin) + 1 - coming(t, true);
+      const need = Math.ceil((shipsAt(t) + gunsAt(t) + growth) * ai.d.margin) + 1 - coming(t, true);
       if (need < 1 || need > spare) continue;
       const value = t.kind === 'planet' ? 3 : t.kind === 'station' ? 2 : 1;
       const score = value / (need + T / 30);
@@ -63,7 +72,7 @@ export function tickAI(game, ai, dt) {
   let need = Infinity;
   for (const t of game.bodies) {
     if (t.owner === ai.owner) continue;
-    const n = Math.ceil((Math.max(t.ships, 6) + t.guns + coverOf(game, t)) * ai.d.margin) + 2;
+    const n = Math.ceil((Math.max(shipsAt(t), 6) + gunsAt(t)) * ai.d.margin) + 2;
     if (n <= total && n < need) { target = t; need = n; }
   }
   if (target && mine.length > 1) {
@@ -73,8 +82,8 @@ export function tickAI(game, ai, dt) {
 }
 
 /** One economic action if there's something worth doing; returns true if it acted. */
-function economy(game, ai, mine) {
-  const threatened = (b) => game.fleets.some((f) => f.to === b.id && f.owner !== ai.owner) || b.sieges.length;
+function economy(game, ai, mine, coming) {
+  const threatened = (b) => coming(b, false) > 0 || b.sieges.length;
   const free = (b, type) => !cantBuild(game, b, type);
   // 1. Guns for a world about to be hit.
   const hit = mine.find((b) => threatened(b) && free(b, 'defence') && b.structures.filter((x) => x.type === 'defence').length < 2);
@@ -90,6 +99,18 @@ function economy(game, ai, mine) {
       if (x.type === 'mine' && credits > upgradeCost(x) + RULES.ship.cost) return upgrade(game, b, x);
       if (x.type === 'defence' && (threatened(b) || credits > upgradeCost(x) + 200)) return upgrade(game, b, x);
     }
+  }
+  // 2c. Research, in a sensible order, when it can afford it and still build.
+  const order = ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors'];
+  const key = order.find((k) => nextTech(game, ai.owner, k));
+  if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost) {
+    return research(game, ai.owner, key);
+  }
+  // 2d. One research station once things are comfortable.
+  const labs = mine.reduce((n, b) => n + b.structures.filter((x) => x.type === 'lab').length, 0);
+  if (!labs && credits > 700) {
+    const site = mine.find((b) => free(b, 'lab') && b.kind !== 'asteroid');
+    if (site) return buildStructure(game, site, 'lab');
   }
   // 3. A second shipyard, on the planet with the most room.
   const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));

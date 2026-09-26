@@ -12,15 +12,16 @@ export const RULES = {
   outerPeriod: 2400, // seconds for the outermost planet to orbit the sun
   outerRadius: 200,
   startShips: 4,
-  startCredits: 300,
+  startCredits: 400,
   // Credits per second from each world you hold, plus each finished mine.
   income: { planet: 1, moon: 0.5, station: 0.6, asteroid: 0.3 },
   mineIncome: 1.5,
-  ship: { cost: 60, time: 30 }, // built one at a time at a shipyard
+  ship: { cost: 150, time: 45 }, // each shipyard builds one at a time
   structures: {
-    shipyard: { name: 'Shipyard', cost: 200, time: 60 },
-    mine: { name: 'Mine', cost: 100, time: 30, only: ['asteroid', 'moon'], maxLevel: 3 },
-    defence: { name: 'Guns', cost: 120, time: 35, maxLevel: 3 },
+    shipyard: { name: 'Shipyard', cost: 400, time: 90 },
+    mine: { name: 'Mine', cost: 200, time: 45, only: ['asteroid', 'moon'], maxLevel: 3 },
+    defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3 },
+    lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3 },
   },
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
@@ -28,7 +29,69 @@ export const RULES = {
   fire: 0.12, // ships destroyed per second, per firing ship (or gun)
   gunRegen: 0.02, // guns rebuilt per second after a fight
   flipTime: 4, // seconds spent turning around at the midpoint
+  demolishFee: 0.25, // share of a structure's cost to tear it down
+  cancelRefund: 0.8, // share of a ship's cost returned when cancelled
+  labSpeed: 0.5, // research speed added per research-station level
 };
+
+// ---- Research -----------------------------------------------------------------
+// One project at a time per empire, paid in credits; research stations speed
+// it up. The AI researches the same tree under the same rules.
+
+export const TECH = {
+  drives: { name: 'Drives', text: ['+25% thrust', '+50% thrust', '+75% thrust'], cost: [300, 600, 1000], time: [90, 150, 240] },
+  sensors: { name: 'Sensors', text: ['See further', 'See much further', 'See across the system'], cost: [250, 500, 900], time: [80, 140, 220] },
+  intel: { name: 'Intel', text: ['Enemy fleet sizes', 'Enemy destinations and arrival times'], cost: [300, 600], time: [90, 160] },
+  weapons: { name: 'Weapons', text: ['+25% firepower', '+50% firepower'], cost: [400, 800], time: [120, 200] },
+  armour: { name: 'Armour', text: ['Ships take 20% less damage', 'Ships take 40% less damage'], cost: [400, 800], time: [120, 200] },
+  industry: { name: 'Industry', text: ['Build 20% faster, mines +25%', 'Build 40% faster, mines +50%'], cost: [350, 700], time: [100, 180] },
+};
+export const SENSOR_RANGE = [70, 110, 160, 240];
+const techLevel = (game, owner, key) => (owner === NEUTRAL || !game.tech ? 0 : game.tech[owner][key]);
+export const accelOf = (game, owner) => RULES.accel * (1 + 0.25 * techLevel(game, owner, 'drives'));
+const firepowerOf = (game, owner) => 1 + 0.25 * techLevel(game, owner, 'weapons');
+const damageTaken = (game, owner) => 1 - 0.2 * techLevel(game, owner, 'armour');
+const buildSpeed = (game, owner) => 1 + 0.2 * techLevel(game, owner, 'industry');
+
+export function nextTech(game, owner, key) {
+  const lvl = game.tech[owner][key];
+  const d = TECH[key];
+  return lvl < d.cost.length ? { level: lvl + 1, cost: d.cost[lvl], time: d.time[lvl], text: d.text[lvl] } : null;
+}
+export function researchSpeed(game, owner) {
+  const labs = game.bodies.reduce((n, b) => n + (b.owner === owner ? count(b, 'lab') : 0), 0);
+  return 1 + RULES.labSpeed * labs;
+}
+export function cantResearch(game, owner, key) {
+  const next = nextTech(game, owner, key);
+  if (!next) return 'complete';
+  if (game.tech[owner].project) return 'already researching';
+  if (game.credits[owner] < next.cost) return 'not enough credits';
+  return null;
+}
+export function research(game, owner, key) {
+  if (cantResearch(game, owner, key)) return false;
+  const next = nextTech(game, owner, key);
+  game.credits[owner] -= next.cost;
+  game.tech[owner].project = { key, left: next.time, total: next.time };
+  return true;
+}
+
+/**
+ * What an owner can see: within sensor range of its worlds, and a little
+ * around its fleets. Beyond that, worlds hide their ships and structures and
+ * enemy fleets are invisible. Intel sets how much a visible enemy fleet shows.
+ */
+export function visibility(game, owner) {
+  const range = SENSOR_RANGE[techLevel(game, owner, 'sensors')];
+  const eyes = [];
+  for (const b of game.bodies) if (b.owner === owner) eyes.push([posAt(game, b, game.time), range]);
+  for (const f of game.fleets) if (f.owner === owner) eyes.push([fleetState(f, game.time), 20]);
+  for (const b of game.bodies) if (b.sieges.some((g) => g.owner === owner)) eyes.push([posAt(game, b, game.time), 20]);
+  const sees = (p) => eyes.some(([e, r]) => dist(e, p) <= r);
+  const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
+  return { owner, sees, bodies, intel: techLevel(game, owner, 'intel') };
+}
 
 export function rng(seed) {
   let a = seed >>> 0;
@@ -168,6 +231,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     h.guns = maxGuns(h);
   });
   game.credits = Array.from({ length: game.players }, () => RULES.startCredits);
+  game.tech = Array.from({ length: game.players }, () => ({ drives: 0, sensors: 0, intel: 0, weapons: 0, armour: 0, industry: 0, project: null }));
   return game;
 }
 
@@ -186,15 +250,43 @@ export const has = (b, type) => b.structures.some((x) => x.type === type && work
 /** Total working levels of a type (a level-3 mine counts 3). */
 const count = (b, type) => b.structures.reduce((n, x) => n + (x.type === type && working(x) ? x.level : 0), 0);
 export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
-export const incomeOf = (b) => (b.owner === NEUTRAL ? 0 : RULES.income[b.kind] + RULES.mineIncome * count(b, 'mine'));
-export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b) : 0), 0);
+export const incomeOf = (b, game) => {
+  if (b.owner === NEUTRAL) return 0;
+  const mining = 1 + 0.25 * (game ? techLevel(game, b.owner, 'industry') : 0);
+  return RULES.income[b.kind] + RULES.mineIncome * count(b, 'mine') * mining;
+};
+export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
+/** Working shipyards here: each builds one ship at a time. */
+export const yardsOf = (b) => b.structures.filter((x) => x.type === 'shipyard' && working(x)).length;
+
+/** Tear a structure down for a fee (a share of what it cost). */
+export const demolishFee = (x) => Math.round(RULES.structures[x.type].cost * RULES.demolishFee);
+export function cantDemolish(game, b, x) {
+  if (b.owner === NEUTRAL) return 'not yours';
+  if (game.credits[b.owner] < demolishFee(x)) return 'not enough credits';
+  return null;
+}
+export function demolish(game, b, x) {
+  if (cantDemolish(game, b, x)) return false;
+  game.credits[b.owner] -= demolishFee(x);
+  b.structures = b.structures.filter((y) => y !== x);
+  if (!yardsOf(b)) b.build = 0;
+  return true;
+}
+/** Cancel the last queued ship, refunding most of its cost. */
+export function cancelShip(game, b) {
+  if (b.owner === NEUTRAL || b.queue < 1) return false;
+  b.queue -= 1;
+  game.credits[b.owner] += Math.round(RULES.ship.cost * RULES.cancelRefund);
+  if (b.queue === 0) b.build = 0;
+  return true;
+}
 
 /** Why a structure can't be built here, or null if it can. */
 export function cantBuild(game, b, type) {
   const def = RULES.structures[type];
   if (b.owner === NEUTRAL) return 'not yours';
   if (def.only && !def.only.includes(b.kind)) return `${b.kind}s can't have one`;
-  if (type === 'shipyard' && b.structures.some((x) => x.type === 'shipyard')) return 'already has one';
   if (b.structures.length >= slotsOf(b)) return 'no free slots';
   if (game.credits[b.owner] < def.cost) return 'not enough credits';
   return null;
@@ -319,6 +411,7 @@ function clearOfSun(f) {
 
 /** Plans a transfer from `from` (now) to meet `to`. Returns { p0, v0, p1, v1, a1, a2, T }. */
 export function plan(game, from, to, now = game.time) {
+  const accel = accelOf(game, from.owner);
   const p0 = posAt(game, from, now);
   const v0 = velAt(game, from, now);
   const make = (T) => {
@@ -337,12 +430,12 @@ export function plan(game, from, to, now = game.time) {
   let prev = 1;
   for (let T = 2; T < 20000; T += 2) {
     let f = make(T);
-    if (f.need > RULES.accel) { prev = T; continue; }
+    if (f.need > accel) { prev = T; continue; }
     let lo = prev;
     let hi = T;
     for (let i = 0; i < 30; i++) {
       const mid = (lo + hi) / 2;
-      if (make(mid).need > RULES.accel) lo = mid;
+      if (make(mid).need > accel) lo = mid;
       else hi = mid;
     }
     f = make(hi);
@@ -414,12 +507,14 @@ function fight(game, b, dt) {
   const attackers = b.sieges.reduce((n, g) => n + g.n, 0);
   // Cover adds firepower but can't be destroyed here: only the planet's own
   // fight can knock out its guns.
-  const defenders = b.ships + b.guns + coverOf(game, b);
+  const defenders = (b.ships + b.guns + coverOf(game, b)) * firepowerOf(game, b.owner);
+  let attackFire = 0;
   for (const g of b.sieges) {
     const share = attackers > 0 ? g.n / attackers : 0;
-    g.dmg = (g.dmg || 0) + RULES.fire * defenders * share * dt;
+    g.dmg = (g.dmg || 0) + RULES.fire * defenders * share * damageTaken(game, g.owner) * dt;
+    attackFire += g.n * firepowerOf(game, g.owner);
   }
-  b.dmg = (b.dmg || 0) + RULES.fire * attackers * dt;
+  b.dmg = (b.dmg || 0) + RULES.fire * attackFire * damageTaken(game, b.owner) * dt;
   b.fighting = true;
   // Damage becomes whole ships lost: docked ships first, then guns.
   while (b.dmg >= 1 && b.ships + b.guns > 0) {
@@ -439,6 +534,7 @@ function fight(game, b, dt) {
     b.guns = 0;
     b.dmg = 0;
     b.build = 0;
+    b.slips = [];
     b.queue = 0;
     b.structures = b.structures.filter((x) => x.left <= 0 || x.next);
     for (const x of b.structures) { if (x.next) { delete x.next; x.left = 0; } }
@@ -454,19 +550,32 @@ export function step(game, dt) {
 
   for (const b of game.bodies) {
     if (b.owner === NEUTRAL) continue;
-    game.credits[b.owner] += incomeOf(b) * dt;
+    game.credits[b.owner] += incomeOf(b, game) * dt;
+    const speed = buildSpeed(game, b.owner);
     if (b.sieges.length) continue; // nothing gets built under fire
     for (const x of b.structures) {
       if (x.left <= 0) continue;
-      x.left = Math.max(0, x.left - dt);
+      x.left = Math.max(0, x.left - dt * speed);
       if (x.left === 0 && x.next) { x.level = x.next; delete x.next; }
     }
-    if (b.queue > 0 && has(b, 'shipyard')) {
-      b.build += dt / RULES.ship.time;
-      if (b.build >= 1) { b.build = 0; b.queue -= 1; b.ships += 1; }
-    }
+    // Each working yard builds one ship at a time, in parallel.
+    // b.slips holds each yard's progress on the ship it's building.
+    const yards = yardsOf(b);
+    if (!b.slips) b.slips = [];
+    while (b.slips.length < Math.min(yards, b.queue)) b.slips.push(0);
+    b.slips.length = Math.min(b.slips.length, yards, b.queue);
+    b.slips = b.slips.map((p) => p + (dt * speed) / RULES.ship.time);
+    for (const p of b.slips) if (p >= 1) { b.queue -= 1; b.ships += 1; }
+    b.slips = b.slips.filter((p) => p < 1);
+    b.build = b.slips.length ? Math.max(...b.slips) : 0;
     const top = maxGuns(b);
     if (b.guns < top) b.guns = Math.min(top, b.guns + RULES.gunRegen * dt);
+  }
+
+  for (const [owner, t] of (game.tech || []).entries()) {
+    if (!t.project) continue;
+    t.project.left -= dt * researchSpeed(game, owner);
+    if (t.project.left <= 0) { t[t.project.key] += 1; t.project = null; }
   }
 
   game.fleets = game.fleets.filter((f) => {
