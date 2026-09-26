@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -18,7 +18,7 @@ let running = false;
 const WARPS = [1, 2, 4, 8];
 let warp = 1;
 
-const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false };
+const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, demolish: false };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -44,7 +44,11 @@ function start() {
   const r = rng(seed ^ 0xabc);
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
   ui.selected = ui.target = ui.preview = ui.fleet = null;
+  ui.demolish = false;
+  lastTech = {};
+  $('research').hidden = true;
   view.build(game);
+  ui.vis = visibility(game, PLAYER);
   // Open on the homeworld, far enough out to see its moons and neighbours.
   const home = game.bodies.find((b) => b.owner === PLAYER);
   view.focus(game, home.id, false);
@@ -130,7 +134,8 @@ function updateActions() {
     ui.preview = plan(game, s, t);
     const defence = t.owner === PLAYER ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === PLAYER ? 0 : coverOf(game, t);
-    const defenceText = cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
+    const seen = !ui.vis || ui.vis.bodies.has(t.id);
+    const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
     setHTML($('info'), `<b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>`);
     $('launch').disabled = s.ships < 1;
   }
@@ -142,6 +147,7 @@ const BUILD = [
   { key: 'shipyard', label: 'Yard', cost: () => RULES.structures.shipyard.cost },
   { key: 'mine', label: 'Mine', cost: () => RULES.structures.mine.cost },
   { key: 'defence', label: 'Guns', cost: () => RULES.structures.defence.cost },
+  { key: 'lab', label: 'Lab', cost: () => RULES.structures.lab.cost },
 ];
 function renderBuildRow(s) {
   const html = BUILD.map((b) => {
@@ -155,10 +161,30 @@ function renderBuildRow(s) {
     if (why && why !== 'not enough credits') return '';
     const name = x.type === 'mine' ? 'Mine' : 'Guns';
     return `<button data-u="${i}" ${why ? 'disabled' : ''}>${name} ${x.level}→${x.level + 1}<small>${upgradeCost(x)}</small></button>`;
-  }).join('');
+  }).join('')
+    + (s.queue ? `<button data-cancel="1">✕ Ship<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
+    + (s.structures.length ? `<button data-demo="toggle">${ui.demolish ? 'Done' : 'Demolish'}</button>` : '');
+  // Demolish: a separate row, only while toggled on, so it's hard to hit by accident.
+  $('demorow').hidden = !ui.demolish;
+  if (ui.demolish) {
+    setHTML($('demorow'), s.structures.map((x, i) => {
+      const lvl = RULES.structures[x.type].maxLevel ? ` ${x.level}` : '';
+      return `<button data-d="${i}" ${cantDemolish(game, s, x) ? 'disabled' : ''}>✕ ${RULES.structures[x.type].name}${lvl}<small>${demolishFee(x)}</small></button>`;
+    }).join(''));
+  }
   setHTML($('buildrow'), html);
 }
 $('buildrow').addEventListener('click', (e) => {
+  if (e.target.closest('button[data-cancel]') && ui.selected !== null) {
+    if (cancelShip(game, game.bodies[ui.selected])) toast('Ship build cancelled', ownerColor(PLAYER));
+    updateActions();
+    return;
+  }
+  if (e.target.closest('button[data-demo]')) {
+    ui.demolish = !ui.demolish;
+    updateActions();
+    return;
+  }
   const up = e.target.closest('button[data-u]');
   if (up && ui.selected !== null) {
     const s = game.bodies[ui.selected];
@@ -174,6 +200,58 @@ $('buildrow').addEventListener('click', (e) => {
   const ok = k === 'ship' ? orderShip(game, s) : buildStructure(game, s, k);
   if (ok) toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(PLAYER));
   updateActions();
+});
+
+$('demorow').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-d]');
+  if (!btn || ui.selected === null) return;
+  const s = game.bodies[ui.selected];
+  const x = s.structures[Number(btn.dataset.d)];
+  if (x && demolish(game, s, x)) toast(`${RULES.structures[x.type].name} demolished at ${s.name}`, ownerColor(PLAYER));
+  if (!s.structures.length) ui.demolish = false;
+  updateActions();
+});
+
+// ---- Research --------------------------------------------------------------------
+
+const ROMAN = ['', 'I', 'II', 'III'];
+function renderResearch() {
+  const t = game.tech[PLAYER];
+  const p = t.project;
+  $('rbar').hidden = !running || !p;
+  if (p) {
+    const pct = Math.floor((1 - p.left / p.total) * 100);
+    const eta = fmt(p.left / researchSpeed(game, PLAYER));
+    setHTML($('rbar'), `Researching <b>${TECH[p.key].name} ${ROMAN[t[p.key] + 1]}</b> · ${pct}% · ${eta}`);
+  }
+  if ($('research').hidden) return;
+  $('rstatus').textContent = `speed ×${researchSpeed(game, PLAYER).toFixed(1)}`;
+  setHTML($('rlist'), Object.entries(TECH).map(([key, d]) => {
+    const lvl = t[key];
+    const pips = '●'.repeat(lvl) + '○'.repeat(d.cost.length - lvl);
+    const next = nextTech(game, PLAYER, key);
+    if (!next) return `<button class="tech-row" disabled><span class="t"><b>${d.name}<span class="pips">${pips}</span></b><small>Complete</small></span></button>`;
+    const running = p && p.key === key;
+    const why = cantResearch(game, PLAYER, key);
+    const note = running ? `Researching · ${Math.floor((1 - p.left / p.total) * 100)}%` : `${next.text} · ${fmt(next.time / researchSpeed(game, PLAYER))}`;
+    return `<button class="tech-row" data-k="${key}" ${why ? 'disabled' : ''}><span class="t"><b>${d.name} ${ROMAN[next.level]}<span class="pips">${pips}</span></b><small>${note}</small></span><span class="c">${running ? '' : next.cost}</span></button>`;
+  }).join(''));
+}
+$('rnd').addEventListener('click', () => {
+  $('research').hidden = !$('research').hidden;
+  ui.selected = ui.target = null;
+  updateActions();
+  renderResearch();
+});
+$('rclose').addEventListener('click', () => { $('research').hidden = true; });
+$('rlist').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-k]');
+  if (!b) return;
+  if (research(game, PLAYER, b.dataset.k)) {
+    toast(`Researching ${TECH[b.dataset.k].name}`, ownerColor(PLAYER));
+    $('research').hidden = true;
+  }
+  renderResearch();
 });
 
 $('less').addEventListener('click', () => { ui.count = Math.max(1, ui.count - 1); updateActions(); });
@@ -326,6 +404,7 @@ function finish() {
 
 let last = performance.now();
 let uiClock = 0;
+let lastTech = {};
 const seenOwner = new Map();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -345,7 +424,13 @@ function frame(now) {
       uiClock -= dt;
       if (uiClock <= 0) {
         uiClock = 0.25;
+        ui.vis = visibility(game, PLAYER);
         updateActions();
+        renderResearch();
+        const t = game.tech[PLAYER];
+        const done = Object.keys(TECH).find((k) => t[k] > (lastTech[k] ?? 0));
+        if (done) toast(`${TECH[done].name} ${ROMAN[t[done]]} complete`, ownerColor(PLAYER));
+        lastTech = { ...t };
         $('clock').innerHTML = `<b>₵ ${Math.floor(game.credits[PLAYER])}</b> +${income(game, PLAYER).toFixed(1)}/s · T+${fmt(game.time)}`;
         for (const b of game.bodies) {
           const was = seenOwner.get(b.id);
@@ -379,4 +464,4 @@ view.orbit.dist = 330;
 requestAnimationFrame(frame);
 
 // Hook for the headless smoke test.
-window.__perihelion = { get game() { return game; }, view, ui, sim: { launch } };
+window.__perihelion = { get game() { return game; }, view, ui, sim: { launch, fleetState } };

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { NEUTRAL, posAt, fleetState, rng } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
@@ -183,29 +183,57 @@ function nightOnly(mat) {
 // ---- Meshes -------------------------------------------------------------------
 
 /**
- * Three hull types, all built along +Z (nose forward, drive at the back):
- * a lean corvette with radiator fins, a frigate with a spin ring, and a
- * gunship with side pods. Each is a single merged geometry.
+ * Three hull types in a hard-sci-fi style: no aerodynamics, flat fronts,
+ * stacked pressure hulls, trusses, radiators, and a big drive section. All are
+ * built along +Z (front forward, drive at the back) and merged.
  */
 function shipGeometries() {
   const X = Math.PI / 2;
-  const cyl = (r1, r2, l, z, seg = 8) => new THREE.CylinderGeometry(r1, r2, l, seg).rotateX(X).translate(0, 0, z);
-  const cone = (r, l, z, seg = 8) => new THREE.ConeGeometry(r, l, seg).rotateX(X).translate(0, 0, z);
-  const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-  const bell = () => new THREE.CylinderGeometry(0.05, 0.1, 0.12, 10, 1, true).rotateX(-X).translate(0, 0, -0.36);
-  const corvette = mergeGeometries([
-    cyl(0.06, 0.08, 0.55, 0), cone(0.06, 0.2, 0.37), box(0.3, 0.01, 0.16, 0, 0, -0.12), box(0.01, 0.22, 0.12, 0, 0, -0.12),
-    cyl(0.09, 0.09, 0.08, -0.25), bell(),
-  ].map((g) => g.toNonIndexed()));
-  const frigate = mergeGeometries([
-    cyl(0.08, 0.1, 0.6, 0), cone(0.08, 0.16, 0.38), new THREE.TorusGeometry(0.16, 0.025, 6, 20).translate(0, 0, 0.05),
-    box(0.34, 0.012, 0.1, 0, 0, -0.18), cyl(0.11, 0.11, 0.1, -0.26), bell(),
-  ].map((g) => g.toNonIndexed()));
-  const gunship = mergeGeometries([
-    box(0.12, 0.08, 0.6, 0, 0, 0), cone(0.07, 0.2, 0.38, 4), cyl(0.035, 0.035, 0.4, 0).translate(0.11, 0, 0),
-    cyl(0.035, 0.035, 0.4, 0).translate(-0.11, 0, 0), box(0.02, 0.18, 0.14, 0, 0.08, -0.2), bell(),
-  ].map((g) => g.toNonIndexed()));
-  return [corvette, frigate, gunship];
+  const box = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+  const cyl = (r1, r2, l, z, seg = 10) => new THREE.CylinderGeometry(r1, r2, l, seg).rotateX(X).translate(0, 0, z);
+  const drive = (r, z) => [
+    cyl(r * 0.9, r * 1.05, 0.1, z), // engine block
+    new THREE.CylinderGeometry(r * 0.45, r * 0.9, 0.14, 12, 1, true).rotateX(-X).translate(0, 0, z - 0.11), // bell
+  ];
+  const merge = (parts) => mergeGeometries(parts.map((g) => g.toNonIndexed()));
+  // Frigate: stacked hull sections on a spine, flat bow, radiators amidships.
+  const frigate = merge([
+    box(0.16, 0.14, 0.16, 0, 0, 0.26), // bow block (flat front)
+    box(0.12, 0.12, 0.06, 0, 0, 0.36),
+    cyl(0.1, 0.1, 0.18, 0.08), // habitat section
+    box(0.2, 0.18, 0.12, 0, 0, -0.08), // reactor block
+    box(0.36, 0.008, 0.14, 0, 0.05, -0.08), // radiator wings
+    box(0.36, 0.008, 0.14, 0, -0.05, -0.08),
+    box(0.035, 0.035, 0.08, 0.1, 0.07, 0.26), // point-defence turrets
+    box(0.035, 0.035, 0.08, -0.1, -0.07, 0.26),
+    ...drive(0.1, -0.2),
+  ]);
+  // Gunboat: squat and wide, a keel of armour and twin gun pods.
+  const gunboat = merge([
+    box(0.26, 0.1, 0.4, 0, 0, 0.05),
+    box(0.2, 0.06, 0.1, 0, 0.07, 0.12), // bridge
+    box(0.06, 0.06, 0.38, 0.17, 0, 0.08), // gun pods
+    box(0.06, 0.06, 0.38, -0.17, 0, 0.08),
+    box(0.02, 0.02, 0.14, 0.17, 0, 0.32), // barrels
+    box(0.02, 0.02, 0.14, -0.17, 0, 0.32),
+    box(0.3, 0.12, 0.08, 0, 0, -0.18),
+    ...drive(0.11, -0.26),
+  ]);
+  // Carrier: a long open truss with a command block, cargo pods and radiators.
+  const carrier = merge([
+    box(0.14, 0.14, 0.12, 0, 0, 0.32), // command block
+    box(0.03, 0.03, 0.56, 0.05, 0.05, 0), // truss rails
+    box(0.03, 0.03, 0.56, -0.05, -0.05, 0),
+    box(0.03, 0.03, 0.56, 0.05, -0.05, 0),
+    box(0.03, 0.03, 0.56, -0.05, 0.05, 0),
+    box(0.1, 0.1, 0.1, 0.12, 0, 0.1), // cargo containers
+    box(0.1, 0.1, 0.1, -0.12, 0, 0.1),
+    box(0.1, 0.1, 0.1, 0, 0.12, -0.04),
+    box(0.42, 0.006, 0.1, 0, 0, -0.14), // radiators
+    box(0.18, 0.16, 0.08, 0, 0, -0.22),
+    ...drive(0.09, -0.3),
+  ]);
+  return [frigate, gunboat, carrier];
 }
 
 function stationMesh(size) {
@@ -244,19 +272,43 @@ function stationMesh(size) {
 
 function asteroidMesh(b) {
   const r = rng(b.id * 97 + 1);
-  const geo = new THREE.IcosahedronGeometry(b.size, 2);
+  // Merge shared vertices first so the displacement is smooth (no torn,
+  // triangular facets), then shape with low-frequency noise and a few craters.
+  let geo = new THREE.IcosahedronGeometry(b.size, 5);
+  geo.deleteAttribute('normal');
+  geo.deleteAttribute('uv');
+  geo = mergeVertices(geo);
+  const waves = Array.from({ length: 5 }, () => ({
+    d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(),
+    f: 0.6 + r() * 1.2,
+    ph: r() * 6.28,
+    a: 0.05 + r() * 0.07,
+  }));
+  // Finer ripples for surface detail.
+  for (let i = 0; i < 4; i++) waves.push({ d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(), f: 3 + r() * 3, ph: r() * 6.28, a: 0.015 + r() * 0.015 });
+  const craters = Array.from({ length: 6 }, () => ({
+    d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(),
+    size: 0.2 + r() * 0.25,
+  }));
+  const stretch = new THREE.Vector3(1.2 + r() * 0.5, 0.8 + r() * 0.2, 0.9 + r() * 0.3);
   const p = geo.attributes.position;
   const v = new THREE.Vector3();
+  const n = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    // Lumpy: stretch along one axis and dent by a few low-frequency waves.
-    const k = 1 + 0.25 * Math.sin(v.x * 3 + r() * 0.2) * Math.cos(v.y * 2.5) + (r() - 0.5) * 0.08;
-    v.multiplyScalar(k);
-    v.x *= 1.4;
+    n.copy(v).normalize();
+    let k = 1;
+    for (const w of waves) k += w.a * Math.sin(n.dot(w.d) * w.f * 3 + w.ph);
+    for (const c of craters) {
+      const d = n.distanceTo(c.d);
+      if (d < c.size) k -= 0.12 * Math.cos((d / c.size) * Math.PI * 0.5) ** 2;
+      else if (d < c.size * 1.25) k += 0.03; // raised rim
+    }
+    v.multiplyScalar(k).multiply(stretch);
     p.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#8d8173', roughness: 1, flatShading: true }));
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#8a7f72', roughness: 0.95, metalness: 0.05 }));
 }
 
 function orbitLine(b) {
@@ -268,6 +320,33 @@ function orbitLine(b) {
   return new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color: '#3a4460', transparent: true, opacity: b.parent === null ? 0.5 : 0.35 }),
+  );
+}
+
+/** A thin atmosphere: a shell that glows toward the limb (fresnel). */
+function atmosphere(b) {
+  const color = new THREE.Color(b.home ? '#6fb6ff' : b.giant ? '#e8d2a8' : '#b9c8dc');
+  const strength = b.home ? 1.1 : b.giant ? 0.45 : 0.6;
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(b.size * 1.05, 48, 32),
+    new THREE.ShaderMaterial({
+      uniforms: { color: { value: color }, strength: { value: strength } },
+      vertexShader: `varying vec3 vN; varying vec3 vV;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vN = normalize(normalMatrix * normal);
+          vV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `uniform vec3 color; uniform float strength; varying vec3 vN; varying vec3 vV;
+        void main() {
+          float rim = pow(1.0 - max(dot(vN, vV), 0.0), 3.0);
+          gl_FragColor = vec4(color, rim * strength);
+        }`,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
   );
 }
 
@@ -379,6 +458,7 @@ export function createView(canvas, labelRoot) {
           })),
         );
         body.rotation.z = 0.2 + b.hue * 0.3;
+        if (b.kind === 'planet') g.add(atmosphere(b));
         if (b.giant && b.hue > 0.4) {
           const ring = new THREE.Mesh(
             new THREE.RingGeometry(b.size * 1.4, b.size * 2.2, 64),
@@ -584,10 +664,16 @@ export function createView(canvas, labelRoot) {
     // Moons and stations crowded against their planet on screen hide their
     // label; their ship counts ride on the planet's label instead.
     // Hostile fleets on their way to each world: count and soonest arrival.
+    // Fog of war: what the player's sensors and intel reveal.
+    const vis = ui.vis;
+    const knowsWorld = (b) => !vis || vis.bodies.has(b.id);
+    const seesFleet = (f) => !vis || f.owner === vis.owner || vis.sees(fleetState(f, now));
+    const knowsDest = (f) => !vis || f.owner === vis.owner || (vis.intel >= 2 && seesFleet(f));
+    const knowsSize = (f) => !vis || f.owner === vis.owner || vis.intel >= 1;
     const incoming = new Map();
     for (const f of game.fleets) {
       const tb = game.bodies[f.to];
-      if (f.owner === tb.owner) continue;
+      if (f.owner === tb.owner || !knowsDest(f)) continue;
       const left = f.T - (now - f.t0);
       const k = `${f.to}:${f.owner}`;
       const cur = incoming.get(k) || { to: f.to, owner: f.owner, n: 0, eta: Infinity };
@@ -610,7 +696,7 @@ export function createView(canvas, labelRoot) {
       tmp2.set(q.x, q.y, q.z).project(camera);
       if (Math.hypot((tmp.x - tmp2.x) * w, (tmp.y - tmp2.y) * h) / 2 >= 46) continue;
       crowded.add(b.id);
-      if (b.owner !== NEUTRAL && b.ships > 0) {
+      if (b.owner !== NEUTRAL && b.ships > 0 && knowsWorld(b)) {
         if (!extras.has(b.parent)) extras.set(b.parent, []);
         extras.get(b.parent).push(`<span class="kid" style="color:${ownerColor(b.owner)}">+${b.ships}</span>`);
       }
@@ -672,7 +758,10 @@ export function createView(canvas, labelRoot) {
       else v.mark.material.color.set(col);
 
       // Docked ships in a parking orbit; attackers circle wider.
-      const fighting = b.sieges.length > 0;
+      const known = knowsWorld(b);
+      if (v.structs) v.structs.visible = known;
+      v.surface.visible = known;
+      const fighting = known && b.sieges.length > 0;
       const defPts = [];
       const atkPts = [];
       const park = (n, owner, radius, speed, seed, out) => {
@@ -689,8 +778,8 @@ export function createView(canvas, labelRoot) {
           if (out) out.push({ p: tmp.clone(), owner });
         }
       };
-      park(Math.min(b.ships, 20), b.owner, b.size * 1.8 + 0.4, 0.25, b.id * 13, fighting ? defPts : null);
-      for (const g of b.sieges) park(Math.min(g.n, 20), g.owner, b.size * 2.6 + 0.8, -0.18, b.id * 29 + g.owner, atkPts);
+      if (known) park(Math.min(b.ships, 20), b.owner, b.size * 1.8 + 0.4, 0.25, b.id * 13, fighting ? defPts : null);
+      for (const g of known ? b.sieges : []) park(Math.min(g.n, 20), g.owner, b.size * 2.6 + 0.8, -0.18, b.id * 29 + g.owner, atkPts);
 
       if (fighting) {
         // Gun emplacements: fixed points on the surface that turn with the body.
@@ -734,8 +823,8 @@ export function createView(canvas, labelRoot) {
       tmp.copy(v.g.position).project(camera);
       const hide = tmp.z > 1 || crowded.has(b.id);
       if (hide) { v.label.style.visibility = 'hidden'; continue; }
-      const attackers = b.sieges.map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
-      const count = b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : `<b>${b.ships}</b>`;
+      const attackers = (known ? b.sieges : []).map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
+      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : `<b>${b.ships}</b>`;
       const kids = (extras.get(b.id) || []).join('');
       const warn = (incomingTo.get(b.id) || []).map((x) => {
         const e = Math.max(0, x.eta);
@@ -753,6 +842,7 @@ export function createView(canvas, labelRoot) {
     let routeN = 0;
     let ghostN = 0;
     for (const f of game.fleets) {
+      if (!seesFleet(f)) continue;
       const s = fleetState(f, now);
       const color = ownerColor(f.owner);
       // Nose along the thrust; the formation spreads across the direction of travel.
@@ -773,7 +863,7 @@ export function createView(canvas, labelRoot) {
           .addScaledVector(dir, -hash(f.id + 7, j) * 0.8);
         placeShip(sh, tmp, nose, color, s.burning, t, j, f.id * 97 + j);
       }
-      if (routeN < 200 * SEGS) {
+      if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.
         const c = new THREE.Color(color);
         let prev = s;
@@ -805,9 +895,9 @@ export function createView(canvas, labelRoot) {
       const s = fleetState(f, now);
       tmp.set(s.x, s.y, s.z).project(camera);
       const el = fleetLabel(fl++);
-      if (tmp.z > 1) { el.style.visibility = 'hidden'; continue; }
+      if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === 0;
-      const text = `▸ ${f.n}`;
+      const text = `▸ ${knowsSize(f) ? f.n : '?'}`;
       if (el._t !== text) { el._t = text; el.textContent = text; }
       el.style.color = ownerColor(f.owner);
       el.style.borderColor = ownerColor(f.owner);
