@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#8cc9dd" />
+  <meta name="description" content="A tiny free-flight holiday over a painted Adriatic archipelago. No missions, no score, just fly." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Covewind" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <title>Covewind — Free Flight</title>
+  <style>
+    :root {
+      --ink: #173541;
+      --cream: #fff6dc;
+      --glass: rgba(255, 248, 225, .80);
+      --glass-dim: rgba(255, 248, 225, .34);
+      --edge: rgba(255, 255, 255, .55);
+      --shadow: 0 8px 25px rgba(42, 86, 99, .14);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* Holding a control must never start a text selection or the long-press
+       menu. The title card keeps ordinary text behaviour. */
+    body, #ui, button, .joyBase, #throttle, #mobile, #tools, canvas {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #8cc9dd;
+      font-family: ui-rounded, "SF Pro Rounded", "Avenir Next", system-ui, sans-serif;
+      color: var(--ink);
+      overscroll-behavior: none;
+    }
+
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+    #ui { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+
+    /* ------------------------------------------------------------ HUD --- */
+    #hud {
+      position: absolute;
+      top: max(14px, env(safe-area-inset-top));
+      left: max(14px, env(safe-area-inset-left));
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      opacity: .94;
+      transition: opacity .45s ease;
+    }
+    .pill {
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--edge);
+      box-shadow: var(--shadow);
+      padding: 8px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: .06em;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    #keyhints {
+      position: absolute;
+      top: max(16px, env(safe-area-inset-top));
+      right: max(16px, env(safe-area-inset-right));
+      text-align: right;
+      font-size: 11px;
+      line-height: 1.35;
+      text-shadow: 0 1px 5px rgba(255, 255, 255, .7);
+      opacity: .68;
+      transition: opacity .45s ease;
+    }
+    #hint {
+      position: absolute;
+      left: 50%;
+      bottom: max(24px, calc(env(safe-area-inset-bottom) + 18px));
+      transform: translateX(-50%);
+      background: rgba(16, 46, 55, .66);
+      color: #fff9e8;
+      padding: 9px 14px;
+      border-radius: 13px;
+      font-size: 12px;
+      letter-spacing: .015em;
+      opacity: 0;
+      transition: opacity .45s ease;
+      text-align: center;
+      max-width: min(84vw, 420px);
+    }
+
+    /* -------------------------------------------------------- toolbar --- */
+    #tools {
+      position: absolute;
+      right: max(16px, env(safe-area-inset-right));
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      pointer-events: auto;
+      transition: opacity .45s ease;
+    }
+    .tool {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      border: 1px solid var(--edge);
+      background: var(--glass-dim);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background .2s ease, transform .12s ease;
+      padding: 0;
+    }
+    .tool:hover { background: var(--glass); }
+    .tool:active { transform: scale(.93); }
+    .tool.off { opacity: .45; }
+
+    /* ---------------------------------------------------------- intro --- */
+    #intro {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      pointer-events: auto;
+      background: linear-gradient(180deg, rgba(116, 192, 218, .18), rgba(255, 220, 164, .16));
+      transition: opacity .5s ease;
+      padding: 16px;
+    }
+    #card {
+      width: min(520px, calc(100vw - 34px));
+      max-height: calc(100dvh - 32px);
+      overflow: auto;
+      padding: 26px 24px 22px;
+      border-radius: 26px;
+      background: rgba(255, 247, 220, .90);
+      box-shadow: 0 24px 70px rgba(24, 68, 78, .22);
+      border: 1px solid rgba(255, 255, 255, .8);
+      backdrop-filter: blur(16px);
+      text-align: center;
+    }
+    #card h1 { margin: 0; font-size: clamp(34px, 8vw, 62px); line-height: .86; letter-spacing: -.07em; font-weight: 900; }
+    #card .sub { margin: 10px 0 18px; font-size: 13px; opacity: .72; line-height: 1.5; }
+    #start {
+      appearance: none;
+      border: 0;
+      background: #173f49;
+      color: #fff8df;
+      padding: 13px 26px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 15px;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(22, 61, 72, .22);
+    }
+    #card .keys { margin-top: 16px; font-size: 11px; opacity: .62; line-height: 1.7; }
+    .lightRow { display: flex; gap: 7px; justify-content: center; margin: 18px 0 4px; flex-wrap: wrap; }
+    .lightRow .label { width: 100%; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .5; margin-bottom: 2px; }
+    .chip {
+      appearance: none;
+      font-family: inherit;
+      border: 1px solid rgba(23, 63, 73, .18);
+      background: rgba(255, 255, 255, .5);
+      color: var(--ink);
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .2s ease, border-color .2s ease;
+    }
+    .chip[aria-pressed="true"] { background: #173f49; color: #fff8df; border-color: transparent; }
+
+    /* --------------------------------------------------- touch flying --- */
+    #mobile { display: none; position: absolute; inset: 0; pointer-events: none; }
+    .joyBase {
+      position: absolute;
+      left: max(20px, env(safe-area-inset-left));
+      bottom: max(24px, calc(env(safe-area-inset-bottom) + 18px));
+      width: 126px;
+      height: 126px;
+      border-radius: 50%;
+      background: rgba(255, 249, 226, .18);
+      border: 1px solid rgba(255, 255, 255, .40);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      pointer-events: auto;
+      touch-action: none;
+    }
+    .joyKnob {
+      position: absolute;
+      width: 56px;
+      height: 56px;
+      left: 34px;
+      top: 34px;
+      border-radius: 50%;
+      background: rgba(255, 248, 223, .72);
+      box-shadow: 0 5px 18px rgba(26, 64, 73, .18);
+      transition: transform .08s linear;
+    }
+    #mobileRight {
+      position: absolute;
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(20px, calc(env(safe-area-inset-bottom) + 14px));
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+      pointer-events: auto;
+    }
+    #boostBtn {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 1px solid var(--edge);
+      background: rgba(255, 247, 219, .62);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #173d47;
+      font-size: 21px;
+      box-shadow: var(--shadow);
+      touch-action: none;
+    }
+    #boostBtn:active { background: rgba(255, 236, 176, .9); }
+    #smokeBtn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid var(--edge);
+      background: rgba(255, 247, 219, .5);
+      color: #173d47;
+      font-size: 17px;
+      touch-action: none;
+    }
+    #smokeBtn.off { opacity: .55; }
+    #throttle {
+      width: 58px;
+      height: 136px;
+      border-radius: 29px;
+      background: rgba(255, 247, 219, .22);
+      border: 1px solid rgba(255, 255, 255, .40);
+      position: relative;
+      touch-action: none;
+      overflow: hidden;
+    }
+    #throttleFill {
+      position: absolute;
+      left: 6px;
+      right: 6px;
+      bottom: 6px;
+      height: 64%;
+      border-radius: 23px;
+      background: rgba(255, 247, 219, .64);
+    }
+    #throttle::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 14px;
+      width: 16px;
+      height: 2px;
+      border-radius: 2px;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, .5);
+    }
+
+    /* ----------------------------------------------------- photo mode --- */
+    #photo { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .5s ease; }
+    #photo .bar { position: absolute; left: 0; right: 0; height: 7vh; background: #10222a; }
+    #photo .bar.top { top: 0; }
+    #photo .bar.bottom { bottom: 0; }
+    #photoControls {
+      position: absolute;
+      left: 50%;
+      bottom: calc(7vh + max(18px, env(safe-area-inset-bottom)));
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      pointer-events: auto;
+    }
+    #shutter {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 248, 223, .9);
+      background: rgba(255, 248, 223, .28);
+      cursor: pointer;
+    }
+    #shutter:active { background: rgba(255, 248, 223, .8); }
+    #photoNote {
+      position: absolute;
+      left: 50%;
+      top: calc(7vh + 14px);
+      transform: translateX(-50%);
+      color: rgba(255, 249, 232, .78);
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    #flash { position: absolute; inset: 0; background: #fffbef; opacity: 0; pointer-events: none; }
+
+    body.photo #hud, body.photo #keyhints, body.photo #tools, body.photo #mobile, body.photo #hint { opacity: 0 !important; pointer-events: none; }
+    body.photo #photo { opacity: 1; pointer-events: none; }
+    body.photo #photoControls { pointer-events: auto; }
+    /* The HUD's own opacity (hidden, idle-faded) is set from hud.js. */
+
+    /* --------------------------------------------------------- errors --- */
+    #error {
+      display: none;
+      position: absolute;
+      inset: 0;
+      place-items: center;
+      background: #dceebf;
+      padding: 30px;
+      pointer-events: auto;
+      text-align: center;
+    }
+    #error h2 { margin: 0 0 8px; }
+    #error p { margin: 0 auto; max-width: 440px; font-size: 14px; line-height: 1.6; opacity: .8; }
+
+    @media (hover: none), (pointer: coarse) {
+      #mobile { display: block; }
+      #keyhints { display: none; }
+      #hud { top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); }
+      .pill { font-size: 10px; padding: 7px 9px; }
+      /* Tools go in a row along the top, clear of the thumbs and of the
+         throttle, which needs the whole right-hand edge. */
+      #tools {
+        flex-direction: row;
+        top: max(10px, env(safe-area-inset-top));
+        bottom: auto;
+        transform: none;
+        gap: 8px;
+      }
+      .tool { width: 44px; height: 44px; }
+      #hint {
+        top: calc(max(10px, env(safe-area-inset-top)) + 54px);
+        bottom: auto;
+        font-size: 11px;
+      }
+    }
+    /* Tall screens have room for the pills above the tools rather than beside. */
+    @media (pointer: coarse) and (orientation: portrait) {
+      #tools { top: calc(max(10px, env(safe-area-inset-top)) + 44px); }
+      #hint { top: calc(max(10px, env(safe-area-inset-top)) + 98px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #hud, #hint, #tools, #photo, #intro, #keyhints { transition: none; }
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-C1tn-nhN.js"></script>
+</head>
+<body>
+  <div id="ui">
+    <div id="hud">
+      <div class="pill" id="speed">38 kt</div>
+      <div class="pill" id="alt">92 m</div>
+      <div class="pill" id="power">64%</div>
+    </div>
+
+    <div id="keyhints">
+      S/W climb, dive · A/D bank · Q/E rudder<br />
+      R/F throttle · SPACE boost · double-tap A/D to roll<br />
+      X smoke · C camera · L light · P photo · I pitch · H hud · M sound
+    </div>
+
+    <div id="hint" role="status" aria-live="polite"></div>
+
+    <div id="tools">
+      <button class="tool" id="cameraBtn" title="Camera (C)" aria-label="Change camera">◉</button>
+      <button class="tool" id="lightBtn" title="Light (L)" aria-label="Change light">☀</button>
+      <button class="tool" id="photoBtn" title="Photo mode (P)" aria-label="Photo mode">◍</button>
+      <button class="tool" id="soundBtn" title="Sound (M)" aria-label="Toggle sound">♪</button>
+    </div>
+
+    <div id="mobile">
+      <div class="joyBase" id="joy"><div class="joyKnob" id="knob"></div></div>
+      <div id="mobileRight">
+        <button id="smokeBtn" class="off" aria-label="Smoke">☁</button>
+        <button id="boostBtn" aria-label="Boost">⚡</button>
+        <div id="throttle" role="slider" aria-label="Throttle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64">
+          <div id="throttleFill"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="photo" aria-hidden="true">
+      <div class="bar top"></div>
+      <div class="bar bottom"></div>
+      <div id="photoNote">Drag to orbit · pinch or scroll to zoom</div>
+      <div id="photoControls">
+        <button class="tool" id="photoExit" aria-label="Leave photo mode">✕</button>
+        <button id="shutter" aria-label="Save photo"></button>
+        <button class="tool" id="photoLight" aria-label="Change light">☀</button>
+      </div>
+      <div id="flash"></div>
+    </div>
+
+    <div id="intro">
+      <div id="card">
+        <h1>COVEWIND</h1>
+        <div class="sub">
+          A tiny free-flight holiday over a painted Adriatic archipelago.<br />
+          Loop over the campanile, thread the sea stacks, find the grotto behind the falls.<br />
+          No missions. No score. Just fly.
+        </div>
+        <button id="start">Take off</button>
+        <div class="lightRow" id="lightRow">
+          <div class="label">Light</div>
+          <button class="chip" data-light="sunrise">Sunrise</button>
+          <button class="chip" data-light="noon">Noon</button>
+          <button class="chip" data-light="golden" aria-pressed="true">Golden hour</button>
+          <button class="chip" data-light="dusk">Dusk</button>
+          <button class="chip" data-light="night">Night</button>
+        </div>
+        <div class="lightRow" id="pitchRow">
+          <div class="label">Climbing</div>
+          <button class="chip" data-pitch="normal">Push forward</button>
+          <button class="chip" data-pitch="inverted" aria-pressed="true">Pull back</button>
+        </div>
+        <div class="lightRow" id="tiltRow">
+          <div class="label">Steering (phones)</div>
+          <button class="chip" data-tilt="off" aria-pressed="true">Thumb stick</button>
+          <button class="chip" data-tilt="on">Tilt the phone</button>
+          <div class="label" id="tiltNote" style="text-transform:none;letter-spacing:0;opacity:.7;margin-top:6px"></div>
+        </div>
+        <div class="keys">
+          Desktop: S climbs, W dives · A/D bank · double-tap A/D to roll · R/F throttle · SPACE boost · X smoke<br />
+          Mobile: left stick flies (or tilt the phone), flick it twice to roll · right slider is the throttle · ⚡ boosts · ☁ smoke<br />
+          Hold the stick back to loop. Hold the second tap of a roll to stop upside down.<br />
+          It's a floatplane — throttle back over the water and you can land on it.
+        </div>
+      </div>
+    </div>
+
+    <div id="error">
+      <div>
+        <h2>Covewind couldn't start</h2>
+        <p id="errorText">
+          This little island needs WebGL. Try a different browser, or turn hardware acceleration
+          back on, and it should appear.
+        </p>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

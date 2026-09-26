@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Covewind">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6fbad6" />
+      <stop offset="1" stop-color="#ffcf93" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#sky)" />
+  <circle cx="19" cy="30" r="8" fill="#fff3c8" />
+  <path d="M0 44h64v20H0z" fill="#3f9cae" />
+  <path d="M38 44c4-9 11-9 15 0z" fill="#7dad65" />
+  <g transform="rotate(-25 36 28)" fill="#c9473d">
+    <rect x="22" y="25.6" width="28" height="5" rx="2.5" />
+    <rect x="32" y="15" width="4" height="26" rx="2" />
+    <rect x="24" y="20" width="3" height="16" rx="1.5" />
+  </g>
+</svg>
