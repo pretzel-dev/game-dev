@@ -189,47 +189,68 @@ function nightOnly(mat) {
  */
 function shipGeometries() {
   const X = Math.PI / 2;
-  const box = (w, h, d, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-  const cyl = (r1, r2, l, z, seg = 10) => new THREE.CylinderGeometry(r1, r2, l, seg).rotateX(X).translate(0, 0, z);
+  // Each part is tagged: hull (light), dark (engines, radiators, trusses) or
+  // accent (painted in the owner's colour, as a separate mesh).
+  const tag = (g, t) => ((g.userData.tag = t), g);
+  const box = (w, h, d, x = 0, y = 0, z = 0, t = 'hull') => tag(new THREE.BoxGeometry(w, h, d).translate(x, y, z), t);
+  const cyl = (r1, r2, l, z, t = 'hull', seg = 10) => tag(new THREE.CylinderGeometry(r1, r2, l, seg).rotateX(X).translate(0, 0, z), t);
   const drive = (r, z) => [
-    cyl(r * 0.9, r * 1.05, 0.1, z), // engine block
-    new THREE.CylinderGeometry(r * 0.45, r * 0.9, 0.14, 12, 1, true).rotateX(-X).translate(0, 0, z - 0.11), // bell
+    cyl(r * 0.9, r * 1.05, 0.1, z, 'dark'), // engine block
+    tag(new THREE.CylinderGeometry(r * 0.45, r * 0.9, 0.14, 12, 1, true).rotateX(-X).translate(0, 0, z - 0.11), 'dark'), // bell
   ];
-  const merge = (parts) => mergeGeometries(parts.map((g) => g.toNonIndexed()));
+  const HULL = new THREE.Color('#c9ced6');
+  const DARK = new THREE.Color('#3b414c');
+  const build = (parts) => {
+    const base = [];
+    const accent = [];
+    for (const g of parts) {
+      const n = g.toNonIndexed();
+      if (g.userData.tag === 'accent') { accent.push(n); continue; }
+      const c = g.userData.tag === 'dark' ? DARK : HULL;
+      const col = new Float32Array(n.attributes.position.count * 3);
+      for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
+      n.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      base.push(n);
+    }
+    return { base: mergeGeometries(base), accent: mergeGeometries(accent) };
+  };
   // Frigate: stacked hull sections on a spine, flat bow, radiators amidships.
-  const frigate = merge([
-    box(0.16, 0.14, 0.16, 0, 0, 0.26), // bow block (flat front)
-    box(0.12, 0.12, 0.06, 0, 0, 0.36),
-    cyl(0.1, 0.1, 0.18, 0.08), // habitat section
-    box(0.2, 0.18, 0.12, 0, 0, -0.08), // reactor block
-    box(0.36, 0.008, 0.14, 0, 0.05, -0.08), // radiator wings
-    box(0.36, 0.008, 0.14, 0, -0.05, -0.08),
-    box(0.035, 0.035, 0.08, 0.1, 0.07, 0.26), // point-defence turrets
-    box(0.035, 0.035, 0.08, -0.1, -0.07, 0.26),
+  const frigate = build([
+    box(0.16, 0.14, 0.16, 0, 0, 0.26),
+    box(0.165, 0.03, 0.12, 0, 0.06, 0.26, 'accent'), // bow stripe
+    box(0.12, 0.12, 0.06, 0, 0, 0.36, 'accent'), // bow cap
+    cyl(0.1, 0.1, 0.18, 0.08),
+    cyl(0.105, 0.105, 0.03, 0.08, 'accent'), // hull band
+    box(0.2, 0.18, 0.12, 0, 0, -0.08, 'dark'),
+    box(0.36, 0.008, 0.14, 0, 0.05, -0.08, 'dark'),
+    box(0.36, 0.008, 0.14, 0, -0.05, -0.08, 'dark'),
+    box(0.035, 0.035, 0.08, 0.1, 0.07, 0.26, 'dark'),
+    box(0.035, 0.035, 0.08, -0.1, -0.07, 0.26, 'dark'),
     ...drive(0.1, -0.2),
   ]);
   // Gunboat: squat and wide, a keel of armour and twin gun pods.
-  const gunboat = merge([
+  const gunboat = build([
     box(0.26, 0.1, 0.4, 0, 0, 0.05),
-    box(0.2, 0.06, 0.1, 0, 0.07, 0.12), // bridge
-    box(0.06, 0.06, 0.38, 0.17, 0, 0.08), // gun pods
-    box(0.06, 0.06, 0.38, -0.17, 0, 0.08),
-    box(0.02, 0.02, 0.14, 0.17, 0, 0.32), // barrels
-    box(0.02, 0.02, 0.14, -0.17, 0, 0.32),
-    box(0.3, 0.12, 0.08, 0, 0, -0.18),
+    box(0.2, 0.06, 0.1, 0, 0.07, 0.12, 'accent'), // bridge
+    box(0.06, 0.06, 0.38, 0.17, 0, 0.08, 'accent'), // gun pods
+    box(0.06, 0.06, 0.38, -0.17, 0, 0.08, 'accent'),
+    box(0.02, 0.02, 0.14, 0.17, 0, 0.32, 'dark'),
+    box(0.02, 0.02, 0.14, -0.17, 0, 0.32, 'dark'),
+    box(0.3, 0.12, 0.08, 0, 0, -0.18, 'dark'),
     ...drive(0.11, -0.26),
   ]);
   // Carrier: a long open truss with a command block, cargo pods and radiators.
-  const carrier = merge([
-    box(0.14, 0.14, 0.12, 0, 0, 0.32), // command block
-    box(0.03, 0.03, 0.56, 0.05, 0.05, 0), // truss rails
-    box(0.03, 0.03, 0.56, -0.05, -0.05, 0),
-    box(0.03, 0.03, 0.56, 0.05, -0.05, 0),
-    box(0.03, 0.03, 0.56, -0.05, 0.05, 0),
-    box(0.1, 0.1, 0.1, 0.12, 0, 0.1), // cargo containers
-    box(0.1, 0.1, 0.1, -0.12, 0, 0.1),
+  const carrier = build([
+    box(0.14, 0.14, 0.12, 0, 0, 0.32),
+    box(0.145, 0.04, 0.125, 0, 0.05, 0.32, 'accent'),
+    box(0.03, 0.03, 0.56, 0.05, 0.05, 0, 'dark'),
+    box(0.03, 0.03, 0.56, -0.05, -0.05, 0, 'dark'),
+    box(0.03, 0.03, 0.56, 0.05, -0.05, 0, 'dark'),
+    box(0.03, 0.03, 0.56, -0.05, 0.05, 0, 'dark'),
+    box(0.1, 0.1, 0.1, 0.12, 0, 0.1),
+    box(0.1, 0.1, 0.1, -0.12, 0, 0.1, 'accent'),
     box(0.1, 0.1, 0.1, 0, 0.12, -0.04),
-    box(0.42, 0.006, 0.1, 0, 0, -0.14), // radiators
+    box(0.42, 0.006, 0.1, 0, 0, -0.14, 'dark'),
     box(0.18, 0.16, 0.08, 0, 0, -0.22),
     ...drive(0.09, -0.3),
   ]);
@@ -493,7 +514,10 @@ export function createView(canvas, labelRoot) {
   function ship(i) {
     if (i >= MAX_SHIPS) return null;
     if (!ships[i]) {
-      const mesh = new THREE.Mesh(shipGeos[0], new THREE.MeshStandardMaterial({ color: '#d7dce6', metalness: 0.6, roughness: 0.4, emissive: '#000' }));
+      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.45 }));
+      // Owner-coloured paint: stripes, bows and pods, lit a little so it reads.
+      const accent = new THREE.Mesh(shipGeos[0].accent, new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.5 }));
+      mesh.add(accent);
       const plume = new THREE.Mesh(
         new THREE.ConeGeometry(0.07, 1, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.92),
         new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
@@ -501,7 +525,7 @@ export function createView(canvas, labelRoot) {
       mesh.add(plume);
       const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       scene.add(mesh, glint);
-      ships[i] = { mesh, plume, glint };
+      ships[i] = { mesh, accent, plume, glint };
     }
     return ships[i];
   }
@@ -614,14 +638,19 @@ export function createView(canvas, labelRoot) {
   function placeShip(sh, p, n, color, burning, t, seed, id = seed) {
     sh.mesh.visible = true;
     const v = Math.floor(hash(id, 3) * shipGeos.length);
-    if (sh.mesh.geometry !== shipGeos[v]) sh.mesh.geometry = shipGeos[v];
+    if (sh.mesh.geometry !== shipGeos[v].base) {
+      sh.mesh.geometry = shipGeos[v].base;
+      sh.accent.geometry = shipGeos[v].accent;
+    }
     const k = 0.9 + hash(id, 5) * 0.25;
-    sh.mesh.scale.set(1, 1, k);
-    sh.mesh.material.color.setHSL(0.58 + hash(id, 7) * 0.08, 0.05 + hash(id, 9) * 0.1, 0.62 + hash(id, 11) * 0.2);
+    sh.mesh.scale.set(0.8, 0.8, 0.8 * k);
+    // A slight per-ship tint on the hull (vertex colours carry the light/dark split).
+    sh.mesh.material.color.setHSL(0.6, 0.05 + hash(id, 9) * 0.08, 0.85 + hash(id, 11) * 0.15);
     sh.mesh.position.copy(p);
     tmp2.copy(p).add(n);
     sh.mesh.lookAt(tmp2);
-    sh.mesh.material.emissive.set(color).multiplyScalar(0.18);
+    sh.accent.material.color.set(color);
+    sh.accent.material.emissive.set(color).multiplyScalar(0.35);
     sh.plume.visible = burning;
     if (burning) sh.plume.scale.set(1, 1, 0.8 + Math.sin(t * 40 + seed) * 0.15);
     // Visible from afar as a point of light; brighter while the drive burns.
@@ -858,11 +887,13 @@ export function createView(canvas, labelRoot) {
       for (let j = 0; j < f.n; j++) {
         const sh = ship(used++);
         if (!sh) break;
-        // A loose formation, a little staggered.
+        // Formation: rows of three, staggered, with clear space between hulls.
+        const row = Math.floor(j / 3);
+        const col = (j % 3) - 1;
         tmp.set(s.x, s.y, s.z)
-          .addScaledVector(perp, (hash(f.id, j) - 0.5) * 1.2)
-          .addScaledVector(UP, (hash(j, f.id) - 0.5) * 0.6)
-          .addScaledVector(dir, -hash(f.id + 7, j) * 0.8);
+          .addScaledVector(perp, col * 1.1 + (row % 2) * 0.45 + (hash(f.id, j) - 0.5) * 0.15)
+          .addScaledVector(UP, (row % 2 ? 0.35 : -0.2) + (hash(j, f.id) - 0.5) * 0.12)
+          .addScaledVector(dir, -row * 1.3);
         placeShip(sh, tmp, nose, color, s.burning, t, j, f.id * 97 + j);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
