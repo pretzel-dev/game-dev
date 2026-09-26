@@ -38,13 +38,38 @@ export const RULES = {
 // One project at a time per empire, paid in credits; research stations speed
 // it up. The AI researches the same tree under the same rules.
 
+// Each level has its own name and story; the effects stay simple and exact.
 export const TECH = {
-  drives: { name: 'Drives', text: ['+15% thrust', '+30% thrust', '+45% thrust'], cost: [300, 600, 1000], time: [90, 150, 240] },
-  sensors: { name: 'Sensors', text: ['See further', 'See much further', 'See across the system'], cost: [250, 500, 900], time: [80, 140, 220] },
-  intel: { name: 'Intel', text: ['Enemy fleet sizes', 'Enemy routes and landing points', 'Enemy arrival times and warnings'], cost: [300, 550, 850], time: [90, 150, 210] },
-  weapons: { name: 'Weapons', text: ['+15% firepower', '+30% firepower'], cost: [400, 800], time: [120, 200] },
-  armour: { name: 'Armour', text: ['Ships take 12% less damage', 'Ships take 24% less damage'], cost: [400, 800], time: [120, 200] },
-  industry: { name: 'Industry', text: ['Build 12% faster, mines +15%', 'Build 24% faster, mines +30%'], cost: [350, 700], time: [100, 180] },
+  drives: {
+    name: 'Drives', cost: [300, 600, 1000], time: [90, 150, 240],
+    levels: ['Magnetic nozzle', 'Pellet-fusion torch', 'Catalysed fusion drive'],
+    text: ['Tighter plasma, +15% thrust', 'Pulsed fusion, +30% thrust', 'Hotter burn, +45% thrust'],
+  },
+  sensors: {
+    name: 'Sensors', cost: [250, 500, 900], time: [80, 140, 220],
+    levels: ['Long-baseline telescopes', 'Deep-space listening posts', 'Interferometer net'],
+    text: ['Spot drive flares further out', 'Hear the system’s far side', 'See across the whole system'],
+  },
+  intel: {
+    name: 'Intel', cost: [300, 550, 850], time: [90, 150, 210],
+    levels: ['Signals intercept', 'Agents in the yards', 'Broken fleet cipher'],
+    text: ['Read enemy fleet sizes', 'Learn enemy routes and landing points', 'Know arrival times; get warnings'],
+  },
+  weapons: {
+    name: 'Weapons', cost: [400, 800], time: [120, 200],
+    levels: ['Coilgun batteries', 'Spinal railguns'],
+    text: ['Faster slugs, +15% firepower', 'Hull-length rails, +30% firepower'],
+  },
+  armour: {
+    name: 'Armour', cost: [400, 800], time: [120, 200],
+    levels: ['Whipple shielding', 'Point-defence drone swarm'],
+    text: ['Layered plate, 12% less damage', 'Drones swat rounds, 24% less damage'],
+  },
+  industry: {
+    name: 'Industry', cost: [350, 700], time: [100, 180],
+    levels: ['Orbital fabricators', 'Self-replicating tooling'],
+    text: ['Build 12% faster, mines +15%', 'Build 24% faster, mines +30%'],
+  },
 };
 export const SENSOR_RANGE = [70, 110, 160, 240];
 const techLevel = (game, owner, key) => (owner === NEUTRAL || !game.tech ? 0 : game.tech[owner][key]);
@@ -74,7 +99,7 @@ const buildSpeed = (game, owner) => 1 + 0.12 * techLevel(game, owner, 'industry'
 export function nextTech(game, owner, key) {
   const lvl = game.tech[owner][key];
   const d = TECH[key];
-  return lvl < d.cost.length ? { level: lvl + 1, cost: d.cost[lvl], time: d.time[lvl], text: d.text[lvl] } : null;
+  return lvl < d.cost.length ? { level: lvl + 1, cost: d.cost[lvl], time: d.time[lvl], text: d.text[lvl], title: d.levels[lvl] } : null;
 }
 export function researchSpeed(game, owner) {
   const labs = game.bodies.reduce((n, b) => n + (b.owner === owner ? count(b, 'lab') : 0), 0);
@@ -125,10 +150,50 @@ export function rng(seed) {
 
 export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
-const PLANET_NAMES = ['Vesper', 'Ardent', 'Halcyon', 'Morrow', 'Tessaly', 'Oberin', 'Calyx', 'Nadir'];
-const MOON_NAMES = ['Io', 'Kell', 'Pim', 'Soren', 'Lark', 'Dace', 'Nym', 'Tove', 'Wren', 'Ossa'];
-const STATION_NAMES = ['Tycho Yard', 'Ring One', 'Anchor', 'Meridian'];
-const ROCK_NAMES = ['Ceres', 'Hygiea', 'Pallas', 'Thisbe', 'Egeria', 'Iris'];
+// Big name banks so every game feels different. All invented or borrowed
+// from myth, weather and old ships of the line; nothing from The Expanse.
+const PLANET_NAMES = ['Vesper', 'Ardent', 'Halcyon', 'Morrow', 'Tessaly', 'Oberin', 'Calyx', 'Nadir', 'Aubade', 'Corvina', 'Drummond', 'Elysa',
+  'Farrow', 'Gallant', 'Hesper', 'Isolde', 'Jubal', 'Karst', 'Lodestar', 'Marchmont', 'Nerissa', 'Orrin', 'Perrin', 'Quillon', 'Rhosyn', 'Sabine',
+  'Tamsin', 'Umbriel Minor', 'Valdis', 'Wyvern', 'Xanthe', 'Yarrow', 'Zephyrine', 'Anselm', 'Brigid', 'Caddis', 'Delphine', 'Emberlin', 'Fenwick',
+  'Graystone', 'Hollin', 'Ingram', 'Juniper', 'Kestrel', 'Lanark', 'Mirabel', 'Nightjar', 'Ostara', 'Pellucid', 'Ravenna', 'Solace', 'Thule Major',
+  'Ulster', 'Verity', 'Wistful', 'Aldous', 'Bellweather', 'Cinder', 'Dunmore', 'Evenfall', 'Foxglove', 'Gideon', 'Harrowgate', 'Idris', 'Jessamine',
+  'Kinsale', 'Lumen', 'Merrow', 'Noctis', 'Orla', 'Prospero', 'Rookwood', 'Sorrel', 'Tarn', 'Undine', 'Vantage', 'Wolde', 'Aster', 'Brandt'];
+const MOON_NAMES = ['Kell', 'Pim', 'Soren', 'Lark', 'Dace', 'Nym', 'Tove', 'Wren', 'Ossa', 'Brill', 'Cade', 'Dowle', 'Eske', 'Fenn', 'Gorse',
+  'Hask', 'Ilse', 'Jory', 'Kip', 'Lusk', 'Mote', 'Nib', 'Orme', 'Prell', 'Quoin', 'Rill', 'Skerry', 'Thrum', 'Ulla', 'Vane', 'Whin', 'Yule',
+  'Zell', 'Ashby', 'Bracken', 'Cobble', 'Dunnock', 'Ember', 'Flint', 'Grebe', 'Holt', 'Inch', 'Jet', 'Knoll', 'Linnet', 'Marl', 'Nook', 'Pewter',
+  'Quill', 'Rook', 'Shale', 'Tansy', 'Umber', 'Vetch', 'Wisp', 'Brume', 'Chert', 'Dross', 'Eyot', 'Fell', 'Gloam', 'Hob', 'Ivel', 'Lode', 'Mica'];
+const STATION_NAMES = ['Ring One', 'Anchor', 'Meridian', 'Longreach', 'Holdfast', 'Keystone', 'Lantern', 'Tollgate', 'Crossways', 'Beacon Hill',
+  'Harbourline', 'Windlass', 'Capstan', 'Stillwater', 'Gantry Nine', 'Fairhaven', 'Moorings', 'Pinwheel', 'Carrick Yard', 'Halfway House',
+  'Sentinel', 'Spindle', 'Drydock Four', 'Tether', 'Outlook', 'Commonwealth', 'Linchpin', 'Caravel', 'Weigh Station', 'Portcullis'];
+const ROCK_NAMES = ['Hollow', 'Gravel', 'Anvil', 'Cairn', 'Dolmen', 'Flinders', 'Grist', 'Hearth', 'Kiln', 'Loam', 'Menhir', 'Nugget', 'Quarry',
+  'Rubble', 'Slag', 'Tor', 'Whetstone', 'Boulder', 'Clinker', 'Dregs', 'Ingot', 'Lump', 'Pumice', 'Scoria', 'Talus', 'Tuff', 'Cobalt', 'Nickel Jack',
+  'Old Iron', 'Spall', 'Brickbat', 'Crag', 'Scree', 'Knapp', 'Hardpan'];
+// Task forces: a name per launch, so fleets become characters.
+export const FLEET_NAMES = ['Resolute', 'Tenacity', 'Wayfarer', 'Undaunted', 'Nightingale', 'Clemency', 'Forbearance', 'Hardihood', 'Persistence',
+  'Sparrowhawk', 'Temerity', 'Valiance', 'Wanderlust', 'Adamant', 'Bellicose', 'Candour', 'Diligence', 'Endeavour', 'Fortitude', 'Gallantry',
+  'Harbinger', 'Impetus', 'Jubilee', 'Kittiwake', 'Longbow', 'Mistral', 'Nonesuch', 'Obstinate', 'Paladin', 'Quicksilver', 'Rapier', 'Sirocco',
+  'Tempest', 'Unbowed', 'Vigilant', 'Warspite', 'Xiphias', 'Yeoman', 'Zealous', 'Albatross', 'Brigantine', 'Corsair', 'Dauntless', 'Equinox',
+  'Firebrand', 'Grenadier', 'Halberd', 'Inflexible', 'Javelin', 'Kingfisher', 'Lionheart', 'Mariner', 'Nemesis', 'Onslaught', 'Peregrine',
+  'Quarterstaff', 'Relentless', 'Stalwart', 'Thunderer', 'Unicorn', 'Vanguard', 'Wolfhound', 'Arbalest', 'Bulwark', 'Cutlass', 'Defiance',
+  'Ember Tide', 'Falconer', 'Goshawk', 'Hotspur', 'Invictus', 'Jackdaw', 'Kraken', 'Lodestone', 'Monsoon', 'Northwind', 'Outrider', 'Pathfinder',
+  'Quarrel', 'Redoubt', 'Scimitar', 'Trident', 'Upholder', 'Vortex', 'Whirlwind', 'Asp', 'Basilisk', 'Cockatrice', 'Dragonet', 'Estoc', 'Fulmar',
+  'Glaive', 'Hurricane', 'Ironside', 'Jaeger', 'Kestrel Wing', 'Lance', 'Magpie', 'Narwhal', 'Osprey', 'Petrel', 'Raven', 'Shrike', 'Tern',
+  'Umbra', 'Viper', 'Wyvern Wing', 'Auk', 'Bittern', 'Curlew', 'Dunlin', 'Egret', 'Fieldfare', 'Gannet', 'Heron', 'Ibis', 'Jay', 'Kite',
+  'Lapwing', 'Merlin', 'Nuthatch', 'Oriole', 'Plover', 'Redshank', 'Skua', 'Tanager', 'Veery', 'Whimbrel', 'Stoic', 'Candle', 'Hearthguard'];
+export const VET_BONUS = 0.08; // firepower per veterancy star (max 3)
+
+/** Something the player might want to hear about; the UI drains these. */
+function note(game, e) {
+  if (!game.events) return;
+  game.events.push({ t: game.time, ...e });
+  if (game.events.length > 60) game.events.splice(0, game.events.length - 60);
+}
+function fleetName(game) {
+  const n = FLEET_NAMES[(game.nameSeed + game.nextId * 7919) % FLEET_NAMES.length];
+  const used = game.fleets.some((f) => f.name === n);
+  return used ? `${n} ${['II', 'III', 'IV', 'V'][game.nextId % 4]}` : n;
+}
+const mix = (vA, nA, vB, nB) => (nA + nB > 0 ? (vA * nA + vB * nB) / (nA + nB) : 0);
 
 /** Kepler: period grows with radius^1.5. */
 const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
@@ -165,14 +230,14 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     const count = i === 0 ? 0 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
     const moons = [];
     for (let m = 0; m < count; m++) {
-      moons.push({ r: size * 1.8 + 3 + m * 3.2 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 300 + m * 150 + rand() * 120 });
+      moons.push({ r: size * 3.4 + 6 + m * 7 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 300 + m * 150 + rand() * 120 });
     }
     specs.push({ giant, size, moons, station: false });
   }
   const hostIdx = [1, 2, 3, 4, 5].sort(() => rand() - 0.5).slice(0, 2);
   for (const i of hostIdx) specs[i].station = true;
   for (const sp of specs) {
-    sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.size * 1.9 + 1 : 0, ...sp.moons.map((m) => m.r + m.size));
+    sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.size * 1.5 + 1 : 0, ...sp.moons.map((m) => m.r + m.size));
   }
 
   // Orbits outward from the sun, each at least both families' reach plus a gap
@@ -211,7 +276,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     }
     if (sp.station) {
       add({
-        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.size * 1.9,
+        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.size * 1.45,
         period: 200 + rand() * 60, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45, hue: 0,
       });
     }
@@ -226,7 +291,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
-  const game = { bodies, fleets: [], players: opponents + 1, time: 0, winner: null, nextId: 1 };
+  const game = { bodies, fleets: [], players: opponents + 1, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   const planets = bodies.filter((b) => b.kind === 'planet');
   const candidates = planets.slice(1, 5);
   const homes = [candidates[Math.floor(rand() * candidates.length)]];
@@ -478,8 +543,10 @@ export function launch(game, from, to, n) {
   if (n < 1 || from === to || game.winner !== null) return null;
   const p = plan(game, from, to);
   from.ships -= n;
-  const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time };
+  const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time, vet: from.vet || 0 };
+  f.name = fleetName(game);
   game.fleets.push(f);
+  note(game, { type: 'launch', owner: f.owner, fleet: f.id, name: f.name, n, from: from.id, to: to.id });
   return f;
 }
 
@@ -532,15 +599,16 @@ export function coverOf(game, b) {
 }
 
 function fight(game, b, dt) {
+  let taken = false;
   const attackers = b.sieges.reduce((n, g) => n + g.n, 0);
   // Cover adds firepower but can't be destroyed here: only the planet's own
   // fight can knock out its guns.
-  const defenders = (b.ships + b.guns + coverOf(game, b)) * firepowerOf(game, b.owner);
+  const defenders = (b.ships * (1 + VET_BONUS * (b.vet || 0)) + b.guns + coverOf(game, b)) * firepowerOf(game, b.owner);
   let attackFire = 0;
   for (const g of b.sieges) {
     const share = attackers > 0 ? g.n / attackers : 0;
     g.dmg = (g.dmg || 0) + RULES.fire * defenders * share * damageTaken(game, g.owner) * dt;
-    attackFire += g.n * firepowerOf(game, g.owner);
+    attackFire += g.n * (1 + VET_BONUS * (g.vet || 0)) * firepowerOf(game, g.owner);
   }
   b.dmg = (b.dmg || 0) + RULES.fire * attackFire * damageTaken(game, b.owner) * dt;
   b.fighting = true;
@@ -561,13 +629,17 @@ function fight(game, b, dt) {
       tally(game, b.owner, 'killed');
     }
   }
+  for (const g of b.sieges) if (g.n <= 0) note(game, { type: 'wiped', owner: g.owner, name: g.name, at: b.id, vs: b.owner });
   b.sieges = b.sieges.filter((g) => g.n > 0);
   if (b.ships + b.guns <= 0 && b.sieges.length) {
     const win = b.sieges.sort((x, y) => y.n - x.n)[0];
     tally(game, b.owner, 'worldsLost');
     tally(game, win.owner, 'captured');
+    note(game, { type: 'captured', owner: win.owner, from: b.owner, at: b.id, name: win.name });
     b.owner = win.owner;
     b.ships = win.n;
+    // Survivors of a won battle are veterans.
+    b.vet = Math.min(3, (win.vet || 0) + 1);
     b.guns = 0;
     b.dmg = 0;
     b.build = 0;
@@ -577,8 +649,16 @@ function fight(game, b, dt) {
     for (const x of b.structures) { if (x.next) { delete x.next; x.left = 0; } }
     b.sieges = b.sieges.filter((g) => g !== win);
     b.captured = true;
+    taken = true;
   }
-  if (!b.sieges.length) { b.dmg = 0; b.fighting = false; }
+  if (!b.sieges.length) {
+    // Held: the garrison that saw it through gains a star.
+    if (b.fighting && !taken && b.ships > 0) {
+      b.vet = Math.min(3, (b.vet || 0) + 1);
+      note(game, { type: 'held', owner: b.owner, at: b.id });
+    }
+    b.dmg = 0; b.fighting = false;
+  }
 }
 
 export function step(game, dt) {
@@ -604,7 +684,7 @@ export function step(game, dt) {
     while (b.slips.length < Math.min(yards, b.queue)) b.slips.push(0);
     b.slips.length = Math.min(b.slips.length, yards, b.queue);
     b.slips = b.slips.map((p) => p + (dt * speed) / RULES.ship.time);
-    for (const p of b.slips) if (p >= 1) { b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
+    for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, 0, 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
     b.build = b.slips.length ? Math.max(...b.slips) : 0;
     const top = maxGuns(b);
@@ -614,17 +694,21 @@ export function step(game, dt) {
   for (const [owner, t] of (game.tech || []).entries()) {
     if (!t.project) continue;
     t.project.left -= dt * researchSpeed(game, owner);
-    if (t.project.left <= 0) { t[t.project.key] += 1; t.project = null; tally(game, owner, 'research'); }
+    if (t.project.left <= 0) { t[t.project.key] += 1; note(game, { type: 'research', owner, key: t.project.key, level: t[t.project.key] }); t.project = null; tally(game, owner, 'research'); }
   }
 
   game.fleets = game.fleets.filter((f) => {
     if (game.time - f.t0 < f.T) return true;
     const b = game.bodies[f.to];
-    if (b.owner === f.owner) b.ships += f.n;
-    else {
+    if (b.owner === f.owner) {
+      b.vet = mix(b.vet || 0, b.ships, f.vet || 0, f.n);
+      b.ships += f.n;
+      note(game, { type: 'arrived', owner: f.owner, name: f.name, n: f.n, at: b.id });
+    } else {
       const g = b.sieges.find((x) => x.owner === f.owner);
-      if (g) g.n += f.n;
-      else b.sieges.push({ owner: f.owner, n: f.n });
+      if (g) { g.vet = mix(g.vet || 0, g.n, f.vet || 0, f.n); g.n += f.n; }
+      else b.sieges.push({ owner: f.owner, n: f.n, vet: f.vet || 0, name: f.name });
+      note(game, { type: 'engaged', owner: f.owner, name: f.name, n: f.n, at: b.id, vs: b.owner });
     }
     return false;
   });

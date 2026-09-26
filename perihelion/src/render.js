@@ -52,6 +52,52 @@ function grain(g, w, h, r, amount) {
   }
 }
 
+// Small 3D value noise, enough for coastlines and cloud decks.
+function vhash(x, y, z, s) {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ Math.imul(s, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, y, z, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const fx = x - xi, fy = y - yi, fz = z - zi;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+  const L = (a, b, t) => a + (b - a) * t;
+  const c = (i, j, k) => vhash(xi + i, yi + j, zi + k, s);
+  return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v),
+    L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v), w) * 2 - 1;
+}
+function fbm(x, y, z, s, oct) {
+  let sum = 0, amp = 0.5, f = 1;
+  for (let o = 0; o < oct; o++) { sum += vnoise(x * f, y * f, z * f, s + o) * amp; f *= 2.03; amp *= 0.5; }
+  return sum;
+}
+
+/** Cloud deck for a living world: swirling, banded by latitude, mostly clear. */
+function cloudTex(b) {
+  return canvasTex(512, 256, (g) => {
+    const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
+    const { width: W, height: H, data: d } = img;
+    const seed = b.id * 31 + 11;
+    for (let y = 0; y < H; y++) {
+      const lat = (y / H - 0.5) * Math.PI;
+      const cl = Math.cos(lat);
+      // Storm belts at mid latitudes, clear subtropics.
+      const belt = 0.1 + 0.25 * Math.abs(Math.sin(lat * 3));
+      for (let x = 0; x < W; x++) {
+        const lon = (x / W) * Math.PI * 2;
+        const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
+        const sw = fbm(px * 2, py * 2, pz * 2, seed + 5, 3);
+        const n = fbm(px * 3 + sw, py * 6 + sw * 0.5, pz * 3 - sw, seed, 5) + belt - 0.3;
+        const a = Math.max(0, Math.min(1, n * 2.6));
+        const i = (y * W + x) * 4;
+        d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = a * 210;
+      }
+    }
+    g.putImageData(img, 0, 0);
+  }, 1);
+}
+
 /** Gas giant: soft horizontal bands. Rocky world: mottled continents and craters. */
 function surfaceTex(b) {
   const r = rng(Math.floor(b.hue * 1e6) + b.id);
@@ -59,33 +105,49 @@ function surfaceTex(b) {
   return canvasTex(256, 128, (g, w, h) => {
     drawSurface(g, w, h);
     grain(g, w, h, r, b.giant ? 0.05 : 0.12);
-  }, b.kind === 'planet' ? 4 : 2);
+  }, b.home ? 2 : b.kind === 'planet' ? 4 : 2);
 
   function drawSurface(g, w, h) {
     if (b.home) {
-      // A living world: deep oceans, green and ochre continents, ice caps, cloud.
-      g.fillStyle = '#1d4f86';
-      g.fillRect(0, 0, w, h);
-      for (let c = 0; c < 7; c++) {
-        const cx = r() * w;
-        const cy = h * (0.2 + r() * 0.6);
-        for (let i = 0; i < 26; i++) {
-          col.setHSL(0.22 + r() * 0.12 - (r() < 0.3 ? 0.14 : 0), 0.45, 0.3 + r() * 0.1);
-          g.fillStyle = `#${col.getHexString()}`;
-          g.beginPath();
-          g.arc((cx + (r() - 0.5) * 50 + w) % w, cy + (r() - 0.5) * 26, 3 + r() * 9, 0, Math.PI * 2);
-          g.fill();
+      // A living world, drawn from 3D noise on the sphere so coastlines are
+      // fractal and seamless: oceans with shelves, continents coloured by
+      // latitude and height, ice caps. Clouds are a separate layer.
+      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
+      const W = img.width;
+      const H = img.height;
+      const seed = b.id * 17 + 3;
+      const d = img.data;
+      for (let y = 0; y < H; y++) {
+        const lat = (y / H - 0.5) * Math.PI;
+        const cl = Math.cos(lat);
+        for (let x = 0; x < W; x++) {
+          const lon = (x / W) * Math.PI * 2;
+          const px = Math.cos(lon) * cl;
+          const py = Math.sin(lat);
+          const pz = Math.sin(lon) * cl;
+          // Domain warp, then fractal height.
+          const wx = fbm(px * 1.5, py * 1.5, pz * 1.5, seed + 9, 3) * 0.6;
+          const h = fbm(px * 1.6 + wx, py * 1.6 - wx, pz * 1.6 + wx, seed, 6) - 0.04;
+          const ab = Math.abs(py);
+          const ice = ab > 0.86 - h * 0.25;
+          let R, G, B;
+          if (ice) { R = 236; G = 242; B = 248; }
+          else if (h < 0) {
+            // Ocean: shallow shelves turquoise, deep water dark.
+            const k = Math.max(0, 1 + h * 7);
+            R = 12 + 30 * k * k; G = 44 + 70 * k * k; B = 92 + 60 * k;
+          } else {
+            const hot = 1 - ab; // deserts near the tropics, forests elsewhere
+            const dry = Math.max(0, fbm(px * 3, py * 3, pz * 3, seed + 4, 3) + (hot > 0.55 && hot < 0.85 ? 0.25 : -0.1));
+            const m = Math.min(1, h * 3.2);
+            R = 58 + dry * 120 + m * 50; G = 86 + dry * 60 + m * 20; B = 40 + dry * 30 + m * 30;
+            if (ab > 0.7) { const t = (ab - 0.7) / 0.16; R += t * 40; G += t * 30; B += t * 40; } // tundra
+          }
+          const i = (y * W + x) * 4;
+          d[i] = R; d[i + 1] = G; d[i + 2] = B; d[i + 3] = 255;
         }
       }
-      g.fillStyle = 'rgba(240,248,255,0.9)';
-      g.fillRect(0, 0, w, 6);
-      g.fillRect(0, h - 6, w, 6);
-      g.fillStyle = 'rgba(255,255,255,0.35)';
-      for (let i = 0; i < 40; i++) {
-        g.beginPath();
-        g.ellipse(r() * w, r() * h, 8 + r() * 20, 2 + r() * 3, 0, 0, Math.PI * 2);
-        g.fill();
-      }
+      g.putImageData(img, 0, 0);
       return;
     }
     if (b.kind === 'planet' && b.giant) {
@@ -445,8 +507,62 @@ export function createView(canvas, labelRoot) {
   }
 
   // The sun: bright core, layered glow, and the only real light.
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 32, 24), new THREE.MeshBasicMaterial({ color: '#fff4d6' })));
-  for (const [s, c, o] of [[40, '#ffd27a', 0.9], [110, '#ff9a4a', 0.35]]) {
+  // Churning granulation with dark-edged cells, limb darkening, and slow
+  // brighter faculae; a streaked corona and a wide glow around it.
+  const sunTime = { value: 0 };
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 48), new THREE.ShaderMaterial({
+    uniforms: { uT: sunTime },
+    vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vV;
+      void main() {
+        vP = position; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `uniform float uT; varying vec3 vP; varying vec3 vN; varying vec3 vV;
+      float h(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      float n3(vec3 p) {
+        vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      float fbm(vec3 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += n3(p) * a; p *= 2.1; a *= 0.5; } return s; }
+      void main() {
+        vec3 p = normalize(vP);
+        float t = uT * 0.02;
+        float warp = fbm(p * 3.0 + t);
+        float cells = fbm(p * 9.0 + warp * 2.0 - t * 2.0);
+        float spots = smoothstep(0.62, 0.72, fbm(p * 2.2 + vec3(0.0, t * 0.3, 0.0)));
+        float mu = max(dot(vN, vV), 0.0);
+        float limb = 0.45 + 0.55 * pow(mu, 0.5);
+        vec3 hot = vec3(1.0, 0.96, 0.82), mid = vec3(1.0, 0.72, 0.32), cool = vec3(0.85, 0.35, 0.1);
+        vec3 c = mix(mid * 0.85, hot, smoothstep(0.4, 0.75, cells));
+        c = mix(c, cool, (1.0 - limb) * 0.8);
+        c += spots * 0.25 * hot;
+        gl_FragColor = vec4(c * (0.55 + 0.4 * limb), 1.0);
+      }`,
+  })));
+  // Corona: long faint streamers, slowly turning.
+  const coronaTex = canvasTex(256, 256, (g) => {
+    g.translate(128, 128);
+    const r = rng(42);
+    for (let i = 0; i < 90; i++) {
+      const a = r() * Math.PI * 2;
+      const len = 40 + r() ** 2 * 88;
+      const grad = g.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
+      grad.addColorStop(0, 'rgba(255,230,180,0.25)');
+      grad.addColorStop(1, 'rgba(255,200,120,0)');
+      g.strokeStyle = grad;
+      g.lineWidth = 1 + r() * 3;
+      g.beginPath();
+      g.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+      g.quadraticCurveTo(Math.cos(a + 0.1) * len * 0.6, Math.sin(a + 0.1) * len * 0.6, Math.cos(a + (r() - 0.5) * 0.3) * len, Math.sin(a + (r() - 0.5) * 0.3) * len);
+      g.stroke();
+    }
+  });
+  const corona = new THREE.Sprite(new THREE.SpriteMaterial({ map: coronaTex, color: '#ffd9a0', opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  corona.scale.setScalar(34);
+  scene.add(corona);
+  for (const [s, c, o] of [[20, '#fff0c0', 0.6], [46, '#ffd27a', 0.45], [120, '#ff9a4a', 0.25]]) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     glow.scale.setScalar(s);
     scene.add(glow);
@@ -480,6 +596,14 @@ export function createView(canvas, labelRoot) {
         );
         body.rotation.z = 0.2 + b.hue * 0.3;
         if (b.kind === 'planet') g.add(atmosphere(b));
+        if (b.home) {
+          const clouds = new THREE.Mesh(
+            new THREE.SphereGeometry(b.size * 1.012, 48, 32),
+            new THREE.MeshStandardMaterial({ map: cloudTex(b), transparent: true, depthWrite: false, roughness: 1 }),
+          );
+          clouds.name = 'clouds';
+          body.add(clouds);
+        }
         if (b.giant && b.hue > 0.4) {
           const ring = new THREE.Mesh(
             new THREE.RingGeometry(b.size * 1.4, b.size * 2.2, 64),
@@ -575,7 +699,7 @@ export function createView(canvas, labelRoot) {
   }
   const MAX_SHOTS = 240;
   const shots = [];
-  function shoot(a, b, color) {
+  function shoot(a, b, color, lvl = 0, pd = false) {
     let sh = shots.find((x) => !x.live);
     if (!sh) {
       if (shots.length >= MAX_SHOTS) return;
@@ -587,9 +711,14 @@ export function createView(canvas, labelRoot) {
     sh.b.copy(b);
     sh.color = color;
     // Light the shooter's colour towards white so rounds read as hot.
-    sh.c.set(color).lerp(new THREE.Color('#ffffff'), 0.45);
+    // Guns by research: tracers, then coilgun slugs, then railgun streaks.
+    sh.c.set(color).lerp(new THREE.Color('#ffffff'), [0.45, 0.6, 0.85][lvl]);
+    sh.tail = [0.18, 0.3, 1][lvl];
     sh.age = 0;
-    sh.life = THREE.MathUtils.clamp(a.distanceTo(b) / 14, 0.12, 0.7);
+    sh.life = lvl === 2 ? 0.16 : THREE.MathUtils.clamp(a.distanceTo(b) / (lvl ? 24 : 14), 0.1, 0.7);
+    // Point-defence drones swat some rounds short of the target.
+    sh.pd = pd && Math.random() < 0.3;
+    if (sh.pd) sh.b.lerpVectors(a, b, 0.7 + Math.random() * 0.2);
   }
   const tracerGeo = new THREE.BufferGeometry();
   const tracerPos = new Float32Array(MAX_SHOTS * 6);
@@ -635,7 +764,7 @@ export function createView(canvas, labelRoot) {
    * Places a ship mesh (with glint and plume) at p, nose along n. `id` picks
    * its hull and small variations (length, paint), stable for that ship.
    */
-  function placeShip(sh, p, n, color, burning, t, seed, id = seed) {
+  function placeShip(sh, p, n, color, burning, t, seed, id = seed, plume = 1) {
     sh.mesh.visible = true;
     const v = Math.floor(hash(id, 3) * shipGeos.length);
     if (sh.mesh.geometry !== shipGeos[v].base) {
@@ -652,7 +781,7 @@ export function createView(canvas, labelRoot) {
     sh.accent.material.color.set(color);
     sh.accent.material.emissive.set(color).multiplyScalar(0.35);
     sh.plume.visible = burning;
-    if (burning) sh.plume.scale.set(1, 1, 0.8 + Math.sin(t * 40 + seed) * 0.15);
+    if (burning) sh.plume.scale.set(0.8 + plume * 0.2, 0.8 + plume * 0.2, plume * (0.8 + Math.sin(t * 40 + seed) * 0.15));
     // Visible from afar as a point of light; brighter while the drive burns.
     const ppu = ppuAt(p);
     sh.glint.visible = true;
@@ -664,6 +793,9 @@ export function createView(canvas, labelRoot) {
 
   function render(game, ui, dt, t) {
     const now = game.time;
+    sunTime.value = t;
+    corona.material.rotation = t * 0.004;
+    const techOf = (o, k) => (o >= 0 && game.tech ? game.tech[o][k] : 0);
     // Camera: follow the focused body, with inertia on rotation.
     for (const v of views) {
       const p = posAt(game, v.b, now);
@@ -744,7 +876,11 @@ export function createView(canvas, labelRoot) {
       // Slow spin; stations turn faster, asteroids tumble.
       if (b.kind === 'station') v.body.rotation.z += dt * 0.5;
       else if (b.kind === 'asteroid') { v.body.rotation.x += dt * 0.3; v.body.rotation.y += dt * 0.2; }
-      else v.body.rotation.y += dt * 0.05;
+      else {
+        v.body.rotation.y += dt * 0.05;
+        const cl = v.body.getObjectByName('clouds');
+        if (cl) cl.rotation.y += dt * 0.012;
+      }
 
       const col = ownerColor(b.owner);
       if (v.owner !== b.owner) {
@@ -801,7 +937,7 @@ export function createView(canvas, labelRoot) {
           if (!sh) return;
           const r1 = hash(seed, j);
           const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
-          const rr = radius * (1 + hash(j, seed) * 0.3);
+          const rr = radius * (1 + hash(j, seed) * 0.15);
           tmp.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
           dir.set(-Math.sin(a), 0, Math.cos(a));
           placeShip(sh, tmp, dir, ownerColor(owner), false, t, j, seed * 131 + j);
@@ -810,7 +946,7 @@ export function createView(canvas, labelRoot) {
         }
       };
       if (known) park(Math.min(b.ships, 20), b.owner, b.size * 1.8 + 0.4, 0.25, b.id * 13, fighting ? defPts : null);
-      for (const g of known ? b.sieges : []) park(Math.min(g.n, 20), g.owner, b.size * 2.6 + 0.8, -0.18, b.id * 29 + g.owner, atkPts);
+      for (const g of known ? b.sieges : []) park(Math.min(g.n, 20), g.owner, b.size * 2.4 + 0.8, -0.18, b.id * 29 + g.owner, atkPts);
 
       if (fighting) {
         // Gun emplacements: fixed points on the surface that turn with the body.
@@ -828,7 +964,7 @@ export function createView(canvas, labelRoot) {
             const fromAtk = Math.random() < atkPts.length / total;
             const src = (fromAtk ? atkPts : defPts)[(Math.random() * (fromAtk ? atkPts : defPts).length) | 0];
             const dst = (fromAtk ? defPts : atkPts)[(Math.random() * (fromAtk ? defPts : atkPts).length) | 0];
-            shoot(src.p, dst.p, ownerColor(src.owner));
+            shoot(src.p, dst.p, ownerColor(src.owner), Math.min(2, techOf(src.owner, 'weapons')), techOf(dst.owner, 'armour') >= 2);
           }
           n -= 1;
         }
@@ -855,7 +991,7 @@ export function createView(canvas, labelRoot) {
       const hide = tmp.z > 1 || crowded.has(b.id);
       if (hide) { v.label.style.visibility = 'hidden'; continue; }
       const attackers = (known ? b.sieges : []).map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
-      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : `<b>${b.ships}</b>`;
+      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : b.ships ? `<b>${b.ships}</b>` : '';
       const kids = (extras.get(b.id) || []).join('');
       const warn = (incomingTo.get(b.id) || []).map((x) => {
         const e = Math.max(0, x.eta);
@@ -887,18 +1023,20 @@ export function createView(canvas, labelRoot) {
       for (let j = 0; j < f.n; j++) {
         const sh = ship(used++);
         if (!sh) break;
-        // Formation: rows of three, staggered, with clear space between hulls.
-        // The formation opens out after launch and closes up before arrival,
-        // so ships leave and arrive as a tight group instead of popping out.
+        // Formation: a loose, uneven column of threes. Each ship keeps its own
+        // offset and drifts a little, so it reads as crewed ships, not a grid.
+        // It opens out after launch and closes up before arrival.
         const row = Math.floor(j / 3);
         const col = (j % 3) - 1;
         const since = now - f.t0;
         const open = THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.92 + 0.08;
+        const h1 = hash(f.id, j), h2 = hash(j, f.id), h3 = hash(f.id + 7, j * 3);
+        const drift = t * (0.3 + h1 * 0.4) + h2 * 6;
         tmp.set(s.x, s.y, s.z)
-          .addScaledVector(perp, (col * 1.1 + (row % 2) * 0.45 + (hash(f.id, j) - 0.5) * 0.15) * open)
-          .addScaledVector(UP, ((row % 2 ? 0.35 : -0.2) + (hash(j, f.id) - 0.5) * 0.12) * open)
-          .addScaledVector(dir, -row * 1.3 * open);
-        placeShip(sh, tmp, nose, color, s.burning, t, j, f.id * 97 + j);
+          .addScaledVector(perp, (col * (0.9 + h3 * 0.5) + (row % 2) * 0.45 + (h1 - 0.5) * 0.7 + Math.sin(drift) * 0.08) * open)
+          .addScaledVector(UP, ((h2 - 0.5) * 0.9 + Math.cos(drift * 0.8) * 0.06) * open)
+          .addScaledVector(dir, (-row * (1.1 + h3 * 0.5) - (h2 - 0.5) * 0.8) * open);
+        placeShip(sh, tmp, nose, color, s.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'));
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.
@@ -934,7 +1072,7 @@ export function createView(canvas, labelRoot) {
       const el = fleetLabel(fl++);
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === 0;
-      const text = `▸ ${knowsSize(f) ? f.n : '?'}`;
+      const text = `▸ ${knowsSize(f) ? f.n : '?'}${knowsSize(f) && f.vet >= 1 ? ' ' + '★'.repeat(Math.floor(f.vet)) : ''}`;
       if (el._t !== text) { el._t = text; el.textContent = text; }
       el.style.color = ownerColor(f.owner);
       el.style.borderColor = ownerColor(f.owner);
@@ -958,15 +1096,18 @@ export function createView(canvas, labelRoot) {
       const k = sh.age / sh.life;
       if (k >= 1) {
         sh.live = false;
-        boom(sh.b, sh.color, 0.5, 0.25);
+        if (sh.pd) boom(sh.b, '#dff4ff', 0.35, 0.15);
+        else boom(sh.b, sh.color, sh.tail === 1 ? 0.9 : 0.5, 0.25);
         continue;
       }
       if (tn >= MAX_SHOTS) continue;
-      tmp.lerpVectors(sh.a, sh.b, Math.max(0, k - 0.18));
-      tmp2.lerpVectors(sh.a, sh.b, k);
+      tmp.lerpVectors(sh.a, sh.b, sh.tail === 1 ? 0 : Math.max(0, k - sh.tail));
+      if (sh.tail === 1) tmp2.copy(sh.b);
+      else tmp2.lerpVectors(sh.a, sh.b, k);
       tracerPos.set([tmp.x, tmp.y, tmp.z, tmp2.x, tmp2.y, tmp2.z], tn * 6);
       const c = sh.c;
-      tracerCol.set([c.r * 0.2, c.g * 0.2, c.b * 0.2, c.r, c.g, c.b], tn * 6);
+      if (sh.tail === 1) { const f = 1 - k; tracerCol.set([c.r * f * 0.6, c.g * f * 0.6, c.b * f * 0.6, c.r * f, c.g * f, c.b * f], tn * 6); }
+      else tracerCol.set([c.r * 0.2, c.g * 0.2, c.b * 0.2, c.r, c.g, c.b], tn * 6);
       tn++;
     }
     tracerGeo.setDrawRange(0, tn * 2);
