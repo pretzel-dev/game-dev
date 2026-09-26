@@ -48,6 +48,24 @@ export const TECH = {
 };
 export const SENSOR_RANGE = [70, 110, 160, 240];
 const techLevel = (game, owner, key) => (owner === NEUTRAL || !game.tech ? 0 : game.tech[owner][key]);
+/** Adds to a player's running total (no-op for neutrals). */
+export function tally(game, owner, key, n = 1) {
+  if (owner === NEUTRAL || !game.stats) return;
+  game.stats.totals[owner][key] += n;
+}
+/** A snapshot of every player: ships (docked and in flight), worlds, income, credits. */
+function sample(game) {
+  game.stats.series.push({
+    t: game.time,
+    p: game.credits.map((c, o) => ({
+      ships: game.bodies.reduce((n, b) => n + (b.owner === o ? b.ships : 0), 0) + game.fleets.reduce((n, f) => n + (f.owner === o ? f.n : 0), 0),
+      worlds: game.bodies.filter((b) => b.owner === o).length,
+      income: income(game, o),
+      credits: c,
+    })),
+  });
+}
+
 export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives'));
 const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
 const damageTaken = (game, owner) => 1 - 0.12 * techLevel(game, owner, 'armour');
@@ -73,6 +91,7 @@ export function research(game, owner, key) {
   if (cantResearch(game, owner, key)) return false;
   const next = nextTech(game, owner, key);
   game.credits[owner] -= next.cost;
+  tally(game, owner, 'spent', next.cost);
   game.tech[owner].project = { key, left: next.time, total: next.time };
   return true;
 }
@@ -231,6 +250,11 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
     h.guns = maxGuns(h);
   });
   game.credits = Array.from({ length: game.players }, () => RULES.startCredits);
+  // Per-player totals and a time series, for the end-of-game report.
+  game.stats = {
+    totals: Array.from({ length: game.players }, () => ({ built: 0, lost: 0, killed: 0, captured: 0, worldsLost: 0, earned: 0, spent: 0, research: 0 })),
+    series: [],
+  };
   game.tech = Array.from({ length: game.players }, () => ({ drives: 0, sensors: 0, intel: 0, weapons: 0, armour: 0, industry: 0, project: null }));
   return game;
 }
@@ -269,6 +293,7 @@ export function cantDemolish(game, b, x) {
 export function demolish(game, b, x) {
   if (cantDemolish(game, b, x)) return false;
   game.credits[b.owner] -= demolishFee(x);
+  tally(game, b.owner, 'spent', demolishFee(x));
   b.structures = b.structures.filter((y) => y !== x);
   if (!yardsOf(b)) b.build = 0;
   return true;
@@ -295,6 +320,7 @@ export function buildStructure(game, b, type) {
   if (cantBuild(game, b, type)) return false;
   const def = RULES.structures[type];
   game.credits[b.owner] -= def.cost;
+  tally(game, b.owner, 'spent', def.cost);
   b.structures.push({ type, level: 1, left: def.time });
   return true;
 }
@@ -313,6 +339,7 @@ export function cantUpgrade(game, b, x) {
 }
 export function upgrade(game, b, x) {
   if (cantUpgrade(game, b, x)) return false;
+  tally(game, b.owner, 'spent', upgradeCost(x));
   game.credits[b.owner] -= upgradeCost(x);
   x.next = x.level + 1;
   x.left = upgradeTime(x);
@@ -327,6 +354,7 @@ export function cantOrderShip(game, b) {
 export function orderShip(game, b) {
   if (cantOrderShip(game, b)) return false;
   game.credits[b.owner] -= RULES.ship.cost;
+  tally(game, b.owner, 'spent', RULES.ship.cost);
   b.queue += 1;
   return true;
 }
@@ -519,16 +547,25 @@ function fight(game, b, dt) {
   // Damage becomes whole ships lost: docked ships first, then guns.
   while (b.dmg >= 1 && b.ships + b.guns > 0) {
     b.dmg -= 1;
-    if (b.ships > 0) b.ships -= 1;
-    else b.guns = Math.max(0, b.guns - 1);
+    if (b.ships > 0) {
+      b.ships -= 1;
+      tally(game, b.owner, 'lost');
+      tally(game, b.sieges.slice().sort((x, y) => y.n - x.n)[0].owner, 'killed');
+    } else b.guns = Math.max(0, b.guns - 1);
     b.lostDef = (b.lostDef || 0) + 1;
   }
   for (const g of b.sieges) {
-    while (g.dmg >= 1 && g.n > 0) { g.dmg -= 1; g.n -= 1; b.lostAtk = (b.lostAtk || 0) + 1; }
+    while (g.dmg >= 1 && g.n > 0) {
+      g.dmg -= 1; g.n -= 1; b.lostAtk = (b.lostAtk || 0) + 1;
+      tally(game, g.owner, 'lost');
+      tally(game, b.owner, 'killed');
+    }
   }
   b.sieges = b.sieges.filter((g) => g.n > 0);
   if (b.ships + b.guns <= 0 && b.sieges.length) {
     const win = b.sieges.sort((x, y) => y.n - x.n)[0];
+    tally(game, b.owner, 'worldsLost');
+    tally(game, win.owner, 'captured');
     b.owner = win.owner;
     b.ships = win.n;
     b.guns = 0;
@@ -546,11 +583,13 @@ function fight(game, b, dt) {
 
 export function step(game, dt) {
   if (game.winner !== null) return;
+  if (game.stats && (!game.stats.series.length || game.time - game.stats.series.at(-1).t >= 10)) sample(game);
   game.time += dt;
 
   for (const b of game.bodies) {
     if (b.owner === NEUTRAL) continue;
     game.credits[b.owner] += incomeOf(b, game) * dt;
+    tally(game, b.owner, 'earned', incomeOf(b, game) * dt);
     const speed = buildSpeed(game, b.owner);
     if (b.sieges.length) continue; // nothing gets built under fire
     for (const x of b.structures) {
@@ -565,7 +604,7 @@ export function step(game, dt) {
     while (b.slips.length < Math.min(yards, b.queue)) b.slips.push(0);
     b.slips.length = Math.min(b.slips.length, yards, b.queue);
     b.slips = b.slips.map((p) => p + (dt * speed) / RULES.ship.time);
-    for (const p of b.slips) if (p >= 1) { b.queue -= 1; b.ships += 1; }
+    for (const p of b.slips) if (p >= 1) { b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
     b.build = b.slips.length ? Math.max(...b.slips) : 0;
     const top = maxGuns(b);
@@ -575,7 +614,7 @@ export function step(game, dt) {
   for (const [owner, t] of (game.tech || []).entries()) {
     if (!t.project) continue;
     t.project.left -= dt * researchSpeed(game, owner);
-    if (t.project.left <= 0) { t[t.project.key] += 1; t.project = null; }
+    if (t.project.left <= 0) { t[t.project.key] += 1; t.project = null; tally(game, owner, 'research'); }
   }
 
   game.fleets = game.fleets.filter((f) => {
@@ -600,4 +639,5 @@ export function step(game, dt) {
   for (const f of game.fleets) alive.add(f.owner);
   if (!alive.has(PLAYER)) game.winner = [...alive][0] ?? NEUTRAL;
   else if (alive.size === 1) game.winner = PLAYER;
+  if (game.winner !== null && game.stats) sample(game); // final snapshot
 }

@@ -90,7 +90,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #focus { width: 48px; height: 48px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); font-size: 18px; color: var(--dim); }
 
 #toast {
-  position: fixed; top: calc(var(--safe-t) + 62px); left: 50%; transform: translateX(-50%);
+  position: fixed; top: calc(var(--safe-t) + 86px); left: 50%; transform: translateX(-50%);
   font-size: 13px; letter-spacing: 0.05em; text-shadow: 0 0 6px #000;
   opacity: 0; transition: opacity 0.4s; pointer-events: none; white-space: nowrap;
 }
@@ -175,3 +175,24 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .sheet-foot { margin: 8px 4px 0; font-size: 12px; color: var(--dim); }
 .lbl .unk { color: var(--dim); }
 #demorow button { color: #ff9a8a; }
+
+/* Build panel: ships and structures as two separate groups. */
+#buildrow { flex-direction: column; align-items: stretch; gap: 8px; }
+.grp { background: rgba(12, 15, 28, 0.55); border: 1px solid var(--line); border-radius: 16px; padding: 6px 8px 8px; }
+.gh { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin: 0 4px 6px; }
+.gb { display: flex; flex-wrap: wrap; gap: 6px; }
+.bar.build button.quiet { color: var(--dim); }
+
+/* End-of-game report */
+#end { justify-content: flex-start; padding-top: calc(var(--safe-t) + 32px); background: var(--bg); }
+#report { width: min(460px, 100%); display: flex; flex-direction: column; gap: 18px; text-align: left; }
+.legend { display: flex; gap: 14px; justify-content: center; font-size: 12px; color: var(--dim); }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+table.totals { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.totals th, table.totals td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+table.totals th:first-child, table.totals td:first-child { text-align: left; color: var(--dim); font-weight: 400; }
+table.totals th { font-weight: 600; }
+.chart h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+.chart svg { width: 100%; height: auto; display: block; touch-action: none; }
+.chart .readout { min-height: 18px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.chart .readout b { color: var(--fg); font-weight: 600; }

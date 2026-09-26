@@ -112,8 +112,9 @@ function updateActions() {
   $('actions').hidden = !show;
   $('system').hidden = view.orbit.follow === null;
   if (!show) { ui.preview = null; return; }
-  ui.count = Math.max(1, Math.min(ui.count, s.ships));
-  $('count').textContent = s.ships ? ui.count : 0;
+  // No ships here: nothing to send, and Launch stays off.
+  ui.count = s.ships ? Math.max(1, Math.min(ui.count, s.ships)) : 0;
+  $('count').textContent = ui.count;
   $('buildrow').hidden = ui.target !== null;
   if (ui.target === null) {
     ui.preview = null;
@@ -136,7 +137,8 @@ function updateActions() {
     const cover = t.owner === PLAYER ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
-    setHTML($('info'), `<b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>`);
+    if (s.ships < 1) setHTML($('info'), `No ships at <b>${s.name}</b> to send`);
+    else setHTML($('info'), `<b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>`);
     $('launch').disabled = s.ships < 1;
   }
 }
@@ -150,20 +152,27 @@ const BUILD = [
   { key: 'lab', label: 'Lab', cost: () => RULES.structures.lab.cost },
 ];
 function renderBuildRow(s) {
-  const html = BUILD.map((b) => {
+  const button = (b) => {
     const why = b.key === 'ship' ? cantOrderShip(game, s) : cantBuild(game, s, b.key);
     // Hide what can never go here; grey out what can't be afforded yet.
     if (why && why !== 'not enough credits' && b.key !== 'ship' && why !== 'no free slots') return '';
     return `<button data-b="${b.key}" ${why ? 'disabled' : ''} title="${why || ''}">${b.label}<small>${b.cost()}</small></button>`;
-  }).join('') + s.structures.map((x, i) => {
-    // Upgrades for what's already here.
-    const why = cantUpgrade(game, s, x);
-    if (why && why !== 'not enough credits') return '';
-    const name = x.type === 'mine' ? 'Mine' : 'Guns';
-    return `<button data-u="${i}" ${why ? 'disabled' : ''}>${name} ${x.level}→${x.level + 1}<small>${upgradeCost(x)}</small></button>`;
-  }).join('')
-    + (s.queue ? `<button data-cancel="1">✕ Ship<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
-    + (s.structures.length ? `<button data-demo="toggle">${ui.demolish ? 'Done' : 'Demolish'}</button>` : '');
+  };
+  const SHORT = { mine: 'Mine', defence: 'Guns', lab: 'Lab', shipyard: 'Yard' };
+  // Two groups: ships (no slots; queued at yards) and structures (use slots).
+  const shipGroup = BUILD.filter((b) => b.key === 'ship').map(button).join('')
+    + (s.queue ? `<button data-cancel="1">✕ Cancel<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '');
+  const structGroup = BUILD.filter((b) => b.key !== 'ship').map(button).join('')
+    + s.structures.map((x, i) => {
+      // Upgrades for what's already here.
+      const why = cantUpgrade(game, s, x);
+      if (why && why !== 'not enough credits') return '';
+      return `<button data-u="${i}" ${why ? 'disabled' : ''}>${SHORT[x.type]} ${x.level}→${x.level + 1}<small>${upgradeCost(x)}</small></button>`;
+    }).join('')
+    + (s.structures.length ? `<button data-demo="toggle" class="quiet">${ui.demolish ? 'Done' : 'Demolish'}</button>` : '');
+  const yards = yardsOf(s);
+  const html = `<div class="grp"><span class="gh">Ships${yards ? ` · ${yards} yard${yards === 1 ? '' : 's'}` : ' · needs a yard'}${s.queue ? ` · ${s.queue} queued` : ''}</span><div class="gb">${shipGroup}</div></div>`
+    + `<div class="grp"><span class="gh">Structures · ${s.structures.length}/${slotsOf(s)} slots</span><div class="gb">${structGroup}</div></div>`;
   // Demolish: a separate row, only while toggled on, so it's hard to hit by accident.
   $('demorow').hidden = !ui.demolish;
   if (ui.demolish) {
@@ -255,6 +264,7 @@ $('rlist').addEventListener('click', (e) => {
 });
 
 $('less').addEventListener('click', () => { ui.count = Math.max(1, ui.count - 1); updateActions(); });
+
 $('more').addEventListener('click', () => { ui.count += 1; updateActions(); });
 $('launch').addEventListener('click', doLaunch);
 $('focus').addEventListener('click', () => {
@@ -264,7 +274,7 @@ $('focus').addEventListener('click', () => {
 });
 
 function doLaunch() {
-  if (ui.selected === null || ui.target === null) return;
+  if (ui.selected === null || ui.target === null || ui.count < 1) return;
   const f = launch(game, game.bodies[ui.selected], game.bodies[ui.target], ui.count);
   if (f) toast(`${f.n} ship${f.n === 1 ? '' : 's'} burning for ${game.bodies[f.to].name} · ${fmt(f.T)}`, ownerColor(PLAYER));
   ui.selected = ui.target = null;
@@ -391,6 +401,78 @@ document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.prev
 
 // ---- Loop -------------------------------------------------------------------
 
+// ---- End-of-game report ----------------------------------------------------------
+
+const PLAYER_NAMES = ['You', 'Red', 'Amber'];
+
+/** A small line chart: one line per player, recessive grid, end labels, touch readout. */
+function lineChart(title, key, series, players, fmtV = (v) => Math.round(v)) {
+  const W = 320;
+  const H = 130;
+  const L = 30; // room for the y labels
+  const R = 34; // room for end labels
+  const T = 8;
+  const B = 18;
+  const t1 = series.at(-1).t || 1;
+  const max = Math.max(1, ...series.flatMap((s) => s.p.map((p) => p[key])));
+  const x = (t) => L + (t / t1) * (W - L - R);
+  const y = (v) => T + (1 - v / max) * (H - T - B);
+  const lines = players.map((o) => {
+    const pts = series.map((s) => `${x(s.t).toFixed(1)},${y(s.p[o][key]).toFixed(1)}`).join(' ');
+    const last = series.at(-1).p[o][key];
+    return `<polyline points="${pts}" fill="none" stroke="${ownerColor(o)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`
+      + `<text x="${x(t1) + 4}" y="${y(last) + 4}" font-size="10" fill="#aab1c8">${PLAYER_NAMES[o]}</text>`;
+  }).join('');
+  const grid = [0, 0.5, 1].map((k) => `<line x1="${L}" x2="${W - R}" y1="${y(max * k)}" y2="${y(max * k)}" stroke="rgba(160,180,255,0.12)" />`
+    + `<text x="${L - 4}" y="${y(max * k) + 3}" font-size="9" fill="#858ca6" text-anchor="end">${fmtV(max * k)}</text>`).join('');
+  const axis = `<text x="${L}" y="${H - 4}" font-size="9" fill="#858ca6">0:00</text><text x="${W - R}" y="${H - 4}" font-size="9" fill="#858ca6" text-anchor="end">${fmt(t1)}</text>`;
+  return `<div class="chart" data-key="${key}"><h3>${title}</h3>`
+    + `<svg viewBox="0 0 ${W} ${H}" data-l="${L}" data-r="${W - R}" data-w="${W}">${grid}${axis}${lines}<line class="cross" y1="${T}" y2="${H - B}" stroke="#e6ebf7" stroke-opacity="0.5" visibility="hidden" /></svg>`
+    + `<div class="readout">Touch the chart to read values</div></div>`;
+}
+
+function renderReport() {
+  const st = game.stats;
+  const players = Array.from({ length: game.players }, (_, i) => i);
+  const rows = [
+    ['Ships built', 'built'], ['Ships lost', 'lost'], ['Enemy ships destroyed', 'killed'],
+    ['Worlds captured', 'captured'], ['Worlds lost', 'worldsLost'],
+    ['Credits earned', 'earned'], ['Credits spent', 'spent'], ['Research completed', 'research'],
+  ];
+  const legend = `<div class="legend">${players.map((o) => `<span><i style="background:${ownerColor(o)}"></i>${PLAYER_NAMES[o]}</span>`).join('')}</div>`;
+  const table = `<table class="totals"><tr><th></th>${players.map((o) => `<th style="color:${ownerColor(o)}">${PLAYER_NAMES[o]}</th>`).join('')}</tr>`
+    + rows.map(([label, k]) => `<tr><td>${label}</td>${players.map((o) => `<td>${Math.round(st.totals[o][k])}</td>`).join('')}</tr>`).join('')
+    + '</table>';
+  $('report').innerHTML = legend + table
+    + lineChart('Ships', 'ships', st.series, players)
+    + lineChart('Worlds held', 'worlds', st.series, players)
+    + lineChart('Income (credits/s)', 'income', st.series, players, (v) => v.toFixed(1));
+  // Touch or hover: a crosshair and the values at that moment.
+  for (const chart of $('report').querySelectorAll('.chart')) {
+    const svg = chart.querySelector('svg');
+    const key = chart.dataset.key;
+    const show = (e) => {
+      const r = svg.getBoundingClientRect();
+      const vx = ((e.clientX - r.left) / r.width) * Number(svg.dataset.w);
+      const l = Number(svg.dataset.l);
+      const rr = Number(svg.dataset.r);
+      const k = Math.min(1, Math.max(0, (vx - l) / (rr - l)));
+      const s = st.series[Math.round(k * (st.series.length - 1))];
+      const cross = svg.querySelector('.cross');
+      const cx = l + (s.t / (st.series.at(-1).t || 1)) * (rr - l);
+      cross.setAttribute('x1', cx);
+      cross.setAttribute('x2', cx);
+      cross.setAttribute('visibility', 'visible');
+      chart.querySelector('.readout').innerHTML = `${fmt(s.t)} · ` + players.map((o) => {
+        const v = s.p[o][key];
+        return `${PLAYER_NAMES[o]} <b>${key === 'income' ? v.toFixed(1) : Math.round(v)}</b>`;
+      }).join(' · ');
+    };
+    svg.addEventListener('pointerdown', show);
+    svg.addEventListener('pointermove', show);
+  }
+}
+
 function finish() {
   running = false;
   ui.selected = ui.target = null;
@@ -399,6 +481,7 @@ function finish() {
   $('end-title').textContent = won ? 'Victory' : 'Defeat';
   $('end-title').style.color = ownerColor(won ? PLAYER : game.winner);
   $('end-sub').textContent = won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(game.time)}.`;
+  renderReport();
   setTimeout(() => ($('end').hidden = false), 1200);
 }
 
@@ -464,4 +547,4 @@ view.orbit.dist = 330;
 requestAnimationFrame(frame);
 
 // Hook for the headless smoke test.
-window.__perihelion = { get game() { return game; }, view, ui, sim: { launch, fleetState } };
+window.__perihelion = { get game() { return game; }, view, ui, sim: { launch, fleetState, step } };
