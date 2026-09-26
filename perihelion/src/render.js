@@ -888,12 +888,16 @@ export function createView(canvas, labelRoot) {
         const sh = ship(used++);
         if (!sh) break;
         // Formation: rows of three, staggered, with clear space between hulls.
+        // The formation opens out after launch and closes up before arrival,
+        // so ships leave and arrive as a tight group instead of popping out.
         const row = Math.floor(j / 3);
         const col = (j % 3) - 1;
+        const since = now - f.t0;
+        const open = THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.92 + 0.08;
         tmp.set(s.x, s.y, s.z)
-          .addScaledVector(perp, col * 1.1 + (row % 2) * 0.45 + (hash(f.id, j) - 0.5) * 0.15)
-          .addScaledVector(UP, (row % 2 ? 0.35 : -0.2) + (hash(j, f.id) - 0.5) * 0.12)
-          .addScaledVector(dir, -row * 1.3);
+          .addScaledVector(perp, (col * 1.1 + (row % 2) * 0.45 + (hash(f.id, j) - 0.5) * 0.15) * open)
+          .addScaledVector(UP, ((row % 2 ? 0.35 : -0.2) + (hash(j, f.id) - 0.5) * 0.12) * open)
+          .addScaledVector(dir, -row * 1.3 * open);
         placeShip(sh, tmp, nose, color, s.burning, t, j, f.id * 97 + j);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
