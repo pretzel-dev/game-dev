@@ -17,7 +17,7 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
-  font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 500 15px/1.35 'Rajdhani', system-ui, -apple-system, 'Segoe UI', sans-serif;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -136,14 +136,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #fleet b { color: var(--fg); font-weight: 600; }
 
 #clock b { color: var(--fg); font-weight: 600; letter-spacing: 0.02em; }
-.bar.build { gap: 6px; flex-wrap: wrap; }
-.bar.build[hidden] { display: none; }
-.bar.build button {
-  height: 40px; padding: 0 12px; border-radius: 20px;
-  background: var(--panel); border: 1px solid var(--line); font-size: 13px;
-}
-.bar.build button small { color: var(--accent); margin-left: 5px; font-variant-numeric: tabular-nums; }
-.bar.build button:disabled { opacity: 0.4; }
 .lbl .inc { font-size: 11px; font-weight: 700; animation: blink 1s ease-in-out infinite alternate; }
 @keyframes blink { from { opacity: 1; } to { opacity: 0.45; } }
 
@@ -174,14 +166,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .pips { color: var(--dim); letter-spacing: 2px; font-size: 10px; margin-left: 6px; }
 .sheet-foot { margin: 8px 4px 0; font-size: 12px; color: var(--dim); }
 .lbl .unk { color: var(--dim); }
-#demorow button { color: #ff9a8a; }
-
-/* Build panel: ships and structures as two separate groups. */
-#buildrow { flex-direction: column; align-items: stretch; gap: 8px; }
-.grp { background: rgba(12, 15, 28, 0.55); border: 1px solid var(--line); border-radius: 16px; padding: 6px 8px 8px; }
-.gh { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin: 0 4px 6px; }
-.gb { display: flex; flex-wrap: wrap; gap: 6px; }
-.bar.build button.quiet { color: var(--dim); }
 
 /* End-of-game report */
 #end { justify-content: flex-start; padding-top: calc(var(--safe-t) + 32px); background: var(--bg); }
@@ -196,3 +180,81 @@ table.totals th { font-weight: 600; }
 .chart svg { width: 100%; height: auto; display: block; touch-action: none; }
 .chart .readout { min-height: 18px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .chart .readout b { color: var(--fg); font-weight: 600; }
+
+/* ---- Hard-sci-fi console skin: hairlines, chamfered corners, small caps labels ---- */
+:root {
+  --panel: rgba(6, 10, 18, 0.82);
+  --line: rgba(120, 190, 255, 0.22);
+  --hot: #ff7a4d;
+  --cut: 8px;
+}
+.chamfer, #actions, #fleet, #research, #hud button, .stepper, #launch, #focus {
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  border-radius: 0;
+}
+#hud button { height: 34px; min-width: 38px; font-size: 13px; letter-spacing: 0.08em; border: 1px solid var(--line); }
+#clock { font-size: 13px; }
+
+#actions {
+  gap: 6px; padding: 8px; bottom: calc(var(--safe-b) + 10px);
+  width: min(400px, calc(100% - 20px));
+  background: var(--panel); border: 1px solid var(--line);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  align-items: stretch;
+}
+#info {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; justify-content: center;
+  font-size: 14px; text-shadow: none; padding: 0 2px 4px; border-bottom: 1px solid var(--line);
+}
+#info .grow { flex: 1; }
+#info b { letter-spacing: 0.06em; text-transform: uppercase; }
+.tag { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+.num { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--fg); font-size: 15px; }
+
+#buildrow { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+#buildrow > * { width: 100%; }
+#buildrow[hidden] { display: none; }
+.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; }
+.cell {
+  position: relative; height: 40px; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border: 1px solid var(--line); background: rgba(88, 184, 255, 0.07);
+  font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.cell b { font-weight: 700; }
+.cell.empty { background: none; border-style: dashed; color: var(--dim); font-size: 18px; }
+.cell.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cell .pips { font-style: normal; font-size: 8px; letter-spacing: 1px; color: var(--accent); }
+.cell .prog { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); }
+.cell.busy { color: var(--dim); }
+
+.ctx { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-height: 36px; }
+.ctx .what { flex: 1; min-width: 110px; font-size: 12px; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+.ctx.ships { border-top: 1px solid var(--line); padding-top: 6px; }
+.ctx button {
+  height: 36px; padding: 0 10px; border: 1px solid var(--line); background: rgba(88, 184, 255, 0.1);
+  font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.ctx button small { color: var(--accent); margin-left: 6px; font-variant-numeric: tabular-nums; }
+.ctx button:disabled { opacity: 0.4; }
+.ctx button.danger { color: var(--hot); background: rgba(255, 122, 77, 0.08); border-color: rgba(255, 122, 77, 0.35); }
+.ctx button.danger small { color: var(--hot); }
+.meter { display: inline-block; width: 60px; height: 3px; background: var(--line); }
+.meter i { display: block; height: 100%; background: var(--accent); }
+
+.bar { gap: 6px; }
+.stepper { border-radius: 0; }
+.stepper button { width: 42px; height: 42px; }
+#launch { height: 42px; flex: 1; letter-spacing: 0.2em; }
+#focus { width: 42px; height: 42px; }
+
+#fleet { padding: 8px 12px; bottom: calc(var(--safe-b) + 10px); }
+#research { border-radius: 0; padding: 10px; }
+.tech-row { border-radius: 0; min-height: 48px; padding: 6px 12px; border-left: 2px solid var(--line); }
+.tech-row .t b { letter-spacing: 0.06em; text-transform: uppercase; font-size: 14px; }
+.sheet-head span:first-child, .overlay h1 { font-weight: 600; }
+#rbar, #toast { letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+#rbar { top: calc(var(--safe-t) + 50px); }
+#toast { top: calc(var(--safe-t) + 74px); }
+.seg, .seg button, .primary { border-radius: 0; }
+.primary { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); letter-spacing: 0.2em; text-transform: uppercase; }

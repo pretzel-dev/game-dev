@@ -18,7 +18,7 @@ let running = false;
 const WARPS = [1, 2, 4, 8];
 let warp = 1;
 
-const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, demolish: false };
+const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -44,7 +44,7 @@ function start() {
   const r = rng(seed ^ 0xabc);
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
   ui.selected = ui.target = ui.preview = ui.fleet = null;
-  ui.demolish = false;
+  ui.slot = null;
   lastTech = {};
   $('research').hidden = true;
   view.build(game);
@@ -118,16 +118,8 @@ function updateActions() {
   $('buildrow').hidden = ui.target !== null;
   if (ui.target === null) {
     ui.preview = null;
-    // What's here: slots, structures (and their progress), the ship queue.
-    const parts = s.structures.map((x) => {
-      const def = RULES.structures[x.type];
-      const lvl = def.maxLevel ? ` ${x.level}` : '';
-      if (x.next) return `${def.name}${lvl}→${x.next} ${Math.floor((1 - x.left / upgradeTime({ ...x, level: x.next - 1 })) * 100)}%`;
-      return x.left > 0 ? `${def.name} ${Math.floor((1 - x.left / def.time) * 100)}%` : `${def.name}${lvl}`;
-    });
-    const queue = s.queue ? ` · building ${s.queue} ship${s.queue === 1 ? '' : 's'} (${Math.floor(s.build * 100)}%)` : '';
-    setHTML($('info'), `<b>${s.name}</b> · ${s.ships} ship${s.ships === 1 ? '' : 's'}${queue}<br>`
-      + `${parts.join(', ') || 'Nothing built'} · slots ${s.structures.length}/${slotsOf(s)}`);
+    const kind = s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
+    setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span><span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>`);
     $('launch').disabled = true;
     renderBuildRow(s);
   } else {
@@ -144,86 +136,110 @@ function updateActions() {
 }
 // ---- Building ----------------------------------------------------------------
 
-const BUILD = [
-  { key: 'ship', label: 'Ship', cost: () => RULES.ship.cost },
-  { key: 'shipyard', label: 'Yard', cost: () => RULES.structures.shipyard.cost },
-  { key: 'mine', label: 'Mine', cost: () => RULES.structures.mine.cost },
-  { key: 'defence', label: 'Guns', cost: () => RULES.structures.defence.cost },
-  { key: 'lab', label: 'Lab', cost: () => RULES.structures.lab.cost },
-];
+const ROMAN = ['', 'I', 'II', 'III'];
+const ABBR = { shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab' };
+const pct = (v) => `${Math.max(0, Math.min(100, Math.floor(v * 100)))}%`;
+function progressOf(x) {
+  if (x.next) return 1 - x.left / upgradeTime({ ...x, level: x.next - 1 });
+  return x.left > 0 ? 1 - x.left / RULES.structures[x.type].time : null;
+}
+// The world panel: one cell per build slot (built, building, or empty), a
+// ship line only where there's a yard, and one context row for the cell
+// you tapped: build options for an empty slot, upgrade/demolish for a built one.
 function renderBuildRow(s) {
-  const button = (b) => {
-    const why = b.key === 'ship' ? cantOrderShip(game, s) : cantBuild(game, s, b.key);
-    // Hide what can never go here; grey out what can't be afforded yet.
-    if (why && why !== 'not enough credits' && b.key !== 'ship' && why !== 'no free slots') return '';
-    return `<button data-b="${b.key}" ${why ? 'disabled' : ''} title="${why || ''}">${b.label}<small>${b.cost()}</small></button>`;
-  };
-  const SHORT = { mine: 'Mine', defence: 'Guns', lab: 'Lab', shipyard: 'Yard' };
-  // Two groups: ships (no slots; queued at yards) and structures (use slots).
-  const shipGroup = BUILD.filter((b) => b.key === 'ship').map(button).join('')
-    + (s.queue ? `<button data-cancel="1">✕ Cancel<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '');
-  const structGroup = BUILD.filter((b) => b.key !== 'ship').map(button).join('')
-    + s.structures.map((x, i) => {
-      // Upgrades for what's already here.
+  const slots = slotsOf(s);
+  if (ui.slot !== null && ui.slot >= slots) ui.slot = null;
+  const cells = [];
+  for (let i = 0; i < slots; i++) {
+    const x = s.structures[i];
+    const on = ui.slot === i ? ' on' : '';
+    if (!x) { cells.push(`<button class="cell empty${on}" data-slot="${i}"><span>+</span></button>`); continue; }
+    const def = RULES.structures[x.type];
+    const p = progressOf(x);
+    const pips = def.maxLevel ? `<i class="pips">${'▮'.repeat(x.level)}${'▯'.repeat(def.maxLevel - x.level)}</i>` : '';
+    const bar = p === null ? '' : `<i class="prog" style="width:${pct(p)}"></i>`;
+    cells.push(`<button class="cell${p === null ? '' : ' busy'}${on}" data-slot="${i}"><b>${ABBR[x.type]}</b>${pips}${bar}</button>`);
+  }
+  let html = `<div class="cells">${cells.join('')}</div>`;
+
+  // Context row for the tapped slot.
+  if (ui.slot !== null) {
+    const x = s.structures[ui.slot];
+    let row = '';
+    if (!x) {
+      row = ['shipyard', 'mine', 'defence', 'lab'].map((k) => {
+        const why = cantBuild(game, s, k);
+        if (why && why !== 'not enough credits') return '';
+        return `<button data-b="${k}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${RULES.structures[k].cost}</small></button>`;
+      }).join('');
+    } else {
+      const def = RULES.structures[x.type];
+      const p = progressOf(x);
+      const state = x.next ? `upgrading → ${ROMAN[x.next]} · ${pct(p)}` : x.left > 0 ? `building · ${pct(p)}` : def.maxLevel ? `level ${ROMAN[x.level]}` : 'online';
       const why = cantUpgrade(game, s, x);
-      if (why && why !== 'not enough credits') return '';
-      return `<button data-u="${i}" ${why ? 'disabled' : ''}>${SHORT[x.type]} ${x.level}→${x.level + 1}<small>${upgradeCost(x)}</small></button>`;
-    }).join('')
-    + (s.structures.length ? `<button data-demo="toggle" class="quiet">${ui.demolish ? 'Done' : 'Demolish'}</button>` : '');
+      const up = !why || why === 'not enough credits'
+        ? `<button data-u="${ui.slot}" ${why ? 'disabled' : ''}>Upgrade<small>${upgradeCost(x)}</small></button>` : '';
+      const dwhy = cantDemolish(game, s, x);
+      row = `<span class="what">${def.name} · ${state}</span>${up}<button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
+    }
+    html += `<div class="ctx">${row}</div>`;
+  }
+
+  // Ships: only where a yard can build them.
   const yards = yardsOf(s);
-  const html = `<div class="grp"><span class="gh">Ships${yards ? ` · ${yards} yard${yards === 1 ? '' : 's'}` : ' · needs a yard'}${s.queue ? ` · ${s.queue} queued` : ''}</span><div class="gb">${shipGroup}</div></div>`
-    + `<div class="grp"><span class="gh">Structures · ${s.structures.length}/${slotsOf(s)} slots</span><div class="gb">${structGroup}</div></div>`;
-  // Demolish: a separate row, only while toggled on, so it's hard to hit by accident.
-  $('demorow').hidden = !ui.demolish;
-  if (ui.demolish) {
-    setHTML($('demorow'), s.structures.map((x, i) => {
-      const lvl = RULES.structures[x.type].maxLevel ? ` ${x.level}` : '';
-      return `<button data-d="${i}" ${cantDemolish(game, s, x) ? 'disabled' : ''}>✕ ${RULES.structures[x.type].name}${lvl}<small>${demolishFee(x)}</small></button>`;
-    }).join(''));
+  if (yards) {
+    const why = cantOrderShip(game, s);
+    const q = s.queue ? `<span class="what">Queue <b class="num">${s.queue}</b><i class="meter"><i style="width:${pct(s.build)}"></i></i></span>`
+      : `<span class="what">${yards} yard${yards === 1 ? '' : 's'} idle</span>`;
+    html += `<div class="ctx ships">${q}`
+      + (s.queue ? `<button data-cancel="1" class="danger">✕<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
+      + `<button data-b="ship" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost}</small></button></div>`;
   }
   setHTML($('buildrow'), html);
 }
 $('buildrow').addEventListener('click', (e) => {
-  if (e.target.closest('button[data-cancel]') && ui.selected !== null) {
-    if (cancelShip(game, game.bodies[ui.selected])) toast('Ship build cancelled', ownerColor(PLAYER));
+  if (ui.selected === null) return;
+  const s = game.bodies[ui.selected];
+  const cell = e.target.closest('button[data-slot]');
+  if (cell) {
+    const i = Number(cell.dataset.slot);
+    ui.slot = ui.slot === i ? null : i;
     updateActions();
     return;
   }
-  if (e.target.closest('button[data-demo]')) {
-    ui.demolish = !ui.demolish;
+  if (e.target.closest('button[data-cancel]')) {
+    if (cancelShip(game, s)) toast('Ship build cancelled', ownerColor(PLAYER));
     updateActions();
     return;
   }
   const up = e.target.closest('button[data-u]');
-  if (up && ui.selected !== null) {
-    const s = game.bodies[ui.selected];
+  if (up) {
     const x = s.structures[Number(up.dataset.u)];
-    if (x && upgrade(game, s, x)) toast(`Upgrading ${RULES.structures[x.type].name} to level ${x.next} · ${Math.round(upgradeTime({ ...x, level: x.next - 1 }))}s`, ownerColor(PLAYER));
+    if (x && upgrade(game, s, x)) toast(`Upgrading ${RULES.structures[x.type].name} to ${ROMAN[x.next]} · ${Math.round(upgradeTime({ ...x, level: x.next - 1 }))}s`, ownerColor(PLAYER));
+    updateActions();
+    return;
+  }
+  const d = e.target.closest('button[data-d]');
+  if (d) {
+    const x = s.structures[Number(d.dataset.d)];
+    if (x && demolish(game, s, x)) toast(`${RULES.structures[x.type].name} scrapped at ${s.name}`, ownerColor(PLAYER));
+    ui.slot = null;
     updateActions();
     return;
   }
   const btn = e.target.closest('button[data-b]');
-  if (!btn || ui.selected === null) return;
-  const s = game.bodies[ui.selected];
+  if (!btn) return;
   const k = btn.dataset.b;
   const ok = k === 'ship' ? orderShip(game, s) : buildStructure(game, s, k);
-  if (ok) toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(PLAYER));
-  updateActions();
-});
-
-$('demorow').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-d]');
-  if (!btn || ui.selected === null) return;
-  const s = game.bodies[ui.selected];
-  const x = s.structures[Number(btn.dataset.d)];
-  if (x && demolish(game, s, x)) toast(`${RULES.structures[x.type].name} demolished at ${s.name}`, ownerColor(PLAYER));
-  if (!s.structures.length) ui.demolish = false;
+  if (ok) {
+    toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(PLAYER));
+    if (k !== 'ship') ui.slot = null;
+  }
   updateActions();
 });
 
 // ---- Research --------------------------------------------------------------------
 
-const ROMAN = ['', 'I', 'II', 'III'];
 function renderResearch() {
   const t = game.tech[PLAYER];
   const p = t.project;
@@ -315,7 +331,7 @@ function tap(id, x, y) {
   } else if (id === ui.selected) {
     ui.selected = ui.target = null;
   } else if (game.bodies[id].owner === PLAYER) {
-    ui.selected = id;
+    ui.selected = id; ui.slot = null;
     ui.target = null;
   }
   updateActions();
