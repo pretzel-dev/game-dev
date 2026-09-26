@@ -101,7 +101,7 @@ function economy(game, ai, mine, coming) {
     }
   }
   // 2c. Research, in a sensible order, when it can afford it and still build.
-  const order = ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors'];
+  const order = ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors', 'intel'];
   const key = order.find((k) => nextTech(game, ai.owner, k));
   if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost) {
     return research(game, ai.owner, key);

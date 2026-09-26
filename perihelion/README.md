@@ -41,9 +41,10 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
   structures; anything unfinished and any queued ships are lost. Nothing is
   built while a world is under attack.
 - **Research (R&D, top bar):** one project at a time, paid in credits.
-  Drives (thrust), Sensors (range), Intel (I: enemy fleet sizes; II: their
-  destinations, arrival times and incoming warnings), Weapons, Armour and
-  Industry (build speed, mine output).
+  Drives (+15% thrust per level), Sensors (range), Intel (I: enemy fleet
+  sizes; II: their routes and landing points; III: arrival times and
+  incoming warnings), Weapons (+15% firepower), Armour (-12% damage taken)
+  and Industry (+12% build speed, +15% mine output).
 - **Fog of war:** beyond your sensors, worlds show `?` for ships and hide
   their structures, and enemy fleets are invisible. Rivals have the same
   limits and research the same tree.
