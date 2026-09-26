@@ -180,7 +180,12 @@ export const FLEET_NAMES = ['Resolute', 'Tenacity', 'Wayfarer', 'Undaunted', 'Ni
   'Glaive', 'Hurricane', 'Ironside', 'Jaeger', 'Kestrel Wing', 'Lance', 'Magpie', 'Narwhal', 'Osprey', 'Petrel', 'Raven', 'Shrike', 'Tern',
   'Umbra', 'Viper', 'Wyvern Wing', 'Auk', 'Bittern', 'Curlew', 'Dunlin', 'Egret', 'Fieldfare', 'Gannet', 'Heron', 'Ibis', 'Jay', 'Kite',
   'Lapwing', 'Merlin', 'Nuthatch', 'Oriole', 'Plover', 'Redshank', 'Skua', 'Tanager', 'Veery', 'Whimbrel', 'Stoic', 'Candle', 'Hearthguard'];
-export const VET_BONUS = 0.08; // firepower per veterancy star (max 3)
+export const VET_BONUS = 0.08; // firepower per veterancy level (max 3)
+/** Veterancy is experience (0..3); only whole levels count in battle. */
+export const vetLevel = (v) => Math.min(3, Math.floor(v || 0));
+/** Experience for a win: an even fight is half a level, a long-odds win up to
+ * more than a level, a walkover almost nothing. */
+const winXP = (foe, own) => 0.5 * Math.min(2.5, Math.max(0.1, foe / Math.max(own, 0.5))) ** 1.3;
 
 /** Something the player might want to hear about; the UI drains these. */
 function note(game, e) {
@@ -544,7 +549,10 @@ export function launch(game, from, to, n) {
   const p = plan(game, from, to);
   from.ships -= n;
   const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time, vet: from.vet || 0 };
-  f.name = fleetName(game);
+  // The bulk of a garrison keeps its task force name; a small detachment gets a new one.
+  if (from.tf && n * 2 >= n + from.ships) { f.name = from.tf; from.tf = null; }
+  else f.name = fleetName(game);
+  if (!from.ships) from.tf = null;
   game.fleets.push(f);
   note(game, { type: 'launch', owner: f.owner, fleet: f.id, name: f.name, n, from: from.id, to: to.id });
   return f;
@@ -603,12 +611,12 @@ function fight(game, b, dt) {
   const attackers = b.sieges.reduce((n, g) => n + g.n, 0);
   // Cover adds firepower but can't be destroyed here: only the planet's own
   // fight can knock out its guns.
-  const defenders = (b.ships * (1 + VET_BONUS * (b.vet || 0)) + b.guns + coverOf(game, b)) * firepowerOf(game, b.owner);
+  const defenders = (b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b)) * firepowerOf(game, b.owner);
   let attackFire = 0;
   for (const g of b.sieges) {
     const share = attackers > 0 ? g.n / attackers : 0;
     g.dmg = (g.dmg || 0) + RULES.fire * defenders * share * damageTaken(game, g.owner) * dt;
-    attackFire += g.n * (1 + VET_BONUS * (g.vet || 0)) * firepowerOf(game, g.owner);
+    attackFire += g.n * (1 + VET_BONUS * vetLevel(g.vet)) * firepowerOf(game, g.owner);
   }
   b.dmg = (b.dmg || 0) + RULES.fire * attackFire * damageTaken(game, b.owner) * dt;
   b.fighting = true;
@@ -630,6 +638,7 @@ function fight(game, b, dt) {
     }
   }
   for (const g of b.sieges) if (g.n <= 0) note(game, { type: 'wiped', owner: g.owner, name: g.name, at: b.id, vs: b.owner });
+  if (!b.ships) b.tf = null;
   b.sieges = b.sieges.filter((g) => g.n > 0);
   if (b.ships + b.guns <= 0 && b.sieges.length) {
     const win = b.sieges.sort((x, y) => y.n - x.n)[0];
@@ -638,8 +647,10 @@ function fight(game, b, dt) {
     note(game, { type: 'captured', owner: win.owner, from: b.owner, at: b.id, name: win.name });
     b.owner = win.owner;
     b.ships = win.n;
-    // Survivors of a won battle are veterans.
-    b.vet = Math.min(3, (win.vet || 0) + 1);
+    // Survivors gain experience, more for winning against the odds.
+    b.vet = Math.min(3, (win.vet || 0) + winXP(win.foe0 || 1, win.n0 || win.n));
+    b.tf = win.name;
+    if (vetLevel(b.vet) > vetLevel(win.vet)) note(game, { type: 'promoted', owner: b.owner, at: b.id, name: b.tf, v: b.vet });
     b.guns = 0;
     b.dmg = 0;
     b.build = 0;
@@ -654,10 +665,12 @@ function fight(game, b, dt) {
   if (!b.sieges.length) {
     // Held: the garrison that saw it through gains a star.
     if (b.fighting && !taken && b.ships > 0) {
-      b.vet = Math.min(3, (b.vet || 0) + 1);
+      const was = b.vet;
+      b.vet = Math.min(3, (b.vet || 0) + winXP(b.foe0 || 1, b.own0 || 1));
+      if (vetLevel(b.vet) > vetLevel(was)) note(game, { type: 'promoted', owner: b.owner, at: b.id, name: b.tf, v: b.vet });
       note(game, { type: 'held', owner: b.owner, at: b.id });
     }
-    b.dmg = 0; b.fighting = false;
+    b.dmg = 0; b.fighting = false; b.foe0 = b.own0 = 0;
   }
 }
 
@@ -702,12 +715,17 @@ export function step(game, dt) {
     const b = game.bodies[f.to];
     if (b.owner === f.owner) {
       b.vet = mix(b.vet || 0, b.ships, f.vet || 0, f.n);
+      if (!b.tf || f.n >= b.ships) b.tf = f.name;
       b.ships += f.n;
       note(game, { type: 'arrived', owner: f.owner, name: f.name, n: f.n, at: b.id });
     } else {
+      // Odds as the fight is joined, so wins can be judged by them later.
+      const defence = b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b);
+      b.own0 = Math.max(b.own0 || 0, defence);
+      b.foe0 = (b.foe0 || 0) + f.n;
       const g = b.sieges.find((x) => x.owner === f.owner);
-      if (g) { g.vet = mix(g.vet || 0, g.n, f.vet || 0, f.n); g.n += f.n; }
-      else b.sieges.push({ owner: f.owner, n: f.n, vet: f.vet || 0, name: f.name });
+      if (g) { g.vet = mix(g.vet || 0, g.n, f.vet || 0, f.n); g.n += f.n; g.n0 += f.n; }
+      else b.sieges.push({ owner: f.owner, n: f.n, vet: f.vet || 0, name: f.name, n0: f.n, foe0: defence });
       note(game, { type: 'engaged', owner: f.owner, name: f.name, n: f.n, at: b.id, vs: b.owner });
     }
     return false;

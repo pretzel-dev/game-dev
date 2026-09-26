@@ -176,15 +176,25 @@ import { rng } from '../src/sim.js';
   m.sieges.push({ owner: 0, n: 6, vet: 0, name: 'Test' });
   for (let t = 0; t < 60 && m.owner !== 0; t += 0.1) step(g, 0.1);
   assert.equal(m.owner, 0);
-  assert.equal(m.vet, 1, 'survivors of a capture gain a star');
+  assert.ok(m.vet > 0 && m.vet < 1, 'an easy capture gives a little experience');
+  assert.equal(m.tf, 'Test', 'the task force name stays with the garrison');
   assert.ok(g.events.some((e) => e.type === 'captured' && e.at === m.id));
   const home = g.bodies.find((b) => b.owner === 0 && b.home);
   const f = launch(g, m, home, 2);
-  assert.ok(f.name && f.vet === 1, 'fleets are named and carry veterancy');
+  assert.ok(f.name && f.vet === m.vet, 'fleets are named and carry veterancy');
+  m.vet = 1.2;
   const before = home.ships;
   for (let t = 0; t < f.T + 1; t += 0.5) step(g, 0.5);
   assert.ok(home.vet > 0 && home.vet < 1 && home.ships === before + 2, 'veterancy mixes into the garrison');
-  console.log(`veterancy: TF ${f.name} carried ${f.vet} star; garrison now ${home.vet.toFixed(2)}`);
+  // An underdog win is worth far more than a walkover.
+  const h = createGame({ seed: 5 });
+  const m2 = h.bodies.find((b) => b.owner === NEUTRAL && b.kind === 'moon');
+  m2.guns = 3; m2.ships = 3;
+  h.fleets.push({ ...plan(h, home, m2), id: 99, owner: 0, n: 9, from: home.id, to: m2.id, t0: h.time - 1e4, vet: 0, name: 'Odds' });
+  h.fleets[0].T = 0;
+  for (let t = 0; t < 120 && m2.owner !== 0; t += 0.1) step(h, 0.1);
+  assert.ok(m2.owner === 0 && m2.vet > f.vet * 2, `hard win gives real experience (${m2.vet.toFixed(2)})`);
+  console.log(`veterancy: easy win ${f.vet.toFixed(2)}, hard win ${m2.vet.toFixed(2)}; name kept: ${m.tf ?? f.name}`);
 }
 
 // AI-only matches finish.

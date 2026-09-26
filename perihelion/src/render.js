@@ -1,9 +1,15 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { NEUTRAL, posAt, fleetState, rng } from './sim.js';
+import { NEUTRAL, posAt, fleetState, rng, vetLevel } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
+/** A count wrapped in a thin ring with one diagonal notch per veterancy level. */
+export function vetBadge(inner, vet) {
+  const lvl = vetLevel(vet);
+  if (!lvl) return inner;
+  return `<span class="vb">${inner}${'<i></i>'.repeat(lvl)}</span>`;
+}
 export const ownerColor = (o) => (o === NEUTRAL ? NEUTRAL_COLOR : OWNER_COLORS[o]);
 
 const SUN_RADIUS = 6;
@@ -508,7 +514,7 @@ export function createView(canvas, labelRoot) {
 
   // The sun: bright core, layered glow, and the only real light.
   // Churning granulation with dark-edged cells, limb darkening, and slow
-  // brighter faculae; a streaked corona and a wide glow around it.
+  // brighter faculae, dark sunspots, and a soft glow around it.
   const sunTime = { value: 0 };
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 48), new THREE.ShaderMaterial({
     uniforms: { uT: sunTime },
@@ -531,38 +537,43 @@ export function createView(canvas, labelRoot) {
         float t = uT * 0.02;
         float warp = fbm(p * 3.0 + t);
         float cells = fbm(p * 9.0 + warp * 2.0 - t * 2.0);
-        float spots = smoothstep(0.62, 0.72, fbm(p * 2.2 + vec3(0.0, t * 0.3, 0.0)));
+        float spots = smoothstep(0.66, 0.74, fbm(p * 2.6 + vec3(0.0, t * 0.3, 0.0)));
+        float pen = smoothstep(0.6, 0.66, fbm(p * 2.6 + vec3(0.0, t * 0.3, 0.0)));
+        float fac = smoothstep(0.55, 0.62, fbm(p * 5.0 - t * 0.5)) * (1.0 - pen);
         float mu = max(dot(vN, vV), 0.0);
         float limb = 0.45 + 0.55 * pow(mu, 0.5);
         vec3 hot = vec3(1.0, 0.96, 0.82), mid = vec3(1.0, 0.72, 0.32), cool = vec3(0.85, 0.35, 0.1);
         vec3 c = mix(mid * 0.85, hot, smoothstep(0.4, 0.75, cells));
         c = mix(c, cool, (1.0 - limb) * 0.8);
-        c += spots * 0.25 * hot;
+        c += fac * 0.18 * hot;
+        c *= 1.0 - pen * 0.35 - spots * 0.5;
         gl_FragColor = vec4(c * (0.55 + 0.4 * limb), 1.0);
       }`,
   })));
-  // Corona: long faint streamers, slowly turning.
-  const coronaTex = canvasTex(256, 256, (g) => {
-    g.translate(128, 128);
-    const r = rng(42);
-    for (let i = 0; i < 90; i++) {
-      const a = r() * Math.PI * 2;
-      const len = 40 + r() ** 2 * 88;
-      const grad = g.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
-      grad.addColorStop(0, 'rgba(255,230,180,0.25)');
-      grad.addColorStop(1, 'rgba(255,200,120,0)');
-      g.strokeStyle = grad;
-      g.lineWidth = 1 + r() * 3;
-      g.beginPath();
-      g.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
-      g.quadraticCurveTo(Math.cos(a + 0.1) * len * 0.6, Math.sin(a + 0.1) * len * 0.6, Math.cos(a + (r() - 0.5) * 0.3) * len, Math.sin(a + (r() - 0.5) * 0.3) * len);
-      g.stroke();
+  // Prominences: glowing loops of plasma rising off the surface, each
+  // swelling and fading on its own clock, then reappearing somewhere else.
+  const proms = [];
+  {
+    const r = rng(7);
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i < 9; i++) {
+      const size = 0.7 + r() * 1.3;
+      const m = new THREE.Mesh(
+        new THREE.TorusGeometry(size, 0.07 + r() * 0.08, 6, 28, Math.PI),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.04 + r() * 0.05, 1, 0.55), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+      );
+      const place = () => {
+        const n = new THREE.Vector3().randomDirection();
+        m.position.copy(n).multiplyScalar(SUN_RADIUS * 0.97);
+        m.quaternion.setFromUnitVectors(up, n);
+        m.rotateY(Math.random() * Math.PI);
+      };
+      place();
+      proms.push({ m, place, phase: r() * 40, period: 25 + r() * 30, peak: 0.5 + r() * 0.4, grow: size });
+      scene.add(m);
     }
-  });
-  const corona = new THREE.Sprite(new THREE.SpriteMaterial({ map: coronaTex, color: '#ffd9a0', opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-  corona.scale.setScalar(34);
-  scene.add(corona);
-  for (const [s, c, o] of [[20, '#fff0c0', 0.6], [46, '#ffd27a', 0.45], [120, '#ff9a4a', 0.25]]) {
+  }
+  for (const [s, c, o] of [[18, '#fff0c0', 0.5], [40, '#ffd27a', 0.35], [110, '#ff9a4a', 0.2]]) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     glow.scale.setScalar(s);
     scene.add(glow);
@@ -794,7 +805,13 @@ export function createView(canvas, labelRoot) {
   function render(game, ui, dt, t) {
     const now = game.time;
     sunTime.value = t;
-    corona.material.rotation = t * 0.004;
+    for (const pr of proms) {
+      const u = ((t + pr.phase) % pr.period) / pr.period;
+      if (u < pr.lastU) pr.place();
+      pr.lastU = u;
+      pr.m.material.opacity = Math.sin(u * Math.PI) ** 2 * pr.peak;
+      pr.m.scale.setScalar(0.6 + u * 0.6);
+    }
     const techOf = (o, k) => (o >= 0 && game.tech ? game.tech[o][k] : 0);
     // Camera: follow the focused body, with inertia on rotation.
     for (const v of views) {
@@ -991,7 +1008,7 @@ export function createView(canvas, labelRoot) {
       const hide = tmp.z > 1 || crowded.has(b.id);
       if (hide) { v.label.style.visibility = 'hidden'; continue; }
       const attackers = (known ? b.sieges : []).map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
-      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : b.ships ? `<b>${b.ships}</b>` : '';
+      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : b.ships ? vetBadge(`<b>${b.ships}</b>`, b.vet) : '';
       const kids = (extras.get(b.id) || []).join('');
       const warn = (incomingTo.get(b.id) || []).map((x) => {
         const e = Math.max(0, x.eta);
@@ -1072,8 +1089,8 @@ export function createView(canvas, labelRoot) {
       const el = fleetLabel(fl++);
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === 0;
-      const text = `▸ ${knowsSize(f) ? f.n : '?'}${knowsSize(f) && f.vet >= 1 ? ' ' + '★'.repeat(Math.floor(f.vet)) : ''}`;
-      if (el._t !== text) { el._t = text; el.textContent = text; }
+      const text = knowsSize(f) ? `▸ ${vetBadge(String(f.n), f.vet)}` : '▸ ?';
+      if (el._t !== text) { el._t = text; el.innerHTML = text; }
       el.style.color = ownerColor(f.owner);
       el.style.borderColor = ownerColor(f.owner);
       el.style.opacity = mine ? (ui.fleet === f.id ? 1 : 0.85) : 0.6;

@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH } from './sim.js';
+import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
@@ -26,7 +26,7 @@ export function tickAI(game, ai, dt) {
   const sizeOf = (f) => (f.owner === ai.owner || vis.intel >= 1 ? f.n : 5);
   const coming = (b, own) => game.fleets.filter((f) => f.to === b.id && (f.owner === ai.owner) === own && known(f)).reduce((n, f) => n + sizeOf(f), 0);
   // Worlds out of sensor range: guess a modest garrison.
-  const shipsAt = (t) => (vis.bodies.has(t.id) ? t.ships : 4);
+  const shipsAt = (t) => (vis.bodies.has(t.id) ? t.ships * (1 + VET_BONUS * vetLevel(t.vet)) : 4);
   const gunsAt = (t) => (vis.bodies.has(t.id) ? t.guns + coverOf(game, t) : 3);
   if (economy(game, ai, mine, coming)) return;
 
