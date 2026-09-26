@@ -268,3 +268,20 @@ table.totals th { font-weight: 600; }
 .vet { color: #ffd479; font-size: 11px; letter-spacing: 1px; }
 .tech-row .t em { display: block; font-style: normal; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
 #rbar { right: auto; max-width: 42vw; }
+
+/* Veterancy: a thin ring around the count with a diagonal notch per level. */
+.vb {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.9em; height: 1.9em; padding: 0 0.3em; border: 1.5px solid currentColor; border-radius: 1em;
+}
+.vb i {
+  position: absolute; top: -0.3em; width: 2px; height: 0.65em; background: currentColor;
+  transform: rotate(35deg); box-shadow: 0 0 0 1px rgba(3, 4, 10, 0.8);
+}
+.vb i:nth-of-type(1) { right: 0.15em; }
+.vb i:nth-of-type(2) { right: 0.5em; }
+.vb i:nth-of-type(3) { right: 0.85em; }
+.flbl .vb { min-width: 1.7em; height: 1.35em; border-width: 1px; margin: 1px 0 1px 2px; }
+.flbl .vb i { height: 0.5em; top: -0.25em; width: 1.5px; }
+.flbl:has(.vb) { line-height: 18px; }
+.vet { color: var(--dim); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
