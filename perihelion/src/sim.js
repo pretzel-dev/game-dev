@@ -39,19 +39,19 @@ export const RULES = {
 // it up. The AI researches the same tree under the same rules.
 
 export const TECH = {
-  drives: { name: 'Drives', text: ['+25% thrust', '+50% thrust', '+75% thrust'], cost: [300, 600, 1000], time: [90, 150, 240] },
+  drives: { name: 'Drives', text: ['+15% thrust', '+30% thrust', '+45% thrust'], cost: [300, 600, 1000], time: [90, 150, 240] },
   sensors: { name: 'Sensors', text: ['See further', 'See much further', 'See across the system'], cost: [250, 500, 900], time: [80, 140, 220] },
-  intel: { name: 'Intel', text: ['Enemy fleet sizes', 'Enemy destinations and arrival times'], cost: [300, 600], time: [90, 160] },
-  weapons: { name: 'Weapons', text: ['+25% firepower', '+50% firepower'], cost: [400, 800], time: [120, 200] },
-  armour: { name: 'Armour', text: ['Ships take 20% less damage', 'Ships take 40% less damage'], cost: [400, 800], time: [120, 200] },
-  industry: { name: 'Industry', text: ['Build 20% faster, mines +25%', 'Build 40% faster, mines +50%'], cost: [350, 700], time: [100, 180] },
+  intel: { name: 'Intel', text: ['Enemy fleet sizes', 'Enemy routes and landing points', 'Enemy arrival times and warnings'], cost: [300, 550, 850], time: [90, 150, 210] },
+  weapons: { name: 'Weapons', text: ['+15% firepower', '+30% firepower'], cost: [400, 800], time: [120, 200] },
+  armour: { name: 'Armour', text: ['Ships take 12% less damage', 'Ships take 24% less damage'], cost: [400, 800], time: [120, 200] },
+  industry: { name: 'Industry', text: ['Build 12% faster, mines +15%', 'Build 24% faster, mines +30%'], cost: [350, 700], time: [100, 180] },
 };
 export const SENSOR_RANGE = [70, 110, 160, 240];
 const techLevel = (game, owner, key) => (owner === NEUTRAL || !game.tech ? 0 : game.tech[owner][key]);
-export const accelOf = (game, owner) => RULES.accel * (1 + 0.25 * techLevel(game, owner, 'drives'));
-const firepowerOf = (game, owner) => 1 + 0.25 * techLevel(game, owner, 'weapons');
-const damageTaken = (game, owner) => 1 - 0.2 * techLevel(game, owner, 'armour');
-const buildSpeed = (game, owner) => 1 + 0.2 * techLevel(game, owner, 'industry');
+export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives'));
+const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
+const damageTaken = (game, owner) => 1 - 0.12 * techLevel(game, owner, 'armour');
+const buildSpeed = (game, owner) => 1 + 0.12 * techLevel(game, owner, 'industry');
 
 export function nextTech(game, owner, key) {
   const lvl = game.tech[owner][key];
@@ -252,7 +252,7 @@ const count = (b, type) => b.structures.reduce((n, x) => n + (x.type === type &&
 export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
 export const incomeOf = (b, game) => {
   if (b.owner === NEUTRAL) return 0;
-  const mining = 1 + 0.25 * (game ? techLevel(game, b.owner, 'industry') : 0);
+  const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
   return RULES.income[b.kind] + RULES.mineIncome * count(b, 'mine') * mining;
 };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);

@@ -137,7 +137,7 @@ import { rng } from '../src/sim.js';
   const a0 = accelOf(g, 0);
   assert.ok(research(g, 0, 'drives'));
   for (let t = 0; t < TECH.drives.time[0] + 1; t += 0.5) step(g, 0.5);
-  assert.ok(accelOf(g, 0) > a0 * 1.2, 'drives research raises thrust');
+  assert.ok(accelOf(g, 0) > a0 * 1.1, 'drives research raises thrust');
   // Fog: far worlds are unseen at the start; sensors widen the view.
   const v0 = visibility(g, 0).bodies.size;
   g.tech[0].sensors = 3;

@@ -668,12 +668,14 @@ export function createView(canvas, labelRoot) {
     const vis = ui.vis;
     const knowsWorld = (b) => !vis || vis.bodies.has(b.id);
     const seesFleet = (f) => !vis || f.owner === vis.owner || vis.sees(fleetState(f, now));
+    // Intel II: routes and landing points; Intel III: arrival times and warnings.
     const knowsDest = (f) => !vis || f.owner === vis.owner || (vis.intel >= 2 && seesFleet(f));
+    const knowsEta = (f) => !vis || f.owner === vis.owner || (vis.intel >= 3 && seesFleet(f));
     const knowsSize = (f) => !vis || f.owner === vis.owner || vis.intel >= 1;
     const incoming = new Map();
     for (const f of game.fleets) {
       const tb = game.bodies[f.to];
-      if (f.owner === tb.owner || !knowsDest(f)) continue;
+      if (f.owner === tb.owner || !knowsEta(f)) continue;
       const left = f.T - (now - f.t0);
       const k = `${f.to}:${f.owner}`;
       const cur = incoming.get(k) || { to: f.to, owner: f.owner, n: 0, eta: Infinity };
