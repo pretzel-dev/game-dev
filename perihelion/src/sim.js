@@ -523,8 +523,37 @@ function clearOfSun(f) {
 }
 
 /** Plans a transfer from `from` (now) to meet `to`. Returns { p0, v0, p1, v1, a1, a2, T }. */
+/**
+ * Gravity assist, kept simple: a transfer that passes close to a gas giant can
+ * use its pull, so the drive's effective thrust on that route is 20% higher.
+ * (Real assists bend and speed a path; this gives the same payoff: giants
+ * become fast lanes worth routing past, and holding.)
+ */
+export const ASSIST = { boost: 1.25, range: 16 }; // range in giant radii
+function assistBy(game, f, from, to, now) {
+  const skip = new Set([from.id, to.id, from.parent, to.parent]);
+  let best = null;
+  for (const g of game.bodies) {
+    if (!g.giant || skip.has(g.id)) continue;
+    for (let k = 1; k < 24; k++) {
+      const t = (k / 24) * f.T;
+      const d = dist(along(f, t), posAt(game, g, now + t));
+      if (d < g.size * ASSIST.range && (!best || d < best.d)) best = { g, d };
+    }
+  }
+  return best && best.g;
+}
+
 export function plan(game, from, to, now = game.time) {
-  const accel = accelOf(game, from.owner);
+  const direct = planWith(game, from, to, now, accelOf(game, from.owner));
+  const g = assistBy(game, direct, from, to, now);
+  if (!g) return direct;
+  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * ASSIST.boost);
+  // Only if the faster path still swings past the same giant.
+  return fast.T < direct.T && assistBy(game, fast, from, to, now) === g ? { ...fast, assist: g.id } : direct;
+}
+
+function planWith(game, from, to, now, accel) {
   const p0 = posAt(game, from, now);
   const v0 = velAt(game, from, now);
   const make = (T) => {

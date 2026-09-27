@@ -298,3 +298,5 @@ table.totals th { font-weight: 600; }
   clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); }
 #actions.launching #focus { display: none; }
 #cancel { flex: 0 0 auto; }
+.ladder .lv i { font-style: normal; font-size: 10px; color: #7ee0a1; letter-spacing: 0.02em; }
+.assist { color: #c9a4ff; }

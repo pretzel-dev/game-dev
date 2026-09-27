@@ -103,7 +103,7 @@ function updateFleetInfo() {
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
   setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> ship${f.n === 1 ? '' : 's'} from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
-    + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s`);
+    + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s${f.assist !== undefined ? ` · <span class="assist">↻ ${game.bodies[f.assist].name}</span>` : ''}`);
 }
 
 function updateActions() {
@@ -142,7 +142,8 @@ function updateActions() {
     const cover = t.owner === PLAYER ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b></span>`);
+    const assist = ui.preview.assist !== undefined ? ` · <span class="assist">↻ assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}</span>`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = false;
   }
@@ -156,6 +157,15 @@ function econLine(b) {
   const base = RULES.income[b.kind];
   const mines = total - base;
   return `<span class="tag">Income</span> <b class="pos">+${total.toFixed(1)}/s</b> <span class="dim">· ${b.kind} ${base.toFixed(1)}${mines > 0.001 ? ` + mines ${mines.toFixed(1)}` : ''}</span>`;
+}
+/** Is the next level worth it? Mines: how long to earn the cost back.
+ * Guns: price per gun. Research stations: price per +10% research speed. */
+function levelValue(type, cost) {
+  const mining = 1 + 0.15 * game.tech[PLAYER].industry;
+  if (type === 'mine') return `pays back ${fmt(cost / (RULES.mineIncome * mining))}`;
+  if (type === 'defence') return `${Math.round(cost / RULES.gunsPerDefence)} per gun`;
+  if (type === 'lab') return `${Math.round(cost / (RULES.labSpeed * 10))} per +10%`;
+  return '';
 }
 /** What one level of a structure does, for the upgrade breakdown. */
 function levelEffect(type, level) {
@@ -198,7 +208,7 @@ function renderBuildRow(s) {
       row = ['shipyard', 'mine', 'defence', 'lab'].map((k) => {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
-        return `<button data-b="${k}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${RULES.structures[k].cost}</small></button>`;
+        return `<button data-b="${k}" ${why ? 'disabled' : ''} title="${levelValue(k, RULES.structures[k].cost)}">${ABBR[k]}<small>${RULES.structures[k].cost}</small></button>`;
       }).join('');
     } else {
       const def = RULES.structures[x.type];
@@ -215,7 +225,7 @@ function renderBuildRow(s) {
         for (let k = 1; k <= def.maxLevel; k++) {
           const cost = k === 1 ? def.cost : upgradeCost({ type: x.type, level: k - 1 });
           const cls = k <= x.level ? 'done' : k === x.next ? 'now' : '';
-          steps.push(`<span class="lv ${cls}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${k <= x.level ? '✓' : cost}</small></span>`);
+          steps.push(`<span class="lv ${cls}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${k <= x.level ? '✓' : cost}</small><i>${k <= x.level ? '' : levelValue(x.type, cost)}</i></span>`);
         }
         row += `<div class="ladder">${steps.join('')}</div>`;
       }
@@ -342,7 +352,7 @@ function doLaunch() {
   if (ui.selected === null || ui.target === null || ui.count < 1) return;
   const f = launch(game, game.bodies[ui.selected], game.bodies[ui.target], ui.count);
   ui.mode = null;
-  if (f) toast(`${tf(f.name)} · ${f.n} ship${f.n === 1 ? '' : 's'} → ${game.bodies[f.to].name} · ${fmt(f.T)}`, ownerColor(PLAYER));
+  if (f) toast(`${tf(f.name)} · ${f.n} ship${f.n === 1 ? '' : 's'} → ${game.bodies[f.to].name} · ${fmt(f.T)}${f.assist !== undefined ? ` · assist via ${game.bodies[f.assist].name}` : ''}`, ownerColor(PLAYER));
   ui.selected = ui.target = null;
   updateActions();
 }
