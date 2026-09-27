@@ -358,13 +358,15 @@ function updateActions() {
   const show = !!s && s.owner === me && running;
   $('actions').hidden = !show;
   if (!show) { ui.preview = null; ui.mode = null; return; }
-  if (!s.ships && !yardsOf(s) && ui.mode) ui.mode = null;
+  if (!s.ships && ui.mode === 'launch') ui.mode = null;
+  if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
+  const probing = ui.mode === 'probe';
   ui.count = s.ships ? Math.max(1, Math.min(ui.count, s.ships)) : 0;
   $('count').textContent = ui.count;
-  const launching = ui.mode === 'launch';
+  const launching = ui.mode === 'launch' || probing;
   $('actions').classList.toggle('launching', launching);
   $('buildrow').hidden = launching;
-  $('stepper').hidden = !launching;
+  $('stepper').hidden = !launching || probing;
   $('cancel').hidden = !launching;
   if (!launching) {
     ui.preview = null;
@@ -373,26 +375,31 @@ function updateActions() {
     setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
       + `<div class="econ">${econLine(s)}</div>`);
     $('launch').textContent = 'Launch';
-    $('launch').disabled = s.ships < 1 && !yardsOf(s);
+    $('launch').disabled = s.ships < 1;
     renderBuildRow(s);
   } else if (ui.target === null) {
     ui.preview = null;
-    setHTML($('info'), `<span class="tag">Launch from</span><b>${s.name}</b><span class="grow"></span><span class="tag">tap a destination</span>`);
+    setHTML($('info'), `<span class="tag">${probing ? 'Probe from' : 'Launch from'}</span><b>${s.name}</b><span class="grow"></span><span class="tag">tap a destination</span>`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = true;
   } else {
     const t = game.bodies[ui.target];
-    ui.preview = plan(game, s, t);
+    ui.preview = probing ? plan(game, s, t, game.time, RULES.probe.speed) : plan(game, s, t);
     const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
     const assist = ui.preview.assist !== undefined ? ` · <span class="assist">↻ assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
-    const pwhy = cantProbe(game, s, t);
-    const probe = pwhy && pwhy !== 'not enough credits' ? '' : `<button class="probe" data-probe="1" ${pwhy ? 'disabled' : ''}>Probe<small>${RULES.probe.cost}</small></button>`;
-    setHTML($('info'), `<span class="grow">${s.ships ? `<b>${ui.count}</b> → ` : ''}<b>${t.name}</b> (${defenceText})${s.ships ? ` · arrive in <b>${fmt(ui.preview.T)}</b>` : ''}${assist}</span>${probe}`);
+    if (probing) {
+      const why = cantProbe(game, s, t);
+      setHTML($('info'), `<span>Probe → <b>${t.name}</b> (${defenceText}) · flyby in <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
+      $('launch').textContent = 'Confirm';
+      $('launch').disabled = !!why;
+      return;
+    }
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}</span>`);
     $('launch').textContent = 'Confirm';
-    $('launch').disabled = s.ships < 1;
+    $('launch').disabled = false;
   }
 }
 // ---- Building ----------------------------------------------------------------
@@ -414,7 +421,7 @@ function levelEffect(type, level) {
   if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * 100)}% research`;
   return '';
 }
-const ABBR = { shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Skim', exchange: 'Exch' };
+const ABBR = { shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Gas rig', exchange: 'Exchange' };
 const pct = (v) => `${Math.max(0, Math.min(100, Math.floor(v * 100)))}%`;
 function progressOf(x) {
   if (x.scrap) return 1 - x.scrap / RULES.scrapTime;
@@ -483,7 +490,8 @@ function renderBuildRow(s) {
       : `<span class="what">${yards} yard${yards === 1 ? '' : 's'} idle</span>`;
     html += `<div class="ctx ships">${q}`
       + (s.queue ? `<button data-cancel="1" class="danger">✕<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
-      + `<button data-b="ship" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost}</small></button></div>`;
+      + `<button data-b="ship" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost}</small></button>`
+      + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
   }
   setHTML($('buildrow'), html);
 }
@@ -494,6 +502,11 @@ $('buildrow').addEventListener('click', (e) => {
   if (cell) {
     const i = Number(cell.dataset.slot);
     ui.slot = ui.slot === i ? null : i;
+    updateActions();
+    return;
+  }
+  if (e.target.closest('button[data-probe]')) {
+    ui.mode = 'probe'; ui.target = null; ui.slot = null;
     updateActions();
     return;
   }
@@ -581,7 +594,7 @@ $('less').addEventListener('click', () => { ui.count = Math.max(1, ui.count - 1)
 
 $('more').addEventListener('click', () => { ui.count += 1; updateActions(); });
 $('launch').addEventListener('click', () => {
-  if (ui.mode !== 'launch') { ui.mode = 'launch'; ui.target = null; updateActions(); return; }
+  if (!ui.mode) { ui.mode = 'launch'; ui.target = null; updateActions(); return; }
   doLaunch();
 });
 $('cancel').addEventListener('click', () => { ui.mode = null; ui.target = null; updateActions(); });
@@ -591,18 +604,18 @@ $('focus').addEventListener('click', () => {
   updateActions();
 });
 
-// A probe: a fast, one-way flyby that shows the target for a while.
-$('info').addEventListener('click', (e) => {
-  if (!e.target.closest('button[data-probe]') || ui.selected === null || ui.target === null) return;
-  const t = game.bodies[ui.target];
-  if (act({ type: 'probe', b: ui.selected, to: ui.target })) toast(`Probe away to ${t.name}`, ownerColor(me));
-  ui.mode = null;
-  ui.selected = ui.target = null;
-  updateActions();
-});
-
 function doLaunch() {
-  if (ui.selected === null || ui.target === null || ui.count < 1) return;
+  if (ui.selected === null || ui.target === null) return;
+  if (ui.mode === 'probe') {
+    // A probe: a fast, one-way flyby that shows the target for a while.
+    const t = game.bodies[ui.target];
+    if (act({ type: 'probe', b: ui.selected, to: ui.target })) toast(`Probe away to ${t.name}`, ownerColor(me));
+    ui.mode = null;
+    ui.selected = ui.target = null;
+    updateActions();
+    return;
+  }
+  if (ui.count < 1) return;
   act({ type: 'launch', b: ui.selected, to: ui.target, n: ui.count });
   ui.mode = null;
   ui.selected = ui.target = null;
@@ -691,7 +704,7 @@ function tap(id, x, y, mouse = false) {
   // On touch the camera locks onto whatever you tap; a mouse click only
   // selects (the mouse steers the camera itself).
   if (id !== null && !mouse) view.focus(game, id, false);
-  if (ui.mode === 'launch') {
+  if (ui.mode === 'launch' || ui.mode === 'probe') {
     // Picking a destination: any other world becomes the target; empty
     // space backs out of launching and deselects.
     if (id === null) { ui.selected = ui.target = null; ui.mode = null; } else ui.target = id !== ui.selected ? id : null;
@@ -793,7 +806,7 @@ function endPointer(e) {
     if (g.kind === 'turn' && g.right && !g.moved && e.type !== 'pointercancel') {
       const id = view.pick(e.clientX, e.clientY);
       const s = ui.selected !== null ? game.bodies[ui.selected] : null;
-      if (id !== null && s && s.owner === me && id !== s.id && (s.ships || yardsOf(s))) {
+      if (id !== null && s && s.owner === me && id !== s.id && s.ships) {
         ui.mode = 'launch'; ui.target = id; ui.fleet = null;
         updateActions();
       }

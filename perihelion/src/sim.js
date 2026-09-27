@@ -21,9 +21,9 @@ export const RULES = {
   structures: {
     shipyard: { name: 'Shipyard', cost: 400, time: 90 },
     mine: { name: 'Mine', cost: 200, time: 45, only: ['asteroid', 'moon'], maxLevel: 3 },
-    // Gas giants skim their atmospheres for fusion fuel; homeworlds (the only
+    // Gas giants: harvesters scoop fusion fuel from the upper atmosphere; homeworlds (the only
     // living worlds) can float bonds on the system's exchanges.
-    skimmer: { name: 'Gas skimmer', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2 },
+    skimmer: { name: 'Gas harvester', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2 },
     exchange: { name: 'Orbital exchange', cost: 450, time: 80, where: 'home', maxLevel: 2, income: 2.5 },
     defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3 },
     lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3 },
