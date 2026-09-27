@@ -26,7 +26,7 @@ preview server running).
   A hop to your own moon takes under a minute; crossing the system takes
   minutes. Drive plumes are visible from far away. Ships can't be recalled.
 - **Credits:** every world you hold earns credits (planets 1/s, stations
-  0.6, moons 0.5, asteroids 0.3), plus 1.5/s per mine. They show top left.
+  0.6, moons 0.5, asteroids 0.3), homeworlds +0.4, plus 1.5/s per mine. They show top left.
 - **Building:** select one of your worlds for its build row. Worlds have
   build slots by size (asteroids and small moons 1, small planets and larger
   moons 2, rocky planets 3, gas giants 4, stations 2):
@@ -36,14 +36,23 @@ preview server running).
   - **Mine** (200, 45 s): asteroids and moons only; +1.5 credits/s per level.
   - **Guns** (250, 50 s): +2 guns per level (every held world has 1).
   - **Research station** (300, 60 s): each level speeds research by 50%.
-  - **Upgrades:** mines, guns and research stations go up to level 3.
+  - **Gas skimmer** (350, 70 s): gas giants only; +2 credits/s per level.
+  - **Orbital exchange** (450, 80 s): homeworlds only; +2.5 credits/s per level (up to II).
+  - **Upgrades:** mines, guns, research stations and skimmers go up to level 3.
+  - **Scrap:** tearing a structure down costs 25% of its price and takes 20 s;
+    it stops working at once. If the world is taken first, the scrapping is
+    cancelled and the captor gets the structure.
   - **Ship** (150, 45 s): ordered at a shipyard. Queued ships can be
-    cancelled for an 80% refund; any structure can be demolished for 25% of
-    its cost (Demolish in the build row).
+    cancelled for an 80% refund.
   Ships are never built automatically. Your homeworld starts with a shipyard
   and guns, 4 ships and 400 credits. A captured world keeps its finished
   structures; anything unfinished and any queued ships are lost. Nothing is
   built while a world is under attack.
+- **Probes:** in launch mode, pick a target and tap **Probe** (80 credits, needs
+  a shipyard). A probe flies four times faster than ships and is used up on a
+  flyby: the target stays in view (ships, structures) for 2½ minutes. Good for
+  checking a world before you commit a fleet. On desktop, right-click a world
+  with one of yours selected to go straight to launch with it as the target.
 - **Research (R&D, top bar):** one project at a time, paid in credits.
   Drives (+15% thrust per level), Sensors (range), Intel (I: enemy fleet
   sizes; II: their routes and landing points; III: arrival times and
@@ -81,8 +90,11 @@ it to copy); friends tap **Join** and type it. The host can add AI players to
 empty seats, then starts the game.
 
 AI levels: **Cadet** (slow, poor economy, won't attack for the first 7
-minutes), **Easy**, **Normal**, **Hard**, and **Brutal** (fast, bolder, and
-earns 40% more).
+minutes), **Easy**, **Normal**, **Hard**, and **Brutal**. Brutal thinks fastest
+and earns 25% more, but mostly plays smarter with the same information you
+have: it scouts with probes before attacking blind, reads fleets closing on
+its worlds, builds its economy first, keeps a garrison at home and goes after
+rivals' worlds (homeworlds most of all) rather than neutrals.
 
 - The host's browser runs the whole game, AIs included. Guests send orders and
   receive the state four times a second over WebRTC. The free PeerJS cloud only

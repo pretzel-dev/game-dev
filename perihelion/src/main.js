@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -43,6 +43,7 @@ function applyCmd(owner, c) {
     case 'upgrade': return !!b.structures[c.i] && upgrade(game, b, b.structures[c.i]);
     case 'demolish': return !!b.structures[c.i] && demolish(game, b, b.structures[c.i]);
     case 'research': return research(game, owner, c.k);
+    case 'probe': return !!launchProbe(game, b, game.bodies[c.to]);
     default: return false;
   }
 }
@@ -290,6 +291,7 @@ function snapshot() {
     credits: game.credits,
     tech: game.tech,
     fleets: game.fleets,
+    scans: game.scans,
     nextId: game.nextId,
     bodies: game.bodies.map((b) => Object.fromEntries(BODY_KEYS.map((k) => [k, b[k]]))),
     stats: game.winner !== null ? game.stats : undefined,
@@ -302,6 +304,7 @@ function applySnapshot(s) {
   game.credits = s.credits;
   game.tech = s.tech;
   game.fleets = s.fleets;
+  game.scans = s.scans;
   game.nextId = s.nextId;
   s.bodies.forEach((x, i) => {
     const b = game.bodies[i];
@@ -341,6 +344,10 @@ function updateFleetInfo() {
   const phase = s.flipping ? 'flipping' : s.phase === 1 ? 'burning toward' : 'braking for';
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
+  if (f.probe) {
+    setHTML($('fleet'), `<b>Probe</b> from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>flyby in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}%`);
+    return;
+  }
   setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> ship${f.n === 1 ? '' : 's'} from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
     + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s${f.assist !== undefined ? ` · <span class="assist">↻ ${game.bodies[f.assist].name}</span>` : ''}`);
 }
@@ -351,7 +358,7 @@ function updateActions() {
   const show = !!s && s.owner === me && running;
   $('actions').hidden = !show;
   if (!show) { ui.preview = null; ui.mode = null; return; }
-  if (!s.ships && ui.mode) ui.mode = null;
+  if (!s.ships && !yardsOf(s) && ui.mode) ui.mode = null;
   ui.count = s.ships ? Math.max(1, Math.min(ui.count, s.ships)) : 0;
   $('count').textContent = ui.count;
   const launching = ui.mode === 'launch';
@@ -366,7 +373,7 @@ function updateActions() {
     setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
       + `<div class="econ">${econLine(s)}</div>`);
     $('launch').textContent = 'Launch';
-    $('launch').disabled = s.ships < 1;
+    $('launch').disabled = s.ships < 1 && !yardsOf(s);
     renderBuildRow(s);
   } else if (ui.target === null) {
     ui.preview = null;
@@ -381,9 +388,11 @@ function updateActions() {
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
     const assist = ui.preview.assist !== undefined ? ` · <span class="assist">↻ assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}</span>`);
+    const pwhy = cantProbe(game, s, t);
+    const probe = pwhy && pwhy !== 'not enough credits' ? '' : `<button class="probe" data-probe="1" ${pwhy ? 'disabled' : ''}>Probe<small>${RULES.probe.cost}</small></button>`;
+    setHTML($('info'), `<span class="grow">${s.ships ? `<b>${ui.count}</b> → ` : ''}<b>${t.name}</b> (${defenceText})${s.ships ? ` · arrive in <b>${fmt(ui.preview.T)}</b>` : ''}${assist}</span>${probe}`);
     $('launch').textContent = 'Confirm';
-    $('launch').disabled = false;
+    $('launch').disabled = s.ships < 1;
   }
 }
 // ---- Building ----------------------------------------------------------------
@@ -393,20 +402,22 @@ const ROMAN = ['', 'I', 'II', 'III'];
 function econLine(b) {
   const total = incomeOf(b, game);
   const base = RULES.income[b.kind];
-  const mines = total - base;
-  return `<span class="tag">Income</span> <b class="pos">+${total.toFixed(1)}/s</b> <span class="dim">· ${b.kind} ${base.toFixed(1)}${mines > 0.001 ? ` + mines ${mines.toFixed(1)}` : ''}</span>`;
+  const extra = total - base;
+  return `<span class="tag">Income</span> <b class="pos">+${total.toFixed(1)}/s</b> <span class="dim">· ${b.home ? 'home' : b.kind} ${base.toFixed(1)}${extra > 0.001 ? ` + ${b.home ? 'bonus & ' : ''}industry ${extra.toFixed(1)}` : ''}</span>`;
 }
 /** What one level of a structure does, for the upgrade breakdown. */
 function levelEffect(type, level) {
   const mining = 1 + 0.15 * game.tech[me].industry;
   if (type === 'mine') return `+${(RULES.mineIncome * level * mining).toFixed(1)}/s`;
+  if (RULES.structures[type].income) return `+${(RULES.structures[type].income * level).toFixed(1)}/s`;
   if (type === 'defence') return `${RULES.gunsPerDefence * level} guns`;
   if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * 100)}% research`;
   return '';
 }
-const ABBR = { shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab' };
+const ABBR = { shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Skim', exchange: 'Exch' };
 const pct = (v) => `${Math.max(0, Math.min(100, Math.floor(v * 100)))}%`;
 function progressOf(x) {
+  if (x.scrap) return 1 - x.scrap / RULES.scrapTime;
   if (x.next) return 1 - x.left / upgradeTime({ ...x, level: x.next - 1 });
   return x.left > 0 ? 1 - x.left / RULES.structures[x.type].time : null;
 }
@@ -434,7 +445,7 @@ function renderBuildRow(s) {
     const x = s.structures[ui.slot];
     let row = '';
     if (!x) {
-      row = ['shipyard', 'mine', 'defence', 'lab'].map((k) => {
+      row = ['shipyard', 'mine', 'skimmer', 'exchange', 'defence', 'lab'].map((k) => {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
         return `<button data-b="${k}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${RULES.structures[k].cost}</small></button>`;
@@ -442,7 +453,7 @@ function renderBuildRow(s) {
     } else {
       const def = RULES.structures[x.type];
       const p = progressOf(x);
-      const state = x.next ? `upgrading → ${ROMAN[x.next]} · ${pct(p)}` : x.left > 0 ? `building · ${pct(p)}` : def.maxLevel ? `level ${ROMAN[x.level]}` : 'online';
+      const state = x.scrap ? `scrapping · ${pct(p)}` : x.next ? `upgrading → ${ROMAN[x.next]} · ${pct(p)}` : x.left > 0 ? `building · ${pct(p)}` : def.maxLevel ? `level ${ROMAN[x.level]}` : 'online';
       const why = cantUpgrade(game, s, x);
       const dwhy = cantDemolish(game, s, x);
       row = `<span class="what">${def.name} · ${state}</span><button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
@@ -501,7 +512,7 @@ $('buildrow').addEventListener('click', (e) => {
   const d = e.target.closest('button[data-d]');
   if (d) {
     const x = s.structures[Number(d.dataset.d)];
-    if (x && act({ type: 'demolish', b: s.id, i: Number(d.dataset.d) })) toast(`${RULES.structures[x.type].name} scrapped at ${s.name}`, ownerColor(me));
+    if (x && act({ type: 'demolish', b: s.id, i: Number(d.dataset.d) })) toast(`Scrapping ${RULES.structures[x.type].name} at ${s.name}`, ownerColor(me));
     ui.slot = null;
     updateActions();
     return;
@@ -580,6 +591,16 @@ $('focus').addEventListener('click', () => {
   updateActions();
 });
 
+// A probe: a fast, one-way flyby that shows the target for a while.
+$('info').addEventListener('click', (e) => {
+  if (!e.target.closest('button[data-probe]') || ui.selected === null || ui.target === null) return;
+  const t = game.bodies[ui.target];
+  if (act({ type: 'probe', b: ui.selected, to: ui.target })) toast(`Probe away to ${t.name}`, ownerColor(me));
+  ui.mode = null;
+  ui.selected = ui.target = null;
+  updateActions();
+});
+
 function doLaunch() {
   if (ui.selected === null || ui.target === null || ui.count < 1) return;
   act({ type: 'launch', b: ui.selected, to: ui.target, n: ui.count });
@@ -642,6 +663,12 @@ function drainEvents(evs = game.events.splice(0)) {
       case 'promoted':
         if (e.owner === me) toast(`${e.name ? tf(e.name) : `${nm(e.at)} garrison`} now ${vetName(e.v)}`, mine);
         break;
+      case 'probed':
+        if (e.owner === me) toast(`Probe flyby of ${nm(e.at)} · in view for ${Math.round(RULES.probe.scan / 60 * 2) / 2} min`, mine);
+        break;
+      case 'scrapped':
+        if (e.owner === me) toast(`${RULES.structures[e.what].name} scrapped at ${nm(e.at)}`, mine);
+        break;
       case 'research':
         if (e.owner === me) toast(`${TECH[e.key].levels[e.level - 1]} complete`, mine);
         break;
@@ -693,7 +720,7 @@ canvas.addEventListener('pointerdown', (e) => {
     // Mouse: left drags pan, right or middle drags turn the view around
     // whatever is under the cursor. A left click without a drag selects.
     const turn = e.button === 2 || e.button === 1 || e.altKey;
-    gesture = { kind: turn ? 'turn' : 'click', mouse: true, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
+    gesture = { kind: turn ? 'turn' : 'click', right: e.button === 2, mouse: true, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
       pivot: turn ? view.pivotAt(game, e.clientX, e.clientY) : null };
     ui.dragging = true;
     view.orbit.vaz = view.orbit.vpol = 0;
@@ -718,7 +745,10 @@ canvas.addEventListener('pointermove', (e) => {
     gesture.y = e.clientY;
     if (gesture.kind === 'click' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) gesture.kind = 'pan';
     if (gesture.kind === 'pan') view.pan(dx, dy);
-    if (gesture.kind === 'turn') view.rotateAround(gesture.pivot, -dx * 0.006, -dy * 0.006);
+    if (gesture.kind === 'turn') {
+      view.rotateAround(gesture.pivot, -dx * 0.006, -dy * 0.006);
+      if (Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) gesture.moved = true;
+    }
     return;
   }
   // Hover feedback for the mouse: a pointer over anything clickable.
@@ -758,6 +788,17 @@ function endPointer(e) {
     const g = gesture;
     gesture = null;
     ui.dragging = false;
+    // Right-click (no drag) on another world with one of yours selected:
+    // straight into launch, with that world as the target.
+    if (g.kind === 'turn' && g.right && !g.moved && e.type !== 'pointercancel') {
+      const id = view.pick(e.clientX, e.clientY);
+      const s = ui.selected !== null ? game.bodies[ui.selected] : null;
+      if (id !== null && s && s.owner === me && id !== s.id && (s.ships || yardsOf(s))) {
+        ui.mode = 'launch'; ui.target = id; ui.fleet = null;
+        updateActions();
+      }
+      return;
+    }
     if (g.kind !== 'click' || e.type === 'pointercancel') return;
     const id = view.pick(e.clientX, e.clientY);
     const now = performance.now();
@@ -1030,7 +1071,9 @@ function finish() {
   const won = game.winner === me;
   $('end-title').textContent = won ? 'Victory' : 'Defeat';
   $('end-title').style.color = ownerColor(won ? me : game.winner);
-  $('end-sub').textContent = won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(game.time)}.`;
+  const diffs = [...new Set(aiSeatDiffs)];
+  const vs = diffs.length ? ` · ${diffs.map((d) => d[0].toUpperCase() + d.slice(1)).join(' / ')} AI` : '';
+  $('end-sub').textContent = (won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(game.time)}.`) + vs;
   renderReport();
   setTimeout(() => ($('end').hidden = false), 1200);
 }
@@ -1069,7 +1112,7 @@ function frame(now) {
         netClock -= dt;
         if (netClock <= 0 || game.winner !== null) { netClock = 0.25; net.room.broadcast({ t: 'state', s: snapshot() }); }
       }
-      if (game.mp && !knockedOut && !game.bodies.some((b) => b.owner === me) && !game.fleets.some((f) => f.owner === me) && game.winner === null) {
+      if (game.mp && !knockedOut && !game.bodies.some((b) => b.owner === me) && !game.fleets.some((f) => f.owner === me && !f.probe) && game.winner === null) {
         knockedOut = true;
         toast('Your empire has fallen · watching the rest', '#ff7a4d');
         ui.vis = null; // observers see everything

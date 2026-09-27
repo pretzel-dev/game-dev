@@ -469,6 +469,24 @@ function structureMesh(type, b, k, done, level = 1) {
     g.rotation.x = Math.PI / 2 + 0.35;
     return g;
   }
+  if (type === 'skimmer') {
+    // Gas skimmers: scoop craft dipping through the upper cloud deck, one per level.
+    const rad = b.size * 1.08;
+    for (let i = 0; i < level; i++) {
+      const a = (i / level) * Math.PI * 2 + k;
+      const craft = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.ConeGeometry(s * 0.35, s * 1.4, 6), mat);
+      body.rotation.z = Math.PI / 2;
+      const tank = new THREE.Mesh(new THREE.SphereGeometry(s * 0.3, 8, 6), mat);
+      tank.position.x = -s * 0.6;
+      craft.add(body, tank);
+      craft.position.set(Math.cos(a) * rad, 0, Math.sin(a) * rad);
+      craft.rotation.y = -a;
+      g.add(craft);
+    }
+    g.rotation.x = 0.25 + k * 0.3;
+    return g;
+  }
   // Surface structures at a fixed spot, standing out from the ground.
   const r = rng(b.id * 17 + k * 101 + (type === 'mine' ? 5 : 0));
   const dir = new THREE.Vector3(r() - 0.5, (r() - 0.5) * 0.9, r() - 0.5).normalize();
@@ -487,6 +505,24 @@ function structureMesh(type, b, k, done, level = 1) {
       const dome = new THREE.Mesh(new THREE.SphereGeometry(s * 0.3 * w, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat);
       dome.position.y = s * 0.17;
       g.add(dome);
+    }
+  } else if (type === 'exchange') {
+    // Orbital exchange: a slim spire with a tether up to a counting-house in orbit.
+    const spire = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.12, s * 0.35, s * 1.8, 6), mat);
+    spire.position.y = s * 0.9;
+    g.add(spire);
+    const tether = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.02, s * 0.02, s * 3, 3), mat);
+    tether.position.y = s * 3.2;
+    g.add(tether);
+    const hub = new THREE.Mesh(new THREE.TorusGeometry(s * (0.4 + level * 0.12), s * 0.08, 6, 20), mat);
+    hub.position.y = s * 4.7;
+    hub.rotation.x = Math.PI / 2;
+    g.add(hub);
+    if (done) {
+      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffe39a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      light.position.y = s * 4.7;
+      light.scale.setScalar(s * (1.2 + level * 0.4));
+      g.add(light);
     }
   } else if (type === 'lab') {
     // Research station: a dish per level on a mast, with a lit window band.
@@ -900,6 +936,7 @@ export function createView(canvas, labelRoot) {
     const knowsSize = (f) => !vis || f.owner === vis.owner || vis.intel >= 1;
     const incoming = new Map();
     for (const f of game.fleets) {
+      if (f.probe) continue;
       const tb = game.bodies[f.to];
       // Enemy arrivals (with intel), and your own reinforcements, always.
       if (f.owner === tb.owner ? f.owner !== (vis ? vis.owner : 0) : !knowsEta(f)) continue;
@@ -964,7 +1001,7 @@ export function createView(canvas, labelRoot) {
       v.pulse = Math.max(0, v.pulse - dt);
 
       // Structures: rebuilt when anything is added, finished or lost.
-      const sig = b.structures.map((x) => x.type + x.level + (x.left > 0 && !x.next ? '~' : '')).join();
+      const sig = b.structures.map((x) => x.type + x.level + ((x.left > 0 && !x.next) || x.scrap ? '~' : '')).join();
       if (sig !== v.sig) {
         v.sig = sig;
         if (v.structs) v.structs.removeFromParent();
@@ -972,9 +1009,9 @@ export function createView(canvas, labelRoot) {
         v.structs = new THREE.Group();
         b.structures.forEach((x, k) => {
           if (b.kind === 'station' && x.type === 'shipyard') return; // the station is the yard
-          const m = structureMesh(x.type, b, k, x.left <= 0 || !!x.next, x.level);
-          // Surface structures turn with the world; yards orbit on their own.
-          (x.type === 'shipyard' ? v.structs : v.surface).add(m);
+          const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level);
+          // Surface structures turn with the world; yards and skimmers orbit on their own.
+          (x.type === 'shipyard' || x.type === 'skimmer' ? v.structs : v.surface).add(m);
         });
         v.g.add(v.structs);
       }
@@ -1090,7 +1127,7 @@ export function createView(canvas, labelRoot) {
       perp.crossVectors(dir, UP);
       if (perp.lengthSq() < 1e-6) perp.set(1, 0, 0);
       perp.normalize();
-      for (let j = 0; j < f.n; j++) {
+      for (let j = 0; j < (f.probe ? 1 : f.n); j++) {
         const sh = ship(used++);
         if (!sh) break;
         // Formation: a loose, uneven column of threes. Each ship keeps its own
@@ -1142,7 +1179,7 @@ export function createView(canvas, labelRoot) {
       const el = fleetLabel(fl++);
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === (ui.me ?? 0);
-      const text = `▸ ${knowsSize(f) ? f.n : '?'}`;
+      const text = f.probe ? '◇ probe' : `▸ ${knowsSize(f) ? f.n : '?'}`;
       const lv = knowsSize(f) ? vetLevel(f.vet) : 0;
       if (el._v !== lv) { el._v = lv; el.dataset.v = lv; }
       if (el._t !== text) { el._t = text; el.textContent = text; }
