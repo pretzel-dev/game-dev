@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH } from '../src/sim.js';
+import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH, launchProbe, cantBuild as cantBuildAt } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -150,6 +150,8 @@ import { rng } from '../src/sim.js';
   assert.equal(g.credits[0], c + RULES.ship.cost * RULES.cancelRefund);
   const slots = home.structures.length;
   assert.ok(demolish(g, home, home.structures[1]));
+  assert.equal(home.structures.length, slots, 'scrapping takes time');
+  for (let t = 0; t < RULES.scrapTime + 1; t += 0.5) step(g, 0.5);
   assert.equal(home.structures.length, slots - 1);
   // Research: drives raise thrust; research stations speed it up.
   const a0 = accelOf(g, 0);
@@ -249,3 +251,32 @@ for (let seed = 1; seed <= 20; seed++) {
 }
 console.log(`sim ok: ${finished}/20 AI matches finished; minutes: ${lengths.join(' ')}`);
 assert.ok(finished >= 18);
+
+// Probes, gas skimmers, exchanges, and scrapping cut short by a capture.
+{
+  const g = createGame({ seed: 9 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  g.credits[0] = 5000;
+  const far = g.bodies.filter((b) => b.owner === NEUTRAL).sort((a, b) => dist(posAt(g, b, 0), posAt(g, home, 0)) - dist(posAt(g, a, 0), posAt(g, home, 0)))[0];
+  assert.ok(!visibility(g, 0).bodies.has(far.id), 'far world starts hidden');
+  const p = launchProbe(g, home, far);
+  assert.ok(p && p.T < plan(g, home, far).T / 1.5, 'probes are fast');
+  while (g.fleets.includes(p)) step(g, 0.5);
+  assert.ok(visibility(g, 0).bodies.has(far.id), 'a flyby reveals the world');
+  for (let t = 0; t < RULES.probe.scan + 1; t += 0.5) step(g, 0.5);
+  assert.ok(!visibility(g, 0).bodies.has(far.id) || far.owner === 0, 'the view fades');
+  assert.equal(cantBuildAt(g, home, 'skimmer'), 'gas giants only');
+  assert.ok(!cantBuildAt(g, { ...home, structures: [] }, 'exchange'), 'homeworlds can float an exchange');
+  const giant = g.bodies.find((b) => b.giant);
+  giant.owner = 0;
+  assert.ok(!cantBuildAt(g, giant, 'skimmer'));
+  // Scrap guns, then lose the world: the guns stay for the captor.
+  const guns = home.structures.find((x) => x.type === 'defence');
+  demolish(g, home, guns);
+  home.ships = 0; home.guns = 0;
+  home.sieges.push({ owner: 1, n: 5, vet: 0, name: 'X', n0: 5, foe0: 1 });
+  step(g, 0.5);
+  assert.equal(home.owner, 1);
+  assert.ok(home.structures.includes(guns) && !guns.scrap, 'capture cancels scrapping');
+  console.log('probe, skimmer, exchange, scrapping: ok');
+}

@@ -21,6 +21,10 @@ export const RULES = {
   structures: {
     shipyard: { name: 'Shipyard', cost: 400, time: 90 },
     mine: { name: 'Mine', cost: 200, time: 45, only: ['asteroid', 'moon'], maxLevel: 3 },
+    // Gas giants skim their atmospheres for fusion fuel; homeworlds (the only
+    // living worlds) can float bonds on the system's exchanges.
+    skimmer: { name: 'Gas skimmer', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2 },
+    exchange: { name: 'Orbital exchange', cost: 450, time: 80, where: 'home', maxLevel: 2, income: 2.5 },
     defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3 },
     lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3 },
   },
@@ -31,6 +35,9 @@ export const RULES = {
   gunRegen: 0.02, // guns rebuilt per second after a fight
   flipTime: 4, // seconds spent turning around at the midpoint
   demolishFee: 0.25, // share of a structure's cost to tear it down
+  scrapTime: 20, // seconds to tear one down (cancelled if the world is taken)
+  // Unmanned probe: fast, single use; a flyby reveals a world for a while.
+  probe: { cost: 80, speed: 4, scan: 150 },
   cancelRefund: 0.8, // share of a ship's cost returned when cancelled
   labSpeed: 0.5, // research speed added per research-station level
 };
@@ -133,6 +140,7 @@ export function visibility(game, owner) {
   for (const b of game.bodies) if (b.owner === owner) eyes.push([posAt(game, b, game.time), range]);
   for (const f of game.fleets) if (f.owner === owner) eyes.push([fleetState(f, game.time), 20]);
   for (const b of game.bodies) if (b.sieges.some((g) => g.owner === owner)) eyes.push([posAt(game, b, game.time), 20]);
+  for (const x of game.scans || []) if (x.owner === owner && x.until > game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 14]);
   const sees = (p) => eyes.some(([e, r]) => dist(e, p) <= r);
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
   return { owner, sees, bodies, intel: techLevel(game, owner, 'intel') };
@@ -355,7 +363,7 @@ export function slotsOf(b) {
   return b.giant ? 4 : b.size > 2.2 ? 3 : 2;
 }
 /** A structure works once built; while upgrading it keeps working at its old level. */
-const working = (x) => x.left <= 0 || x.next;
+const working = (x) => !x.scrap && (x.left <= 0 || x.next);
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
 /** Total working levels of a type (a level-3 mine counts 3). */
 const count = (b, type) => b.structures.reduce((n, x) => n + (x.type === type && working(x) ? x.level : 0), 0);
@@ -363,7 +371,9 @@ export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, '
 export const incomeOf = (b, game) => {
   if (b.owner === NEUTRAL) return 0;
   const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
-  return RULES.income[b.kind] + (b.home ? RULES.homeIncome : 0) + RULES.mineIncome * count(b, 'mine') * mining;
+  const S = RULES.structures;
+  return RULES.income[b.kind] + (b.home ? RULES.homeIncome : 0) + RULES.mineIncome * count(b, 'mine') * mining
+    + S.skimmer.income * count(b, 'skimmer') + S.exchange.income * count(b, 'exchange');
 };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
 /** Working shipyards here: each builds one ship at a time. */
@@ -373,6 +383,7 @@ export const yardsOf = (b) => b.structures.filter((x) => x.type === 'shipyard' &
 export const demolishFee = (x) => Math.round(RULES.structures[x.type].cost * RULES.demolishFee);
 export function cantDemolish(game, b, x) {
   if (b.owner === NEUTRAL) return 'not yours';
+  if (x.scrap) return 'already scrapping';
   if (game.credits[b.owner] < demolishFee(x)) return 'not enough credits';
   return null;
 }
@@ -380,7 +391,8 @@ export function demolish(game, b, x) {
   if (cantDemolish(game, b, x)) return false;
   game.credits[b.owner] -= demolishFee(x);
   tally(game, b.owner, 'spent', demolishFee(x));
-  b.structures = b.structures.filter((y) => y !== x);
+  // It stops working now and is gone once the crews finish.
+  x.scrap = RULES.scrapTime;
   if (!yardsOf(b)) b.build = 0;
   return true;
 }
@@ -398,6 +410,8 @@ export function cantBuild(game, b, type) {
   const def = RULES.structures[type];
   if (b.owner === NEUTRAL) return 'not yours';
   if (def.only && !def.only.includes(b.kind)) return `${b.kind}s can't have one`;
+  if (def.where === 'giant' && !b.giant) return 'gas giants only';
+  if (def.where === 'home' && !b.home) return 'homeworlds only';
   if (b.structures.length >= slotsOf(b)) return 'no free slots';
   if (game.credits[b.owner] < def.cost) return 'not enough credits';
   return null;
@@ -418,7 +432,7 @@ export function cantUpgrade(game, b, x) {
   const def = RULES.structures[x.type];
   if (b.owner === NEUTRAL) return 'not yours';
   if (!def.maxLevel) return "can't be upgraded";
-  if (x.left > 0) return 'busy';
+  if (x.left > 0 || x.scrap) return 'busy';
   if (x.level >= def.maxLevel) return 'at max level';
   if (game.credits[b.owner] < upgradeCost(x)) return 'not enough credits';
   return null;
@@ -545,11 +559,11 @@ function assistBy(game, f, from, to, now) {
   return best && best.g;
 }
 
-export function plan(game, from, to, now = game.time) {
-  const direct = planWith(game, from, to, now, accelOf(game, from.owner));
+export function plan(game, from, to, now = game.time, speed = 1) {
+  const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed);
   const g = assistBy(game, direct, from, to, now);
   if (!g) return direct;
-  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * ASSIST.boost);
+  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * speed * ASSIST.boost);
   // Only if the faster path still swings past the same giant.
   return fast.T < direct.T && assistBy(game, fast, from, to, now) === g ? { ...fast, assist: g.id } : direct;
 }
@@ -600,6 +614,23 @@ export function launch(game, from, to, n) {
   if (!from.ships) from.tf = null;
   game.fleets.push(f);
   note(game, { type: 'launch', owner: f.owner, fleet: f.id, name: f.name, n, from: from.id, to: to.id });
+  return f;
+}
+
+/** Why a probe can't go from b to t, or null. Probes are built at a shipyard. */
+export function cantProbe(game, b, t) {
+  if (b.owner === NEUTRAL) return 'not yours';
+  if (!t || t === b) return 'pick a target';
+  if (!has(b, 'shipyard')) return 'needs a shipyard';
+  if (game.credits[b.owner] < RULES.probe.cost) return 'not enough credits';
+  return null;
+}
+export function launchProbe(game, from, to) {
+  if (cantProbe(game, from, to) || game.winner !== null) return null;
+  game.credits[from.owner] -= RULES.probe.cost;
+  tally(game, from.owner, 'spent', RULES.probe.cost);
+  const f = { id: game.nextId++, owner: from.owner, n: 0, probe: true, from: from.id, to: to.id, ...plan(game, from, to, game.time, RULES.probe.speed), t0: game.time, vet: 0, name: 'Probe' };
+  game.fleets.push(f);
   return f;
 }
 
@@ -706,7 +737,7 @@ function fight(game, b, dt) {
     b.slips = [];
     b.queue = 0;
     b.structures = b.structures.filter((x) => x.left <= 0 || x.next);
-    for (const x of b.structures) { if (x.next) { delete x.next; x.left = 0; } }
+    for (const x of b.structures) { if (x.next) { delete x.next; x.left = 0; } delete x.scrap; }
     b.sieges = b.sieges.filter((g) => g !== win);
     b.captured = true;
     taken = true;
@@ -735,9 +766,15 @@ export function step(game, dt) {
     const speed = buildSpeed(game, b.owner);
     if (b.sieges.length) continue; // nothing gets built under fire
     for (const x of b.structures) {
+      if (x.scrap) { x.scrap = Math.max(0, x.scrap - dt); if (!x.scrap) x.gone = true; continue; }
       if (x.left <= 0) continue;
       x.left = Math.max(0, x.left - dt * speed);
       if (x.left === 0 && x.next) { x.level = x.next; delete x.next; }
+    }
+    if (b.structures.some((x) => x.gone)) {
+      const x = b.structures.find((y) => y.gone);
+      b.structures = b.structures.filter((y) => !y.gone);
+      note(game, { type: 'scrapped', owner: b.owner, at: b.id, what: x.type });
     }
     // Each working yard builds one ship at a time, in parallel.
     // b.slips holds each yard's progress on the ship it's building.
@@ -759,9 +796,16 @@ export function step(game, dt) {
     if (t.project.left <= 0) { t[t.project.key] += 1; note(game, { type: 'research', owner, key: t.project.key, level: t[t.project.key] }); t.project = null; tally(game, owner, 'research'); }
   }
 
+  if (game.scans) game.scans = game.scans.filter((x) => x.until > game.time);
   game.fleets = game.fleets.filter((f) => {
     if (game.time - f.t0 < f.T) return true;
     const b = game.bodies[f.to];
+    if (f.probe) {
+      // Flyby: the probe is spent, but the world stays in view for a while.
+      (game.scans ||= []).push({ owner: f.owner, body: b.id, until: game.time + RULES.probe.scan });
+      note(game, { type: 'probed', owner: f.owner, at: b.id });
+      return false;
+    }
     if (b.owner === f.owner) {
       b.vet = mix(b.vet || 0, b.ships, f.vet || 0, f.n);
       if (!b.tf || f.n >= b.ships) b.tf = f.name;
@@ -787,7 +831,7 @@ export function step(game, dt) {
     if (b.owner !== NEUTRAL) alive.add(b.owner);
     for (const g of b.sieges) alive.add(g.owner);
   }
-  for (const f of game.fleets) alive.add(f.owner);
+  for (const f of game.fleets) if (!f.probe) alive.add(f.owner);
   if (game.mp) {
     // Multiplayer: it's over when one empire is left (knocked-out players watch).
     if (alive.size <= 1) game.winner = [...alive][0] ?? NEUTRAL;

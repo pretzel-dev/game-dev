@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
@@ -6,13 +6,16 @@ import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, o
 // and `skill`, the chance it follows through on each smart move it spots
 // (defending, rescuing credits, tech and upgrades). At the ends, `eco` scales
 // its income (cadet runs a lean economy, brutal a rich one) and `calm` keeps a
-// cadet from attacking anyone for its first few minutes.
+// cadet from attacking anyone for its first few minutes. `smart` (brutal)
+// plays better without seeing more: it scouts with probes before attacking
+// blind, builds its economy first, prefers hurting rivals over grabbing
+// neutrals, and keeps a garrison home.
 export const DIFFICULTY = {
   cadet: { think: 14, margin: 2.4, skill: 0.1, eco: 0.6, calm: 420 },
   easy: { think: 9, margin: 1.6, skill: 0.35 },
   normal: { think: 5, margin: 1.6, skill: 0.7 },
   hard: { think: 3, margin: 1.6, skill: 1 },
-  brutal: { think: 1.5, margin: 1.35, skill: 1, eco: 1.4 },
+  brutal: { think: 1.5, margin: 1.6, skill: 1, eco: 1.25, smart: true },
 };
 
 export function createAI(owner, difficulty, rand) {
@@ -32,7 +35,14 @@ export function tickAI(game, ai, dt) {
   // can see but can't read (no intel) are assumed to be a medium force; their
   // destinations are only known with intel II.
   const vis = visibility(game, ai.owner);
-  const known = (f) => f.owner === ai.owner || (vis.intel >= 2 && vis.sees(fleetState(f, game.time)));
+  // A smart AI reads intent from a visible fleet closing on one of its worlds
+  // (as a player would), even without the intel to read its route.
+  const closing = (f) => {
+    if (!ai.d.smart || !vis.sees(fleetState(f, game.time))) return false;
+    const t = game.bodies[f.to];
+    return t.owner === ai.owner && dist(fleetState(f, game.time), posAt(game, t, game.time)) < 45;
+  };
+  const known = (f) => f.owner === ai.owner || (vis.intel >= 2 && vis.sees(fleetState(f, game.time))) || closing(f);
   const sizeOf = (f) => (f.owner === ai.owner || vis.intel >= 1 ? f.n : 5);
   const coming = (b, own) => game.fleets.filter((f) => f.to === b.id && (f.owner === ai.owner) === own && known(f)).reduce((n, f) => n + sizeOf(f), 0);
   // Worlds out of sensor range: guess a modest garrison.
@@ -44,9 +54,25 @@ export function tickAI(game, ai, dt) {
   if (economy(game, ai, mine, coming, will)) return;
   if (ai.d.calm && game.time < ai.d.calm) return;
 
+  const smart = ai.d.smart;
+  // Smart: never strip the homeworld bare.
+  const keep = (s) => (smart && s.home ? 3 : 1);
+  const scanned = (t) => (game.scans || []).some((x) => x.owner === ai.owner && x.body === t.id);
+  const probing = (t) => game.fleets.some((f) => f.probe && f.owner === ai.owner && f.to === t.id);
+  // Smart: scout the nearest world it can't see, one probe at a time.
+  if (smart && !game.fleets.some((f) => f.probe && f.owner === ai.owner) && game.credits[ai.owner] > RULES.probe.cost + 150) {
+    const yards = mine.filter((s) => has(s, 'shipyard'));
+    const d = (t) => Math.min(...yards.map((s) => dist(posAt(game, s, game.time), posAt(game, t, game.time))));
+    const blind = game.bodies.filter((t) => t.owner !== ai.owner && !vis.bodies.has(t.id) && !scanned(t)).sort((a, b) => d(a) - d(b))[0];
+    if (blind && yards.length && d(blind) < 120) {
+      const near = (s) => dist(posAt(game, s, game.time), posAt(game, blind, game.time));
+      launchProbe(game, yards.sort((a, b) => near(a) - near(b))[0], blind);
+      return;
+    }
+  }
   let best = null;
   for (const s of mine) {
-    const spare = s.ships - Math.ceil(coming(s, false) * 1.2) - 1;
+    const spare = s.ships - Math.ceil(coming(s, false) * 1.2) - keep(s);
     if (spare < 2) continue;
     const vetK = 1 + VET_BONUS * vetLevel(s.vet); // veterans need fewer hulls
     for (const t of game.bodies) {
@@ -56,16 +82,24 @@ export function tickAI(game, ai, dt) {
       const growth = t.owner === NEUTRAL || !has(t, 'shipyard') ? 0 : Math.min(t.queue, T / RULES.ship.time);
       const need = Math.ceil(((shipsAt(t) + gunsAt(t) + growth) * ai.d.margin) / vetK) + 1 - coming(t, true);
       if (need < 1 || need > spare) continue;
-      const value = t.kind === 'planet' ? 3 : t.kind === 'station' ? 2 : 1;
+      let value = t.kind === 'planet' ? 3 : t.kind === 'station' ? 2 : 1;
+      // Smart: taking from a rival hurts them twice; homeworlds most of all.
+      if (smart && t.owner !== NEUTRAL) value *= t.home ? 2 : 1.5;
       const score = value / (need + T / 30);
       if (!best || score > best.score) best = { s, t, need, score };
     }
+  }
+  if (best && smart && !vis.bodies.has(best.t.id) && !scanned(best.t)) {
+    // Don't attack blind: look first (then plan with what the probe saw).
+    const yard = mine.find((s) => !cantProbe(game, s, best.t));
+    if (yard && !probing(best.t)) { launchProbe(game, yard, best.t); return; }
+    if (probing(best.t)) best = null;
   }
   if (best) { launch(game, best.s, best.t, best.need); return; }
 
   // Nothing one site can take: gather ships at the site nearest a target, one
   // transfer per turn, then strike with all of them at once.
-  const spare = (s) => s.ships - Math.ceil(coming(s, false) * 1.2) - 1;
+  const spare = (s) => s.ships - Math.ceil(coming(s, false) * 1.2) - keep(s);
   if (ai.plan) {
     const t = game.bodies[ai.plan.target];
     const stage = game.bodies[ai.plan.stage];
@@ -131,6 +165,7 @@ function defend(game, ai, mine, vis, known, sizeOf, power, will) {
 }
 
 function economy(game, ai, mine, coming, will) {
+  const smart = ai.d.smart;
   const threatened = (b) => coming(b, false) > 0 || b.sieges.length;
   const free = (b, type) => !cantBuild(game, b, type);
   // 1. Guns for a world about to be hit.
@@ -145,6 +180,11 @@ function economy(game, ai, mine, coming, will) {
     if (free(rock, 'mine')) return buildStructure(game, rock, 'mine');
     if (!threatened(rock) && will()) return true;
   }
+  // 2a. Skimmers on held gas giants, an exchange at home: steady income.
+  for (const type of ['exchange', 'skimmer']) {
+    const site = mine.find((b) => free(b, type) && !threatened(b) && !b.structures.some((x) => x.type === type));
+    if (site && (smart || will())) return buildStructure(game, site, type);
+  }
   // 2b. Upgrade mines when there's money to spare; guns where trouble is coming.
   const credits = game.credits[ai.owner];
   // Save for the next mine upgrade too: extra income compounds.
@@ -155,13 +195,13 @@ function economy(game, ai, mine, coming, will) {
   for (const b of mine) {
     for (const x of b.structures) {
       if (cantUpgrade(game, b, x)) continue;
-      if (x.type === 'mine' && credits >= upgradeCost(x) && will()) return upgrade(game, b, x);
+      if ((x.type === 'mine' || x.type === 'skimmer' || x.type === 'exchange') && credits >= upgradeCost(x) && will()) return upgrade(game, b, x);
       if (x.type === 'lab' && game.tech[ai.owner].project && credits > upgradeCost(x) + 300 && will()) return upgrade(game, b, x);
       if (x.type === 'defence' && threatened(b) && will()) return upgrade(game, b, x);
     }
   }
   // 2c. Research, in a sensible order, when it can afford it and still build.
-  const order = ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors', 'intel'];
+  const order = smart ? ['industry', 'sensors', 'intel', 'drives', 'weapons', 'armour', 'industry', 'drives', 'weapons', 'armour', 'sensors', 'intel', 'drives', 'sensors', 'intel'] : ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors', 'intel'];
   const key = order.find((k) => nextTech(game, ai.owner, k));
   if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost) {
     return research(game, ai.owner, key);
