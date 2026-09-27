@@ -158,15 +158,6 @@ function econLine(b) {
   const mines = total - base;
   return `<span class="tag">Income</span> <b class="pos">+${total.toFixed(1)}/s</b> <span class="dim">· ${b.kind} ${base.toFixed(1)}${mines > 0.001 ? ` + mines ${mines.toFixed(1)}` : ''}</span>`;
 }
-/** Is the next level worth it? Mines: how long to earn the cost back.
- * Guns: price per gun. Research stations: price per +10% research speed. */
-function levelValue(type, cost) {
-  const mining = 1 + 0.15 * game.tech[PLAYER].industry;
-  if (type === 'mine') return `pays back ${fmt(cost / (RULES.mineIncome * mining))}`;
-  if (type === 'defence') return `${Math.round(cost / RULES.gunsPerDefence)} per gun`;
-  if (type === 'lab') return `${Math.round(cost / (RULES.labSpeed * 10))} per +10%`;
-  return '';
-}
 /** What one level of a structure does, for the upgrade breakdown. */
 function levelEffect(type, level) {
   const mining = 1 + 0.15 * game.tech[PLAYER].industry;
@@ -208,7 +199,7 @@ function renderBuildRow(s) {
       row = ['shipyard', 'mine', 'defence', 'lab'].map((k) => {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
-        return `<button data-b="${k}" ${why ? 'disabled' : ''} title="${levelValue(k, RULES.structures[k].cost)}">${ABBR[k]}<small>${RULES.structures[k].cost}</small></button>`;
+        return `<button data-b="${k}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${RULES.structures[k].cost}</small></button>`;
       }).join('');
     } else {
       const def = RULES.structures[x.type];
@@ -225,7 +216,7 @@ function renderBuildRow(s) {
         for (let k = 1; k <= def.maxLevel; k++) {
           const cost = k === 1 ? def.cost : upgradeCost({ type: x.type, level: k - 1 });
           const cls = k <= x.level ? 'done' : k === x.next ? 'now' : '';
-          steps.push(`<span class="lv ${cls}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${k <= x.level ? '✓' : cost}</small><i>${k <= x.level ? '' : levelValue(x.type, cost)}</i></span>`);
+          steps.push(`<span class="lv ${cls}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${k <= x.level ? '✓' : cost}</small></span>`);
         }
         row += `<div class="ladder">${steps.join('')}</div>`;
       }
