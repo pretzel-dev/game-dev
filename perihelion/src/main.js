@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 
@@ -18,7 +18,7 @@ let running = false;
 const WARPS = [1, 2, 4, 8];
 let warp = 1;
 
-const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null };
+const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null, mode: null };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -43,7 +43,7 @@ function start() {
   game = createGame({ seed, opponents: prefs.rivals });
   const r = rng(seed ^ 0xabc);
   ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
-  ui.selected = ui.target = ui.preview = ui.fleet = null;
+  ui.selected = ui.target = ui.preview = ui.fleet = ui.mode = null;
   ui.slot = null;
   game.events.length = 0;
   $('feed').innerHTML = '';
@@ -112,17 +112,29 @@ function updateActions() {
   const show = !!s && s.owner === PLAYER && running;
   $('actions').hidden = !show;
   $('system').hidden = view.orbit.follow === null;
-  if (!show) { ui.preview = null; return; }
-  // No ships here: nothing to send, and Launch stays off.
+  if (!show) { ui.preview = null; ui.mode = null; return; }
+  if (!s.ships && ui.mode) ui.mode = null;
   ui.count = s.ships ? Math.max(1, Math.min(ui.count, s.ships)) : 0;
   $('count').textContent = ui.count;
-  $('buildrow').hidden = ui.target !== null;
-  if (ui.target === null) {
+  const launching = ui.mode === 'launch';
+  $('actions').classList.toggle('launching', launching);
+  $('buildrow').hidden = launching;
+  $('stepper').hidden = !launching;
+  $('cancel').hidden = !launching;
+  if (!launching) {
     ui.preview = null;
+    ui.target = null;
     const kind = s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
-    setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`);
-    $('launch').disabled = true;
+    setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
+      + `<div class="econ">${econLine(s)}</div>`);
+    $('launch').textContent = 'Launch';
+    $('launch').disabled = s.ships < 1;
     renderBuildRow(s);
+  } else if (ui.target === null) {
+    ui.preview = null;
+    setHTML($('info'), `<span class="tag">Launch from</span><b>${s.name}</b><span class="grow"></span><span class="tag">tap a destination</span>`);
+    $('launch').textContent = 'Confirm';
+    $('launch').disabled = true;
   } else {
     const t = game.bodies[ui.target];
     ui.preview = plan(game, s, t);
@@ -130,14 +142,29 @@ function updateActions() {
     const cover = t.owner === PLAYER ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
-    if (s.ships < 1) setHTML($('info'), `No ships at <b>${s.name}</b> to send`);
-    else setHTML($('info'), `<b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>`);
-    $('launch').disabled = s.ships < 1;
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b></span>`);
+    $('launch').textContent = 'Confirm';
+    $('launch').disabled = false;
   }
 }
 // ---- Building ----------------------------------------------------------------
 
 const ROMAN = ['', 'I', 'II', 'III'];
+/** What a world earns: its base plus any mines, per second. */
+function econLine(b) {
+  const total = incomeOf(b, game);
+  const base = RULES.income[b.kind];
+  const mines = total - base;
+  return `<span class="tag">Income</span> <b class="pos">+${total.toFixed(1)}/s</b> <span class="dim">· ${b.kind} ${base.toFixed(1)}${mines > 0.001 ? ` + mines ${mines.toFixed(1)}` : ''}</span>`;
+}
+/** What one level of a structure does, for the upgrade breakdown. */
+function levelEffect(type, level) {
+  const mining = 1 + 0.15 * game.tech[PLAYER].industry;
+  if (type === 'mine') return `+${(RULES.mineIncome * level * mining).toFixed(1)}/s`;
+  if (type === 'defence') return `${RULES.gunsPerDefence * level} guns`;
+  if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * 100)}% research`;
+  return '';
+}
 const ABBR = { shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab' };
 const pct = (v) => `${Math.max(0, Math.min(100, Math.floor(v * 100)))}%`;
 function progressOf(x) {
@@ -182,6 +209,16 @@ function renderBuildRow(s) {
         ? `<button data-u="${ui.slot}" ${why ? 'disabled' : ''}>Upgrade<small>${upgradeCost(x)}</small></button>` : '';
       const dwhy = cantDemolish(game, s, x);
       row = `<span class="what">${def.name} · ${state}</span>${up}<button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
+      // Every level at a glance: what it gives and what it costs to reach.
+      if (def.maxLevel) {
+        const steps = [];
+        for (let k = 1; k <= def.maxLevel; k++) {
+          const cost = k === 1 ? def.cost : upgradeCost({ type: x.type, level: k - 1 });
+          const cls = k <= x.level ? 'done' : k === x.next ? 'now' : '';
+          steps.push(`<span class="lv ${cls}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${k <= x.level ? '✓' : cost}</small></span>`);
+        }
+        row += `<div class="ladder">${steps.join('')}</div>`;
+      }
     }
     html += `<div class="ctx">${row}</div>`;
   }
@@ -290,7 +327,11 @@ $('rlist').addEventListener('click', (e) => {
 $('less').addEventListener('click', () => { ui.count = Math.max(1, ui.count - 1); updateActions(); });
 
 $('more').addEventListener('click', () => { ui.count += 1; updateActions(); });
-$('launch').addEventListener('click', doLaunch);
+$('launch').addEventListener('click', () => {
+  if (ui.mode !== 'launch') { ui.mode = 'launch'; ui.target = null; updateActions(); return; }
+  doLaunch();
+});
+$('cancel').addEventListener('click', () => { ui.mode = null; ui.target = null; updateActions(); });
 $('focus').addEventListener('click', () => {
   const id = ui.target ?? ui.selected;
   if (id !== null) view.focus(game, id);
@@ -300,6 +341,7 @@ $('focus').addEventListener('click', () => {
 function doLaunch() {
   if (ui.selected === null || ui.target === null || ui.count < 1) return;
   const f = launch(game, game.bodies[ui.selected], game.bodies[ui.target], ui.count);
+  ui.mode = null;
   if (f) toast(`${tf(f.name)} · ${f.n} ship${f.n === 1 ? '' : 's'} → ${game.bodies[f.to].name} · ${fmt(f.T)}`, ownerColor(PLAYER));
   ui.selected = ui.target = null;
   updateActions();
@@ -376,18 +418,16 @@ function tap(id, x, y) {
   ui.fleet = null;
   // The camera locks onto whatever you tap.
   if (id !== null) view.focus(game, id, false);
-  if (id === null) {
-    if (ui.target !== null) ui.target = null;
-    else ui.selected = null;
-  } else if (ui.selected !== null && id === ui.target) {
-    // Launching only ever happens from the Launch button.
-  } else if (ui.selected !== null && id !== ui.selected) {
-    ui.target = id;
-  } else if (id === ui.selected) {
+  if (ui.mode === 'launch') {
+    // Picking a destination: any other world becomes the target; empty
+    // space clears it. Leaving launch mode is only via Cancel or Confirm.
+    ui.target = id !== null && id !== ui.selected ? id : null;
+  } else if (id === null || id === ui.selected) {
     ui.selected = ui.target = null;
   } else if (game.bodies[id].owner === PLAYER) {
-    ui.selected = id; ui.slot = null;
-    ui.target = null;
+    ui.selected = id; ui.slot = null; ui.target = null;
+  } else {
+    ui.selected = ui.target = null;
   }
   updateActions();
 }
