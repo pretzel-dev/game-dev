@@ -152,16 +152,19 @@ export const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
 // Big name banks so every game feels different. All invented or borrowed
 // from myth, weather and old ships of the line; nothing from The Expanse.
-const PLANET_NAMES = ['Vesper', 'Ardent', 'Halcyon', 'Morrow', 'Tessaly', 'Oberin', 'Calyx', 'Nadir', 'Aubade', 'Corvina', 'Drummond', 'Elysa',
-  'Farrow', 'Gallant', 'Hesper', 'Isolde', 'Jubal', 'Karst', 'Lodestar', 'Marchmont', 'Nerissa', 'Orrin', 'Perrin', 'Quillon', 'Rhosyn', 'Sabine',
-  'Tamsin', 'Umbriel Minor', 'Valdis', 'Wyvern', 'Xanthe', 'Yarrow', 'Zephyrine', 'Anselm', 'Brigid', 'Caddis', 'Delphine', 'Emberlin', 'Fenwick',
-  'Graystone', 'Hollin', 'Ingram', 'Juniper', 'Kestrel', 'Lanark', 'Mirabel', 'Nightjar', 'Ostara', 'Pellucid', 'Ravenna', 'Solace', 'Thule Major',
-  'Ulster', 'Verity', 'Wistful', 'Aldous', 'Bellweather', 'Cinder', 'Dunmore', 'Evenfall', 'Foxglove', 'Gideon', 'Harrowgate', 'Idris', 'Jessamine',
-  'Kinsale', 'Lumen', 'Merrow', 'Noctis', 'Orla', 'Prospero', 'Rookwood', 'Sorrel', 'Tarn', 'Undine', 'Vantage', 'Wolde', 'Aster', 'Brandt'];
-const MOON_NAMES = ['Kell', 'Pim', 'Soren', 'Lark', 'Dace', 'Nym', 'Tove', 'Wren', 'Ossa', 'Brill', 'Cade', 'Dowle', 'Eske', 'Fenn', 'Gorse',
-  'Hask', 'Ilse', 'Jory', 'Kip', 'Lusk', 'Mote', 'Nib', 'Orme', 'Prell', 'Quoin', 'Rill', 'Skerry', 'Thrum', 'Ulla', 'Vane', 'Whin', 'Yule',
-  'Zell', 'Ashby', 'Bracken', 'Cobble', 'Dunnock', 'Ember', 'Flint', 'Grebe', 'Holt', 'Inch', 'Jet', 'Knoll', 'Linnet', 'Marl', 'Nook', 'Pewter',
-  'Quill', 'Rook', 'Shale', 'Tansy', 'Umber', 'Vetch', 'Wisp', 'Brume', 'Chert', 'Dross', 'Eyot', 'Fell', 'Gloam', 'Hob', 'Ivel', 'Lode', 'Mica'];
+const PLANET_NAMES = ['Aurelion', 'Seraphine', 'Caelestis', 'Vespera', 'Solenne', 'Astraeon', 'Halcyra', 'Lumeris', 'Orionde', 'Celestine',
+  'Empyra', 'Noctara', 'Stellarin', 'Zenitha', 'Aethelis', 'Borealis Major', 'Cygnara', 'Draconis', 'Elysion', 'Fulgora', 'Galathea', 'Heliara',
+  'Ixora', 'Lyrae', 'Meridia', 'Nebulon', 'Ophira', 'Polaria', 'Quasara', 'Radiantis', 'Sidera', 'Thessaly Prime', 'Uranara', 'Valenor',
+  'Wynthera', 'Xandria', 'Ysolde', 'Zephyra', 'Aquilon', 'Brightholm', 'Corvessa', 'Dawnmere', 'Equinoxa', 'Firmament', 'Gloriana', 'Hyperion Tor',
+  'Irisca', 'Kyrios', 'Luminara', 'Magellane', 'Nimbara', 'Ouranos Minor', 'Perigee', 'Radiance', 'Solstira', 'Tethra', 'Umbrielle', 'Vireon',
+  'Aldebara', 'Betelline', 'Capellan', 'Deneba', 'Etamin', 'Fomalhara', 'Hadara', 'Izarine', 'Kochaba', 'Mirzana', 'Nashira', 'Pollara',
+  'Rigelle', 'Sadalmel', 'Talitha', 'Vegara', 'Alcyone Deep', 'Canopea', 'Mimosa', 'Aludra', 'Suhail', 'Menkara'];
+const MOON_NAMES = ['Selene Minor', 'Lucen', 'Nyxa', 'Astra', 'Eos', 'Hesperel', 'Stilbe', 'Aglaia', 'Phaenna', 'Asteria', 'Chione', 'Lampetia',
+  'Aether', 'Hemera', 'Orphne', 'Aura', 'Pleia', 'Maia Minor', 'Electra Minor', 'Merope Minor', 'Taygete Minor', 'Sterope', 'Celaeno Minor',
+  'Alcyon', 'Aphelia', 'Periel', 'Syzyn', 'Nadira', 'Zenia', 'Umbra', 'Penumbra', 'Crescen', 'Gibbous', 'Waxen', 'Occulta', 'Transita',
+  'Libra Minor', 'Albedo', 'Lumen', 'Nimbus', 'Corona Minor', 'Halo', 'Parhelia', 'Glimmer', 'Starling', 'Morrowlight', 'Duskmere', 'Emberlight',
+  'Frostlight', 'Glowworm', 'Ashlight', 'Moth', 'Lantern', 'Candela', 'Lux', 'Ignis', 'Scintilla', 'Stella Parva', 'Vela Minor', 'Nova Parva',
+  'Pulsa', 'Quark', 'Photon', 'Zodia', 'Ecliptica'];
 const STATION_NAMES = ['Ring One', 'Anchor', 'Meridian', 'Longreach', 'Holdfast', 'Keystone', 'Lantern', 'Tollgate', 'Crossways', 'Beacon Hill',
   'Harbourline', 'Windlass', 'Capstan', 'Stillwater', 'Gantry Nine', 'Fairhaven', 'Moorings', 'Pinwheel', 'Carrick Yard', 'Halfway House',
   'Sentinel', 'Spindle', 'Drydock Four', 'Tether', 'Outlook', 'Commonwealth', 'Linchpin', 'Caravel', 'Weigh Station', 'Portcullis'];

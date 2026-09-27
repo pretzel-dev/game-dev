@@ -281,3 +281,20 @@ table.totals th { font-weight: 600; }
 .flbl[data-v='2']::before { -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(70deg, #000 0 60%, transparent 60% 68%, #000 68% 74%, transparent 74% 82%, #000 82%); mask-image: linear-gradient(#000, #000), linear-gradient(70deg, #000 0 60%, transparent 60% 68%, #000 68% 74%, transparent 74% 82%, #000 82%); }
 .flbl[data-v='3']::before { -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(70deg, #000 0 48%, transparent 48% 56%, #000 56% 62%, transparent 62% 70%, #000 70% 76%, transparent 76% 84%, #000 84%); mask-image: linear-gradient(#000, #000), linear-gradient(70deg, #000 0 48%, transparent 48% 56%, #000 56% 62%, transparent 62% 70%, #000 70% 76%, transparent 76% 84%, #000 84%); }
 .vet { color: var(--dim); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+
+/* World economy line and the upgrade ladder. */
+.econ { flex-basis: 100%; font-size: 12px; text-align: left; }
+.econ .pos { color: #7ee0a1; letter-spacing: 0.02em; text-transform: none; }
+.econ .dim { color: var(--dim); }
+.ladder { flex-basis: 100%; display: flex; gap: 4px; }
+.ladder .lv { flex: 1; display: flex; flex-direction: column; padding: 4px 6px; border: 1px solid var(--line); font-size: 11px; color: var(--dim); }
+.ladder .lv b { color: var(--fg); font-size: 11px; letter-spacing: 0.1em; }
+.ladder .lv small { color: var(--accent); font-variant-numeric: tabular-nums; }
+.ladder .lv.done { border-color: var(--accent); color: var(--fg); }
+.ladder .lv.done small { color: var(--dim); }
+.ladder .lv.now { border-style: dashed; border-color: var(--accent); }
+.stepper[hidden], #cancel[hidden] { display: none; }
+#cancel { height: 42px; padding: 0 14px; border: 1px solid var(--line); background: var(--panel); color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; font-size: 13px;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); }
+#actions.launching #focus { display: none; }
+#cancel { flex: 0 0 auto; }
