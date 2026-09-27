@@ -1,6 +1,6 @@
 import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel } from './sim.js';
 import { createAI, tickAI } from './ai.js';
-import { createView, ownerColor, vetBadge } from './render.js';
+import { createView, ownerColor } from './render.js';
 
 const $ = (id) => document.getElementById(id);
 const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
@@ -102,7 +102,7 @@ function updateFleetInfo() {
   const phase = s.flipping ? 'flipping' : s.phase === 1 ? 'burning toward' : 'braking for';
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
-  setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · ${vetBadge(`<b>${f.n}</b>`, f.vet)} ship${f.n === 1 ? '' : 's'} from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
+  setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> ship${f.n === 1 ? '' : 's'} from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
     + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s`);
 }
 
@@ -120,7 +120,7 @@ function updateActions() {
   if (ui.target === null) {
     ui.preview = null;
     const kind = s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
-    setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}${vetBadge(`<span class="num">${s.ships}</span>`, s.vet)}<span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`);
+    setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`);
     $('launch').disabled = true;
     renderBuildRow(s);
   } else {

@@ -4,12 +4,6 @@ import { NEUTRAL, posAt, fleetState, rng, vetLevel } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
-/** A count wrapped in a thin ring with one diagonal notch per veterancy level. */
-export function vetBadge(inner, vet) {
-  const lvl = vetLevel(vet);
-  if (!lvl) return inner;
-  return `<span class="vb">${inner}${'<i></i>'.repeat(lvl)}</span>`;
-}
 export const ownerColor = (o) => (o === NEUTRAL ? NEUTRAL_COLOR : OWNER_COLORS[o]);
 
 const SUN_RADIUS = 6;
@@ -42,13 +36,26 @@ const glowTex = canvasTex(128, 128, (g) => {
   g.fillRect(0, 0, 128, 128);
 });
 
-const ringTex = canvasTex(128, 128, (g) => {
+// Owner ring; veterans get one short gap per level cut into its upper right.
+const ringTexs = [0, 1, 2, 3].map((lvl) => canvasTex(128, 128, (g) => {
   g.strokeStyle = '#fff';
   g.lineWidth = 4;
+  const gap = 0.16;
+  const step = 0.3;
+  const start = -Math.PI / 4 - ((lvl - 1) * step) / 2; // centred on the upper right
+  const cuts = Array.from({ length: lvl }, (_, k) => start + k * step);
+  let from = cuts.length ? cuts[cuts.length - 1] + gap / 2 : 0;
+  const to = cuts.length ? cuts[0] - gap / 2 + Math.PI * 2 : Math.PI * 2;
   g.beginPath();
-  g.arc(64, 64, 58, 0, Math.PI * 2);
+  g.arc(64, 64, 58, from, to);
   g.stroke();
-});
+  for (let k = 0; k < cuts.length - 1; k++) {
+    g.beginPath();
+    g.arc(64, 64, 58, cuts[k] + gap / 2, cuts[k + 1] - gap / 2);
+    g.stroke();
+  }
+}));
+const ringTex = ringTexs[0];
 
 /** Fine speckle over a whole texture, so surfaces have grain when close. */
 function grain(g, w, h, r, amount) {
@@ -938,6 +945,9 @@ export function createView(canvas, labelRoot) {
       v.mark.material.opacity = selected ? 1 : targeted ? 0.9 : b.owner === NEUTRAL ? 0.25 : 0.7;
       // Up close the world itself is the marker: fade the ring out of the way.
       if (b.size * ppu > 70) v.mark.material.opacity *= 0.25;
+      // Garrison veterancy shows as gaps in the ring (only if we can see it).
+      const lvl = knowsWorld(b) && b.ships > 0 ? vetLevel(b.vet) : 0;
+      if (v.mark.material.map !== ringTexs[lvl]) { v.mark.material.map = ringTexs[lvl]; v.mark.material.needsUpdate = true; }
       if (selected || targeted) v.mark.material.color.set(selected ? '#ffffff' : col);
       else v.mark.material.color.set(col);
 
@@ -1008,7 +1018,7 @@ export function createView(canvas, labelRoot) {
       const hide = tmp.z > 1 || crowded.has(b.id);
       if (hide) { v.label.style.visibility = 'hidden'; continue; }
       const attackers = (known ? b.sieges : []).map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
-      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : b.ships ? vetBadge(`<b>${b.ships}</b>`, b.vet) : '';
+      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : b.ships ? `<b>${b.ships}</b>` : '';
       const kids = (extras.get(b.id) || []).join('');
       const warn = (incomingTo.get(b.id) || []).map((x) => {
         const e = Math.max(0, x.eta);
@@ -1089,8 +1099,10 @@ export function createView(canvas, labelRoot) {
       const el = fleetLabel(fl++);
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === 0;
-      const text = knowsSize(f) ? `▸ ${vetBadge(String(f.n), f.vet)}` : '▸ ?';
-      if (el._t !== text) { el._t = text; el.innerHTML = text; }
+      const text = `▸ ${knowsSize(f) ? f.n : '?'}`;
+      const lv = knowsSize(f) ? vetLevel(f.vet) : 0;
+      if (el._v !== lv) { el._v = lv; el.dataset.v = lv; }
+      if (el._t !== text) { el._t = text; el.textContent = text; }
       el.style.color = ownerColor(f.owner);
       el.style.borderColor = ownerColor(f.owner);
       el.style.opacity = mine ? (ui.fleet === f.id ? 1 : 0.85) : 0.6;

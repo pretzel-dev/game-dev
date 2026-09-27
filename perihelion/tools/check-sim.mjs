@@ -197,6 +197,24 @@ import { rng } from '../src/sim.js';
   console.log(`veterancy: easy win ${f.vet.toFixed(2)}, hard win ${m2.vet.toFixed(2)}; name kept: ${m.tf ?? f.name}`);
 }
 
+// Homes: a plain planet with exactly one moon or station, evenly spaced round the sun.
+for (const opponents of [1, 2]) {
+  for (let seed = 1; seed <= 30; seed++) {
+    const g = createGame({ seed, opponents });
+    const homes = g.bodies.filter((b) => b.home);
+    for (const h of homes) {
+      assert.equal(g.bodies.filter((c) => c.parent === h.id).length, 1, 'a home has one companion');
+      assert.ok(!h.giant);
+    }
+    const ang = homes.map((h) => Math.atan2(posAt(g, h, 0).z, posAt(g, h, 0).x));
+    for (let i = 0; i < ang.length; i++) for (let j = i + 1; j < ang.length; j++) {
+      const d = Math.abs(((ang[i] - ang[j] + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+      assert.ok(Math.abs(d - (2 * Math.PI) / ang.length) < 0.01, 'homes evenly spaced');
+    }
+  }
+}
+console.log('homes: one companion each, evenly spaced');
+
 // AI-only matches finish.
 let finished = 0;
 const lengths = [];
