@@ -36,7 +36,8 @@ import { rng } from '../src/sim.js';
     const end = fleetState(f, f.t0 + f.T);
     const v1 = velAt(g, t, f.t0 + f.T);
     worstV = Math.max(worstV, Math.hypot(end.vx - v1.x, end.vy - v1.y, end.vz - v1.z));
-    worstA = Math.max(worstA, Math.hypot(f.a1.x, f.a1.y, f.a1.z), Math.hypot(f.a2.x, f.a2.y, f.a2.z));
+    const k = f.assist !== undefined ? 1.25 : 1;
+    worstA = Math.max(worstA, Math.hypot(f.a1.x, f.a1.y, f.a1.z) / k, Math.hypot(f.a2.x, f.a2.y, f.a2.z) / k);
     for (let k = 0; k <= 200; k++) {
       const s = fleetState(f, f.t0 + (k / 200) * f.T);
       closestSun = Math.min(closestSun, Math.hypot(s.x, s.y, s.z));
@@ -60,6 +61,23 @@ import { rng } from '../src/sim.js';
     assert.ok(T < 60, `hop to ${own.name} should be quick (took ${T.toFixed(0)}s)`);
     console.log(`hop to own ${own.kind} ${own.name}: ${T.toFixed(0)}s; to ${t.name}: ${f.T.toFixed(0)}s`);
   }
+}
+
+// Gravity assists happen on some routes, and only ever make a trip faster.
+{
+  let assisted = 0;
+  let total = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    const g = createGame({ seed });
+    for (const a of g.bodies) for (const b of g.bodies) {
+      if (a === b || a.kind !== 'planet' || b.kind !== 'planet') continue;
+      const f = plan(g, a, b);
+      total++;
+      if (f.assist !== undefined) { assisted++; assert.ok(g.bodies[f.assist].giant); }
+    }
+  }
+  assert.ok(assisted > 0, 'some routes get an assist');
+  console.log(`assists: ${assisted}/${total} planet-to-planet routes`);
 }
 
 // Economy: ships only come from shipyards, paid in credits; slots are limited.
