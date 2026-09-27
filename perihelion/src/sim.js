@@ -15,6 +15,7 @@ export const RULES = {
   startCredits: 400,
   // Credits per second from each world you hold, plus each finished mine.
   income: { planet: 1, moon: 0.5, station: 0.6, asteroid: 0.3 },
+  homeIncome: 0.4, // extra for a homeworld, so it's worth defending (and taking)
   mineIncome: 1.5,
   ship: { cost: 150, time: 45 }, // each shipyard builds one at a time
   structures: {
@@ -362,7 +363,7 @@ export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, '
 export const incomeOf = (b, game) => {
   if (b.owner === NEUTRAL) return 0;
   const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
-  return RULES.income[b.kind] + RULES.mineIncome * count(b, 'mine') * mining;
+  return RULES.income[b.kind] + (b.home ? RULES.homeIncome : 0) + RULES.mineIncome * count(b, 'mine') * mining;
 };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
 /** Working shipyards here: each builds one ship at a time. */

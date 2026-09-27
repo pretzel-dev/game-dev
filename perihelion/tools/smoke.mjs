@@ -32,10 +32,14 @@ ids.t = await page.evaluate(() => {
   const { game, view } = window.__perihelion;
   const on = game.bodies.filter((b) => b.owner === -1).map((b) => ({ id: b.id, ...view.screenOf(b.id) }))
     .filter((q) => q.x > 30 && q.x < 360 && q.y > 120 && q.y < 700);
-  return on[0]?.id ?? game.bodies.find((b) => b.owner === -1).id;
+  return on[0]?.id ?? null;
 });
-p = await pos(ids.t); await page.touchscreen.tap(p.x, p.y); await page.waitForTimeout(400);
-const info = await page.textContent('#info'); console.log('target on screen', JSON.stringify(p));
+// Maps are random: if no neutral is on screen, set the target directly
+// (tapping empty space in launch mode would back out of it).
+if (ids.t === null) await page.evaluate(() => { const { game, ui } = window.__perihelion; ui.target = game.bodies.find((x) => x.owner === -1).id; });
+else { p = await pos(ids.t); await page.touchscreen.tap(p.x, p.y); }
+await page.waitForTimeout(400);
+const info = await page.textContent('#info');
 await page.screenshot({ path: out + '/ph-order.png' });
 await page.tap('#more'); await page.tap('#launch');
 const after = await page.evaluate(() => ({ sel: window.__perihelion.ui.selected, mode: window.__perihelion.ui.mode }));

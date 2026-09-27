@@ -71,12 +71,14 @@ segmented($('difficulty'), () => prefs.difficulty, (v) => (prefs.difficulty = v)
  * Start a game. Solo: you against AIs. Multiplayer: everyone builds the same
  * map from the seed; the host runs it and guests mirror the host's state.
  */
-function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, mp = false } = {}) {
+let aiSeatDiffs = [];
+function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, aiDiffs = null, mp = false } = {}) {
   game = createGame({ seed, opponents: players - 1, mp });
   if (names) game.names = names;
   me = seat;
   const r = rng(seed ^ 0xabc);
   // AIs run only where the game runs: solo, or on the host.
+  aiSeatDiffs = aiDiffs || (aiSeats ? aiSeats.map(([, d]) => d) : mp ? [] : Array(players - 1).fill(prefs.difficulty));
   ais = net?.role === 'client' ? []
     : aiSeats ? aiSeats.map(([i, d]) => createAI(i, d, r))
       : Array.from({ length: players - 1 }, (_, i) => createAI(i + 1, prefs.difficulty, r));
@@ -202,7 +204,7 @@ $('host').addEventListener('click', () => {
   net = { role: 'host', room };
 });
 function startMsg(seat) {
-  return { t: 'start', seed: net.seed, players: game.players, names: game.names, seat, paused };
+  return { t: 'start', seed: net.seed, players: game.players, names: game.names, seat, paused, aiDiffs: aiSeatDiffs };
 }
 $('lobby-start').addEventListener('click', () => {
   if (net?.role !== 'host' || lobbySeats.length < 2) return;
@@ -246,7 +248,7 @@ function onHostMessage(m) {
     $('lobby').hidden = true;
     $('menu').hidden = false;
   } else if (m.t === 'start') {
-    startGame({ seed: m.seed, players: m.players, seat: m.seat, names: m.names, mp: true });
+    startGame({ seed: m.seed, players: m.players, seat: m.seat, names: m.names, aiDiffs: m.aiDiffs || [], mp: true });
     paused = m.paused;
     showPaused();
   } else if (m.t === 'state' && game && running) {
@@ -297,11 +299,15 @@ $('warp').addEventListener('click', () => {
   warp = WARPS[(WARPS.indexOf(warp) + 1) % WARPS.length];
   $('warp').textContent = `${warp}×`;
 });
-$('system').addEventListener('click', () => {
+/** Reset the camera to a view of the whole system. */
+function systemView() {
   view.orbit.follow = null;
   view.orbit.target.set(0, 0, 0);
-  view.orbit.dist = 650;
-});
+  view.orbit.vaz = view.orbit.vpol = 0;
+  view.orbit.pol = 0.9;
+  view.orbit.goalDist = 650;
+}
+$('system').addEventListener('click', systemView);
 
 // ---- Orders ---------------------------------------------------------------
 
@@ -324,7 +330,6 @@ function updateActions() {
   const s = ui.selected !== null && game ? game.bodies[ui.selected] : null;
   const show = !!s && s.owner === me && running;
   $('actions').hidden = !show;
-  $('system').hidden = view.orbit.follow === null;
   if (!show) { ui.preview = null; ui.mode = null; return; }
   if (!s.ships && ui.mode) ui.mode = null;
   ui.count = s.ships ? Math.max(1, Math.min(ui.count, s.ships)) : 0;
@@ -641,8 +646,8 @@ function tap(id, x, y, mouse = false) {
   if (id !== null && !mouse) view.focus(game, id, false);
   if (ui.mode === 'launch') {
     // Picking a destination: any other world becomes the target; empty
-    // space clears it. Leaving launch mode is only via Cancel or Confirm.
-    ui.target = id !== null && id !== ui.selected ? id : null;
+    // space backs out of launching and deselects.
+    if (id === null) { ui.selected = ui.target = null; ui.mode = null; } else ui.target = id !== ui.selected ? id : null;
   } else if (id === null || id === ui.selected) {
     ui.selected = ui.target = null;
   } else if (game.bodies[id].owner === me) {
@@ -769,8 +774,10 @@ canvas.addEventListener('pointercancel', (e) => { endPointer(e); gesture = null;
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   // Trackpad pinch arrives as ctrl+wheel with small deltas; scale to match.
+  // Some browsers (Firefox) report wheel steps in lines or pages, not pixels.
+  const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
   const k = e.ctrlKey ? 0.01 : 0.0015;
-  view.zoomToward(e.clientX, e.clientY, Math.exp(e.deltaY * k));
+  view.zoomToward(e.clientX, e.clientY, Math.exp(Math.max(-0.5, Math.min(0.5, dy * k))));
 }, { passive: false });
 
 // Keyboard: WASD/arrows pan, Q/E turn, +/- zoom, F focus selection,
@@ -788,9 +795,7 @@ window.addEventListener('keydown', (e) => {
     const id = ui.target ?? ui.selected;
     if (id !== null) view.focus(game, id);
   } else if (k === 'h') {
-    view.orbit.follow = null;
-    view.orbit.target.set(0, 0, 0);
-    view.orbit.goalDist = 650;
+    systemView();
   }
 });
 window.addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
@@ -861,6 +866,24 @@ function bestIn(k, players) {
   return players.filter((o, i) => v[i] === best);
 }
 
+/** "12:34 · 2 rivals · normal": difficulty only when there were AIs. */
+function matchLine() {
+  const rivals = game.players - 1;
+  const diffs = [...new Set(aiSeatDiffs)];
+  const aiNote = diffs.length ? ` · ${game.mp ? 'AI ' : ''}${diffs.join('/')}` : '';
+  return `${fmt(game.time)} · ${rivals} rival${rivals === 1 ? '' : 's'}${aiNote}`;
+}
+/** Shrink a font until the text fits the width. */
+function fitText(g, text, x, y, maxW, weight, px, font) {
+  let size = px;
+  g.font = font(weight, size);
+  while (size > 16 && g.measureText(text).width > maxW) g.font = font(weight, --size);
+  if (g.measureText(text).width > maxW) {
+    while (text.length > 1 && g.measureText(text + '…').width > maxW) text = text.slice(0, -1);
+    text += '…';
+  }
+  g.fillText(text, x, y);
+}
 /** One portrait image of the whole report, for sharing. */
 function reportImage() {
   const W = 1080, H = 1500;
@@ -878,12 +901,12 @@ function reportImage() {
   g.fillStyle = ownerColor(won ? me : game.winner); g.font = font(700, 96);
   g.fillText(won ? 'VICTORY' : 'DEFEAT', W / 2, 200);
   g.fillStyle = '#e6ebf7'; g.font = font(500, 34);
-  g.fillText(`${fmt(game.time)} · ${prefs.rivals} rival${prefs.rivals === 1 ? '' : 's'} · ${prefs.difficulty}`, W / 2, 252);
+  g.fillText(matchLine(), W / 2, 252);
   // Table.
   const x0 = 80, colW = 170, labelW = W - 160 - colW * players.length;
   let y = 330;
   g.font = font(700, 32); g.textAlign = 'right';
-  players.forEach((o, i) => { g.fillStyle = ownerColor(o); g.fillText(nameOf(o), x0 + labelW + colW * (i + 1) - 20, y); });
+  players.forEach((o, i) => { g.fillStyle = ownerColor(o); fitText(g, nameOf(o), x0 + labelW + colW * (i + 1) - 20, y, colW - 30, 700, 32, font); });
   y += 20;
   for (const [label, k] of REPORT_ROWS) {
     y += 52;
@@ -929,7 +952,8 @@ async function shareReport() {
   const file = new File([blob], 'perihelion-report.png', { type: 'image/png' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'Perihelion' });
+      // Files only: adding a title makes some share sheets send a second, text item.
+      await navigator.share({ files: [file] });
       return;
     }
   } catch (e) { if (e.name === 'AbortError') return; }
@@ -1028,12 +1052,13 @@ function frame(now) {
       if (game.mp && !knockedOut && !game.bodies.some((b) => b.owner === me) && !game.fleets.some((f) => f.owner === me) && game.winner === null) {
         knockedOut = true;
         toast('Your empire has fallen · watching the rest', '#ff7a4d');
+        ui.vis = null; // observers see everything
       }
       if (ui.fleet !== null) updateFleetInfo();
       uiClock -= dt;
       if (uiClock <= 0) {
         uiClock = 0.25;
-        ui.vis = visibility(game, me);
+        ui.vis = knockedOut ? null : visibility(game, me);
         updateActions();
         renderResearch();
         $('clock').innerHTML = `<b>₵ ${Math.floor(game.credits[me])}</b> +${income(game, me).toFixed(1)}/s · T+${fmt(game.time)}`;
