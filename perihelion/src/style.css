@@ -299,3 +299,12 @@ table.totals th { font-weight: 600; }
 #actions.launching #focus { display: none; }
 #cancel { flex: 0 0 auto; }
 .assist { color: #c9a4ff; }
+.lbl .rein { font-size: 11px; font-weight: 700; opacity: 0.85; }
+.ladder .lv.next { border-color: var(--accent); background: rgba(88, 184, 255, 0.16); color: var(--fg); text-align: left; cursor: pointer; }
+.ladder .lv.next small { color: var(--accent); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.ladder .lv.next:disabled { opacity: 0.45; }
+table.totals td.best { color: #7ee0a1; font-weight: 700; background: rgba(126, 224, 161, 0.1); }
+.end-actions { gap: 10px; }
+.primary.ghost { background: none; border: 1px solid var(--accent); color: var(--accent); min-width: 130px; }
+.ctx .ladder button.lv { height: auto; padding: 4px 6px; font-size: 11px; letter-spacing: normal; text-transform: none; align-items: flex-start; border: 1px solid var(--accent); background: rgba(88, 184, 255, 0.16); }
+.ctx .ladder button.lv small { margin-left: 0; }

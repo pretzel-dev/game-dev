@@ -206,17 +206,19 @@ function renderBuildRow(s) {
       const p = progressOf(x);
       const state = x.next ? `upgrading → ${ROMAN[x.next]} · ${pct(p)}` : x.left > 0 ? `building · ${pct(p)}` : def.maxLevel ? `level ${ROMAN[x.level]}` : 'online';
       const why = cantUpgrade(game, s, x);
-      const up = !why || why === 'not enough credits'
-        ? `<button data-u="${ui.slot}" ${why ? 'disabled' : ''}>Upgrade<small>${upgradeCost(x)}</small></button>` : '';
       const dwhy = cantDemolish(game, s, x);
-      row = `<span class="what">${def.name} · ${state}</span>${up}<button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
+      row = `<span class="what">${def.name} · ${state}</span><button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
       // Every level at a glance: what it gives and what it costs to reach.
       if (def.maxLevel) {
         const steps = [];
         for (let k = 1; k <= def.maxLevel; k++) {
           const cost = k === 1 ? def.cost : upgradeCost({ type: x.type, level: k - 1 });
           const cls = k <= x.level ? 'done' : k === x.next ? 'now' : '';
-          steps.push(`<span class="lv ${cls}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${k <= x.level ? '✓' : cost}</small></span>`);
+          // The next level is the upgrade button itself.
+          const next = k === x.level + 1 && !x.next && (!why || why === 'not enough credits');
+          const tag = next ? `button data-u="${ui.slot}" ${why ? 'disabled' : ''}` : 'span';
+          const note = k <= x.level ? '✓' : k === x.next ? 'upgrading' : next ? `Upgrade · ${cost}` : cost;
+          steps.push(`<${tag} class="lv ${cls}${next ? ' next' : ''}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${note}</small></${tag.split(' ')[0]}>`);
         }
         row += `<div class="ladder">${steps.join('')}</div>`;
       }
@@ -543,17 +545,108 @@ function lineChart(title, key, series, players, fmtV = (v) => Math.round(v)) {
     + `<div class="readout">Touch the chart to read values</div></div>`;
 }
 
+const REPORT_ROWS = [
+  ['Ships built', 'built'], ['Ships lost', 'lost'], ['Enemy ships destroyed', 'killed'],
+  ['Worlds captured', 'captured'], ['Worlds lost', 'worldsLost'],
+  ['Credits earned', 'earned'], ['Credits spent', 'spent'], ['Research completed', 'research'],
+];
+const LOWER_IS_BETTER = new Set(['lost', 'worldsLost']);
+/** Who led a category (ties share it; nobody leads an all-zero row). */
+function bestIn(k, players) {
+  const v = players.map((o) => Math.round(game.stats.totals[o][k]));
+  const best = LOWER_IS_BETTER.has(k) ? Math.min(...v) : Math.max(...v);
+  if (!LOWER_IS_BETTER.has(k) && best <= 0) return [];
+  if (v.every((x) => x === best)) return [];
+  return players.filter((o, i) => v[i] === best);
+}
+
+/** One portrait image of the whole report, for sharing. */
+function reportImage() {
+  const W = 1080, H = 1500;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const players = Array.from({ length: game.players }, (_, i) => i);
+  const font = (w, px) => `${w} ${px}px Rajdhani, system-ui, sans-serif`;
+  g.fillStyle = '#03040a'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(120,190,255,0.25)'; g.lineWidth = 2; g.strokeRect(24, 24, W - 48, H - 48);
+  g.textAlign = 'center';
+  g.fillStyle = '#858ca6'; g.font = font(600, 30);
+  g.fillText('P E R I H E L I O N', W / 2, 96);
+  const won = game.winner === PLAYER;
+  g.fillStyle = ownerColor(won ? PLAYER : game.winner); g.font = font(700, 96);
+  g.fillText(won ? 'VICTORY' : 'DEFEAT', W / 2, 200);
+  g.fillStyle = '#e6ebf7'; g.font = font(500, 34);
+  g.fillText(`${fmt(game.time)} · ${prefs.rivals} rival${prefs.rivals === 1 ? '' : 's'} · ${prefs.difficulty}`, W / 2, 252);
+  // Table.
+  const x0 = 80, colW = 170, labelW = W - 160 - colW * players.length;
+  let y = 330;
+  g.font = font(700, 32); g.textAlign = 'right';
+  players.forEach((o, i) => { g.fillStyle = ownerColor(o); g.fillText(PLAYER_NAMES[o], x0 + labelW + colW * (i + 1) - 20, y); });
+  y += 20;
+  for (const [label, k] of REPORT_ROWS) {
+    y += 52;
+    g.strokeStyle = 'rgba(160,180,255,0.15)'; g.beginPath(); g.moveTo(x0, y + 16); g.lineTo(W - x0, y + 16); g.stroke();
+    g.textAlign = 'left'; g.fillStyle = '#858ca6'; g.font = font(500, 30); g.fillText(label, x0, y);
+    const best = bestIn(k, players);
+    players.forEach((o, i) => {
+      const rx = x0 + labelW + colW * (i + 1) - 20;
+      if (best.includes(o)) {
+        g.fillStyle = 'rgba(126,224,161,0.16)'; g.fillRect(rx - colW + 30, y - 34, colW - 20, 46);
+        g.fillStyle = '#7ee0a1';
+      } else g.fillStyle = '#e6ebf7';
+      g.textAlign = 'right'; g.font = font(best.includes(o) ? 700 : 500, 32);
+      g.fillText(String(Math.round(game.stats.totals[o][k])), rx, y);
+    });
+  }
+  // Charts: three small multiples side by side.
+  const series = game.stats.series;
+  const charts = [['Ships', 'ships'], ['Worlds', 'worlds'], ['Income', 'income']];
+  const cw = (W - 160 - 40) / 3, ch = 400, cy = y + 90;
+  charts.forEach(([title, key], i) => {
+    const cx = 80 + i * (cw + 20);
+    g.textAlign = 'left'; g.fillStyle = '#e6ebf7'; g.font = font(600, 30); g.fillText(title, cx, cy);
+    const top = cy + 20, bot = top + ch;
+    const t1 = series.at(-1).t || 1;
+    const max = Math.max(1, ...series.flatMap((q) => q.p.map((p) => p[key])));
+    g.strokeStyle = 'rgba(160,180,255,0.15)'; g.lineWidth = 2;
+    for (const k of [0, 0.5, 1]) { g.beginPath(); g.moveTo(cx, bot - k * ch); g.lineTo(cx + cw, bot - k * ch); g.stroke(); }
+    for (const o of players) {
+      g.strokeStyle = ownerColor(o); g.lineWidth = 4; g.lineJoin = 'round'; g.beginPath();
+      series.forEach((q, j) => { const px = cx + (q.t / t1) * cw, py = bot - (q.p[o][key] / max) * ch; j ? g.lineTo(px, py) : g.moveTo(px, py); });
+      g.stroke();
+    }
+    g.fillStyle = '#858ca6'; g.font = font(500, 24);
+    g.fillText(key === 'income' ? max.toFixed(1) : String(Math.round(max)), cx, top + 26);
+  });
+  g.textAlign = 'center'; g.fillStyle = '#858ca6'; g.font = font(500, 26);
+  g.fillText('pretzel-dev.github.io/game-dev/perihelion', W / 2, H - 56);
+  return c;
+}
+async function shareReport() {
+  const blob = await new Promise((r) => reportImage().toBlob(r, 'image/png'));
+  const file = new File([blob], 'perihelion-report.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Perihelion' });
+      return;
+    }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$('share').addEventListener('click', shareReport);
+
 function renderReport() {
   const st = game.stats;
   const players = Array.from({ length: game.players }, (_, i) => i);
-  const rows = [
-    ['Ships built', 'built'], ['Ships lost', 'lost'], ['Enemy ships destroyed', 'killed'],
-    ['Worlds captured', 'captured'], ['Worlds lost', 'worldsLost'],
-    ['Credits earned', 'earned'], ['Credits spent', 'spent'], ['Research completed', 'research'],
-  ];
+  const rows = REPORT_ROWS;
   const legend = `<div class="legend">${players.map((o) => `<span><i style="background:${ownerColor(o)}"></i>${PLAYER_NAMES[o]}</span>`).join('')}</div>`;
   const table = `<table class="totals"><tr><th></th>${players.map((o) => `<th style="color:${ownerColor(o)}">${PLAYER_NAMES[o]}</th>`).join('')}</tr>`
-    + rows.map(([label, k]) => `<tr><td>${label}</td>${players.map((o) => `<td>${Math.round(st.totals[o][k])}</td>`).join('')}</tr>`).join('')
+    + rows.map(([label, k]) => `<tr><td>${label}</td>${players.map((o) => `<td class="${bestIn(k, players).includes(o) ? 'best' : ''}">${Math.round(st.totals[o][k])}</td>`).join('')}</tr>`).join('')
     + '</table>';
   $('report').innerHTML = legend + table
     + lineChart('Ships', 'ships', st.series, players)

@@ -452,7 +452,7 @@ const structMat = new THREE.MeshStandardMaterial({ color: '#b9c0cc', metalness: 
 const ghostMat = new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.35, wireframe: true });
 
 /** A structure's mesh, sized to the world: yards orbit, guns and mines sit on the surface. */
-function structureMesh(type, b, k, done) {
+function structureMesh(type, b, k, done, level = 1) {
   const mat = done ? structMat : ghostMat;
   const s = Math.max(0.25, b.size * 0.14);
   const g = new THREE.Group();
@@ -473,22 +473,52 @@ function structureMesh(type, b, k, done) {
   const r = rng(b.id * 17 + k * 101 + (type === 'mine' ? 5 : 0));
   const dir = new THREE.Vector3(r() - 0.5, (r() - 0.5) * 0.9, r() - 0.5).normalize();
   if (type === 'defence') {
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.5, s * 0.6, s * 0.35, 8), mat);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.08, s * 0.9, 6), mat);
-    barrel.position.set(0, s * 0.45, s * 0.25);
-    barrel.rotation.x = 0.7;
-    g.add(base, barrel);
-  } else {
-    // Mine: a rig with a tall derrick and a work light.
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(s * 0.9, s * 0.4, s * 0.7), mat));
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.14, s * 1.4, 5), mat);
-    tower.position.y = s * 0.7;
-    g.add(tower);
+    // One barrel per level on a wider, heavier mount.
+    const w = 1 + (level - 1) * 0.3;
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.5 * w, s * 0.6 * w, s * 0.35, 8), mat);
+    g.add(base);
+    for (let i = 0; i < level; i++) {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.08, s * (0.9 + level * 0.15), 6), mat);
+      barrel.position.set((i - (level - 1) / 2) * s * 0.25, s * 0.45, s * 0.25);
+      barrel.rotation.x = 0.7;
+      g.add(barrel);
+    }
+    if (level > 1) {
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(s * 0.3 * w, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+      dome.position.y = s * 0.17;
+      g.add(dome);
+    }
+  } else if (type === 'lab') {
+    // Research station: a dish per level on a mast, with a lit window band.
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.1, s * 0.16, s * 1.1, 6), mat);
+    mast.position.y = s * 0.55;
+    g.add(mast, new THREE.Mesh(new THREE.BoxGeometry(s * 0.8, s * 0.3, s * 0.8), mat));
+    for (let i = 0; i < level; i++) {
+      const dish = new THREE.Mesh(new THREE.SphereGeometry(s * (0.45 - i * 0.08), 12, 6, 0, Math.PI * 2, 0, Math.PI / 3), mat);
+      dish.position.y = s * (0.7 + i * 0.35);
+      dish.rotation.set(Math.PI + 0.5, i * 2.1, 0);
+      g.add(dish);
+    }
     if (done) {
-      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffc070', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      light.position.y = s * 1.5;
-      light.scale.setScalar(s * 1.6);
+      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#9fd4ff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      light.position.y = s * (1.1 + level * 0.3);
+      light.scale.setScalar(s * (1 + level * 0.4));
       g.add(light);
+    }
+  } else {
+    // Mine: a rig with one derrick and work light per level, on a growing pad.
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(s * (0.9 + (level - 1) * 0.4), s * 0.4, s * 0.7), mat));
+    for (let i = 0; i < level; i++) {
+      const x0 = (i - (level - 1) / 2) * s * 0.45;
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.14, s * (1.4 - i * 0.2), 5), mat);
+      tower.position.set(x0, s * 0.7, 0);
+      g.add(tower);
+      if (done) {
+        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffc070', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+        light.position.set(x0, s * (1.5 - i * 0.2), 0);
+        light.scale.setScalar(s * 1.6);
+        g.add(light);
+      }
     }
   }
   g.position.copy(dir).multiplyScalar(b.size * (b.kind === 'asteroid' ? 1.1 : 1));
@@ -860,7 +890,8 @@ export function createView(canvas, labelRoot) {
     const incoming = new Map();
     for (const f of game.fleets) {
       const tb = game.bodies[f.to];
-      if (f.owner === tb.owner || !knowsEta(f)) continue;
+      // Enemy arrivals (with intel), and your own reinforcements, always.
+      if (f.owner === tb.owner ? f.owner !== (vis ? vis.owner : 0) : !knowsEta(f)) continue;
       const left = f.T - (now - f.t0);
       const k = `${f.to}:${f.owner}`;
       const cur = incoming.get(k) || { to: f.to, owner: f.owner, n: 0, eta: Infinity };
@@ -922,7 +953,7 @@ export function createView(canvas, labelRoot) {
       v.pulse = Math.max(0, v.pulse - dt);
 
       // Structures: rebuilt when anything is added, finished or lost.
-      const sig = b.structures.map((x) => x.type + (x.left > 0 ? '~' : '')).join();
+      const sig = b.structures.map((x) => x.type + x.level + (x.left > 0 && !x.next ? '~' : '')).join();
       if (sig !== v.sig) {
         v.sig = sig;
         if (v.structs) v.structs.removeFromParent();
@@ -930,7 +961,7 @@ export function createView(canvas, labelRoot) {
         v.structs = new THREE.Group();
         b.structures.forEach((x, k) => {
           if (b.kind === 'station' && x.type === 'shipyard') return; // the station is the yard
-          const m = structureMesh(x.type, b, k, x.left <= 0);
+          const m = structureMesh(x.type, b, k, x.left <= 0 || !!x.next, x.level);
           // Surface structures turn with the world; yards orbit on their own.
           (x.type === 'shipyard' ? v.structs : v.surface).add(m);
         });
@@ -1022,7 +1053,8 @@ export function createView(canvas, labelRoot) {
       const kids = (extras.get(b.id) || []).join('');
       const warn = (incomingTo.get(b.id) || []).map((x) => {
         const e = Math.max(0, x.eta);
-        return `<span class="inc" style="color:${ownerColor(x.owner)}">▼${x.n} ${Math.floor(e / 60)}:${String(Math.floor(e % 60)).padStart(2, '0')}</span>`;
+        const own = x.owner === b.owner;
+        return `<span class="${own ? 'rein' : 'inc'}" style="color:${ownerColor(x.owner)}">${own ? '▲' : '▼'}${x.n} ${Math.floor(e / 60)}:${String(Math.floor(e % 60)).padStart(2, '0')}</span>`;
       }).join('');
       const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}<small>${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
