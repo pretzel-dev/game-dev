@@ -53,17 +53,41 @@
 
     <div id="menu" class="overlay">
       <h1>Perihelion</h1>
-      <p class="how">One sun, a handful of worlds, very few ships. Credits build shipyards, mines, guns and ships.<br />Tap your world, tap a target, press Launch. Ships fly to where the target
-        <em>will</em> be, flipping halfway to brake. Double-tap anything to look closer.</p>
+      <p class="how">One sun, a handful of worlds, very few ships. Credits build shipyards, mines, guns and ships.<br />Select your world, press Launch, pick a target and confirm. Ships fly to where the target
+        <em>will</em> be, flipping halfway to brake.</p>
+      <p class="how keys" id="keys"></p>
+      <div class="row"><span>Name</span><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /></div>
       <div class="row"><span>Rivals</span>
         <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button></div>
       </div>
       <div class="row"><span>AI</span>
         <div class="seg" id="difficulty"><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button></div>
       </div>
-      <button id="play" class="primary">Play</button>
+      <button id="play" class="primary">Play vs AI</button>
       <button id="resume" class="primary" hidden>Resume</button>
+      <div class="row mp">
+        <button id="host" class="primary ghost">Host game</button>
+        <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" />
+        <button id="join" class="primary ghost">Join</button>
+      </div>
+      <p class="how" id="menu-msg"></p>
     </div>
+
+    <div id="lobby" class="overlay" hidden>
+      <h1>Lobby</h1>
+      <p class="how">Room code</p>
+      <div id="lobby-code" class="bigcode">·····</div>
+      <p class="how" id="lobby-hint">Share the code. Up to 3 empires.</p>
+      <div id="seats"></div>
+      <div class="row" id="lobby-ai">
+        <div class="seg" id="ai-diff"><button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button></div>
+        <button id="add-ai" class="primary ghost">Add AI</button>
+      </div>
+      <button id="lobby-start" class="primary">Start</button>
+      <button id="lobby-leave" class="primary ghost">Leave</button>
+    </div>
+
+    <div id="banner" hidden></div>
 
     <div id="end" class="overlay" hidden>
       <h1 id="end-title"></h1>

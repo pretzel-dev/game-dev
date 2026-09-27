@@ -219,7 +219,7 @@ const mix = (vA, nA, vB, nB) => (nA + nB > 0 ? (vA * nA + vB * nB) / (nA + nB) :
 /** Kepler: period grows with radius^1.5. */
 const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
 
-export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
+export function createGame({ seed = Date.now(), opponents = 1, mp = false } = {}) {
   const rand = rng(seed);
   const pick = (list, used) => {
     const free = list.filter((n) => !used.has(n));
@@ -318,7 +318,7 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
-  const game = { bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -675,10 +675,11 @@ function fight(game, b, dt) {
     const top = b.sieges.slice().sort((x, y) => y.n - x.n)[0];
     top.kills = (top.kills || 0) + 1;
     b.lostDef = (b.lostDef || 0) + 1;
+    b.totDef = (b.totDef || 0) + 1; // running totals, for multiplayer guests
   }
   for (const g of b.sieges) {
     while (g.dmg >= 1 && g.n > 0) {
-      g.dmg -= 1; g.n -= 1; b.lostAtk = (b.lostAtk || 0) + 1;
+      g.dmg -= 1; g.n -= 1; b.lostAtk = (b.lostAtk || 0) + 1; b.totAtk = (b.totAtk || 0) + 1;
       tally(game, g.owner, 'lost');
       tally(game, b.owner, 'killed');
       b.kills = (b.kills || 0) + 1;
@@ -786,7 +787,10 @@ export function step(game, dt) {
     for (const g of b.sieges) alive.add(g.owner);
   }
   for (const f of game.fleets) alive.add(f.owner);
-  if (!alive.has(PLAYER)) game.winner = [...alive][0] ?? NEUTRAL;
+  if (game.mp) {
+    // Multiplayer: it's over when one empire is left (knocked-out players watch).
+    if (alive.size <= 1) game.winner = [...alive][0] ?? NEUTRAL;
+  } else if (!alive.has(PLAYER)) game.winner = [...alive][0] ?? NEUTRAL;
   else if (alive.size === 1) game.winner = PLAYER;
   if (game.winner !== null && game.stats) sample(game); // final snapshot
 }
