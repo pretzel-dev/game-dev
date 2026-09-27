@@ -855,6 +855,13 @@ export function createView(canvas, labelRoot) {
       const p = posAt(game, v.b, now);
       bodyPos[v.b.id] = p;
     }
+    // Keep the view centre inside the system so it can't drift off into space.
+    let extent = 0;
+    for (const p of bodyPos) if (p) extent = Math.max(extent, Math.hypot(p.x, p.z));
+    extent = extent * 1.2 + 20;
+    const flat = Math.hypot(orbit.target.x, orbit.target.z);
+    if (flat > extent) { orbit.target.x *= extent / flat; orbit.target.z *= extent / flat; }
+    orbit.target.y = THREE.MathUtils.clamp(orbit.target.y, -extent * 0.3, extent * 0.3);
     if (orbit.follow !== null) {
       const p = bodyPos[orbit.follow];
       orbit.target.lerp(tmp.set(p.x, p.y, p.z), Math.min(1, dt * 6));

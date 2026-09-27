@@ -72,7 +72,7 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
 
 ## Multiplayer (host in browser)
 
-Up to 3 empires. Enter a name, tap **Host game** and share the 5-letter code;
+Up to 3 empires. Enter a name, tap **Host** and share the 5-letter code;
 friends type it and tap **Join**. The host can add AI players (easy, normal or
 hard) to empty seats, then starts the game.
 
