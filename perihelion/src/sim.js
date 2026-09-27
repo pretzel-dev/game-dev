@@ -242,10 +242,14 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
   // Plan each planet's family first (its moons and any station), so orbits can
   // be spaced to give every family room: neighbours never come close.
   const specs = [];
+  // Home planets are picked up front from the middle orbits: each is a plain
+  // rocky world with exactly one companion (a moon or a station).
+  const players = opponents + 1;
+  const homeIdx = [1, 2, 3, 4].sort(() => rand() - 0.5).slice(0, players);
   for (let i = 0; i < 6; i++) {
-    const giant = i >= 3 && rand() < 0.7;
+    const giant = !homeIdx.includes(i) && i >= 3 && rand() < 0.7;
     const size = giant ? 3.2 + rand() * 1.2 : 1.6 + rand() * 1.1;
-    const count = i === 0 ? 0 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
+    const count = i === 0 ? 0 : homeIdx.includes(i) ? 1 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
     const moons = [];
     for (let m = 0; m < count; m++) {
       moons.push({ r: size * 3.4 + 6 + m * 7 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 300 + m * 150 + rand() * 120 });
@@ -254,6 +258,8 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
   }
   const hostIdx = [1, 2, 3, 4, 5].sort(() => rand() - 0.5).slice(0, 2);
   for (const i of hostIdx) specs[i].station = true;
+  // A home's one companion is its station if it has one, otherwise its moon.
+  for (const i of homeIdx) if (specs[i].station) specs[i].moons = [];
   for (const sp of specs) {
     sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.size * 1.5 + 1 : 0, ...sp.moons.map((m) => m.r + m.size));
   }
@@ -309,20 +315,13 @@ export function createGame({ seed = Date.now(), opponents = 1 } = {}) {
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
-  const game = { bodies, fleets: [], players: opponents + 1, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  // Homes start evenly spaced around the sun: opposite sides for two
+  // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
-  const candidates = planets.slice(1, 5);
-  const homes = [candidates[Math.floor(rand() * candidates.length)]];
-  while (homes.length < game.players) {
-    let best = null;
-    let bestD = -1;
-    for (const c of candidates) {
-      if (homes.includes(c)) continue;
-      const d = Math.min(...homes.map((h) => dist(posAt(game, h, 0), posAt(game, c, 0))));
-      if (d > bestD) { bestD = d; best = c; }
-    }
-    homes.push(best);
-  }
+  const homes = homeIdx.map((i) => planets[i]);
+  const base = rand() * Math.PI * 2;
+  homes.forEach((h, k) => { h.phase = base + (k * Math.PI * 2) / players; });
   // Stations are shipyards; independents keep theirs until someone takes them.
   for (const b of bodies) if (b.kind === 'station') b.structures.push({ type: 'shipyard', level: 1, left: 0 });
   homes.forEach((h, owner) => {
