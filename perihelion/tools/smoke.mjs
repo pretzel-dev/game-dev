@@ -25,6 +25,9 @@ await page.evaluate((id) => { const { view, game } = window.__perihelion; view.f
 await page.waitForTimeout(1500);
 let p = await pos(ids.home); await page.touchscreen.tap(p.x, p.y); await page.waitForTimeout(400);
 const selected = await page.evaluate(() => !document.getElementById('actions').hidden);
+await page.screenshot({ path: out + '/ph-world.png' });
+await page.tap('#launch'); await page.waitForTimeout(300);
+const mode = await page.evaluate(() => window.__perihelion.ui.mode);
 ids.t = await page.evaluate(() => {
   const { game, view } = window.__perihelion;
   const on = game.bodies.filter((b) => b.owner === -1).map((b) => ({ id: b.id, ...view.screenOf(b.id) }))
@@ -35,6 +38,7 @@ p = await pos(ids.t); await page.touchscreen.tap(p.x, p.y); await page.waitForTi
 const info = await page.textContent('#info'); console.log('target on screen', JSON.stringify(p));
 await page.screenshot({ path: out + '/ph-order.png' });
 await page.tap('#more'); await page.tap('#launch');
+const after = await page.evaluate(() => ({ sel: window.__perihelion.ui.selected, mode: window.__perihelion.ui.mode }));
 await page.waitForTimeout(300);
 const fleets = await page.evaluate(() => window.__perihelion.game.fleets.filter((f) => f.owner === 0).map((f) => f.n));
 // Fast-forward to the burn and look at the fleet.
@@ -42,5 +46,10 @@ await page.evaluate(() => { const { game } = window.__perihelion; const f = game
 await page.tap('#warp');
 await page.waitForTimeout(1500);
 await page.screenshot({ path: out + '/ph-flight.png' });
-console.log(JSON.stringify({ selected, info, fleets, errors }));
+// Outside launch mode, tapping empty space deselects.
+p = await pos(ids.home); await page.touchscreen.tap(p.x, p.y); await page.waitForTimeout(300);
+const reselected = await page.evaluate(() => window.__perihelion.ui.selected !== null);
+await page.touchscreen.tap(20, 400); await page.waitForTimeout(300);
+const cleared = await page.evaluate(() => window.__perihelion.ui.selected === null);
+console.log(JSON.stringify({ selected, mode, info, fleets, after, reselected, cleared, errors }));
 await browser.close();
