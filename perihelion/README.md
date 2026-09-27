@@ -36,9 +36,9 @@ preview server running).
   - **Mine** (200, 45 s): asteroids and moons only; +1.5 credits/s per level.
   - **Guns** (250, 50 s): +2 guns per level (every held world has 1).
   - **Research station** (300, 60 s): each level speeds research by 50%.
-  - **Gas skimmer** (350, 70 s): gas giants only; +2 credits/s per level.
+  - **Gas harvester** (350, 70 s): gas giants only; +2 credits/s per level.
   - **Orbital exchange** (450, 80 s): homeworlds only; +2.5 credits/s per level (up to II).
-  - **Upgrades:** mines, guns, research stations and skimmers go up to level 3.
+  - **Upgrades:** mines, guns, research stations and gas harvesters go up to level 3.
   - **Scrap:** tearing a structure down costs 25% of its price and takes 20 s;
     it stops working at once. If the world is taken first, the scrapping is
     cancelled and the captor gets the structure.
@@ -48,11 +48,12 @@ preview server running).
   and guns, 4 ships and 400 credits. A captured world keeps its finished
   structures; anything unfinished and any queued ships are lost. Nothing is
   built while a world is under attack.
-- **Probes:** in launch mode, pick a target and tap **Probe** (80 credits, needs
-  a shipyard). A probe flies four times faster than ships and is used up on a
-  flyby: the target stays in view (ships, structures) for 2½ minutes. Good for
-  checking a world before you commit a fleet. On desktop, right-click a world
-  with one of yours selected to go straight to launch with it as the target.
+- **Probes:** select a world with a shipyard and tap **Probe** (80 credits)
+  next to **+ Ship**, then tap a destination and Confirm. A probe flies four
+  times faster than ships and is used up on a flyby: the target stays in view
+  (ships, structures) for 2½ minutes. On the map it shows as ◇ (named when
+  you zoom in close). On desktop, right-click a world with one of yours
+  selected to go straight to launch with it as the target.
 - **Research (R&D, top bar):** one project at a time, paid in credits.
   Drives (+15% thrust per level), Sensors (range), Intel (I: enemy fleet
   sizes; II: their routes and landing points; III: arrival times and

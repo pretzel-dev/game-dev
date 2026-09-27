@@ -356,3 +356,5 @@ input:focus { border-color: var(--accent); }
 #info .probe { flex: 0 0 auto; margin-left: 8px; height: 34px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
 #info .probe small { margin-left: 6px; color: var(--dim); }
 #info .probe:disabled { opacity: 0.4; }
+.ctx button.mini { flex: 0 0 auto; padding: 0 8px; font-size: 11px; color: var(--dim); }
+.ctx button.mini small { font-size: 10px; }

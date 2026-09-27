@@ -898,6 +898,7 @@ export function createView(canvas, labelRoot) {
     const flat = Math.hypot(orbit.target.x, orbit.target.z);
     if (flat > extent) { orbit.target.x *= extent / flat; orbit.target.z *= extent / flat; }
     orbit.target.y = THREE.MathUtils.clamp(orbit.target.y, -extent * 0.3, extent * 0.3);
+    if (orbit.follow === null) orbit.target.y *= 1 - Math.min(1, dt * 2); // drift back to the plane of the orbits
     if (orbit.follow !== null) {
       const p = bodyPos[orbit.follow];
       orbit.target.lerp(tmp.set(p.x, p.y, p.z), Math.min(1, dt * 6));
@@ -1179,7 +1180,8 @@ export function createView(canvas, labelRoot) {
       const el = fleetLabel(fl++);
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === (ui.me ?? 0);
-      const text = f.probe ? '◇ probe' : `▸ ${knowsSize(f) ? f.n : '?'}`;
+      // Probes: just an icon from afar, named when the camera is close.
+      const text = f.probe ? (camera.position.distanceTo(tmp2.set(s.x, s.y, s.z)) < 60 ? '◇ probe' : '◇') : `▸ ${knowsSize(f) ? f.n : '?'}`;
       const lv = knowsSize(f) ? vetLevel(f.vet) : 0;
       if (el._v !== lv) { el._v = lv; el.dataset.v = lv; }
       if (el._t !== text) { el._t = text; el.textContent = text; }
@@ -1292,6 +1294,11 @@ export function createView(canvas, labelRoot) {
   function groundAt(x, y) {
     const ndc = new THREE.Vector3((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1, 0.5).unproject(camera);
     const ray = new THREE.Ray(camera.position, ndc.sub(camera.position).normalize());
+    // Prefer the plane of the orbits, so zooming toward the cursor never lifts
+    // the view centre off into empty space above or below the system.
+    const ecliptic = new THREE.Plane(UP.clone(), -orbit.target.y);
+    const hit = ray.intersectPlane(ecliptic, new THREE.Vector3());
+    if (hit && hit.distanceTo(camera.position) < orbit.dist * 4) return hit;
     const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), orbit.target);
     return ray.intersectPlane(plane, new THREE.Vector3());
   }
