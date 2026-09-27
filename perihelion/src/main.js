@@ -1,6 +1,7 @@
 import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
+import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
@@ -15,12 +16,40 @@ const savePrefs = () => { try { localStorage.setItem('perihelion', JSON.stringif
 let game = null;
 let ais = [];
 let running = false;
+// Which empire this screen plays (0 in solo; your seat in multiplayer).
+let me = 0;
+// Multiplayer: null (solo), { role: 'host', room } or { role: 'client', room }.
+let net = null;
+let paused = false; // multiplayer pause, set by the host
 const WARPS = [1, 2, 4, 8];
 let warp = 1;
 
 const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null, mode: null };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+// ---- Orders ----------------------------------------------------------------
+// Every order goes through here: applied directly in solo or on the host,
+// sent to the host from a guest (it shows up with the next state update).
+
+function applyCmd(owner, c) {
+  const b = game.bodies[c.b];
+  if (c.type !== 'research' && (!b || b.owner !== owner)) return false;
+  switch (c.type) {
+    case 'launch': return !!launch(game, b, game.bodies[c.to], c.n);
+    case 'ship': return orderShip(game, b);
+    case 'cancel': return cancelShip(game, b);
+    case 'build': return buildStructure(game, b, c.k);
+    case 'upgrade': return !!b.structures[c.i] && upgrade(game, b, b.structures[c.i]);
+    case 'demolish': return !!b.structures[c.i] && demolish(game, b, b.structures[c.i]);
+    case 'research': return research(game, owner, c.k);
+    default: return false;
+  }
+}
+function act(c) {
+  if (net?.role === 'client') { net.room.send({ t: 'cmd', cmd: c }); return true; }
+  return applyCmd(me, c);
+}
 
 // ---- Menu -----------------------------------------------------------------
 
@@ -38,47 +67,231 @@ function segmented(el, get, set) {
 segmented($('rivals'), () => prefs.rivals, (v) => (prefs.rivals = Number(v)));
 segmented($('difficulty'), () => prefs.difficulty, (v) => (prefs.difficulty = v));
 
-function start() {
-  const seed = (Math.random() * 2 ** 31) | 0;
-  game = createGame({ seed, opponents: prefs.rivals });
+/**
+ * Start a game. Solo: you against AIs. Multiplayer: everyone builds the same
+ * map from the seed; the host runs it and guests mirror the host's state.
+ */
+function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, mp = false } = {}) {
+  game = createGame({ seed, opponents: players - 1, mp });
+  if (names) game.names = names;
+  me = seat;
   const r = rng(seed ^ 0xabc);
-  ais = Array.from({ length: prefs.rivals }, (_, i) => createAI(i + 1, prefs.difficulty, r));
+  // AIs run only where the game runs: solo, or on the host.
+  ais = net?.role === 'client' ? []
+    : aiSeats ? aiSeats.map(([i, d]) => createAI(i, d, r))
+      : Array.from({ length: players - 1 }, (_, i) => createAI(i + 1, prefs.difficulty, r));
   ui.selected = ui.target = ui.preview = ui.fleet = ui.mode = null;
   ui.slot = null;
+  ui.me = me;
+  paused = false;
+  knockedOut = false;
   game.events.length = 0;
   $('feed').innerHTML = '';
   $('research').hidden = true;
   view.build(game);
-  ui.vis = visibility(game, PLAYER);
+  ui.vis = visibility(game, me);
   // Open on the homeworld, far enough out to see its moons and neighbours.
-  const home = game.bodies.find((b) => b.owner === PLAYER);
+  const home = game.bodies.find((b) => b.owner === me);
   view.focus(game, home.id, false);
   view.orbit.target.set(0, 0, 0);
   view.orbit.dist = home.size * 12 + 40;
   view.orbit.pol = 0.9;
-  $('menu').hidden = true;
-  $('end').hidden = true;
+  for (const id of ['menu', 'end', 'lobby']) $(id).hidden = true;
   $('hud').hidden = false;
+  // No time warp in multiplayer; only the host can pause.
+  $('warp').hidden = !!net;
+  $('pause').hidden = net?.role === 'client';
+  warp = 1;
+  $('warp').textContent = '1×';
   running = true;
   updateActions();
 }
+function start() { leaveNet(); startGame(); }
 $('play').addEventListener('click', start);
 $('again').addEventListener('click', () => {
+  leaveNet();
   $('end').hidden = true;
   $('menu').hidden = false;
   $('resume').hidden = true;
-  $('play').textContent = 'Play';
+  $('play').textContent = 'Play vs AI';
 });
 $('pause').addEventListener('click', pause);
 $('resume').addEventListener('click', () => { $('menu').hidden = true; running = true; });
 function pause() {
   if (!game || game.winner !== null || !running) return;
+  if (net) {
+    // Multiplayer: the host pauses (and resumes) for everyone.
+    paused = !paused;
+    $('pause').textContent = paused ? '▶' : '❚❚';
+    net.room.broadcast({ t: 'pause', paused });
+    showPaused();
+    return;
+  }
   running = false;
   $('menu').hidden = false;
   $('resume').hidden = false;
   $('play').textContent = 'New game';
 }
-document.addEventListener('visibilitychange', () => document.hidden && pause());
+function showPaused() {
+  $('banner').hidden = !paused;
+  $('banner').textContent = me === 0 ? 'Paused · tap ▶ to resume' : 'Paused by host';
+}
+
+// ---- Multiplayer ------------------------------------------------------------
+
+$('keys').textContent = matchMedia('(pointer: fine)').matches
+  ? 'Mouse: click to select · drag to pan · right-drag to rotate · scroll to zoom · double-click to fly to a world. Keys: WASD pan · Q/E rotate · +/− zoom · F focus · H whole system · Esc back.'
+  : 'Drag to rotate · two fingers to pan and zoom · double-tap to fly to a world.';
+$('name').value = prefs.name || '';
+$('name').addEventListener('input', () => { prefs.name = $('name').value.trim(); savePrefs(); });
+const myName = () => ($('name').value.trim() || 'Player').slice(0, 16);
+const menuMsg = (t) => { $('menu-msg').textContent = t || ''; };
+let lobbySeats = [];
+
+function leaveNet() {
+  if (net) net.room.close();
+  net = null;
+  paused = false;
+  $('banner').hidden = true;
+  $('pause').textContent = '❚❚';
+}
+
+function renderLobby(seats, code) {
+  lobbySeats = seats;
+  $('lobby-code').textContent = code || '·····';
+  const host = net?.role === 'host';
+  const rows = seats.map((s, i) => `<div class="seat"><i style="background:${ownerColor(i)}"></i><span>${s.name}${i === me ? ' (you)' : ''}</span>`
+    + `<small>${s.kind === 'ai' ? 'AI' : i === 0 ? 'host' : s.online === false ? 'offline' : 'ready'}</small>`
+    + `${host && i > 0 ? `<button data-kick="${i}">✕</button>` : ''}</div>`);
+  for (let i = seats.length; i < MAX_SEATS; i++) rows.push('<div class="seat empty"><span>Open seat</span></div>');
+  $('seats').innerHTML = rows.join('');
+  $('lobby-ai').hidden = !host || seats.length >= MAX_SEATS;
+  $('lobby-start').hidden = !host;
+  $('lobby-start').disabled = seats.length < 2;
+  $('lobby-hint').textContent = host ? (seats.length < 2 ? 'Share the code, or add an AI. Up to 3 empires.' : 'Ready when you are.') : 'Waiting for the host to start…';
+}
+let aiDiff = 'normal';
+$('ai-diff').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  aiDiff = b.dataset.v;
+  $('ai-diff').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+});
+$('add-ai').addEventListener('click', () => net?.role === 'host' && net.room.addAI(aiDiff));
+$('seats').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-kick]');
+  if (b && net?.role === 'host') net.room.remove(Number(b.dataset.kick));
+});
+$('lobby-leave').addEventListener('click', () => { leaveNet(); $('lobby').hidden = true; $('menu').hidden = false; });
+
+$('host').addEventListener('click', () => {
+  leaveNet();
+  menuMsg('Opening a room…');
+  me = 0;
+  const room = hostRoom(myName(), {
+    open: (code) => { menuMsg(''); $('menu').hidden = true; $('lobby').hidden = false; renderLobby(room.seats, code); },
+    seats: (seats) => renderLobby(seats, room.code),
+    error: (t) => { menuMsg(t); if (!room.started) { leaveNet(); $('lobby').hidden = true; $('menu').hidden = false; } },
+    cmd: (seat, c) => { if (game && running) applyCmd(seat, c); },
+    left: (seat) => toast(`${game.names[seat]} disconnected`, ownerColor(seat)),
+    rejoin: (seat) => {
+      room.sendTo(seat, startMsg(seat));
+      toast(`${game.names[seat]} is back`, ownerColor(seat));
+    },
+  });
+  net = { role: 'host', room };
+});
+function startMsg(seat) {
+  return { t: 'start', seed: net.seed, players: game.players, names: game.names, seat, paused };
+}
+$('lobby-start').addEventListener('click', () => {
+  if (net?.role !== 'host' || lobbySeats.length < 2) return;
+  const room = net.room;
+  room.start();
+  net.seed = (Math.random() * 2 ** 31) | 0;
+  const names = room.seats.map((s) => s.name);
+  const aiSeats = room.seats.map((s, i) => [i, s]).filter(([, s]) => s.kind === 'ai').map(([i, s]) => [i, s.difficulty]);
+  startGame({ seed: net.seed, players: room.seats.length, seat: 0, names, aiSeats, mp: true });
+  room.seats.forEach((s, i) => { if (s.conn) room.sendTo(i, startMsg(i)); });
+});
+
+$('join').addEventListener('click', () => {
+  const code = $('code').value.trim().toUpperCase();
+  if (code.length !== 5) { menuMsg('Enter the 5-letter code'); return; }
+  leaveNet();
+  menuMsg('Connecting…');
+  const room = joinRoom(code, myName(), {
+    message: (m) => onHostMessage(m),
+    error: (t) => { menuMsg(t); leaveNet(); $('lobby').hidden = true; $('menu').hidden = false; },
+    closed: () => {
+      if (!net) return;
+      leaveNet();
+      if (running) { toast('Lost connection to the host', '#ff7a4d'); running = false; setTimeout(() => { $('menu').hidden = false; }, 1500); } else { $('lobby').hidden = true; $('menu').hidden = false; menuMsg('The host closed the room'); }
+    },
+  });
+  net = { role: 'client', room, code };
+});
+
+/** A guest: everything arrives from the host. */
+function onHostMessage(m) {
+  if (m.t === 'lobby') {
+    me = m.you;
+    menuMsg('');
+    $('menu').hidden = true;
+    if (!running) $('lobby').hidden = false;
+    renderLobby(m.seats, m.code);
+  } else if (m.t === 'full' || m.t === 'kicked') {
+    menuMsg(m.t === 'kicked' ? 'The host removed you' : m.why);
+    leaveNet();
+    $('lobby').hidden = true;
+    $('menu').hidden = false;
+  } else if (m.t === 'start') {
+    startGame({ seed: m.seed, players: m.players, seat: m.seat, names: m.names, mp: true });
+    paused = m.paused;
+    showPaused();
+  } else if (m.t === 'state' && game && running) {
+    applySnapshot(m.s);
+  } else if (m.t === 'events' && game && running) {
+    drainEvents(m.list);
+  } else if (m.t === 'pause') {
+    paused = m.paused;
+    showPaused();
+  }
+}
+
+// Snapshots: bodies are updated in place (the renderer holds on to them).
+const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk'];
+function snapshot() {
+  return {
+    time: game.time,
+    winner: game.winner,
+    credits: game.credits,
+    tech: game.tech,
+    fleets: game.fleets,
+    nextId: game.nextId,
+    bodies: game.bodies.map((b) => Object.fromEntries(BODY_KEYS.map((k) => [k, b[k]]))),
+    stats: game.winner !== null ? game.stats : undefined,
+  };
+}
+function applySnapshot(s) {
+  // Keep local time smooth: small differences are eased out, big ones snap.
+  const d = s.time - game.time;
+  game.time = paused || Math.abs(d) > 1.5 ? s.time : game.time + d * 0.5;
+  game.credits = s.credits;
+  game.tech = s.tech;
+  game.fleets = s.fleets;
+  game.nextId = s.nextId;
+  s.bodies.forEach((x, i) => {
+    const b = game.bodies[i];
+    // Losses since the last update become explosions; a new owner flashes.
+    const lostDef = (b.lostDef || 0) + Math.max(0, (x.totDef || 0) - (b.totDef || 0));
+    const lostAtk = (b.lostAtk || 0) + Math.max(0, (x.totAtk || 0) - (b.totAtk || 0));
+    const captured = b.captured || x.owner !== b.owner;
+    Object.assign(b, x, { lostDef, lostAtk, captured });
+  });
+  if (s.stats) game.stats = s.stats;
+  if (s.winner !== null) game.winner = s.winner;
+}
 
 $('warp').addEventListener('click', () => {
   warp = WARPS[(WARPS.indexOf(warp) + 1) % WARPS.length];
@@ -109,7 +322,7 @@ function updateFleetInfo() {
 function updateActions() {
   updateFleetInfo();
   const s = ui.selected !== null && game ? game.bodies[ui.selected] : null;
-  const show = !!s && s.owner === PLAYER && running;
+  const show = !!s && s.owner === me && running;
   $('actions').hidden = !show;
   $('system').hidden = view.orbit.follow === null;
   if (!show) { ui.preview = null; ui.mode = null; return; }
@@ -138,8 +351,8 @@ function updateActions() {
   } else {
     const t = game.bodies[ui.target];
     ui.preview = plan(game, s, t);
-    const defence = t.owner === PLAYER ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
-    const cover = t.owner === PLAYER ? 0 : coverOf(game, t);
+    const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
+    const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
     const assist = ui.preview.assist !== undefined ? ` · <span class="assist">↻ assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
@@ -160,7 +373,7 @@ function econLine(b) {
 }
 /** What one level of a structure does, for the upgrade breakdown. */
 function levelEffect(type, level) {
-  const mining = 1 + 0.15 * game.tech[PLAYER].industry;
+  const mining = 1 + 0.15 * game.tech[me].industry;
   if (type === 'mine') return `+${(RULES.mineIncome * level * mining).toFixed(1)}/s`;
   if (type === 'defence') return `${RULES.gunsPerDefence * level} guns`;
   if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * 100)}% research`;
@@ -249,21 +462,21 @@ $('buildrow').addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('button[data-cancel]')) {
-    if (cancelShip(game, s)) toast('Ship build cancelled', ownerColor(PLAYER));
+    if (act({ type: 'cancel', b: s.id })) toast('Ship build cancelled', ownerColor(me));
     updateActions();
     return;
   }
   const up = e.target.closest('button[data-u]');
   if (up) {
     const x = s.structures[Number(up.dataset.u)];
-    if (x && upgrade(game, s, x)) toast(`Upgrading ${RULES.structures[x.type].name} to ${ROMAN[x.next]} · ${Math.round(upgradeTime({ ...x, level: x.next - 1 }))}s`, ownerColor(PLAYER));
+    if (x && act({ type: 'upgrade', b: s.id, i: Number(up.dataset.u) })) toast(`Upgrading ${RULES.structures[x.type].name} to ${ROMAN[x.level + 1]} · ${Math.round(upgradeTime(x))}s`, ownerColor(me));
     updateActions();
     return;
   }
   const d = e.target.closest('button[data-d]');
   if (d) {
     const x = s.structures[Number(d.dataset.d)];
-    if (x && demolish(game, s, x)) toast(`${RULES.structures[x.type].name} scrapped at ${s.name}`, ownerColor(PLAYER));
+    if (x && act({ type: 'demolish', b: s.id, i: Number(d.dataset.d) })) toast(`${RULES.structures[x.type].name} scrapped at ${s.name}`, ownerColor(me));
     ui.slot = null;
     updateActions();
     return;
@@ -271,9 +484,9 @@ $('buildrow').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-b]');
   if (!btn) return;
   const k = btn.dataset.b;
-  const ok = k === 'ship' ? orderShip(game, s) : buildStructure(game, s, k);
+  const ok = act(k === 'ship' ? { type: 'ship', b: s.id } : { type: 'build', b: s.id, k });
   if (ok) {
-    toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(PLAYER));
+    toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(me));
     if (k !== 'ship') ui.slot = null;
   }
   updateActions();
@@ -282,24 +495,24 @@ $('buildrow').addEventListener('click', (e) => {
 // ---- Research --------------------------------------------------------------------
 
 function renderResearch() {
-  const t = game.tech[PLAYER];
+  const t = game.tech[me];
   const p = t.project;
   $('rbar').hidden = !running || !p;
   if (p) {
     const pct = Math.floor((1 - p.left / p.total) * 100);
-    const eta = fmt(p.left / researchSpeed(game, PLAYER));
+    const eta = fmt(p.left / researchSpeed(game, me));
     setHTML($('rbar'), `Researching <b>${TECH[p.key].levels[t[p.key]]}</b> · ${pct}% · ${eta}`);
   }
   if ($('research').hidden) return;
-  $('rstatus').textContent = `speed ×${researchSpeed(game, PLAYER).toFixed(1)}`;
+  $('rstatus').textContent = `speed ×${researchSpeed(game, me).toFixed(1)}`;
   setHTML($('rlist'), Object.entries(TECH).map(([key, d]) => {
     const lvl = t[key];
     const pips = '●'.repeat(lvl) + '○'.repeat(d.cost.length - lvl);
-    const next = nextTech(game, PLAYER, key);
+    const next = nextTech(game, me, key);
     if (!next) return `<button class="tech-row" disabled><span class="t"><em>${d.name}</em><b>${d.levels.at(-1)}<span class="pips">${pips}</span></b><small>Complete</small></span></button>`;
     const running = p && p.key === key;
-    const why = cantResearch(game, PLAYER, key);
-    const note = running ? `Researching · ${Math.floor((1 - p.left / p.total) * 100)}%` : `${next.text} · ${fmt(next.time / researchSpeed(game, PLAYER))}`;
+    const why = cantResearch(game, me, key);
+    const note = running ? `Researching · ${Math.floor((1 - p.left / p.total) * 100)}%` : `${next.text} · ${fmt(next.time / researchSpeed(game, me))}`;
     return `<button class="tech-row" data-k="${key}" ${why ? 'disabled' : ''}><span class="t"><em>${d.name} ${ROMAN[next.level]}</em><b>${next.title}<span class="pips">${pips}</span></b><small>${note}</small></span><span class="c">${running ? '' : next.cost}</span></button>`;
   }).join(''));
 }
@@ -320,8 +533,9 @@ for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.addEventLi
 $('rlist').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-k]');
   if (!b) return;
-  if (research(game, PLAYER, b.dataset.k)) {
-    toast(`Researching ${TECH[b.dataset.k].levels[game.tech[PLAYER][b.dataset.k]]}`, ownerColor(PLAYER));
+  const title = TECH[b.dataset.k].levels[game.tech[me][b.dataset.k]];
+  if (act({ type: 'research', k: b.dataset.k })) {
+    toast(`Researching ${title}`, ownerColor(me));
     $('research').hidden = true;
   }
   renderResearch();
@@ -343,9 +557,8 @@ $('focus').addEventListener('click', () => {
 
 function doLaunch() {
   if (ui.selected === null || ui.target === null || ui.count < 1) return;
-  const f = launch(game, game.bodies[ui.selected], game.bodies[ui.target], ui.count);
+  act({ type: 'launch', b: ui.selected, to: ui.target, n: ui.count });
   ui.mode = null;
-  if (f) toast(`${tf(f.name)} · ${f.n} ship${f.n === 1 ? '' : 's'} → ${game.bodies[f.to].name} · ${fmt(f.T)}${f.assist !== undefined ? ` · assist via ${game.bodies[f.assist].name}` : ''}`, ownerColor(PLAYER));
   ui.selected = ui.target = null;
   updateActions();
 }
@@ -367,51 +580,55 @@ const vetName = (v) => ['', 'blooded', 'veteran', 'elite'][vetLevel(v)];
 const tf = (name) => `TF ${name}`;
 
 /** Turns the simulation's events into notes, filtered by what we can know. */
-function drainEvents() {
-  const evs = game.events.splice(0);
+function drainEvents(evs = game.events.splice(0)) {
   const vis = ui.vis;
   const nm = (id) => game.bodies[id].name;
-  const mine = ownerColor(PLAYER);
+  const mine = ownerColor(me);
   for (const e of evs) {
     const c = ownerColor(e.owner);
     switch (e.type) {
       case 'launch':
-        if (e.owner === PLAYER || !vis || vis.intel < 1 || !vis.bodies.has(e.from)) break;
+        if (e.owner === me) {
+          const f = game.fleets.find((x) => x.id === e.fleet);
+          toast(`${tf(e.name)} · ${e.n} ship${e.n === 1 ? '' : 's'} → ${nm(e.to)}${f ? ` · ${fmt(f.T)}` : ''}${f && f.assist !== undefined ? ` · assist via ${nm(f.assist)}` : ''}`, mine);
+          break;
+        }
+        if (!vis || vis.intel < 1 || !vis.bodies.has(e.from)) break;
         toast(`Launch detected at ${nm(e.from)} · ${e.n} ship${e.n === 1 ? '' : 's'}${vis.intel >= 2 ? ` → ${nm(e.to)}` : ''}`, c);
         break;
       case 'arrived':
-        if (e.owner === PLAYER) toast(`${tf(e.name)} arrived at ${nm(e.at)}`, mine);
+        if (e.owner === me) toast(`${tf(e.name)} arrived at ${nm(e.at)}`, mine);
         break;
       case 'engaged':
-        if (e.owner === PLAYER) toast(`${tf(e.name)} engaging ${nm(e.at)}`, mine);
-        else if (e.vs === PLAYER) toast(`${nm(e.at)} under attack`, c);
+        if (e.owner === me) toast(`${tf(e.name)} engaging ${nm(e.at)}`, mine);
+        else if (e.vs === me) toast(`${nm(e.at)} under attack`, c);
         break;
       case 'wiped':
-        if (e.owner === PLAYER) toast(`${tf(e.name)} lost with all hands at ${nm(e.at)}`, ownerColor(e.vs));
-        else if (e.vs === PLAYER) toast(`Enemy ${tf(e.name)} destroyed at ${nm(e.at)}`, mine);
+        if (e.owner === me) toast(`${tf(e.name)} lost with all hands at ${nm(e.at)}`, ownerColor(e.vs));
+        else if (e.vs === me) toast(`Enemy ${tf(e.name)} destroyed at ${nm(e.at)}`, mine);
         break;
       case 'captured':
-        if (e.owner === PLAYER) toast(`${nm(e.at)} taken by ${tf(e.name)}`, mine);
-        else if (e.from === PLAYER) toast(`${nm(e.at)} lost`, c);
+        if (e.owner === me) toast(`${nm(e.at)} taken by ${tf(e.name)}`, mine);
+        else if (e.from === me) toast(`${nm(e.at)} lost`, c);
         break;
       case 'held':
-        if (e.owner === PLAYER) toast(`${nm(e.at)} held${vetLevel(game.bodies[e.at].vet) ? ` · garrison ${vetName(game.bodies[e.at].vet)}` : ''}`, mine);
+        if (e.owner === me) toast(`${nm(e.at)} held${vetLevel(game.bodies[e.at].vet) ? ` · garrison ${vetName(game.bodies[e.at].vet)}` : ''}`, mine);
         break;
       case 'promoted':
-        if (e.owner === PLAYER) toast(`${e.name ? tf(e.name) : `${nm(e.at)} garrison`} now ${vetName(e.v)}`, mine);
+        if (e.owner === me) toast(`${e.name ? tf(e.name) : `${nm(e.at)} garrison`} now ${vetName(e.v)}`, mine);
         break;
       case 'research':
-        if (e.owner === PLAYER) toast(`${TECH[e.key].levels[e.level - 1]} complete`, mine);
+        if (e.owner === me) toast(`${TECH[e.key].levels[e.level - 1]} complete`, mine);
         break;
     }
   }
 }
 
-function tap(id, x, y) {
+function tap(id, x, y, mouse = false) {
   // Tapping one of your fleets in flight shows where it's going (fleets win
   // over the world behind them, unless you're picking a target).
   if (ui.selected === null) {
-    const f = view.pickFleet(game, x, y, PLAYER);
+    const f = view.pickFleet(game, x, y, me);
     if (f !== null) {
       ui.fleet = f;
       updateActions();
@@ -419,15 +636,16 @@ function tap(id, x, y) {
     }
   }
   ui.fleet = null;
-  // The camera locks onto whatever you tap.
-  if (id !== null) view.focus(game, id, false);
+  // On touch the camera locks onto whatever you tap; a mouse click only
+  // selects (the mouse steers the camera itself).
+  if (id !== null && !mouse) view.focus(game, id, false);
   if (ui.mode === 'launch') {
     // Picking a destination: any other world becomes the target; empty
     // space clears it. Leaving launch mode is only via Cancel or Confirm.
     ui.target = id !== null && id !== ui.selected ? id : null;
   } else if (id === null || id === ui.selected) {
     ui.selected = ui.target = null;
-  } else if (game.bodies[id].owner === PLAYER) {
+  } else if (game.bodies[id].owner === me) {
     ui.selected = id; ui.slot = null; ui.target = null;
   } else {
     ui.selected = ui.target = null;
@@ -446,6 +664,16 @@ canvas.addEventListener('pointerdown', (e) => {
   if (!running) return;
   e.preventDefault();
   try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  if (e.pointerType === 'mouse') {
+    // Mouse: left drags pan, right or middle drags turn the view around
+    // whatever is under the cursor. A left click without a drag selects.
+    const turn = e.button === 2 || e.button === 1 || e.altKey;
+    gesture = { kind: turn ? 'turn' : 'click', mouse: true, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
+      pivot: turn ? view.pivotAt(game, e.clientX, e.clientY) : null };
+    ui.dragging = true;
+    view.orbit.vaz = view.orbit.vpol = 0;
+    return;
+  }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
     gesture = { kind: 'tap', x0: e.clientX, y0: e.clientY };
@@ -458,6 +686,18 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  if (gesture?.mouse) {
+    const dx = e.clientX - gesture.x;
+    const dy = e.clientY - gesture.y;
+    gesture.x = e.clientX;
+    gesture.y = e.clientY;
+    if (gesture.kind === 'click' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) gesture.kind = 'pan';
+    if (gesture.kind === 'pan') view.pan(dx, dy);
+    if (gesture.kind === 'turn') view.rotateAround(gesture.pivot, -dx * 0.006, -dy * 0.006);
+    return;
+  }
+  // Hover feedback for the mouse: a pointer over anything clickable.
+  if (e.pointerType === 'mouse' && game) canvas.style.cursor = view.pick(e.clientX, e.clientY) !== null ? 'pointer' : 'grab';
   const p = pointers.get(e.pointerId);
   if (!p || !gesture) return;
   const dx = e.clientX - p.x;
@@ -489,6 +729,24 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function endPointer(e) {
+  if (gesture?.mouse) {
+    const g = gesture;
+    gesture = null;
+    ui.dragging = false;
+    if (g.kind !== 'click' || e.type === 'pointercancel') return;
+    const id = view.pick(e.clientX, e.clientY);
+    const now = performance.now();
+    if (id !== null && lastTap.id === id && now - lastTap.t < 350) {
+      // Double-click: glide to it and follow.
+      view.focus(game, id);
+      lastTap = { t: 0, id: null };
+      updateActions();
+    } else {
+      lastTap = { t: now, id };
+      tap(id, e.clientX, e.clientY, true);
+    }
+    return;
+  }
   if (!pointers.delete(e.pointerId)) return;
   if (gesture?.kind === 'tap' && pointers.size === 0) {
     const id = view.pick(e.clientX, e.clientY);
@@ -507,8 +765,49 @@ function endPointer(e) {
   else gesture = { kind: 'orbit' };
 }
 canvas.addEventListener('pointerup', endPointer);
-canvas.addEventListener('pointercancel', (e) => { gesture = null; endPointer(e); });
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY * 0.001)); }, { passive: false });
+canvas.addEventListener('pointercancel', (e) => { endPointer(e); gesture = null; ui.dragging = false; });
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  // Trackpad pinch arrives as ctrl+wheel with small deltas; scale to match.
+  const k = e.ctrlKey ? 0.01 : 0.0015;
+  view.zoomToward(e.clientX, e.clientY, Math.exp(e.deltaY * k));
+}, { passive: false });
+
+// Keyboard: WASD/arrows pan, Q/E turn, +/- zoom, F focus selection,
+// H whole system, Esc backs out of whatever you're doing.
+const held = new Set();
+window.addEventListener('keydown', (e) => {
+  if (!running || e.target.closest('input, textarea')) return;
+  const k = e.key.toLowerCase();
+  held.add(k);
+  if (k === 'escape') {
+    if (ui.mode) { ui.mode = null; ui.target = null; } else ui.selected = ui.target = null;
+    $('research').hidden = true;
+    updateActions();
+  } else if (k === 'f') {
+    const id = ui.target ?? ui.selected;
+    if (id !== null) view.focus(game, id);
+  } else if (k === 'h') {
+    view.orbit.follow = null;
+    view.orbit.target.set(0, 0, 0);
+    view.orbit.goalDist = 650;
+  }
+});
+window.addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => held.clear());
+function keyboardCamera(dt) {
+  if (!held.size) return;
+  const v = 700 * dt;
+  const has = (...ks) => ks.some((k) => held.has(k));
+  if (has('w', 'arrowup')) view.pan(0, v);
+  if (has('s', 'arrowdown')) view.pan(0, -v);
+  if (has('a', 'arrowleft')) view.pan(v, 0);
+  if (has('d', 'arrowright')) view.pan(-v, 0);
+  if (has('q')) view.orbit.az += dt * 1.5;
+  if (has('e')) view.orbit.az -= dt * 1.5;
+  if (has('=', '+')) view.zoomAt(window.innerWidth / 2, window.innerHeight / 2, Math.exp(-dt * 1.8));
+  if (has('-', '_')) view.zoomAt(window.innerWidth / 2, window.innerHeight / 2, Math.exp(dt * 1.8));
+}
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
@@ -517,7 +816,9 @@ document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.prev
 
 // ---- End-of-game report ----------------------------------------------------------
 
-const PLAYER_NAMES = ['You', 'Red', 'Amber'];
+const SOLO_NAMES = ['You', 'Red', 'Amber'];
+/** Display name for an empire: "You" for this screen, else its player's name. */
+const nameOf = (o) => (o === me ? 'You' : game.names ? game.names[o] : SOLO_NAMES[o]);
 
 /** A small line chart: one line per player, recessive grid, end labels, touch readout. */
 function lineChart(title, key, series, players, fmtV = (v) => Math.round(v)) {
@@ -535,7 +836,7 @@ function lineChart(title, key, series, players, fmtV = (v) => Math.round(v)) {
     const pts = series.map((s) => `${x(s.t).toFixed(1)},${y(s.p[o][key]).toFixed(1)}`).join(' ');
     const last = series.at(-1).p[o][key];
     return `<polyline points="${pts}" fill="none" stroke="${ownerColor(o)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`
-      + `<text x="${x(t1) + 4}" y="${y(last) + 4}" font-size="10" fill="#aab1c8">${PLAYER_NAMES[o]}</text>`;
+      + `<text x="${x(t1) + 4}" y="${y(last) + 4}" font-size="10" fill="#aab1c8">${nameOf(o)}</text>`;
   }).join('');
   const grid = [0, 0.5, 1].map((k) => `<line x1="${L}" x2="${W - R}" y1="${y(max * k)}" y2="${y(max * k)}" stroke="rgba(160,180,255,0.12)" />`
     + `<text x="${L - 4}" y="${y(max * k) + 3}" font-size="9" fill="#858ca6" text-anchor="end">${fmtV(max * k)}</text>`).join('');
@@ -573,8 +874,8 @@ function reportImage() {
   g.textAlign = 'center';
   g.fillStyle = '#858ca6'; g.font = font(600, 30);
   g.fillText('P E R I H E L I O N', W / 2, 96);
-  const won = game.winner === PLAYER;
-  g.fillStyle = ownerColor(won ? PLAYER : game.winner); g.font = font(700, 96);
+  const won = game.winner === me;
+  g.fillStyle = ownerColor(won ? me : game.winner); g.font = font(700, 96);
   g.fillText(won ? 'VICTORY' : 'DEFEAT', W / 2, 200);
   g.fillStyle = '#e6ebf7'; g.font = font(500, 34);
   g.fillText(`${fmt(game.time)} · ${prefs.rivals} rival${prefs.rivals === 1 ? '' : 's'} · ${prefs.difficulty}`, W / 2, 252);
@@ -582,7 +883,7 @@ function reportImage() {
   const x0 = 80, colW = 170, labelW = W - 160 - colW * players.length;
   let y = 330;
   g.font = font(700, 32); g.textAlign = 'right';
-  players.forEach((o, i) => { g.fillStyle = ownerColor(o); g.fillText(PLAYER_NAMES[o], x0 + labelW + colW * (i + 1) - 20, y); });
+  players.forEach((o, i) => { g.fillStyle = ownerColor(o); g.fillText(nameOf(o), x0 + labelW + colW * (i + 1) - 20, y); });
   y += 20;
   for (const [label, k] of REPORT_ROWS) {
     y += 52;
@@ -644,8 +945,8 @@ function renderReport() {
   const st = game.stats;
   const players = Array.from({ length: game.players }, (_, i) => i);
   const rows = REPORT_ROWS;
-  const legend = `<div class="legend">${players.map((o) => `<span><i style="background:${ownerColor(o)}"></i>${PLAYER_NAMES[o]}</span>`).join('')}</div>`;
-  const table = `<table class="totals"><tr><th></th>${players.map((o) => `<th style="color:${ownerColor(o)}">${PLAYER_NAMES[o]}</th>`).join('')}</tr>`
+  const legend = `<div class="legend">${players.map((o) => `<span><i style="background:${ownerColor(o)}"></i>${nameOf(o)}</span>`).join('')}</div>`;
+  const table = `<table class="totals"><tr><th></th>${players.map((o) => `<th style="color:${ownerColor(o)}">${nameOf(o)}</th>`).join('')}</tr>`
     + rows.map(([label, k]) => `<tr><td>${label}</td>${players.map((o) => `<td class="${bestIn(k, players).includes(o) ? 'best' : ''}">${Math.round(st.totals[o][k])}</td>`).join('')}</tr>`).join('')
     + '</table>';
   $('report').innerHTML = legend + table
@@ -670,7 +971,7 @@ function renderReport() {
       cross.setAttribute('visibility', 'visible');
       chart.querySelector('.readout').innerHTML = `${fmt(s.t)} · ` + players.map((o) => {
         const v = s.p[o][key];
-        return `${PLAYER_NAMES[o]} <b>${key === 'income' ? v.toFixed(1) : Math.round(v)}</b>`;
+        return `${nameOf(o)} <b>${key === 'income' ? v.toFixed(1) : Math.round(v)}</b>`;
       }).join(' · ');
     };
     svg.addEventListener('pointerdown', show);
@@ -682,9 +983,9 @@ function finish() {
   running = false;
   ui.selected = ui.target = null;
   updateActions();
-  const won = game.winner === PLAYER;
+  const won = game.winner === me;
   $('end-title').textContent = won ? 'Victory' : 'Defeat';
-  $('end-title').style.color = ownerColor(won ? PLAYER : game.winner);
+  $('end-title').style.color = ownerColor(won ? me : game.winner);
   $('end-sub').textContent = won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(game.time)}.`;
   renderReport();
   setTimeout(() => ($('end').hidden = false), 1200);
@@ -692,32 +993,54 @@ function finish() {
 
 let last = performance.now();
 let uiClock = 0;
+let netClock = 0;
+let knockedOut = false;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (game) {
-    if (running) {
-      // Time warp in small steps so battles and arrivals stay accurate.
-      let left = dt * warp;
-      while (left > 0) {
-        const h = Math.min(0.25, left);
-        for (const ai of ais) tickAI(game, ai, h);
-        step(game, h);
-        left -= h;
+    if (running && !paused) {
+      if (net?.role === 'client') {
+        // Guests don't simulate: orbits and flights are functions of time, so
+        // advancing the clock keeps everything moving between host updates.
+        game.time += dt;
+      } else {
+        // Time warp in small steps so battles and arrivals stay accurate.
+        let left = dt * warp;
+        while (left > 0) {
+          const h = Math.min(0.25, left);
+          for (const ai of ais) tickAI(game, ai, h);
+          step(game, h);
+          left -= h;
+        }
       }
-      if (ui.selected !== null && game.bodies[ui.selected].owner !== PLAYER) ui.selected = ui.target = null;
-      drainEvents();
+    }
+    if (running) {      if (ui.selected !== null && game.bodies[ui.selected].owner !== me) ui.selected = ui.target = null;
+      if (net?.role !== 'client') {
+        const evs = game.events.splice(0);
+        drainEvents(evs);
+        if (net?.role === 'host' && evs.length) net.room.broadcast({ t: 'events', list: evs });
+      }
+      if (net?.role === 'host') {
+        netClock -= dt;
+        if (netClock <= 0 || game.winner !== null) { netClock = 0.25; net.room.broadcast({ t: 'state', s: snapshot() }); }
+      }
+      if (game.mp && !knockedOut && !game.bodies.some((b) => b.owner === me) && !game.fleets.some((f) => f.owner === me) && game.winner === null) {
+        knockedOut = true;
+        toast('Your empire has fallen · watching the rest', '#ff7a4d');
+      }
       if (ui.fleet !== null) updateFleetInfo();
       uiClock -= dt;
       if (uiClock <= 0) {
         uiClock = 0.25;
-        ui.vis = visibility(game, PLAYER);
+        ui.vis = visibility(game, me);
         updateActions();
         renderResearch();
-        $('clock').innerHTML = `<b>₵ ${Math.floor(game.credits[PLAYER])}</b> +${income(game, PLAYER).toFixed(1)}/s · T+${fmt(game.time)}`;
+        $('clock').innerHTML = `<b>₵ ${Math.floor(game.credits[me])}</b> +${income(game, me).toFixed(1)}/s · T+${fmt(game.time)}`;
       }
       if (game.winner !== null) finish();
     }
+    if (running) keyboardCamera(dt);
     view.render(game, ui, dt * (running ? warp : 0.2), now / 1000);
   }
   requestAnimationFrame(frame);

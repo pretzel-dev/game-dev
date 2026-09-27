@@ -70,6 +70,34 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
   shows city lights on its night side (stations light their windows).
 - **Time:** the 1× button cycles 1×, 2×, 4× and 8×.
 
+## Multiplayer (host in browser)
+
+Up to 3 empires. Enter a name, tap **Host game** and share the 5-letter code;
+friends type it and tap **Join**. The host can add AI players (easy, normal or
+hard) to empty seats, then starts the game.
+
+- The host's browser runs the whole game, AIs included. Guests send orders and
+  receive the state four times a second over WebRTC. The free PeerJS cloud only
+  brokers the first handshake.
+- No time warp. Only the host can pause, and it pauses for everyone.
+- If a guest drops, their empire sits idle; rejoining with the same code and
+  name takes the seat back. If the host leaves, the game ends.
+- Knocked-out players keep watching until one empire is left.
+- For testing against a self-hosted PeerJS server, add `?peer=host:port`.
+
+Later: move the game onto a server (Cloudflare) so it keeps running without
+the host and nobody can pause.
+
+## Controls
+
+- Touch: tap to select, drag to rotate, two fingers to pan and zoom, double-tap
+  to fly to a world.
+- Mouse: click to select, drag to pan, right-drag (or Alt-drag) to rotate
+  around whatever is under the cursor, scroll to zoom toward the cursor,
+  double-click to fly to a world.
+- Keys: WASD/arrows pan, Q/E rotate, +/- zoom, F focus the selection,
+  H whole system, Esc back out.
+
 ## Run
 
 ```sh

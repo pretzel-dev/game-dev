@@ -865,6 +865,10 @@ export function createView(canvas, labelRoot) {
       orbit.vaz *= 0.92;
       orbit.vpol *= 0.92;
     }
+    if (orbit.goalDist) {
+      orbit.dist += (orbit.goalDist - orbit.dist) * Math.min(1, dt * 4);
+      if (Math.abs(orbit.goalDist - orbit.dist) < 0.01 * orbit.dist) orbit.goalDist = null;
+    }
     orbit.pol = THREE.MathUtils.clamp(orbit.pol, 0.15, Math.PI - 0.15);
     orbit.dist = THREE.MathUtils.clamp(orbit.dist, orbit.minDist, orbit.maxDist);
     camera.position.setFromSphericalCoords(orbit.dist, orbit.pol, orbit.az).add(orbit.target);
@@ -1115,7 +1119,7 @@ export function createView(canvas, labelRoot) {
         gh.position.set(f.p1.x, f.p1.y, f.p1.z);
         gh.material.color.set(color);
         // Enemy landing points pulse so they stand out.
-        const hostile = f.owner !== 0;
+        const hostile = f.owner !== (ui.me ?? 0);
         const pulse = hostile ? 1 + 0.35 * Math.sin(t * 6) : 1;
         gh.material.opacity = hostile ? 0.9 : 0.5;
         gh.scale.setScalar((hostile ? 22 : 14) * pulse / ppuAt(gh.position));
@@ -1130,7 +1134,7 @@ export function createView(canvas, labelRoot) {
       tmp.set(s.x, s.y, s.z).project(camera);
       const el = fleetLabel(fl++);
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
-      const mine = f.owner === 0;
+      const mine = f.owner === (ui.me ?? 0);
       const text = `▸ ${knowsSize(f) ? f.n : '?'}`;
       const lv = knowsSize(f) ? vetLevel(f.vet) : 0;
       if (el._v !== lv) { el._v = lv; el.dataset.v = lv; }
@@ -1250,6 +1254,7 @@ export function createView(canvas, labelRoot) {
   function zoomAt(x, y, factor) {
     // Zoom toward the fingers, wherever they are.
     orbit.follow = null;
+    orbit.goalDist = null;
     const before = groundAt(x, y);
     const next = THREE.MathUtils.clamp(orbit.dist * factor, orbit.minDist, orbit.maxDist);
     const k = next / orbit.dist;
@@ -1267,7 +1272,43 @@ export function createView(canvas, labelRoot) {
     orbit.follow = id;
     if (id === null || !zoom) return;
     const b = game.bodies[id];
-    orbit.dist = Math.max(orbit.minDist, b.size * 9 + 3);
+    // Glide in rather than jump.
+    orbit.goalDist = Math.max(orbit.minDist, b.size * 9 + 3);
+  }
+  /** The point a drag should turn around: the world under the cursor, else
+   * where the cursor meets the plane through the current view centre. */
+  function pivotAt(game, x, y) {
+    const id = pick(x, y);
+    if (id !== null) return views[id].g.position.clone();
+    return groundAt(x, y) || orbit.target.clone();
+  }
+  /** Turn the view around a pivot (camera and look-at point both swing). */
+  function rotateAround(pivot, daz, dpol) {
+    orbit.follow = null;
+    orbit.goalDist = null;
+    const off = new THREE.Vector3().subVectors(camera.position, orbit.target);
+    const sph = new THREE.Spherical().setFromVector3(off);
+    const pol = THREE.MathUtils.clamp(sph.phi + dpol, 0.15, Math.PI - 0.15);
+    dpol = pol - sph.phi;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    const q = new THREE.Quaternion().setFromAxisAngle(UP, daz).multiply(new THREE.Quaternion().setFromAxisAngle(right, dpol));
+    const cam = camera.position.clone().sub(pivot).applyQuaternion(q).add(pivot);
+    orbit.target.sub(pivot).applyQuaternion(q).add(pivot);
+    sph.setFromVector3(cam.clone().sub(orbit.target));
+    orbit.az = sph.theta;
+    orbit.pol = sph.phi;
+    orbit.dist = sph.radius;
+  }
+  /** Zoom toward a world if the cursor is on one, else toward the cursor. */
+  function zoomToward(x, y, factor) {
+    const id = pick(x, y);
+    orbit.goalDist = null;
+    if (id === null) { zoomAt(x, y, factor); return; }
+    orbit.follow = null;
+    const p = views[id].g.position;
+    const next = THREE.MathUtils.clamp(orbit.dist * factor, orbit.minDist, orbit.maxDist);
+    orbit.target.lerp(p, 1 - next / orbit.dist);
+    orbit.dist = next;
   }
 
   /** Where a body is on screen, in CSS pixels (for tests and tooling). */
@@ -1276,5 +1317,5 @@ export function createView(canvas, labelRoot) {
     return { x: (tmp.x * 0.5 + 0.5) * window.innerWidth, y: (-tmp.y * 0.5 + 0.5) * window.innerHeight };
   }
 
-  return { build, render, resize, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf };
+  return { build, render, resize, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
 }
