@@ -142,7 +142,7 @@ function showPaused() {
 // ---- Multiplayer ------------------------------------------------------------
 
 $('keys').textContent = matchMedia('(pointer: fine)').matches
-  ? 'Mouse: click to select · drag to pan · right-drag to rotate · scroll to zoom · double-click to fly to a world. Keys: WASD pan · Q/E rotate · +/− zoom · F focus · H whole system · Esc back.'
+  ? 'Mouse: click to select · drag to pan · right-drag to rotate · scroll to zoom · double-click a world to fly there. Keys: WASD pan · Q/E rotate · +/− zoom · F focus · H whole system · Esc back.'
   : 'Drag to rotate · two fingers to pan and zoom · double-tap to fly to a world.';
 $('name').value = prefs.name || '';
 $('name').addEventListener('input', () => { prefs.name = $('name').value.trim(); savePrefs(); });
@@ -170,7 +170,7 @@ function renderLobby(seats, code) {
   $('lobby-ai').hidden = !host || seats.length >= MAX_SEATS;
   $('lobby-start').hidden = !host;
   $('lobby-start').disabled = seats.length < 2;
-  $('lobby-hint').textContent = host ? (seats.length < 2 ? 'Share the code, or add an AI. Up to 3 empires.' : 'Ready when you are.') : 'Waiting for the host to start…';
+  $('lobby-hint').textContent = host ? (seats.length < 2 ? 'Tap the code to copy it. Up to 3 empires.' : 'Ready when you are.') : 'Waiting for the host to start…';
 }
 let aiDiff = 'normal';
 $('ai-diff').addEventListener('click', (e) => {
@@ -217,7 +217,27 @@ $('lobby-start').addEventListener('click', () => {
   room.seats.forEach((s, i) => { if (s.conn) room.sendTo(i, startMsg(i)); });
 });
 
-$('join').addEventListener('click', () => {
+// Join asks for the code in place of the Host / Join buttons.
+function showJoin(on) {
+  $('mp-buttons').hidden = on;
+  $('join-row').hidden = !on;
+  if (on) $('code').focus();
+}
+$('join').addEventListener('click', () => { menuMsg(''); showJoin(true); });
+$('join-back').addEventListener('click', () => { menuMsg(''); showJoin(false); });
+$('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('join-go').click(); });
+$('howto').addEventListener('click', () => { $('menu').hidden = true; $('tutorial').hidden = false; });
+$('tut-close').addEventListener('click', () => { $('tutorial').hidden = true; $('menu').hidden = false; });
+// Tap the room code to copy it.
+$('lobby-code').addEventListener('click', async () => {
+  const code = $('lobby-code').textContent;
+  if (!/^\w{5}$/.test(code)) return;
+  const hint = $('lobby-hint');
+  const was = hint.textContent;
+  try { await navigator.clipboard.writeText(code); hint.textContent = 'Code copied'; } catch { hint.textContent = 'Long-press the code to copy it'; }
+  setTimeout(() => { hint.textContent = was; }, 1800);
+});
+$('join-go').addEventListener('click', () => {
   const code = $('code').value.trim().toUpperCase();
   if (code.length !== 5) { menuMsg('Enter the 5-letter code'); return; }
   leaveNet();

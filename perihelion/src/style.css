@@ -327,3 +327,24 @@ input:focus { border-color: var(--accent); }
 .keys { font-size: 12px; }
 #banner { position: fixed; top: 38%; left: 50%; transform: translateX(-50%); padding: 6px 14px; background: var(--panel); border: 1px solid var(--accent); color: var(--accent); letter-spacing: 0.2em; text-transform: uppercase; font-size: 13px; z-index: 6; }
 #banner[hidden] { display: none; }
+
+/* Five difficulty levels still fit a phone. */
+.seg.tight button { min-width: 0; padding: 0 9px; font-size: 13px; }
+.bigcode { cursor: pointer; }
+#join-row[hidden], #mp-buttons[hidden] { display: none; }
+#join-row #code { height: 44px; }
+.link { color: var(--dim); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; text-decoration: underline; text-underline-offset: 4px; padding: 8px; }
+
+/* How to play: a short column of screenshot cards. */
+#tutorial { justify-content: flex-start; background: rgba(3, 4, 10, 0.96); }
+.tut-head { display: flex; align-items: center; justify-content: space-between; width: min(420px, 100%); }
+.tut-head h1 { font-size: 20px; margin: 0; }
+.tut-head button { width: 40px; height: 40px; color: var(--dim); }
+.tut-list { display: grid; grid-template-columns: 1fr; gap: 14px; width: min(420px, 100%); }
+@media (min-width: 900px) { .tut-list, .tut-head { width: min(880px, 100%); } .tut-list { grid-template-columns: 1fr 1fr; } }
+.tut-list figure { margin: 0; border: 1px solid var(--line); background: var(--panel); text-align: left; overflow: hidden; }
+.tut-list img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #03040a; }
+.tut-list figcaption { padding: 10px 12px 12px; color: var(--dim); font-size: 14px; line-height: 1.4; }
+.tut-list figcaption b { display: block; color: var(--fg); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 4px; }
+#tutorial #keys { max-width: 420px; font-size: 12px; }
+.row.mp #join-back { min-width: 44px; width: 44px; padding: 0; }

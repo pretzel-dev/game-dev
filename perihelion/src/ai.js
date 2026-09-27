@@ -1,14 +1,18 @@
-import { NEUTRAL, RULES, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
 // Difficulty: how often it thinks, how much margin it wants before attacking,
 // and `skill`, the chance it follows through on each smart move it spots
-// (defending, rescuing credits, tech and upgrades).
+// (defending, rescuing credits, tech and upgrades). At the ends, `eco` scales
+// its income (cadet runs a lean economy, brutal a rich one) and `calm` keeps a
+// cadet from attacking anyone for its first few minutes.
 export const DIFFICULTY = {
+  cadet: { think: 14, margin: 2.4, skill: 0.1, eco: 0.6, calm: 420 },
   easy: { think: 9, margin: 1.6, skill: 0.35 },
   normal: { think: 5, margin: 1.6, skill: 0.7 },
   hard: { think: 3, margin: 1.6, skill: 1 },
+  brutal: { think: 1.5, margin: 1.35, skill: 1, eco: 1.4 },
 };
 
 export function createAI(owner, difficulty, rand) {
@@ -16,6 +20,9 @@ export function createAI(owner, difficulty, rand) {
 }
 
 export function tickAI(game, ai, dt) {
+  if (ai.d.eco && game.winner === null) {
+    game.credits[ai.owner] = Math.max(0, game.credits[ai.owner] + income(game, ai.owner) * (ai.d.eco - 1) * dt);
+  }
   ai.clock -= dt;
   if (ai.clock > 0 || game.winner !== null) return;
   ai.clock = ai.d.think * (0.7 + ai.rand() * 0.6);
@@ -35,6 +42,7 @@ export function tickAI(game, ai, dt) {
   const power = (b) => b.ships * (1 + VET_BONUS * vetLevel(b.vet));
   if (defend(game, ai, mine, vis, known, sizeOf, power, will)) return;
   if (economy(game, ai, mine, coming, will)) return;
+  if (ai.d.calm && game.time < ai.d.calm) return;
 
   let best = null;
   for (const s of mine) {

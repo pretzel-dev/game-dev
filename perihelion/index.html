@@ -53,24 +53,39 @@
 
     <div id="menu" class="overlay">
       <h1>Perihelion</h1>
-      <p class="how">One sun, a handful of worlds, very few ships. Credits build shipyards, mines, guns and ships.<br />Select your world, press Launch, pick a target and confirm. Ships fly to where the target
-        <em>will</em> be, flipping halfway to brake.</p>
-      <p class="how keys" id="keys"></p>
       <div class="row"><span>Name</span><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /></div>
       <div class="row"><span>Rivals</span>
         <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button></div>
       </div>
       <div class="row"><span>AI</span>
-        <div class="seg" id="difficulty"><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button></div>
+        <div class="seg tight" id="difficulty"><button data-v="cadet">Cadet</button><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button><button data-v="brutal">Brutal</button></div>
       </div>
       <button id="play" class="primary">Play vs AI</button>
       <button id="resume" class="primary" hidden>Resume</button>
-      <div class="row mp">
+      <div class="row mp" id="mp-buttons">
         <button id="host" class="primary ghost">Host</button>
-        <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" />
         <button id="join" class="primary ghost">Join</button>
       </div>
+      <div class="row mp" id="join-row" hidden>
+        <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" />
+        <button id="join-go" class="primary">Join</button>
+        <button id="join-back" class="primary ghost" aria-label="Back">✕</button>
+      </div>
       <p class="how" id="menu-msg"></p>
+      <button id="howto" class="link">How to play</button>
+    </div>
+
+    <div id="tutorial" class="overlay" hidden>
+      <div class="tut-head"><h1>How to play</h1><button id="tut-close" aria-label="Close">✕</button></div>
+      <div class="tut-list">
+        <figure><img src="tutorial/worlds.jpg" alt="" loading="lazy" /><figcaption><b>Your worlds</b>Blue rings are yours. Every world earns credits (top left). Take the whole system by knocking out every rival.</figcaption></figure>
+        <figure><img src="tutorial/launch.jpg" alt="" loading="lazy" /><figcaption><b>Send ships</b>Tap your world, press Launch, tap a target and set how many with − / +, then Confirm.</figcaption></figure>
+        <figure><img src="tutorial/flight.jpg" alt="" loading="lazy" /><figcaption><b>Everything orbits</b>Ships fly to where the target <em>will</em> be, flipping halfway to brake. Far worlds take minutes, so plan ahead.</figcaption></figure>
+        <figure><img src="tutorial/build.jpg" alt="" loading="lazy" /><figcaption><b>Build</b>Select a world to build: shipyards make ships, mines add credits, guns defend, research stations speed up R&amp;D.</figcaption></figure>
+        <figure><img src="tutorial/battle.jpg" alt="" loading="lazy" /><figcaption><b>Battles</b>Ships fight a world's ships and guns until one side is gone. A ▼ on a label means enemies are coming.</figcaption></figure>
+        <figure><img src="tutorial/research.jpg" alt="" loading="lazy" /><figcaption><b>Research</b>R&amp;D improves drives, sensors, weapons and more. Beyond your sensors, enemy worlds and fleets are hidden.</figcaption></figure>
+      </div>
+      <p class="how" id="keys"></p>
     </div>
 
     <div id="lobby" class="overlay" hidden>
@@ -80,7 +95,7 @@
       <p class="how" id="lobby-hint">Share the code. Up to 3 empires.</p>
       <div id="seats"></div>
       <div class="row" id="lobby-ai">
-        <div class="seg" id="ai-diff"><button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button></div>
+        <div class="seg tight" id="ai-diff"><button data-v="cadet">Cadet</button><button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button><button data-v="brutal">Brutal</button></div>
         <button id="add-ai" class="primary ghost">Add AI</button>
       </div>
       <button id="lobby-start" class="primary">Start</button>
