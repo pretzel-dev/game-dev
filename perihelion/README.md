@@ -4,6 +4,22 @@ A slow, hard-sci-fi strategy game set in one solar system. It's a smaller-scale
 sibling of Starfall: one sun, six planets with moons, a few stations and
 asteroids, and very few ships. Take the system from one or two AI rivals.
 
+## Systems
+
+Pick a **System** on the menu (or Random). Each is a different layout; the
+rules don't change:
+
+- **Classic:** six worlds, a belt, a few moons.
+- **Giant's court:** one huge gas giant ringed with five moons.
+- **Wide and cold:** few worlds, far apart; long trips, probes matter.
+- **Crowded:** worlds packed close; short, sharp trips.
+- **Rich belt:** eight asteroids in a thick belt.
+- **Binary:** two suns circling each other in the middle (planets orbit both,
+  as real circumbinary planets do, so no three-body chaos).
+
+**Daily system:** everyone gets the same map each day (seed and system from
+the date). The end screen and share image say which day it was.
+
 ## How to play
 
 The menu's **How to play** page has the basics with screenshots
@@ -54,6 +70,9 @@ preview server running).
   (ships, structures) for 2½ minutes. On the map it shows as ◇ (named when
   you zoom in close). On desktop, right-click a world with one of yours
   selected to go straight to launch with it as the target.
+- **Upgrades apply at once:** Weapons and Armour count in every fight from the
+  moment they finish; Drives also re-plan fleets already in flight, so they
+  arrive sooner.
 - **Research (R&D, top bar):** one project at a time, paid in credits.
   Drives (+15% thrust per level), Sensors (range), Intel (I: enemy fleet
   sizes; II: their routes and landing points; III: arrival times and

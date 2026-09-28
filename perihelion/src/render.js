@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { NEUTRAL, posAt, fleetState, rng, vetLevel } from './sim.js';
+import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
@@ -589,7 +589,9 @@ export function createView(canvas, labelRoot) {
   // Churning granulation with dark-edged cells, limb darkening, and slow
   // brighter faculae, dark sunspots, and a soft glow around it.
   const sunTime = { value: 0 };
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 48), new THREE.ShaderMaterial({
+  const sunGroup = new THREE.Group();
+  scene.add(sunGroup);
+  sunGroup.add(new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 48), new THREE.ShaderMaterial({
     uniforms: { uT: sunTime },
     vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vV;
       void main() {
@@ -643,14 +645,18 @@ export function createView(canvas, labelRoot) {
       };
       place();
       proms.push({ m, place, phase: r() * 40, period: 25 + r() * 30, peak: 0.5 + r() * 0.4, grow: size });
-      scene.add(m);
+      sunGroup.add(m);
     }
   }
   for (const [s, c, o] of [[18, '#fff0c0', 0.5], [40, '#ffd27a', 0.35], [110, '#ff9a4a', 0.2]]) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     glow.scale.setScalar(s);
-    scene.add(glow);
+    sunGroup.add(glow);
   }
+  // Binary systems: a second, smaller star (same look) circling with the first.
+  const sun2 = sunGroup.clone();
+  sun2.visible = false;
+  scene.add(sun2);
   scene.add(new THREE.PointLight('#fff1dd', 3, 0, 0));
   scene.add(new THREE.AmbientLight('#26304a', 0.35));
 
@@ -848,6 +854,21 @@ export function createView(canvas, labelRoot) {
    * Places a ship mesh (with glint and plume) at p, nose along n. `id` picks
    * its hull and small variations (length, paint), stable for that ship.
    */
+  /** Keep ships outside worlds (launching from a planet, a moon passing a fleet). */
+  function unclip(p) {
+    for (const v of views) {
+      const q = bodyPos[v.b.id];
+      if (!q) continue;
+      const min = v.b.size * 1.25 + 0.25;
+      const dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= min * min) continue;
+      const d = Math.sqrt(d2);
+      if (d < 1e-6) { p.x = q.x + min; continue; }
+      const k = min / d;
+      p.set(q.x + dx * k, q.y + dy * k, q.z + dz * k);
+    }
+  }
   function placeShip(sh, p, n, color, burning, t, seed, id = seed, plume = 1) {
     sh.mesh.visible = true;
     const v = Math.floor(hash(id, 3) * shipGeos.length);
@@ -859,6 +880,7 @@ export function createView(canvas, labelRoot) {
     sh.mesh.scale.set(0.8, 0.8, 0.8 * k);
     // A slight per-ship tint on the hull (vertex colours carry the light/dark split).
     sh.mesh.material.color.setHSL(0.6, 0.05 + hash(id, 9) * 0.08, 0.85 + hash(id, 11) * 0.15);
+    unclip(p);
     sh.mesh.position.copy(p);
     tmp2.copy(p).add(n);
     sh.mesh.lookAt(tmp2);
@@ -878,6 +900,15 @@ export function createView(canvas, labelRoot) {
   function render(game, ui, dt, t) {
     const now = game.time;
     sunTime.value = t;
+    const stars = game.stars || [{ r: 0, period: 1, phase: 0, size: 1 }];
+    stars.slice(0, 2).forEach((st, i) => {
+      const g = i ? sun2 : sunGroup;
+      const q = starPos(game, i, now);
+      g.visible = true;
+      g.position.set(q.x, q.y, q.z);
+      g.scale.setScalar(st.size);
+    });
+    if (stars.length < 2) sun2.visible = false;
     for (const pr of proms) {
       const u = ((t + pr.phase) % pr.period) / pr.period;
       if (u < pr.lastU) pr.place();
