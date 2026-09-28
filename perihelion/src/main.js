@@ -492,15 +492,20 @@ function renderBuildRow(s) {
       row = ['shipyard', 'mine', 'skimmer', 'exchange', 'defence', 'lab'].map((k) => {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
-        return `<button data-b="${k}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${RULES.structures[k].cost}</small></button>`;
+        const def = RULES.structures[k];
+        const on = ui.pick === k ? ' on' : '';
+        return `<button class="opt${on}" data-b="${k}" title="${def.name}: ${def.desc}" ${why ? 'disabled' : ''}>${ui.pick === k ? 'Build' : ABBR[k]}<small>${def.cost}</small></button>`;
       }).join('');
+      // What the picked option does (touch: tap once to read, again to build).
+      const pk = ui.pick && RULES.structures[ui.pick];
+      row += `<div class="desc">${pk ? `<b>${pk.name}</b> · ${pk.desc}` : touchInput ? 'Tap an option to see what it does' : ''}</div>`;
     } else {
       const def = RULES.structures[x.type];
       const p = progressOf(x);
       const state = x.scrap ? `scrapping · ${pct(p)}` : x.next ? `upgrading → ${ROMAN[x.next]} · ${pct(p)}` : x.left > 0 ? `building · ${pct(p)}` : def.maxLevel ? `level ${ROMAN[x.level]}` : 'online';
       const why = cantUpgrade(game, s, x);
       const dwhy = cantDemolish(game, s, x);
-      row = `<span class="what">${def.name} · ${state}</span><button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
+      row = `<span class="what" title="${def.desc}">${def.name} · ${state}</span><button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
       // Every level at a glance: what it gives and what it costs to reach.
       if (def.maxLevel) {
         const steps = [];
@@ -514,6 +519,7 @@ function renderBuildRow(s) {
           steps.push(`<${tag} class="lv ${cls}${next ? ' next' : ''}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${note}</small></${tag.split(' ')[0]}>`);
         }
         row += `<div class="ladder">${steps.join('')}</div>`;
+      row += `<div class="desc">${def.desc}</div>`;
       }
     }
     html += `<div class="ctx">${row}</div>`;
@@ -527,7 +533,7 @@ function renderBuildRow(s) {
       : `<span class="what">${yards} yard${yards === 1 ? '' : 's'} idle</span>`;
     html += `<div class="ctx ships">${q}`
       + (s.queue ? `<button data-cancel="1" class="danger">✕<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
-      + `<button data-b="ship" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost}</small></button>`
+      + `<button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost}</small></button>`
       + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
   }
   setHTML($('buildrow'), html);
@@ -537,6 +543,7 @@ $('buildrow').addEventListener('click', (e) => {
   const s = game.bodies[ui.selected];
   const cell = e.target.closest('button[data-slot]');
   if (cell) {
+    ui.pick = null;
     const i = Number(cell.dataset.slot);
     ui.slot = ui.slot === i ? null : i;
     updateActions();
@@ -570,6 +577,9 @@ $('buildrow').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-b]');
   if (!btn) return;
   const k = btn.dataset.b;
+  // On touch, the first tap on a build option explains it; the second builds.
+  if (k !== 'ship' && touchInput && ui.pick !== k) { ui.pick = k; updateActions(); return; }
+  ui.pick = null;
   const ok = act(k === 'ship' ? { type: 'ship', b: s.id } : { type: 'build', b: s.id, k });
   if (ok) {
     toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(me));
@@ -659,6 +669,9 @@ function doLaunch() {
   updateActions();
 }
 
+// Touch or mouse, from the last press: touch builds take a second tap.
+let touchInput = matchMedia('(pointer: coarse)').matches;
+window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; }, true);
 let toastTimer = 0;
 // Notifications: a small stack in the top corner; each fades after a while.
 function toast(text, color) {
@@ -755,7 +768,7 @@ function tap(id, x, y, mouse = false) {
   } else if (id === null || id === ui.selected) {
     ui.selected = ui.target = null;
   } else if (game.bodies[id].owner === me) {
-    ui.selected = id; ui.slot = null; ui.target = null;
+    ui.selected = id; ui.slot = null; ui.pick = null; ui.target = null;
   } else {
     ui.selected = ui.target = null;
   }
