@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -21,7 +21,7 @@ let me = 0;
 // Multiplayer: null (solo), { role: 'host', room } or { role: 'client', room }.
 let net = null;
 let paused = false; // multiplayer pause, set by the host
-const WARPS = [1, 2, 4, 8];
+const WARPS = [0.5, 1, 2, 4, 8];
 let warp = 1;
 
 const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null, mode: null };
@@ -143,7 +143,7 @@ function showPaused() {
 // ---- Multiplayer ------------------------------------------------------------
 
 $('keys').textContent = matchMedia('(pointer: fine)').matches
-  ? 'Mouse: click to select · drag to pan · right-drag to rotate · scroll to zoom · double-click a world to fly there. Keys: WASD pan · Q/E rotate · +/− zoom · F focus · H whole system · Esc back.'
+  ? 'Mouse: click to select · drag to pan · right-drag to rotate · scroll to zoom · double-click a world to fly there. Keys: WASD pan · Q/E rotate · +/− zoom · F focus · H whole system · L launch/confirm · P probe · R research · Space pause · 1–5 speed (½× to 8×) · Esc back.'
   : 'Drag to rotate · two fingers to pan and zoom · double-tap to fly to a world.';
 $('name').value = prefs.name || '';
 $('name').addEventListener('input', () => { prefs.name = $('name').value.trim(); savePrefs(); });
@@ -283,7 +283,7 @@ function onHostMessage(m) {
 }
 
 // Snapshots: bodies are updated in place (the renderer holds on to them).
-const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk'];
+const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil'];
 function snapshot() {
   return {
     time: game.time,
@@ -318,10 +318,11 @@ function applySnapshot(s) {
   if (s.winner !== null) game.winner = s.winner;
 }
 
-$('warp').addEventListener('click', () => {
-  warp = WARPS[(WARPS.indexOf(warp) + 1) % WARPS.length];
-  $('warp').textContent = `${warp}×`;
-});
+function setWarp(v) {
+  warp = v;
+  $('warp').textContent = `${warp === 0.5 ? '½' : warp}×`;
+}
+$('warp').addEventListener('click', () => setWarp(WARPS[(WARPS.indexOf(warp) + 1) % WARPS.length]));
 /** Reset the camera to a view of the whole system. */
 function systemView() {
   view.orbit.follow = null;
@@ -359,9 +360,10 @@ function updateActions() {
   $('actions').hidden = !show;
   if (!show) { ui.preview = null; ui.mode = null; return; }
   if (!s.ships && ui.mode === 'launch') ui.mode = null;
+  const ready = readyShips(game, s);
   if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
   const probing = ui.mode === 'probe';
-  ui.count = s.ships ? Math.max(1, Math.min(ui.count, s.ships)) : 0;
+  ui.count = ready ? Math.max(1, Math.min(ui.count, ready)) : 0;
   $('count').textContent = ui.count;
   const launching = ui.mode === 'launch' || probing;
   $('actions').classList.toggle('launching', launching);
@@ -374,8 +376,10 @@ function updateActions() {
     const kind = s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
     setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
       + `<div class="econ">${econLine(s)}</div>`);
-    $('launch').textContent = 'Launch';
-    $('launch').disabled = s.ships < 1;
+    // Ships that just arrived need a moment before they can leave again.
+    const wait = s.ships && !ready ? Math.ceil(s.restUntil - game.time) : 0;
+    $('launch').textContent = wait ? `Ready in ${fmt(wait)}` : 'Launch';
+    $('launch').disabled = ready < 1;
     renderBuildRow(s);
   } else if (ui.target === null) {
     ui.preview = null;
@@ -397,9 +401,11 @@ function updateActions() {
       $('launch').disabled = !!why;
       return;
     }
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}</span>`);
+    const resting = restingShips(game, s);
+    const restNote = resting ? ` · <span class="dim">${resting} more ready in ${fmt(Math.ceil(s.restUntil - game.time))}</span>` : '';
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}${restNote}</span>`);
     $('launch').textContent = 'Confirm';
-    $('launch').disabled = false;
+    $('launch').disabled = ready < 1;
   }
 }
 // ---- Building ----------------------------------------------------------------
@@ -870,6 +876,20 @@ window.addEventListener('keydown', (e) => {
     if (id !== null) view.focus(game, id);
   } else if (k === 'h') {
     systemView();
+  } else if (k >= '1' && k <= '5' && !net) {
+    // Number keys set the time speed: 1 = ½×, 2 = 1×, 3 = 2×, 4 = 4×, 5 = 8×.
+    setWarp(WARPS[Number(k) - 1]);
+  } else if (k === ' ') {
+    e.preventDefault();
+    if (!$('pause').hidden) pause();
+  } else if (k === 'l' || k === 'enter') {
+    // L: launch, then confirm.
+    if (ui.selected !== null && !$('launch').disabled) $('launch').click();
+  } else if (k === 'p') {
+    const b = document.querySelector('#buildrow button[data-probe]');
+    if (b && !b.disabled) b.click();
+  } else if (k === 'r') {
+    $('rnd').click();
   }
 });
 window.addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));

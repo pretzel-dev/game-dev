@@ -200,6 +200,7 @@ import { rng } from '../src/sim.js';
   assert.equal(m.tf, 'Test', 'the task force name stays with the garrison');
   assert.ok(g.events.some((e) => e.type === 'captured' && e.at === m.id));
   const home = g.bodies.find((b) => b.owner === 0 && b.home);
+  m.restUntil = 0; // skip the turnaround after capture
   const f = launch(g, m, home, 2);
   assert.ok(f.name && f.vet === m.vet, 'fleets are named and carry veterancy');
   m.vet = 1.2;
@@ -279,4 +280,18 @@ assert.ok(finished >= 18);
   assert.equal(home.owner, 1);
   assert.ok(home.structures.includes(guns) && !guns.scrap, 'capture cancels scrapping');
   console.log('probe, skimmer, exchange, scrapping: ok');
+}
+
+// Turnaround: arrivals can't leave straight away.
+{
+  const g = createGame({ seed: 4 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  const moon = g.bodies.find((b) => b.parent === home.id);
+  moon.owner = 0; moon.ships = 0;
+  const f = launch(g, home, moon, 2);
+  while (g.fleets.includes(f)) step(g, 0.5);
+  assert.equal(launch(g, moon, home, 2), null, 'fresh arrivals must rest');
+  for (let t = 0; t < RULES.cooldown + 1; t += 0.5) step(g, 0.5);
+  assert.ok(launch(g, moon, home, 2), 'rested ships can leave');
+  console.log('turnaround: ok');
 }

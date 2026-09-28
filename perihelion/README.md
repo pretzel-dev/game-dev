@@ -82,7 +82,8 @@ preview server running).
   destination, arrival time and whether it's burning, flipping or braking.
 - **Life:** homeworlds are ocean-and-continent worlds, and every held world
   shows city lights on its night side (stations light their windows).
-- **Time:** the 1× button cycles 1×, 2×, 4× and 8×.
+- **Time:** the 1× button cycles ½×, 1×, 2×, 4× and 8× (keys 1–5 on desktop).
+- **Turnaround:** ships that arrive at a world (or take it) need 15 s before they can launch again, so fleets can't bounce straight on.
 
 ## Multiplayer (host in browser)
 
