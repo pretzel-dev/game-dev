@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH, launchProbe, cantBuild as cantBuildAt } from '../src/sim.js';
+import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH, launchProbe, cantBuild as cantBuildAt, SYSTEM_KEYS, SYSTEMS, dailySeed, starPos } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -240,7 +240,8 @@ console.log('homes: one companion each, evenly spaced');
 let finished = 0;
 const lengths = [];
 for (let seed = 1; seed <= 20; seed++) {
-  const g = createGame({ seed, opponents: 1 + (seed % 2) });
+  // Every system type gets matches (three or four each).
+  const g = createGame({ seed, opponents: 1 + (seed % 2), system: SYSTEM_KEYS[seed % SYSTEM_KEYS.length] });
   const r = rng(seed);
   const ais = Array.from({ length: g.players }, (_, i) => createAI(i, i ? 'hard' : 'normal', r));
   let t = 0;
@@ -294,4 +295,38 @@ assert.ok(finished >= 18);
   for (let t = 0; t < RULES.cooldown + 1; t += 0.5) step(g, 0.5);
   assert.ok(launch(g, moon, home, 2), 'rested ships can leave');
   console.log('turnaround: ok');
+}
+
+// System types all build a sane map; the daily is the same for everyone.
+{
+  for (const k of SYSTEM_KEYS) {
+    for (const opp of [1, 2]) {
+      const g = createGame({ seed: 77, opponents: opp, system: k });
+      assert.equal(g.system, k);
+      assert.equal(g.bodies.filter((b) => b.home).length, opp + 1, `${k}: homes`);
+      for (const b of g.bodies) assert.ok(Number.isFinite(b.r) && b.period > 0, `${k}: orbits`);
+      for (const b of g.bodies) if (b.parent === null && b.kind === 'planet') assert.ok(b.r > 25, `${k}: clear of the sun(s)`);
+    }
+  }
+  const bin = createGame({ seed: 3, system: 'binary' });
+  const a = starPos(bin, 0, 10), b = starPos(bin, 1, 10);
+  assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > 10, 'binary stars stay apart');
+  const d = dailySeed(new Date('2026-09-28T12:00:00Z'));
+  assert.deepEqual(d, dailySeed(new Date('2026-09-28T20:00:00Z')), 'one daily per day');
+  console.log(`systems: ${SYSTEM_KEYS.map((k) => SYSTEMS[k].name).join(', ')}; daily ${d.key} = ${SYSTEMS[d.system].name}`);
+}
+
+// Drives research speeds up fleets already in flight.
+{
+  const g = createGame({ seed: 8 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  const far = g.bodies.filter((b) => b.kind === 'planet' && b.owner === NEUTRAL).sort((x, y) => plan(g, home, y).T - plan(g, home, x).T)[0];
+  const f = launch(g, home, far, 1);
+  const eta = f.t0 + f.T;
+  g.credits[0] = 5000;
+  research(g, 0, 'drives');
+  g.tech[0].project.left = 0.1;
+  step(g, 0.5);
+  assert.ok(f.t0 + f.T < eta - 1, 'in-flight fleet arrives sooner after a drives upgrade');
+  console.log(`refit: arrival ${Math.round(eta)}s -> ${Math.round(f.t0 + f.T)}s`);
 }

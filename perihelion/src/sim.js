@@ -229,8 +229,33 @@ const mix = (vA, nA, vB, nB) => (nA + nB > 0 ? (vA * nA + vB * nB) / (nA + nB) :
 /** Kepler: period grows with radius^1.5. */
 const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
 
-export function createGame({ seed = Date.now(), opponents = 1, mp = false } = {}) {
+// System types: each is a recipe for the layout, nothing else changes.
+export const SYSTEMS = {
+  classic: { name: 'Classic', text: 'Six worlds, a belt, a few moons' },
+  court: { name: 'Giant’s court', text: 'One huge gas giant ringed with moons', court: true },
+  wide: { name: 'Wide and cold', text: 'Few worlds, far apart', gap: 30, moons: 0.5, rocks: 3 },
+  crowded: { name: 'Crowded', text: 'Worlds packed close: short, sharp trips', gap: 8, stations: 3 },
+  belt: { name: 'Rich belt', text: 'A thick asteroid belt worth mining', rocks: 8, beltW: 12 },
+  binary: { name: 'Binary', text: 'Two suns circling each other', inner: 42, stars: 2 },
+};
+export const SYSTEM_KEYS = Object.keys(SYSTEMS);
+/** A star's position (binary systems: the two circle their common centre). */
+export function starPos(game, i, t = game.time) {
+  const s = game.stars[i];
+  const th = s.phase + (2 * Math.PI * t) / s.period;
+  return { x: Math.cos(th) * s.r, y: 0, z: Math.sin(th) * s.r };
+}
+/** The day's shared system: same seed and layout for everyone. */
+export function dailySeed(date = new Date()) {
+  const key = date.toISOString().slice(0, 10);
+  let h = 2166136261;
+  for (const c of key) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return { seed: h >>> 0, system: SYSTEM_KEYS[(h >>> 0) % SYSTEM_KEYS.length], key };
+}
+
+export function createGame({ seed = Date.now(), opponents = 1, mp = false, system = 'classic' } = {}) {
   const rand = rng(seed);
+  const sys = SYSTEMS[system] || SYSTEMS.classic;
   const pick = (list, used) => {
     const free = list.filter((n) => !used.has(n));
     const n = free[Math.floor(rand() * free.length)] ?? `${list[0]} ${used.size}`;
@@ -260,16 +285,18 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false } = {}
   const players = opponents + 1;
   const homeIdx = [1, 2, 3, 4].sort(() => rand() - 0.5).slice(0, players);
   for (let i = 0; i < 6; i++) {
-    const giant = !homeIdx.includes(i) && i >= 3 && rand() < 0.7;
-    const size = giant ? 3.2 + rand() * 1.2 : 1.6 + rand() * 1.1;
-    const count = i === 0 ? 0 : homeIdx.includes(i) ? 1 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
+    const court = sys.court && i === 5;
+    const giant = court || (!homeIdx.includes(i) && i >= 3 && rand() < (sys.court ? 0.3 : 0.7));
+    const size = court ? 5 : giant ? 3.2 + rand() * 1.2 : 1.6 + rand() * 1.1;
+    let count = i === 0 ? 0 : homeIdx.includes(i) ? 1 : court ? 5 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
+    if (sys.moons && !homeIdx.includes(i)) count = Math.floor(count * sys.moons);
     const moons = [];
     for (let m = 0; m < count; m++) {
       moons.push({ r: size * 3.4 + 6 + m * 7 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 300 + m * 150 + rand() * 120 });
     }
     specs.push({ giant, size, moons, station: false });
   }
-  const hostIdx = [1, 2, 3, 4, 5].sort(() => rand() - 0.5).slice(0, 2);
+  const hostIdx = [1, 2, 3, 4, 5].sort(() => rand() - 0.5).slice(0, sys.stations || 2);
   for (const i of hostIdx) specs[i].station = true;
   // A home's one companion is its station if it has one, otherwise its moon.
   for (const i of homeIdx) if (specs[i].station) specs[i].moons = [];
@@ -279,15 +306,15 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false } = {}
 
   // Orbits outward from the sun, each at least both families' reach plus a gap
   // apart; the asteroid belt gets its own lane after the fourth planet.
-  const GAP = 16;
+  const GAP = sys.gap || 16;
   let beltR = 0;
   let prev = null;
   for (const [i, sp] of specs.entries()) {
-    if (!prev) sp.r = 30;
+    if (!prev) sp.r = sys.inner || 30;
     else sp.r = prev.r + prev.reach + sp.reach + GAP + rand() * 10;
     if (i === 4) {
       beltR = prev.r + prev.reach + GAP;
-      sp.r = beltR + 6 + GAP + sp.reach + rand() * 10;
+      sp.r = beltR + (sys.beltW || 6) + GAP + sp.reach + rand() * 10;
     }
     prev = sp;
   }
@@ -319,16 +346,18 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false } = {}
     }
   }
   // The asteroid belt, in its own lane.
-  for (let k = 0; k < 4; k++) {
-    const r = beltR + rand() * 6;
+  const rocks = sys.rocks || 4;
+  for (let k = 0; k < rocks; k++) {
+    const r = beltR + rand() * (sys.beltW || 6);
     add({
       kind: 'asteroid', name: pick(ROCK_NAMES, names), parent: null, r, period: periodAt(r),
-      phase: (k / 4) * Math.PI * 2 + rand() * 0.8, incl: (rand() - 0.5) * 0.1, size: 0.5 + rand() * 0.4, hue: rand(),
+      phase: (k / rocks) * Math.PI * 2 + rand() * 0.8, incl: (rand() - 0.5) * 0.1, size: 0.5 + rand() * 0.4, hue: rand(),
     });
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
-  const game = { mp, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const stars = sys.stars === 2 ? [0, 1].map((k) => ({ r: 7, period: 90, phase: k * Math.PI, size: 0.62 })) : [{ r: 0, period: 1, phase: 0, size: 1 }];
+  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -569,9 +598,9 @@ export function plan(game, from, to, now = game.time, speed = 1) {
   return fast.T < direct.T && assistBy(game, fast, from, to, now) === g ? { ...fast, assist: g.id } : direct;
 }
 
-function planWith(game, from, to, now, accel) {
-  const p0 = posAt(game, from, now);
-  const v0 = velAt(game, from, now);
+function planWith(game, from, to, now, accel, start = null) {
+  const p0 = start ? start.p : posAt(game, from, now);
+  const v0 = start ? start.v : velAt(game, from, now);
   const make = (T) => {
     // Aim for a parking orbit beside the target, on the side we come in from.
     const c = posAt(game, to, now + T);
@@ -624,6 +653,24 @@ export function launch(game, from, to, n) {
   game.fleets.push(f);
   note(game, { type: 'launch', owner: f.owner, fleet: f.id, name: f.name, n, from: from.id, to: to.id });
   return f;
+}
+
+/**
+ * Better drives reach ships already in flight: each fleet re-plans from where
+ * it is now, at the new thrust, if that gets it there sooner.
+ */
+function refit(game, owner) {
+  for (const f of game.fleets) {
+    if (f.owner !== owner) continue;
+    const left = f.T - (game.time - f.t0);
+    if (left < 10) continue;
+    const s = fleetState(f, game.time);
+    const accel = accelOf(game, owner) * (f.probe ? RULES.probe.speed : 1);
+    const p = planWith(game, null, game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
+    if (p.T >= left) continue;
+    delete f.assist;
+    Object.assign(f, p, { t0: game.time });
+  }
 }
 
 /** Why a probe can't go from b to t, or null. Probes are built at a shipyard. */
@@ -804,7 +851,9 @@ export function step(game, dt) {
   for (const [owner, t] of (game.tech || []).entries()) {
     if (!t.project) continue;
     t.project.left -= dt * researchSpeed(game, owner);
-    if (t.project.left <= 0) { t[t.project.key] += 1; note(game, { type: 'research', owner, key: t.project.key, level: t[t.project.key] }); t.project = null; tally(game, owner, 'research'); }
+    if (t.project.left <= 0) {
+      t[t.project.key] += 1;
+      if (t.project.key === 'drives') refit(game, owner); note(game, { type: 'research', owner, key: t.project.key, level: t[t.project.key] }); t.project = null; tally(game, owner, 'research'); }
   }
 
   if (game.scans) game.scans = game.scans.filter((x) => x.until > game.time);

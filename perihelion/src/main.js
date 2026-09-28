@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, dailySeed } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -8,7 +8,7 @@ const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.inn
 const view = createView($('scene'), $('labels'));
 
 const prefs = (() => {
-  const d = { rivals: 1, difficulty: 'normal' };
+  const d = { rivals: 1, difficulty: 'normal', system: 'random' };
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion') || '{}') }; } catch { return d; }
 })();
 const savePrefs = () => { try { localStorage.setItem('perihelion', JSON.stringify(prefs)); } catch { /* ignore */ } };
@@ -73,8 +73,12 @@ segmented($('difficulty'), () => prefs.difficulty, (v) => (prefs.difficulty = v)
  * map from the seed; the host runs it and guests mirror the host's state.
  */
 let aiSeatDiffs = [];
-function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, aiDiffs = null, mp = false } = {}) {
-  game = createGame({ seed, opponents: players - 1, mp });
+let daily = null; // the day's key when playing the daily system
+/** The chosen system type, with Random resolved from the seed. */
+const systemFor = (seed) => (prefs.system !== 'random' && SYSTEMS[prefs.system] ? prefs.system : SYSTEM_KEYS[(seed >>> 0) % SYSTEM_KEYS.length]);
+function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, aiDiffs = null, mp = false, system = systemFor(seed), day = null } = {}) {
+  daily = day;
+  game = createGame({ seed, opponents: players - 1, mp, system });
   if (names) game.names = names;
   me = seat;
   const r = rng(seed ^ 0xabc);
@@ -108,12 +112,30 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   $('warp').textContent = '1×';
   running = true;
   updateActions();
+  const sys = SYSTEMS[game.system];
+  toast(`${daily ? 'Daily · ' : ''}${sys.name} · ${sys.text}`, '#aab1c8');
 }
 function start() { leaveNet(); startGame(); }
+function startDaily() { leaveNet(); const d = dailySeed(); startGame({ seed: d.seed, system: d.system, day: d.key }); }
+$('daily').addEventListener('click', startDaily);
+// System picker: tap to cycle Random and each type.
+const SYSTEM_CHOICES = ['random', ...SYSTEM_KEYS];
+function syncSystem() {
+  $('system-pick').textContent = prefs.system === 'random' ? 'Random' : SYSTEMS[prefs.system].name;
+  const d = dailySeed();
+  $('daily').innerHTML = `Daily system<small>${SYSTEMS[d.system].name}</small>`;
+}
+$('system-pick').addEventListener('click', () => {
+  prefs.system = SYSTEM_CHOICES[(SYSTEM_CHOICES.indexOf(prefs.system) + 1) % SYSTEM_CHOICES.length];
+  savePrefs();
+  syncSystem();
+});
+syncSystem();
 $('play').addEventListener('click', start);
 $('again').addEventListener('click', () => {
   leaveNet();
   $('end').hidden = true;
+  if (daily) { startDaily(); return; }
   $('menu').hidden = false;
   $('resume').hidden = true;
   $('play').textContent = 'Play vs AI';
@@ -205,7 +227,7 @@ $('host').addEventListener('click', () => {
   net = { role: 'host', room };
 });
 function startMsg(seat) {
-  return { t: 'start', seed: net.seed, players: game.players, names: game.names, seat, paused, aiDiffs: aiSeatDiffs };
+  return { t: 'start', seed: net.seed, players: game.players, names: game.names, seat, paused, aiDiffs: aiSeatDiffs, system: game.system };
 }
 $('lobby-start').addEventListener('click', () => {
   if (net?.role !== 'host' || lobbySeats.length < 2) return;
@@ -269,7 +291,7 @@ function onHostMessage(m) {
     $('lobby').hidden = true;
     $('menu').hidden = false;
   } else if (m.t === 'start') {
-    startGame({ seed: m.seed, players: m.players, seat: m.seat, names: m.names, aiDiffs: m.aiDiffs || [], mp: true });
+    startGame({ seed: m.seed, players: m.players, seat: m.seat, names: m.names, aiDiffs: m.aiDiffs || [], mp: true, system: m.system || 'classic' });
     paused = m.paused;
     showPaused();
   } else if (m.t === 'state' && game && running) {
@@ -965,7 +987,8 @@ function matchLine() {
   const rivals = game.players - 1;
   const diffs = [...new Set(aiSeatDiffs)];
   const aiNote = diffs.length ? ` · ${game.mp ? 'AI ' : ''}${diffs.join('/')}` : '';
-  return `${fmt(game.time)} · ${rivals} rival${rivals === 1 ? '' : 's'}${aiNote}`;
+  const where = daily ? `Daily ${daily.slice(5).replace('-', '/')} · ${SYSTEMS[game.system].name}` : SYSTEMS[game.system].name;
+  return `${where} · ${fmt(game.time)} · ${rivals} rival${rivals === 1 ? '' : 's'}${aiNote}`;
 }
 /** Shrink a font until the text fits the width. */
 function fitText(g, text, x, y, maxW, weight, px, font) {
@@ -1106,7 +1129,7 @@ function finish() {
   $('end-title').style.color = ownerColor(won ? me : game.winner);
   const diffs = [...new Set(aiSeatDiffs)];
   const vs = diffs.length ? ` · ${diffs.map((d) => d[0].toUpperCase() + d.slice(1)).join(' / ')} AI` : '';
-  $('end-sub').textContent = (won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(game.time)}.`) + vs;
+  $('end-sub').textContent = (won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(game.time)}.`) + vs + ` · ${daily ? 'Daily · ' : ''}${SYSTEMS[game.system].name}`;
   renderReport();
   setTimeout(() => ($('end').hidden = false), 1200);
 }
