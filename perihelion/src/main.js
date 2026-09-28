@@ -1,4 +1,4 @@
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, dailySeed } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, dailySeed, PERKS, EVENTS } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -305,7 +305,7 @@ function onHostMessage(m) {
 }
 
 // Snapshots: bodies are updated in place (the renderer holds on to them).
-const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil'];
+const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus'];
 function snapshot() {
   return {
     time: game.time,
@@ -314,6 +314,7 @@ function snapshot() {
     tech: game.tech,
     fleets: game.fleets,
     scans: game.scans,
+    happenings: game.happenings,
     nextId: game.nextId,
     bodies: game.bodies.map((b) => Object.fromEntries(BODY_KEYS.map((k) => [k, b[k]]))),
     stats: game.winner !== null ? game.stats : undefined,
@@ -327,6 +328,7 @@ function applySnapshot(s) {
   game.tech = s.tech;
   game.fleets = s.fleets;
   game.scans = s.scans;
+  game.happenings = s.happenings;
   game.nextId = s.nextId;
   s.bodies.forEach((x, i) => {
     const b = game.bodies[i];
@@ -397,7 +399,7 @@ function updateActions() {
     ui.target = null;
     const kind = s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
     setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
-      + `<div class="econ">${econLine(s)}</div>`);
+      + `<div class="econ">${econLine(s)}</div>${specialLine(s)}`);
     // Ships that just arrived need a moment before they can leave again.
     const wait = s.ships && !ready ? Math.ceil(s.restUntil - game.time) : 0;
     $('launch').textContent = wait ? `Ready in ${fmt(wait)}` : 'Launch';
@@ -425,7 +427,7 @@ function updateActions() {
     }
     const resting = restingShips(game, s);
     const restNote = resting ? ` · <span class="dim">${resting} more ready in ${fmt(Math.ceil(s.restUntil - game.time))}</span>` : '';
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}${restNote}</span>`);
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}${restNote}</span>${specialLine(t)}`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = ready < 1;
   }
@@ -433,6 +435,13 @@ function updateActions() {
 // ---- Building ----------------------------------------------------------------
 
 const ROMAN = ['', 'I', 'II', 'III'];
+/** A world's perk and any event there, one short line each. */
+function specialLine(b) {
+  const out = [];
+  if (b.perk) out.push(`${PERKS[b.perk].icon} ${PERKS[b.perk].name} · ${PERKS[b.perk].text}`);
+  for (const h of game.happenings || []) if (h.at === b.id) out.push(`${EVENTS[h.kind].icon} ${EVENTS[h.kind].name} · ${EVENTS[h.kind].text} (${EVENTS[h.kind].hold}s)`);
+  return out.map((t) => `<div class="perkline">${t}</div>`).join('');
+}
 /** What a world earns: its base plus any mines, per second. */
 function econLine(b) {
   const total = incomeOf(b, game);
@@ -704,6 +713,13 @@ function drainEvents(evs = game.events.splice(0)) {
       case 'promoted':
         if (e.owner === me) toast(`${e.name ? tf(e.name) : `${nm(e.at)} garrison`} now ${vetName(e.v)}`, mine);
         break;
+      case 'event': {
+        const E = EVENTS[e.kind];
+        if (e.phase === 'soon') toast(`${E.icon} ${E.name} at ${nm(e.at)} in 1:00 · ${E.text}`, '#ffd479');
+        else if (e.phase === 'won') toast(`${E.icon} ${e.owner === me ? 'You' : nameOf(e.owner)} secured the ${E.name.toLowerCase()} · ${e.what}`, ownerColor(e.owner));
+        else toast(`${E.icon} ${E.name} at ${nm(e.at)} is gone`, '#858ca6');
+        break;
+      }
       case 'probed':
         if (e.owner === me) toast(`Probe flyby of ${nm(e.at)} · in view for ${Math.round(RULES.probe.scan / 60 * 2) / 2} min`, mine);
         break;

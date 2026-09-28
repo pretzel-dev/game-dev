@@ -330,3 +330,42 @@ assert.ok(finished >= 18);
   assert.ok(f.t0 + f.T < eta - 1, 'in-flight fleet arrives sooner after a drives upgrade');
   console.log(`refit: arrival ${Math.round(eta)}s -> ${Math.round(f.t0 + f.T)}s`);
 }
+
+// Special worlds and events.
+{
+  const { PERKS, EVENTS, EVENT_RULES, holds, depotBoost, fortressGuns } = await import('../src/sim.js');
+  let total = 0;
+  const seen = new Set();
+  for (let seed = 1; seed <= 40; seed++) {
+    const g = createGame({ seed, system: SYSTEM_KEYS[seed % SYSTEM_KEYS.length] });
+    const ps = g.bodies.filter((b) => b.perk);
+    assert.ok(ps.length >= 2 && ps.length <= 3, 'two or three special worlds');
+    for (const b of ps) { assert.ok(!b.home && b.owner === NEUTRAL); seen.add(b.perk); }
+    total += ps.length;
+  }
+  assert.equal(seen.size, Object.keys(PERKS).length, 'every perk turns up');
+  // Perks work for whoever holds them.
+  const g = createGame({ seed: 12 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  const relay = g.bodies.find((b) => b.owner === NEUTRAL && !b.home);
+  relay.perk = 'relay'; relay.owner = 0;
+  assert.equal(visibility(g, 0).bodies.size, g.bodies.length, 'relay sees all');
+  relay.perk = 'depot';
+  const moon = g.bodies.find((b) => b.parent === home.id);
+  relay.owner = NEUTRAL; const slow = plan(g, home, moon).T; relay.owner = 0;
+  const near = depotBoost(g, home) > 1;
+  assert.ok(!near || plan(g, home, moon).T < slow, 'depot speeds nearby launches');
+  // Events: announced, then held for a reward.
+  const e = createGame({ seed: 21 });
+  const credits = () => e.credits[0];
+  while (!e.happenings?.length) step(e, 0.5);
+  const h = e.happenings[0];
+  const at = e.bodies[h.at];
+  at.owner = 0; at.ships = 5; at.sieges = []; at.structures = [];
+  const c0 = credits(), t0 = e.tech[0], k0 = JSON.stringify(t0), s0 = at.ships;
+  for (let t = 0; t < EVENT_RULES.notice + EVENTS[h.kind].hold + 2; t += 0.5) step(e, 0.5);
+  assert.ok(!e.happenings.includes(h), 'event resolved');
+  const won = e.events.some((x) => x.type === 'event' && x.phase === 'won' && x.owner === 0);
+  assert.ok(won, `holding the world wins the ${h.kind}`);
+  console.log(`special worlds: ${total} over 40 maps, all ${seen.size} kinds; event ${h.kind} won by holding (credits ${Math.round(c0)} -> ${Math.round(credits())}, ships ${s0} -> ${at.ships})`);
+}

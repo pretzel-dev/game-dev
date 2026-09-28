@@ -103,7 +103,7 @@ function sample(game) {
 export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives'));
 const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
 const damageTaken = (game, owner) => 1 - 0.12 * techLevel(game, owner, 'armour');
-const buildSpeed = (game, owner) => 1 + 0.12 * techLevel(game, owner, 'industry');
+const buildSpeed = (game, owner, b = null) => (1 + 0.12 * techLevel(game, owner, 'industry')) * (b && b.perk === 'forge' ? PERKS.forge.boost : 1);
 
 export function nextTech(game, owner, key) {
   const lvl = game.tech[owner][key];
@@ -112,7 +112,7 @@ export function nextTech(game, owner, key) {
 }
 export function researchSpeed(game, owner) {
   const labs = game.bodies.reduce((n, b) => n + (b.owner === owner ? count(b, 'lab') : 0), 0);
-  return 1 + RULES.labSpeed * labs;
+  return (1 + RULES.labSpeed * labs) * (holds(game, owner, 'archive') ? PERKS.archive.boost : 1);
 }
 export function cantResearch(game, owner, key) {
   const next = nextTech(game, owner, key);
@@ -143,8 +143,12 @@ export function visibility(game, owner) {
   for (const b of game.bodies) if (b.sieges.some((g) => g.owner === owner)) eyes.push([posAt(game, b, game.time), 20]);
   for (const x of game.scans || []) if (x.owner === owner && x.until > game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 14]);
   const sees = (p) => eyes.some(([e, r]) => dist(e, p) <= r);
+  if (holds(game, owner, 'relay')) {
+    // The old relay sees everything (reading fleets still takes Intel).
+    return { owner, sees: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel: techLevel(game, owner, 'intel'), warn: holds(game, owner, 'post') };
+  }
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
-  return { owner, sees, bodies, intel: techLevel(game, owner, 'intel') };
+  return { owner, sees, bodies, intel: techLevel(game, owner, 'intel'), warn: holds(game, owner, 'post') };
 }
 
 export function rng(seed) {
@@ -228,6 +232,84 @@ const mix = (vA, nA, vB, nB) => (nA + nB > 0 ? (vA * nA + vB * nB) / (nA + nB) :
 
 /** Kepler: period grows with radius^1.5. */
 const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
+
+// Special worlds: a few neutrals carry a perk for whoever holds them.
+export const PERKS = {
+  seam: { name: 'Rich seam', icon: '◈', text: 'Mines here pay double', kinds: ['asteroid', 'moon'] },
+  relay: { name: 'Old relay', icon: '⌖', text: 'See the whole system' },
+  depot: { name: 'Fuel depot', icon: '⛽', text: 'Fleets from worlds within 60 fly 20% faster', range: 60, boost: 1.2 },
+  post: { name: 'Listening post', icon: '☊', text: 'Warns of fleets heading for your worlds' },
+  fortress: { name: 'Fortress rock', icon: '⛨', text: 'Heavy guns; +1 gun on your worlds within 50', range: 50 },
+  archive: { name: 'Ancient archive', icon: '✧', text: 'Research 25% faster', boost: 1.25 },
+  hulk: { name: 'Drydock hulk', icon: '⚓', text: 'Ships built here start as veterans', vet: 2.5 },
+  forge: { name: 'Tidal forge', icon: '✺', text: 'Builds and upgrades here 30% faster', boost: 1.3, giantMoon: true },
+};
+// Events: announced a minute ahead at a world; whoever holds that world for
+// the hold time (without losing it) gets the reward.
+export const EVENTS = {
+  comet: { name: 'Comet pass', icon: '☄', text: 'Hold to mine it as it passes', hold: 60, pay: 7 },
+  derelict: { name: 'Derelict warship', icon: '⚑', text: 'Hold to salvage veteran ships', hold: 45, ships: 4 },
+  signal: { name: 'Lost probe signal', icon: '⌁', text: 'Hold to recover a research level', hold: 40 },
+  wreck: { name: 'Ice-hauler wreck', icon: '❄', text: 'Hold to salvage its cargo', hold: 45, credits: 450 },
+  convoy: { name: 'Refugee convoy', icon: '⛭', text: 'Hold when it docks: the world earns +1/s for good', hold: 30, bonus: 1 },
+  cache: { name: 'Supply cache', icon: '▣', text: 'Hold for a free structure upgrade', hold: 30 },
+};
+export const EVENT_RULES = { first: 240, every: 300, jitter: 60, notice: 60, grace: 45 };
+function evRand(game) {
+  // Deterministic, separate from map generation.
+  game.evSeed = (Math.imul(game.evSeed ^ (game.evSeed >>> 15), 2246822507) + 0x6d2b79f5) >>> 0;
+  return game.evSeed / 4294967296;
+}
+function events(game, dt) {
+  const R = EVENT_RULES;
+  if (game.nextEvent === undefined) game.nextEvent = R.first;
+  game.happenings ||= [];
+  if (game.time >= game.nextEvent) {
+    const keys = Object.keys(EVENTS);
+    const kind = keys[Math.floor(evRand(game) * keys.length)];
+    const spots = game.bodies.filter((b) => !b.home && !game.happenings.some((h) => h.at === b.id));
+    const b = spots[Math.floor(evRand(game) * spots.length)];
+    const h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.time + R.notice + EVENTS[kind].hold + R.grace, holder: NEUTRAL, held: 0 };
+    game.happenings.push(h);
+    note(game, { type: 'event', phase: 'soon', kind, at: b.id });
+    game.nextEvent = game.time + R.every + (evRand(game) - 0.5) * 2 * R.jitter;
+  }
+  for (const h of game.happenings) {
+    if (game.time < h.starts) continue;
+    const b = game.bodies[h.at];
+    const E = EVENTS[h.kind];
+    // Holding means owning the world with no fight going on there.
+    const owner = b.sieges.length ? NEUTRAL : b.owner;
+    if (owner !== h.holder) { h.holder = owner; h.held = 0; }
+    if (owner === NEUTRAL) continue;
+    h.held += dt;
+    if (h.kind === 'comet') { game.credits[owner] += E.pay * dt; tally(game, owner, 'earned', E.pay * dt); }
+    if (h.held >= E.hold) { reward(game, h, b, owner); h.done = true; }
+  }
+  for (const h of game.happenings) if (!h.done && game.time > h.ends) { h.done = true; note(game, { type: 'event', phase: 'gone', kind: h.kind, at: h.at }); }
+  game.happenings = game.happenings.filter((h) => !h.done);
+}
+function reward(game, h, b, owner) {
+  const E = EVENTS[h.kind];
+  let what = '';
+  if (h.kind === 'derelict') { b.vet = mix(b.vet || 0, b.ships, 2.5, E.ships); b.ships += E.ships; what = `${E.ships} veteran ships`; }
+  if (h.kind === 'wreck') { game.credits[owner] += E.credits; tally(game, owner, 'earned', E.credits); what = `${E.credits} credits`; }
+  if (h.kind === 'convoy') { b.bonus = (b.bonus || 0) + E.bonus; what = `+${E.bonus}/s here`; }
+  if (h.kind === 'comet') what = 'the comet mined';
+  if (h.kind === 'signal') {
+    const open = Object.keys(TECH).filter((k) => nextTech(game, owner, k));
+    const k = open[Math.floor(evRand(game) * open.length)];
+    if (k) { game.tech[owner][k] += 1; if (k === 'drives') refit(game, owner); what = TECH[k].levels[game.tech[owner][k] - 1]; } else { game.credits[owner] += 400; what = '400 credits'; }
+  }
+  if (h.kind === 'cache') {
+    const x = b.structures.find((y) => RULES.structures[y.type].maxLevel && y.level < RULES.structures[y.type].maxLevel && y.left <= 0 && !y.scrap);
+    if (x) { x.level += 1; what = `${RULES.structures[x.type].name} to level ${x.level}`; } else { game.credits[owner] += 300; what = '300 credits'; }
+  }
+  note(game, { type: 'event', phase: 'won', kind: h.kind, at: b.id, owner, what });
+}
+
+/** Does this owner hold a world with this perk? */
+export const holds = (game, owner, perk) => owner !== NEUTRAL && game.bodies.some((b) => b.perk === perk && b.owner === owner);
 
 // System types: each is a recipe for the layout, nothing else changes.
 export const SYSTEMS = {
@@ -373,6 +455,23 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     h.structures.push({ type: 'shipyard', level: 1, left: 0 }, { type: 'defence', level: 1, left: 0 });
     h.guns = maxGuns(h);
   });
+  // Special worlds: three perks on neutral worlds away from the homes.
+  const homeFamily = new Set(homes.flatMap((h) => [h.id, ...bodies.filter((b) => b.parent === h.id).map((b) => b.id)]));
+  const perkKeys = Object.keys(PERKS).sort(() => rand() - 0.5);
+  let placed = 0;
+  for (const k of perkKeys) {
+    if (placed >= 3) break;
+    const P = PERKS[k];
+    const spots = bodies.filter((b) => b.owner === NEUTRAL && !b.perk && !homeFamily.has(b.id)
+      && (!P.kinds || P.kinds.includes(b.kind)) && (!P.giantMoon || (b.kind === 'moon' && bodies[b.parent].giant)));
+    if (!spots.length) continue;
+    const b = spots[Math.floor(rand() * spots.length)];
+    b.perk = k;
+    if (k === 'fortress') { b.structures.push({ type: 'defence', level: 2, left: 0 }); b.guns = maxGuns(b) + 1; }
+    if (k === 'hulk' && !b.structures.some((x) => x.type === 'shipyard')) b.structures.push({ type: 'shipyard', level: 1, left: 0 });
+    placed++;
+  }
+  game.evSeed = Math.floor(rand() * 2 ** 31);
   game.credits = Array.from({ length: game.players }, () => RULES.startCredits);
   // Per-player totals and a time series, for the end-of-game report.
   game.stats = {
@@ -397,12 +496,18 @@ const working = (x) => !x.scrap && (x.left <= 0 || x.next);
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
 /** Total working levels of a type (a level-3 mine counts 3). */
 const count = (b, type) => b.structures.reduce((n, x) => n + (x.type === type && working(x) ? x.level : 0), 0);
+/** +1 gun on worlds near a fortress rock their owner holds. */
+export function fortressGuns(game, b) {
+  if (b.owner === NEUTRAL || b.perk === 'fortress') return 0;
+  const p = posAt(game, b, game.time);
+  return game.bodies.some((f) => f.perk === 'fortress' && f.owner === b.owner && dist(posAt(game, f, game.time), p) <= PERKS.fortress.range) ? 1 : 0;
+}
 export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
 export const incomeOf = (b, game) => {
   if (b.owner === NEUTRAL) return 0;
   const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
   const S = RULES.structures;
-  return RULES.income[b.kind] + (b.home ? RULES.homeIncome : 0) + RULES.mineIncome * count(b, 'mine') * mining
+  return RULES.income[b.kind] + (b.home ? RULES.homeIncome : 0) + (b.bonus || 0) + RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1)
     + S.skimmer.income * count(b, 'skimmer') + S.exchange.income * count(b, 'exchange');
 };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
@@ -589,7 +694,15 @@ function assistBy(game, f, from, to, now) {
   return best && best.g;
 }
 
+/** A held fuel depot near the launch world speeds the flight. */
+export function depotBoost(game, from, now = game.time) {
+  if (from.owner === NEUTRAL) return 1;
+  const p = posAt(game, from, now);
+  return game.bodies.some((d) => d.perk === 'depot' && d.owner === from.owner && dist(posAt(game, d, now), p) <= PERKS.depot.range) ? PERKS.depot.boost : 1;
+}
+
 export function plan(game, from, to, now = game.time, speed = 1) {
+  speed *= depotBoost(game, from, now);
   const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed);
   const g = assistBy(game, direct, from, to, now);
   if (!g) return direct;
@@ -821,7 +934,7 @@ export function step(game, dt) {
     if (b.owner === NEUTRAL) continue;
     game.credits[b.owner] += incomeOf(b, game) * dt;
     tally(game, b.owner, 'earned', incomeOf(b, game) * dt);
-    const speed = buildSpeed(game, b.owner);
+    const speed = buildSpeed(game, b.owner, b);
     if (b.sieges.length) continue; // nothing gets built under fire
     for (const x of b.structures) {
       if (x.scrap) { x.scrap = Math.max(0, x.scrap - dt); if (!x.scrap) x.gone = true; continue; }
@@ -841,10 +954,10 @@ export function step(game, dt) {
     while (b.slips.length < Math.min(yards, b.queue)) b.slips.push(0);
     b.slips.length = Math.min(b.slips.length, yards, b.queue);
     b.slips = b.slips.map((p) => p + (dt * speed) / RULES.ship.time);
-    for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, 0, 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
+    for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, b.perk === 'hulk' ? PERKS.hulk.vet : 0, 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
     b.build = b.slips.length ? Math.max(...b.slips) : 0;
-    const top = maxGuns(b);
+    const top = maxGuns(b) + fortressGuns(game, b);
     if (b.guns < top) b.guns = Math.min(top, b.guns + RULES.gunRegen * dt);
   }
 
@@ -886,6 +999,7 @@ export function step(game, dt) {
   });
 
   for (const b of game.bodies) if (b.sieges.length) fight(game, b, dt);
+  if (game.evSeed !== undefined) events(game, dt);
 
   const alive = new Set();
   for (const b of game.bodies) {
