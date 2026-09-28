@@ -38,14 +38,14 @@ select the world for details). Whoever holds the world has the perk.
 
 ## Events
 
-From about 4 minutes in, roughly every 5 minutes, something turns up at a
+From about 4–6 minutes in, then every 7–10 minutes, something turns up at a
 world (never a homeworld). It's announced a minute ahead; then whoever holds
 that world, with no fight going on there, for the hold time gets the reward.
 Losing the world resets the clock. The label shows the icon and countdown.
 
 | | Event | Hold | Reward |
 |---|---|---|---|
-| ☄ | Comet pass | 60 s | 7 credits/s while you hold it |
+| ☄ | Comet pass | 60 s | 12 credits/s while you hold it |
 | ⚑ | Derelict warship | 45 s | 4 veteran ships |
 | ⌁ | Lost probe signal | 40 s | A random research level |
 | ❄ | Ice-hauler wreck | 45 s | 450 credits |
@@ -75,7 +75,8 @@ preview server running).
   minutes. Drive plumes are visible from far away. Ships can't be recalled.
 - **Credits:** every world you hold earns credits (planets 1/s, stations
   0.6, moons 0.5, asteroids 0.3), homeworlds +0.4, plus 1.5/s per mine. They show top left.
-- **Building:** select one of your worlds for its build row. Worlds have
+- **Building:** select one of your worlds for its build row (on touch, tap an
+  option once to read what it does, again to build; with a mouse, hover). Worlds have
   build slots by size (asteroids and small moons 1, small planets and larger
   moons 2, rocky planets 3, gas giants 4, stations 2):
   - **Shipyard** (400, 90 s): needed to build ships there. Each yard on a

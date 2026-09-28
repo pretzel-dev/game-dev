@@ -19,14 +19,14 @@ export const RULES = {
   mineIncome: 1.5,
   ship: { cost: 150, time: 45 }, // each shipyard builds one at a time
   structures: {
-    shipyard: { name: 'Shipyard', cost: 400, time: 90 },
-    mine: { name: 'Mine', cost: 200, time: 45, only: ['asteroid', 'moon'], maxLevel: 3 },
+    shipyard: { name: 'Shipyard', cost: 400, time: 90, desc: 'Builds ships here, one at a time per yard' },
+    mine: { name: 'Mine', cost: 200, time: 45, only: ['asteroid', 'moon'], maxLevel: 3, desc: 'Digs ore: +1.5 credits/s per level (moons and asteroids)' },
     // Gas giants: harvesters scoop fusion fuel from the upper atmosphere; homeworlds (the only
     // living worlds) can float bonds on the system's exchanges.
-    skimmer: { name: 'Gas harvester', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2 },
-    exchange: { name: 'Orbital exchange', cost: 450, time: 80, where: 'home', maxLevel: 2, income: 2.5 },
-    defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3 },
-    lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3 },
+    skimmer: { name: 'Gas harvester', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2, desc: 'Scoops fusion fuel from a gas giant’s clouds: +2 credits/s per level' },
+    exchange: { name: 'Orbital exchange', cost: 450, time: 80, where: 'home', maxLevel: 2, income: 2.5, desc: 'Your homeworld’s trading house sells shares in the war: +2.5 credits/s per level' },
+    defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3, desc: 'Gun batteries: +2 guns per level to defend this world (a planet’s guns also cover its moons)' },
+    lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3, desc: 'Speeds all research by 50% per level' },
   },
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
@@ -247,14 +247,15 @@ export const PERKS = {
 // Events: announced a minute ahead at a world; whoever holds that world for
 // the hold time (without losing it) gets the reward.
 export const EVENTS = {
-  comet: { name: 'Comet pass', icon: '☄', text: 'Hold to mine it as it passes', hold: 60, pay: 7 },
+  comet: { name: 'Comet pass', icon: '☄', text: 'Hold to mine it as it passes', hold: 60, pay: 12 },
   derelict: { name: 'Derelict warship', icon: '⚑', text: 'Hold to salvage veteran ships', hold: 45, ships: 4 },
   signal: { name: 'Lost probe signal', icon: '⌁', text: 'Hold to recover a research level', hold: 40 },
   wreck: { name: 'Ice-hauler wreck', icon: '❄', text: 'Hold to salvage its cargo', hold: 45, credits: 450 },
   convoy: { name: 'Refugee convoy', icon: '⛭', text: 'Hold when it docks: the world earns +1/s for good', hold: 30, bonus: 1 },
   cache: { name: 'Supply cache', icon: '▣', text: 'Hold for a free structure upgrade', hold: 30 },
 };
-export const EVENT_RULES = { first: 240, every: 300, jitter: 60, notice: 60, grace: 45 };
+// First one at 4-6 minutes, then every 7-10 minutes (never quite regular).
+export const EVENT_RULES = { first: 300, every: 510, jitter: 90, notice: 60, grace: 45 };
 function evRand(game) {
   // Deterministic, separate from map generation.
   game.evSeed = (Math.imul(game.evSeed ^ (game.evSeed >>> 15), 2246822507) + 0x6d2b79f5) >>> 0;
@@ -262,7 +263,7 @@ function evRand(game) {
 }
 function events(game, dt) {
   const R = EVENT_RULES;
-  if (game.nextEvent === undefined) game.nextEvent = R.first;
+  if (game.nextEvent === undefined) game.nextEvent = R.first + (evRand(game) - 0.5) * 2 * 60;
   game.happenings ||= [];
   if (game.time >= game.nextEvent) {
     const keys = Object.keys(EVENTS);
