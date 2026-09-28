@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos } from './sim.js';
+import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
@@ -964,7 +964,8 @@ export function createView(canvas, labelRoot) {
     const seesFleet = (f) => !vis || f.owner === vis.owner || vis.sees(fleetState(f, now));
     // Intel II: routes and landing points; Intel III: arrival times and warnings.
     const knowsDest = (f) => !vis || f.owner === vis.owner || (vis.intel >= 2 && seesFleet(f));
-    const knowsEta = (f) => !vis || f.owner === vis.owner || (vis.intel >= 3 && seesFleet(f));
+    // A listening post warns of anything heading for your worlds.
+    const knowsEta = (f) => !vis || f.owner === vis.owner || (vis.intel >= 3 && seesFleet(f)) || (vis.warn && game.bodies[f.to].owner === vis.owner);
     const knowsSize = (f) => !vis || f.owner === vis.owner || vis.intel >= 1;
     const incoming = new Map();
     for (const f of game.fleets) {
@@ -974,7 +975,7 @@ export function createView(canvas, labelRoot) {
       if (f.owner === tb.owner ? f.owner !== (vis ? vis.owner : 0) : !knowsEta(f)) continue;
       const left = f.T - (now - f.t0);
       const k = `${f.to}:${f.owner}`;
-      const cur = incoming.get(k) || { to: f.to, owner: f.owner, n: 0, eta: Infinity };
+      const cur = incoming.get(k) || { to: f.to, owner: f.owner, n: 0, eta: Infinity, sized: knowsSize(f) };
       cur.n += f.n;
       cur.eta = Math.min(cur.eta, left);
       incoming.set(k, cur);
@@ -1134,9 +1135,18 @@ export function createView(canvas, labelRoot) {
       const warn = (incomingTo.get(b.id) || []).map((x) => {
         const e = Math.max(0, x.eta);
         const own = x.owner === b.owner;
-        return `<span class="${own ? 'rein' : 'inc'}" style="color:${ownerColor(x.owner)}">${own ? '▲' : '▼'}${x.n} ${Math.floor(e / 60)}:${String(Math.floor(e % 60)).padStart(2, '0')}</span>`;
+        return `<span class="${own ? 'rein' : 'inc'}" style="color:${ownerColor(x.owner)}">${own ? '▲' : '▼'}${x.sized ? x.n : '?'} ${Math.floor(e / 60)}:${String(Math.floor(e % 60)).padStart(2, '0')}</span>`;
       }).join('');
-      const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}<small>${b.name}</small>`;
+      // Events at this world: an icon, then the countdown to start or the hold left.
+      const evs = (game.happenings || []).filter((h) => h.at === b.id).map((h) => {
+        const E = EVENTS[h.kind];
+        const soon = now < h.starts;
+        const left = soon ? h.starts - now : E.hold - h.held;
+        const c = !soon && h.holder !== NEUTRAL ? ownerColor(h.holder) : '#ffd479';
+        return `<span class="ev" style="color:${c}">${E.icon} ${soon ? 'in ' : ''}${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</span>`;
+      }).join('');
+      const perk = b.perk ? `<i class="perk" title="${PERKS[b.perk].name}">${PERKS[b.perk].icon}</i> ` : '';
+      const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}${evs}<small>${perk}${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
       v.label.style.visibility = 'visible';
       const x = (tmp.x * 0.5 + 0.5) * w;

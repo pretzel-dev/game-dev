@@ -85,6 +85,9 @@ export function tickAI(game, ai, dt) {
       let value = t.kind === 'planet' ? 3 : t.kind === 'station' ? 2 : 1;
       // Smart: taking from a rival hurts them twice; homeworlds most of all.
       if (smart && t.owner !== NEUTRAL) value *= t.home ? 2 : 1.5;
+      // Special worlds and events are worth going for.
+      if (t.perk) value *= 1.5;
+      if ((game.happenings || []).some((h) => h.at === t.id)) value *= 2;
       const score = value / (need + T / 30);
       if (!best || score > best.score) best = { s, t, need, score };
     }

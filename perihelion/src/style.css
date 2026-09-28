@@ -362,3 +362,6 @@ input:focus { border-color: var(--accent); }
 .primary.daily { height: 44px; min-width: 180px; margin-top: 0; }
 .primary.daily small { margin-left: 8px; font-size: 11px; opacity: 0.7; letter-spacing: 0.1em; }
 #menu > *, #lobby > *, #tutorial > * { flex-shrink: 0; }
+.lbl .ev { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+.lbl .perk { font-style: normal; color: #ffd479; }
+.perkline { font-size: 12px; color: #ffd479; margin-top: 2px; }
