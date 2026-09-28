@@ -35,7 +35,8 @@ export const RULES = {
   gunRegen: 0.02, // guns rebuilt per second after a fight
   flipTime: 4, // seconds spent turning around at the midpoint
   demolishFee: 0.25, // share of a structure's cost to tear it down
-  scrapTime: 20, // seconds to tear one down (cancelled if the world is taken)
+  scrapTime: 20,
+  cooldown: 15, // seconds before newly arrived ships can launch again // seconds to tear one down (cancelled if the world is taken)
   // Unmanned probe: fast, single use; a flyby reveals a world for a while.
   probe: { cost: 80, speed: 4, scan: 150 },
   cancelRefund: 0.8, // share of a ship's cost returned when cancelled
@@ -602,8 +603,16 @@ function planWith(game, from, to, now, accel) {
   return make(20000);
 }
 
+/** Ships that just arrived need a short turnaround before they can leave. */
+export const restingShips = (game, b) => (b.restUntil > game.time ? Math.min(b.resting || 0, b.ships) : 0);
+export const readyShips = (game, b) => b.ships - restingShips(game, b);
+function rest(game, b, n) {
+  b.resting = restingShips(game, b) + n;
+  b.restUntil = game.time + RULES.cooldown;
+}
+
 export function launch(game, from, to, n) {
-  n = Math.min(Math.floor(n), from.ships);
+  n = Math.min(Math.floor(n), readyShips(game, from));
   if (n < 1 || from === to || game.winner !== null) return null;
   const p = plan(game, from, to);
   from.ships -= n;
@@ -727,6 +736,8 @@ function fight(game, b, dt) {
     note(game, { type: 'captured', owner: win.owner, from: b.owner, at: b.id, name: win.name });
     b.owner = win.owner;
     b.ships = win.n;
+    b.resting = 0;
+    rest(game, b, win.n);
     // Survivors gain experience, more for winning against the odds.
     b.vet = Math.min(4.5, (win.vet || 0) + winXP(win.foe0 || 1, win.n0 || win.n, win.kills || 0));
     b.tf = win.name;
@@ -810,6 +821,7 @@ export function step(game, dt) {
       b.vet = mix(b.vet || 0, b.ships, f.vet || 0, f.n);
       if (!b.tf || f.n >= b.ships) b.tf = f.name;
       b.ships += f.n;
+      rest(game, b, f.n);
       note(game, { type: 'arrived', owner: f.owner, name: f.name, n: f.n, at: b.id });
     } else {
       // Odds as the fight is joined, so wins can be judged by them later.

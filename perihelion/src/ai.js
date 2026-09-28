@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
@@ -72,7 +72,7 @@ export function tickAI(game, ai, dt) {
   }
   let best = null;
   for (const s of mine) {
-    const spare = s.ships - Math.ceil(coming(s, false) * 1.2) - keep(s);
+    const spare = readyShips(game, s) - Math.ceil(coming(s, false) * 1.2) - keep(s);
     if (spare < 2) continue;
     const vetK = 1 + VET_BONUS * vetLevel(s.vet); // veterans need fewer hulls
     for (const t of game.bodies) {
@@ -99,14 +99,14 @@ export function tickAI(game, ai, dt) {
 
   // Nothing one site can take: gather ships at the site nearest a target, one
   // transfer per turn, then strike with all of them at once.
-  const spare = (s) => s.ships - Math.ceil(coming(s, false) * 1.2) - keep(s);
+  const spare = (s) => readyShips(game, s) - Math.ceil(coming(s, false) * 1.2) - keep(s);
   if (ai.plan) {
     const t = game.bodies[ai.plan.target];
     const stage = game.bodies[ai.plan.stage];
     if (t.owner === ai.owner || stage.owner !== ai.owner || game.time > ai.plan.until) {
       ai.plan = null;
-    } else if (stage.ships >= ai.plan.need) {
-      launch(game, stage, t, stage.ships - 1);
+    } else if (readyShips(game, stage) >= ai.plan.need) {
+      launch(game, stage, t, readyShips(game, stage) - 1);
       ai.plan = null;
       return;
     } else {
@@ -146,13 +146,13 @@ function defend(game, ai, mine, vis, known, sizeOf, power, will) {
     if (held >= enemy) continue;
     const gap = Math.ceil(enemy - held) + 1;
     // Sources that can get there first and still keep a garrison of their own.
-    const help = mine.filter((s) => s !== b && s.ships >= 3 && !game.fleets.some((f) => f.to === s.id && f.owner !== ai.owner && known(f)))
+    const help = mine.filter((s) => s !== b && readyShips(game, s) >= 3 && !game.fleets.some((f) => f.to === s.id && f.owner !== ai.owner && known(f)))
       .map((s) => ({ s, T: plan(game, s, b).T }))
       .filter((x) => x.T < eta - 5)
       .sort((x, y) => x.T - y.T);
-    const src = help.find((x) => x.s.ships - 1 >= gap) || help[0];
+    const src = help.find((x) => readyShips(game, x.s) - 1 >= gap) || help[0];
     if (src && will()) {
-      launch(game, src.s, b, Math.min(src.s.ships - 1, gap));
+      launch(game, src.s, b, Math.min(readyShips(game, src.s) - 1, gap));
       return true;
     }
     // Lost cause: take the refund on queued ships rather than hand them over.
