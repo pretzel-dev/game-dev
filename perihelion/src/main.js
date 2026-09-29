@@ -1,3 +1,4 @@
+import { icon } from './icons.js';
 import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, dailySeed, PERKS, EVENTS } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
@@ -24,7 +25,7 @@ let paused = false; // multiplayer pause, set by the host
 const WARPS = [0.5, 1, 2, 4, 8];
 let warp = 1;
 
-const ui = { selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null, mode: null };
+const ui = { peek: null, pick: null, selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null, mode: null };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -87,7 +88,7 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   ais = net?.role === 'client' ? []
     : aiSeats ? aiSeats.map(([i, d]) => createAI(i, d, r))
       : Array.from({ length: players - 1 }, (_, i) => createAI(i + 1, prefs.difficulty, r));
-  ui.selected = ui.target = ui.preview = ui.fleet = ui.mode = null;
+  ui.selected = ui.target = ui.preview = ui.fleet = ui.mode = ui.peek = null;
   ui.slot = null;
   ui.me = me;
   paused = false;
@@ -147,7 +148,7 @@ function pause() {
   if (net) {
     // Multiplayer: the host pauses (and resumes) for everyone.
     paused = !paused;
-    $('pause').textContent = paused ? '▶' : '❚❚';
+    $('pause').innerHTML = icon(paused ? 'play' : 'pause');
     net.room.broadcast({ t: 'pause', paused });
     showPaused();
     return;
@@ -159,7 +160,7 @@ function pause() {
 }
 function showPaused() {
   $('banner').hidden = !paused;
-  $('banner').textContent = me === 0 ? 'Paused · tap ▶ to resume' : 'Paused by host';
+  $('banner').textContent = me === 0 ? 'Paused · tap play to resume' : 'Paused by host';
 }
 
 // ---- Multiplayer ------------------------------------------------------------
@@ -178,7 +179,7 @@ function leaveNet() {
   net = null;
   paused = false;
   $('banner').hidden = true;
-  $('pause').textContent = '❚❚';
+  $('pause').innerHTML = icon('pause');
 }
 
 function renderLobby(seats, code) {
@@ -187,7 +188,7 @@ function renderLobby(seats, code) {
   const host = net?.role === 'host';
   const rows = seats.map((s, i) => `<div class="seat"><i style="background:${ownerColor(i)}"></i><span>${s.name}${i === me ? ' (you)' : ''}</span>`
     + `<small>${s.kind === 'ai' ? 'AI' : i === 0 ? 'host' : s.online === false ? 'offline' : 'ready'}</small>`
-    + `${host && i > 0 ? `<button data-kick="${i}">✕</button>` : ''}</div>`);
+    + `${host && i > 0 ? `<button data-kick="${i}" aria-label="Remove">${icon('close')}</button>` : ''}</div>`);
   for (let i = seats.length; i < MAX_SEATS; i++) rows.push('<div class="seat empty"><span>Open seat</span></div>');
   $('seats').innerHTML = rows.join('');
   $('lobby-ai').hidden = !host || seats.length >= MAX_SEATS;
@@ -374,11 +375,26 @@ function updateFleetInfo() {
     return;
   }
   setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> ship${f.n === 1 ? '' : 's'} from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
-    + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s${f.assist !== undefined ? ` · <span class="assist">↻ ${game.bodies[f.assist].name}</span>` : ''}`);
+    + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s${f.assist !== undefined ? ` · <span class="assist">${icon('assist')} ${game.bodies[f.assist].name}</span>` : ''}`);
+}
+
+/** Read-only panel for a world that isn't yours: owner, what you can see, perk, events. */
+function updatePeek() {
+  const b = ui.peek !== null && game && running && ui.selected === null && ui.fleet === null ? game.bodies[ui.peek] : null;
+  $('peek').hidden = !b;
+  if (!b) return;
+  const seen = !ui.vis || ui.vis.bodies.has(b.id);
+  const kind = b.kind === 'planet' && b.giant ? 'Gas giant' : b.kind[0].toUpperCase() + b.kind.slice(1);
+  const who = b.owner === NEUTRAL ? 'Independent' : nameOf(b.owner);
+  const built = b.structures.filter((x) => x.left <= 0 || x.next).map((x) => `${RULES.structures[x.type].name}${RULES.structures[x.type].maxLevel ? ` ${ROMAN[x.level]}` : ''}`);
+  const garrison = seen ? `${icon('fleet')} <b>${b.ships}</b> ship${b.ships === 1 ? '' : 's'} · ${icon('guns')} <b>${Math.ceil(b.guns)}</b> gun${Math.ceil(b.guns) === 1 ? '' : 's'}${built.length ? ` · ${built.join(', ')}` : ''}` : 'Out of sensor range · defences unknown';
+  setHTML($('peek'), `<div class="head"><span class="tag">${kind}</span><b>${b.name}</b><span class="grow"></span><span class="tag" style="color:${b.owner === NEUTRAL ? 'var(--dim)' : ownerColor(b.owner)}">${who}</span></div>`
+    + `<div class="row2">${garrison}</div>${specialLine(b)}`);
 }
 
 function updateActions() {
   updateFleetInfo();
+  updatePeek();
   const s = ui.selected !== null && game ? game.bodies[ui.selected] : null;
   const show = !!s && s.owner === me && running;
   $('actions').hidden = !show;
@@ -417,7 +433,7 @@ function updateActions() {
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
-    const assist = ui.preview.assist !== undefined ? ` · <span class="assist">↻ assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
+    const assist = ui.preview.assist !== undefined ? ` · <span class="assist">${icon('assist')} assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
     if (probing) {
       const why = cantProbe(game, s, t);
       setHTML($('info'), `<span>Probe → <b>${t.name}</b> (${defenceText}) · flyby in <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
@@ -438,8 +454,8 @@ const ROMAN = ['', 'I', 'II', 'III'];
 /** A world's perk and any event there, one short line each. */
 function specialLine(b) {
   const out = [];
-  if (b.perk) out.push(`${PERKS[b.perk].icon} ${PERKS[b.perk].name} · ${PERKS[b.perk].text}`);
-  for (const h of game.happenings || []) if (h.at === b.id) out.push(`${EVENTS[h.kind].icon} ${EVENTS[h.kind].name} · ${EVENTS[h.kind].text} (${EVENTS[h.kind].hold}s)`);
+  if (b.perk) out.push(`${icon(b.perk)} <b>${PERKS[b.perk].name}</b> · ${PERKS[b.perk].text}`);
+  for (const h of game.happenings || []) if (h.at === b.id) out.push(`${icon(h.kind)} <b>${EVENTS[h.kind].name}</b> · ${EVENTS[h.kind].text} (${EVENTS[h.kind].hold}s)`);
   return out.map((t) => `<div class="perkline">${t}</div>`).join('');
 }
 /** What a world earns: its base plus any mines, per second. */
@@ -532,7 +548,7 @@ function renderBuildRow(s) {
     const q = s.queue ? `<span class="what">Queue <b class="num">${s.queue}</b><i class="meter"><i style="width:${pct(s.build)}"></i></i></span>`
       : `<span class="what">${yards} yard${yards === 1 ? '' : 's'} idle</span>`;
     html += `<div class="ctx ships">${q}`
-      + (s.queue ? `<button data-cancel="1" class="danger">✕<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
+      + (s.queue ? `<button data-cancel="1" class="danger" title="Cancel the last queued ship">${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
       + `<button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost}</small></button>`
       + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
   }
@@ -674,12 +690,13 @@ let touchInput = matchMedia('(pointer: coarse)').matches;
 window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; }, true);
 let toastTimer = 0;
 // Notifications: a small stack in the top corner; each fades after a while.
-function toast(text, color) {
+function toast(text, color, ic = null) {
   const feed = $('feed');
   const el = document.createElement('div');
   el.className = 'note';
   el.style.setProperty('--c', color);
   el.textContent = text;
+  if (ic) el.insertAdjacentHTML('afterbegin', `${icon(ic)} `);
   feed.prepend(el);
   while (feed.children.length > 4) feed.lastChild.remove();
   setTimeout(() => el.classList.add('gone'), 5200);
@@ -728,9 +745,9 @@ function drainEvents(evs = game.events.splice(0)) {
         break;
       case 'event': {
         const E = EVENTS[e.kind];
-        if (e.phase === 'soon') toast(`${E.icon} ${E.name} at ${nm(e.at)} in 1:00 · ${E.text}`, '#ffd479');
-        else if (e.phase === 'won') toast(`${E.icon} ${e.owner === me ? 'You' : nameOf(e.owner)} secured the ${E.name.toLowerCase()} · ${e.what}`, ownerColor(e.owner));
-        else toast(`${E.icon} ${E.name} at ${nm(e.at)} is gone`, '#858ca6');
+        if (e.phase === 'soon') toast(`${E.name} at ${nm(e.at)} in 1:00 · ${E.text}`, '#ffd479', e.kind);
+        else if (e.phase === 'won') toast(`${e.owner === me ? 'You' : nameOf(e.owner)} secured the ${E.name.toLowerCase()} · ${e.what}`, ownerColor(e.owner), e.kind);
+        else toast(`${E.name} at ${nm(e.at)} is gone`, '#858ca6', e.kind);
         break;
       }
       case 'probed':
@@ -770,8 +787,13 @@ function tap(id, x, y, mouse = false) {
   } else if (game.bodies[id].owner === me) {
     ui.selected = id; ui.slot = null; ui.pick = null; ui.target = null;
   } else {
+    // Someone else's world (or a neutral): show what's known about it.
     ui.selected = ui.target = null;
+    ui.peek = ui.peek === id ? null : id;
+    updateActions();
+    return;
   }
+  ui.peek = null;
   updateActions();
 }
 
@@ -919,7 +941,7 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   held.add(k);
   if (k === 'escape') {
-    if (ui.mode) { ui.mode = null; ui.target = null; } else ui.selected = ui.target = null;
+    if (ui.mode) { ui.mode = null; ui.target = null; } else ui.selected = ui.target = ui.peek = null;
     $('research').hidden = true;
     updateActions();
   } else if (k === 'f') {

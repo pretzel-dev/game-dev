@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { icon } from './icons.js';
 import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
@@ -656,6 +657,7 @@ export function createView(canvas, labelRoot) {
   // Binary systems: a second, smaller star (same look) circling with the first.
   const sun2 = sunGroup.clone();
   sun2.visible = false;
+  sun2.add(new THREE.PointLight('#ffd9b0', 1.4, 0, 0)); // lights its own worlds
   scene.add(sun2);
   scene.add(new THREE.PointLight('#fff1dd', 3, 0, 0));
   scene.add(new THREE.AmbientLight('#26304a', 0.35));
@@ -1008,6 +1010,9 @@ export function createView(canvas, labelRoot) {
       if (b.parent !== null) {
         const q = bodyPos[b.parent];
         v.lineHolder.position.set(q.x, q.y, q.z);
+      } else if (b.star) {
+        const q = starPos(game, b.star, now);
+        v.lineHolder.position.set(q.x, q.y, q.z);
       }
       // Slow spin; stations turn faster, asteroids tumble.
       if (b.kind === 'station') v.body.rotation.z += dt * 0.5;
@@ -1129,13 +1134,13 @@ export function createView(canvas, labelRoot) {
       tmp.copy(v.g.position).project(camera);
       const hide = tmp.z > 1 || crowded.has(b.id);
       if (hide) { v.label.style.visibility = 'hidden'; continue; }
-      const attackers = (known ? b.sieges : []).map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">⚔ ${g.n}</span>`).join('');
-      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">◆${Math.ceil(b.guns)}</i>` : b.ships ? `<b>${b.ships}</b>` : '';
+      const attackers = (known ? b.sieges : []).map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">${icon('attack')}${g.n}</span>`).join('');
+      const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">${icon('guns')}${Math.ceil(b.guns)}</i>` : b.ships ? `<b>${b.ships}</b>` : '';
       const kids = (extras.get(b.id) || []).join('');
       const warn = (incomingTo.get(b.id) || []).map((x) => {
         const e = Math.max(0, x.eta);
         const own = x.owner === b.owner;
-        return `<span class="${own ? 'rein' : 'inc'}" style="color:${ownerColor(x.owner)}">${own ? '▲' : '▼'}${x.sized ? x.n : '?'} ${Math.floor(e / 60)}:${String(Math.floor(e % 60)).padStart(2, '0')}</span>`;
+        return `<span class="${own ? 'rein' : 'inc'}" style="color:${ownerColor(x.owner)}">${icon(own ? 'reinforce' : 'incoming')}${x.sized ? x.n : '?'} ${Math.floor(e / 60)}:${String(Math.floor(e % 60)).padStart(2, '0')}</span>`;
       }).join('');
       // Events at this world: an icon, then the countdown to start or the hold left.
       const evs = (game.happenings || []).filter((h) => h.at === b.id).map((h) => {
@@ -1143,9 +1148,9 @@ export function createView(canvas, labelRoot) {
         const soon = now < h.starts;
         const left = soon ? h.starts - now : E.hold - h.held;
         const c = !soon && h.holder !== NEUTRAL ? ownerColor(h.holder) : '#ffd479';
-        return `<span class="ev" style="color:${c}">${E.icon} ${soon ? 'in ' : ''}${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</span>`;
+        return `<span class="ev" style="color:${c}">${icon(h.kind)} ${soon ? 'in ' : ''}${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</span>`;
       }).join('');
-      const perk = b.perk ? `<i class="perk" title="${PERKS[b.perk].name}">${PERKS[b.perk].icon}</i> ` : '';
+      const perk = b.perk ? `<i class="perk" title="${PERKS[b.perk].name}">${icon(b.perk)}</i> ` : '';
       const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}${evs}<small>${perk}${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
       v.label.style.visibility = 'visible';
@@ -1222,10 +1227,10 @@ export function createView(canvas, labelRoot) {
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === (ui.me ?? 0);
       // Probes: just an icon from afar, named when the camera is close.
-      const text = f.probe ? (camera.position.distanceTo(tmp2.set(s.x, s.y, s.z)) < 60 ? '◇ probe' : '◇') : `▸ ${knowsSize(f) ? f.n : '?'}`;
+      const text = f.probe ? `${icon('probe')}${camera.position.distanceTo(tmp2.set(s.x, s.y, s.z)) < 60 ? ' probe' : ''}` : `${icon('fleet')}${knowsSize(f) ? f.n : '?'}`;
       const lv = knowsSize(f) ? vetLevel(f.vet) : 0;
       if (el._v !== lv) { el._v = lv; el.dataset.v = lv; }
-      if (el._t !== text) { el._t = text; el.textContent = text; }
+      if (el._t !== text) { el._t = text; el.innerHTML = text; }
       el.style.color = ownerColor(f.owner);
       el.style.borderColor = ownerColor(f.owner);
       el.style.opacity = mine ? (ui.fleet === f.id ? 1 : 0.85) : 0.6;

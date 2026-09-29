@@ -14,27 +14,30 @@ rules don't change:
 - **Wide and cold:** few worlds, far apart; long trips, probes matter.
 - **Crowded:** worlds packed close; short, sharp trips.
 - **Rich belt:** eight asteroids in a thick belt.
-- **Binary:** two suns circling each other in the middle (planets orbit both,
-  as real circumbinary planets do, so no three-body chaos).
+- **Binary:** a smaller companion sun circles far out, about half a turn in a
+  long game, with two worlds (and a moon) of its own. Those worlds earn 50%
+  more, but they're a long way from home, and the companion's path means they
+  drift closer to some empires and away from others as the game goes on.
+  Routes steer clear of both suns.
 
 **Daily system:** everyone gets the same map each day (seed and system from
 the date). The end screen and share image say which day it was.
 
 ## Special worlds
 
-Two or three neutral worlds on each map carry a perk (icon beside the name;
-select the world for details). Whoever holds the world has the perk.
+Two or three neutral worlds on each map carry a perk (an icon beside the name;
+tap any world to see what it has). Whoever holds the world has the perk.
 
-| | World | While held |
-|---|---|---|
-| ◈ | Rich seam (asteroid or moon) | Mines here pay double |
-| ⌖ | Old relay | See the whole system (reading fleets still needs Intel) |
-| ⛽ | Fuel depot | Fleets from your worlds within 60 fly 20% faster |
-| ☊ | Listening post | Warnings of fleets heading for your worlds |
-| ⛨ | Fortress rock | Starts with heavy guns; +1 gun on your worlds within 50 |
-| ✧ | Ancient archive | Research 25% faster |
-| ⚓ | Drydock hulk | Comes with a shipyard; ships built here start as veterans |
-| ✺ | Tidal forge (moon of a gas giant) | Builds and upgrades here 30% faster |
+| World | While held |
+|---|---|
+| Rich seam (asteroid or moon) | Mines here pay double |
+| Old relay | See the whole system (reading fleets still needs Intel) |
+| Fuel depot | Fleets from your worlds within 60 fly 20% faster |
+| Listening post | Warnings of fleets heading for your worlds |
+| Fortress rock | Starts with heavy guns; +1 gun on your worlds within 50 |
+| Ancient archive | Research 25% faster |
+| Drydock hulk | Comes with a shipyard; ships built here start as veterans |
+| Tidal forge (moon of a gas giant) | Builds and upgrades here 30% faster |
 
 ## Events
 
@@ -43,14 +46,14 @@ world (never a homeworld). It's announced a minute ahead; then whoever holds
 that world, with no fight going on there, for the hold time gets the reward.
 Losing the world resets the clock. The label shows the icon and countdown.
 
-| | Event | Hold | Reward |
-|---|---|---|---|
-| ☄ | Comet pass | 60 s | 12 credits/s while you hold it |
-| ⚑ | Derelict warship | 45 s | 4 veteran ships |
-| ⌁ | Lost probe signal | 40 s | A random research level |
-| ❄ | Ice-hauler wreck | 45 s | 450 credits |
-| ⛭ | Refugee convoy | 30 s | That world earns +1/s for good |
-| ▣ | Supply cache | 30 s | A free structure upgrade there |
+| Event | Hold | Reward |
+|---|---|---|
+| Comet pass | 60 s | 12 credits/s while you hold it |
+| Derelict warship | 45 s | 4 veteran ships |
+| Lost probe signal | 40 s | A random research level |
+| Ice-hauler wreck | 45 s | 450 credits |
+| Refugee convoy | 30 s | That world earns +1/s for good |
+| Supply cache | 30 s | A free structure upgrade there |
 
 ## How to play
 

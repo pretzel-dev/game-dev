@@ -305,12 +305,22 @@ assert.ok(finished >= 18);
       assert.equal(g.system, k);
       assert.equal(g.bodies.filter((b) => b.home).length, opp + 1, `${k}: homes`);
       for (const b of g.bodies) assert.ok(Number.isFinite(b.r) && b.period > 0, `${k}: orbits`);
-      for (const b of g.bodies) if (b.parent === null && b.kind === 'planet') assert.ok(b.r > 25, `${k}: clear of the sun(s)`);
+      for (const b of g.bodies) if (b.parent === null && b.kind === 'planet' && !b.star) assert.ok(b.r > 25, `${k}: clear of the sun(s)`);
     }
   }
   const bin = createGame({ seed: 3, system: 'binary' });
-  const a = starPos(bin, 0, 10), b = starPos(bin, 1, 10);
-  assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > 10, 'binary stars stay apart');
+  const far = bin.bodies.filter((x) => x.star === 1);
+  assert.equal(far.filter((x) => x.kind === 'planet').length, 2, 'the companion has two worlds');
+  const s1 = starPos(bin, 1, 0), s2 = starPos(bin, 1, 1500);
+  assert.ok(Math.hypot(s1.x - s2.x, s1.z - s2.z) > 50, 'the companion moves over a match');
+  for (const x of far) assert.ok(dist(posAt(bin, x, 700), starPos(bin, 1, 700)) < 60, 'its worlds ride along');
+  const home = bin.bodies.find((x) => x.owner === 0);
+  const trip = plan(bin, home, far[0]);
+  for (let k = 1; k < 20; k++) {
+    const tau = (k / 20) * trip.T;
+    const st = fleetState({ ...trip, t0: 0 }, tau);
+    assert.ok(dist(st, starPos(bin, 1, tau)) > 8, 'routes keep clear of the companion sun');
+  }
   const d = dailySeed(new Date('2026-09-28T12:00:00Z'));
   assert.deepEqual(d, dailySeed(new Date('2026-09-28T20:00:00Z')), 'one daily per day');
   console.log(`systems: ${SYSTEM_KEYS.map((k) => SYSTEMS[k].name).join(', ')}; daily ${d.key} = ${SYSTEMS[d.system].name}`);
