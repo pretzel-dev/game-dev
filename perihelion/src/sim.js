@@ -14,7 +14,7 @@ export const RULES = {
   startShips: 4,
   startCredits: 400,
   // Credits per second from each world you hold, plus each finished mine.
-  income: { planet: 1, moon: 0.5, station: 0.6, asteroid: 0.3 },
+  income: { planet: 1, moon: 0.5, station: 0.6, asteroid: 0.3, visitor: 0 },
   homeIncome: 0.4, // extra for a homeworld, so it's worth defending (and taking)
   mineIncome: 1.5,
   ship: { cost: 150, time: 45 }, // each shipyard builds one at a time
@@ -247,14 +247,78 @@ export const PERKS = {
 // Events: announced a minute ahead at a world; whoever holds that world for
 // the hold time (without losing it) gets the reward.
 export const EVENTS = {
-  comet: { name: 'Comet pass', text: 'Hold to mine it as it passes', hold: 60, pay: 12 },
-  derelict: { name: 'Derelict warship', text: 'Hold to salvage veteran ships', hold: 45, ships: 4 },
+  comet: { name: 'Comet pass', text: 'Catch it on its pass round the sun and hold it to mine it', hold: 60, pay: 12 },
+  derelict: { name: 'Derelict warship', text: 'Catch the drifting hulk and hold it to salvage veteran ships', hold: 45, ships: 4 },
   signal: { name: 'Lost probe signal', text: 'Hold to recover a research level', hold: 40 },
   wreck: { name: 'Ice-hauler wreck', text: 'Hold to salvage its cargo', hold: 45, credits: 450 },
   convoy: { name: 'Refugee convoy', text: 'Hold when it docks: the world earns +1/s for good', hold: 30, bonus: 1 },
   cache: { name: 'Supply cache', text: 'Hold for a free structure upgrade', hold: 30 },
 };
 // First one at 4-6 minutes, then every 7-10 minutes (never quite regular).
+// Comets and derelicts arrive as visitors: they fly in, whip round the sun on a
+// parabolic (Kepler) pass and leave. Hold one while it's here.
+const VISITS = {
+  comet: { T: 420, q: [30, 50], guns: 0 },
+  derelict: { T: 480, q: [60, 100], guns: 2 },
+};
+const VISIT_FAR = 280; // where a pass starts and ends
+/** Is this body on the map right now? (Only the visitor ever isn't.) */
+export const present = (game, b, t = game.time) => !b.visitor || (!!game.visit && t >= game.visit.t0 && t <= game.visit.t0 + game.visit.T);
+/** Seconds until the visitor leaves (Infinity for anything else). */
+export const staysFor = (game, b) => (b.visitor ? (game.visit ? game.visit.t0 + game.visit.T - game.time : 0) : Infinity);
+function visitPos(game, t) {
+  const v = game.visit;
+  if (!v || t < v.t0 || t > v.t0 + v.T) return { x: 4000, y: 0, z: 4000 };
+  // Barker's equation: D + D³/3 grows steadily with time; D = tan(ν/2).
+  const sT = (t - v.t0 - v.T / 2) / v.tau;
+  let D = sT;
+  for (let k = 0; k < 8; k++) D -= (D + (D * D * D) / 3 - sT) / (1 + D * D);
+  const nu = 2 * Math.atan(D);
+  const rr = v.q * (1 + D * D);
+  const x = rr * Math.cos(nu), z = rr * Math.sin(nu);
+  return { x: x * Math.cos(v.w) - z * Math.sin(v.w), y: rr * 0.04 * Math.sin(nu), z: x * Math.sin(v.w) + z * Math.cos(v.w) };
+}
+function startVisit(game, kind) {
+  const V = VISITS[kind];
+  const q = V.q[0] + evRand(game) * (V.q[1] - V.q[0]);
+  const D0 = Math.sqrt(VISIT_FAR / q - 1);
+  game.visit = { kind, t0: game.time, T: V.T, q, w: evRand(game) * Math.PI * 2, tau: V.T / 2 / (D0 + (D0 ** 3) / 3) };
+  const b = game.bodies.find((x) => x.visitor);
+  b.owner = NEUTRAL; b.ships = 0; b.guns = V.guns; b.sieges = []; b.vet = 0; b.tf = null;
+  b.name = kind === 'comet' ? `Comet ${String.fromCharCode(65 + Math.floor(evRand(game) * 26))}/${10 + Math.floor(evRand(game) * 90)}` : `Derelict ${fleetName(game)}`;
+  return b;
+}
+/** The visitor leaves: anyone there heads for their nearest world; fleets on the way turn back. */
+function endVisit(game) {
+  const b = game.bodies.find((x) => x.visitor);
+  const nearest = (owner, p) => game.bodies.filter((x) => x.owner === owner && !x.visitor)
+    .sort((x, y) => dist(posAt(game, x, game.time), p) - dist(posAt(game, y, game.time), p))[0];
+  const here = posAt(game, b, game.time);
+  const leave = (owner, n, vet, name) => {
+    const home = nearest(owner, here);
+    if (!home || n < 1) return;
+    b.owner = owner; b.ships = n; b.vet = vet; b.tf = name; b.restUntil = 0;
+    launch(game, b, home, n);
+  };
+  const sieges = b.sieges;
+  b.sieges = [];
+  if (b.owner !== NEUTRAL) leave(b.owner, b.ships, b.vet, b.tf);
+  for (const g of sieges) leave(g.owner, g.n, g.vet, g.name);
+  for (const f of game.fleets) {
+    if (f.to !== b.id) continue;
+    const s = fleetState(f, game.time);
+    const home = nearest(f.owner, s);
+    if (!home) { f.n = 0; continue; }
+    const p = planWith(game, null, home, game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
+    delete f.assist;
+    Object.assign(f, p, { t0: game.time, to: home.id });
+  }
+  game.fleets = game.fleets.filter((f) => f.n > 0 || f.probe);
+  b.owner = NEUTRAL; b.ships = 0; b.guns = 0;
+  note(game, { type: 'visitor', phase: 'left', name: b.name });
+  game.visit = null;
+}
+
 export const EVENT_RULES = { first: 300, every: 510, jitter: 90, notice: 60, grace: 45 };
 function evRand(game) {
   // Deterministic, separate from map generation.
@@ -266,11 +330,20 @@ function events(game, dt) {
   if (game.nextEvent === undefined) game.nextEvent = R.first + (evRand(game) - 0.5) * 2 * 60;
   game.happenings ||= [];
   if (game.time >= game.nextEvent) {
-    const keys = Object.keys(EVENTS);
+    const keys = Object.keys(EVENTS).filter((k) => !VISITS[k] || !game.visit);
     const kind = keys[Math.floor(evRand(game) * keys.length)];
-    const spots = game.bodies.filter((b) => !b.home && !game.happenings.some((h) => h.at === b.id));
-    const b = spots[Math.floor(evRand(game) * spots.length)];
-    const h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.time + R.notice + EVENTS[kind].hold + R.grace, holder: NEUTRAL, held: 0 };
+    let h;
+    if (VISITS[kind]) {
+      // A visitor: it can be reached as soon as it's in, but only counts once
+      // it's well inside the system; the pass ends with it leaving.
+      const b = startVisit(game, kind);
+      h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.visit.t0 + game.visit.T - 20, holder: NEUTRAL, held: 0 };
+    } else {
+      const spots = game.bodies.filter((b) => !b.home && !b.visitor && !game.happenings.some((x) => x.at === b.id));
+      const b = spots[Math.floor(evRand(game) * spots.length)];
+      h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.time + R.notice + EVENTS[kind].hold + R.grace, holder: NEUTRAL, held: 0 };
+    }
+    const b = game.bodies[h.at];
     game.happenings.push(h);
     note(game, { type: 'event', phase: 'soon', kind, at: b.id });
     game.nextEvent = game.time + R.every + (evRand(game) - 0.5) * 2 * R.jitter;
@@ -287,6 +360,7 @@ function events(game, dt) {
     if (h.kind === 'comet') { game.credits[owner] += E.pay * dt; tally(game, owner, 'earned', E.pay * dt); }
     if (h.held >= E.hold) { reward(game, h, b, owner); h.done = true; }
   }
+  if (game.visit && game.time >= game.visit.t0 + game.visit.T - 1) endVisit(game);
   for (const h of game.happenings) if (!h.done && game.time > h.ends) { h.done = true; note(game, { type: 'event', phase: 'gone', kind: h.kind, at: h.at }); }
   game.happenings = game.happenings.filter((h) => !h.done);
 }
@@ -325,6 +399,16 @@ export const SYSTEM_KEYS = Object.keys(SYSTEMS);
 /** A star's position (binary: the companion circles far out, with its own worlds). */
 export function starPos(game, i, t = game.time) {
   const s = game.stars[i];
+  if (s.e) {
+    // An eccentric (Kepler) orbit: slow and far at one end, then a fast,
+    // close swing through the outer system at the other.
+    const M = s.phase + (2 * Math.PI * t) / s.period;
+    let E = M;
+    for (let k = 0; k < 6; k++) E -= (E - s.e * Math.sin(E) - M) / (1 - s.e * Math.cos(E));
+    const x = s.a * (Math.cos(E) - s.e);
+    const z = s.a * Math.sqrt(1 - s.e * s.e) * Math.sin(E);
+    return { x: x * Math.cos(s.w) - z * Math.sin(s.w), y: 0, z: x * Math.sin(s.w) + z * Math.cos(s.w) };
+  }
   const th = s.phase + (2 * Math.PI * t) / s.period;
   return { x: Math.cos(th) * s.r, y: 0, z: Math.sin(th) * s.r };
 }
@@ -354,7 +438,8 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     b.build = 0; // progress on the ship being built (0..1)
     b.queue = 0; // ships ordered and paid for, waiting to be built
     b.structures = []; // { type, level, left, next? } (left > 0 while building or upgrading)
-    b.guns = b.kind === 'planet' ? 2 : 1 + Math.floor(rand() * 2); // neutral defences
+    // Neutral defences; gas giants are rich, so they start well defended.
+    b.guns = b.kind === 'planet' ? (b.giant ? 5 : 2) : 1 + Math.floor(rand() * 2);
     b.sieges = [];
     bodies.push(b);
     return b;
@@ -441,16 +526,21 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
   const stars = [{ r: 0, period: 1, phase: 0, size: 1 }];
   if (sys.companion) {
-    // A smaller companion sun far out on a slow orbit (about half a turn in a
-    // long game), with two worlds of its own: rich, but a long way from home.
-    const edge = Math.max(...bodies.filter((b) => b.parent === null).map((b) => b.r)) + 40;
-    const R = edge + 45;
-    stars.push({ r: R, period: 5200, phase: rand() * Math.PI * 2, size: 0.5, clear: 9 });
+    // A smaller companion sun on an eccentric orbit, with two worlds of its
+    // own: most of the time it hangs far out, then once a game or so it swings
+    // in fast through the outer system and away again. When depends on the map.
+    const outer = Math.max(...bodies.filter((b) => b.parent === null).map((b) => b.r));
+    const q = outer + 22; // closest approach: its worlds sweep the outer orbits
+    const e = 0.35;
+    stars.push({ a: q / (1 - e), e, w: rand() * Math.PI * 2, period: 2800, phase: rand() * Math.PI * 2, size: 0.5, clear: 9 });
     [[16, 1.9], [30, 2.4]].forEach(([r, size], k) => {
       const planet = add({ kind: 'planet', name: pick(PLANET_NAMES, names), parent: null, star: 1, r, period: 140 + k * 160, phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.06, size, giant: false, hue: rand() });
       if (k === 1) add({ kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: size * 3.4 + 6, period: 260, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.7, hue: rand() });
     });
   }
+  // The visitor: one body that events turn into a comet or a derelict, on a
+  // pass in around the sun and out again. Absent (far away) the rest of the time.
+  add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
   const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
@@ -474,7 +564,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   for (const k of perkKeys) {
     if (placed >= 3) break;
     const P = PERKS[k];
-    const spots = bodies.filter((b) => b.owner === NEUTRAL && !b.perk && !homeFamily.has(b.id)
+    const spots = bodies.filter((b) => b.owner === NEUTRAL && !b.perk && !b.visitor && !homeFamily.has(b.id)
       && (!P.kinds || P.kinds.includes(b.kind)) && (!P.giantMoon || (b.kind === 'moon' && bodies[b.parent].giant)));
     if (!spots.length) continue;
     const b = spots[Math.floor(rand() * spots.length)];
@@ -498,6 +588,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
 
 /** Build slots grow with the size of the world. */
 export function slotsOf(b) {
+  if (b.visitor) return 0;
   if (b.kind === 'station') return 2;
   if (b.kind === 'asteroid') return 1;
   if (b.kind === 'moon') return b.size > 0.8 ? 2 : 1;
@@ -608,6 +699,7 @@ export function orderShip(game, b) {
 
 /** A body's position at time t (moons ride along with their planet). */
 export function posAt(game, b, t) {
+  if (b.visitor) return visitPos(game, t);
   const th = b.phase + (2 * Math.PI * t) / b.period;
   const p = { x: Math.cos(th) * b.r, y: Math.sin(th) * b.r * b.incl, z: Math.sin(th) * b.r };
   if (b.star) {
@@ -780,6 +872,7 @@ export function launch(game, from, to, n) {
   n = Math.min(Math.floor(n), readyShips(game, from));
   if (n < 1 || from === to || game.winner !== null) return null;
   const p = plan(game, from, to);
+  if (p.T > staysFor(game, to) - 5 || !present(game, to)) return null;
   from.ships -= n;
   const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time, vet: from.vet || 0 };
   // The bulk of a garrison keeps its task force name; a small detachment gets a new one.
@@ -818,7 +911,7 @@ export function cantProbe(game, b, t) {
   return null;
 }
 export function launchProbe(game, from, to) {
-  if (cantProbe(game, from, to) || game.winner !== null) return null;
+  if (cantProbe(game, from, to) || game.winner !== null || !present(game, to)) return null;
   game.credits[from.owner] -= RULES.probe.cost;
   tally(game, from.owner, 'spent', RULES.probe.cost);
   const f = { id: game.nextId++, owner: from.owner, n: 0, probe: true, from: from.id, to: to.id, ...plan(game, from, to, game.time, RULES.probe.speed), t0: game.time, vet: 0, name: 'Probe' };
