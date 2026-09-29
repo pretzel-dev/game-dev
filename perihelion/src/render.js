@@ -685,8 +685,15 @@ export function createView(canvas, labelRoot) {
         // Comet: an icy nucleus with a tail streaming away from the sun.
         // Derelict: a dark hulk. The same body plays either part.
         body = asteroidMesh(b);
-        tail = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 16, 1, true).translate(0, -0.5, 0),
-          new THREE.MeshBasicMaterial({ color: '#bfe4ff', transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+        // Two soft tails of glowing puffs: a straight blue ion tail pointing
+        // straight away from the sun, and a paler dust tail that curves back
+        // along the path; plus a bright coma round the nucleus.
+        tail = new THREE.Group();
+        const puff = (color) => new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+        tail.userData.ion = Array.from({ length: 26 }, () => puff('#9fd0ff'));
+        tail.userData.dust = Array.from({ length: 22 }, () => puff('#fff0cf'));
+        tail.userData.coma = puff('#e8f6ff');
+        for (const sp of [...tail.userData.ion, ...tail.userData.dust, tail.userData.coma]) tail.add(sp);
         g.add(tail);
         hulk = stationMesh(0.7);
         g.add(hulk);
@@ -1063,12 +1070,30 @@ export function createView(canvas, labelRoot) {
         v.body.visible = v.tail.visible = comet;
         v.hulk.visible = !comet;
         if (comet) {
-          // The tail points away from the sun and grows as the comet nears it.
+          // Tails grow and brighten as the comet nears the sun.
           const r = Math.max(1, Math.hypot(p.x, p.y, p.z));
-          tmp2.set(p.x, p.y, p.z).normalize();
-          v.tail.quaternion.setFromUnitVectors(UP, tmp2.negate());
-          const len = THREE.MathUtils.clamp(1400 / r, 5, 34);
-          v.tail.scale.set(0.6 + len * 0.05, len, 0.6 + len * 0.05);
+          const len = THREE.MathUtils.clamp(2600 / r, 8, 60);
+          const bright = THREE.MathUtils.clamp(120 / r, 0.55, 1);
+          const away = tmp2.set(p.x, p.y, p.z).normalize();
+          // Direction of travel, for the dust tail's backward curve.
+          const ahead = posAt(game, b, now + 2);
+          const back = new THREE.Vector3(p.x - ahead.x, p.y - ahead.y, p.z - ahead.z).normalize();
+          const { ion, dust, coma } = v.tail.userData;
+          ion.forEach((sp, i) => {
+            const u = (i + 1) / ion.length;
+            sp.position.copy(away).multiplyScalar(u * len);
+            sp.scale.setScalar(0.8 + u * len * 0.12);
+            sp.material.opacity = 0.5 * bright * (1 - u) ** 1.3;
+          });
+          dust.forEach((sp, i) => {
+            const u = (i + 1) / dust.length;
+            sp.position.copy(away).multiplyScalar(u * len * 0.75).addScaledVector(back, u * u * len * 0.35);
+            sp.scale.setScalar(1 + u * len * 0.18);
+            sp.material.opacity = 0.38 * bright * (1 - u) ** 1.1;
+          });
+          coma.position.set(0, 0, 0);
+          coma.scale.setScalar(2.2 + bright * 3);
+          coma.material.opacity = 0.35 + bright * 0.4;
         } else v.hulk.rotation.y += dt * 0.08;
       }
       // Slow spin; stations turn faster, asteroids tumble.
