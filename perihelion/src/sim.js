@@ -235,24 +235,24 @@ const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
 
 // Special worlds: a few neutrals carry a perk for whoever holds them.
 export const PERKS = {
-  seam: { name: 'Rich seam', icon: '◈', text: 'Mines here pay double', kinds: ['asteroid', 'moon'] },
-  relay: { name: 'Old relay', icon: '⌖', text: 'See the whole system' },
-  depot: { name: 'Fuel depot', icon: '⛽', text: 'Fleets from worlds within 60 fly 20% faster', range: 60, boost: 1.2 },
-  post: { name: 'Listening post', icon: '☊', text: 'Warns of fleets heading for your worlds' },
-  fortress: { name: 'Fortress rock', icon: '⛨', text: 'Heavy guns; +1 gun on your worlds within 50', range: 50 },
-  archive: { name: 'Ancient archive', icon: '✧', text: 'Research 25% faster', boost: 1.25 },
-  hulk: { name: 'Drydock hulk', icon: '⚓', text: 'Ships built here start as veterans', vet: 2.5 },
-  forge: { name: 'Tidal forge', icon: '✺', text: 'Builds and upgrades here 30% faster', boost: 1.3, giantMoon: true },
+  seam: { name: 'Rich seam', text: 'Mines here pay double', kinds: ['asteroid', 'moon'] },
+  relay: { name: 'Old relay', text: 'See the whole system' },
+  depot: { name: 'Fuel depot', text: 'Fleets from worlds within 60 fly 20% faster', range: 60, boost: 1.2 },
+  post: { name: 'Listening post', text: 'Warns of fleets heading for your worlds' },
+  fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on your worlds within 50', range: 50 },
+  archive: { name: 'Ancient archive', text: 'Research 25% faster', boost: 1.25 },
+  hulk: { name: 'Drydock hulk', text: 'Ships built here start as veterans', vet: 2.5 },
+  forge: { name: 'Tidal forge', text: 'Builds and upgrades here 30% faster', boost: 1.3, giantMoon: true },
 };
 // Events: announced a minute ahead at a world; whoever holds that world for
 // the hold time (without losing it) gets the reward.
 export const EVENTS = {
-  comet: { name: 'Comet pass', icon: '☄', text: 'Hold to mine it as it passes', hold: 60, pay: 12 },
-  derelict: { name: 'Derelict warship', icon: '⚑', text: 'Hold to salvage veteran ships', hold: 45, ships: 4 },
-  signal: { name: 'Lost probe signal', icon: '⌁', text: 'Hold to recover a research level', hold: 40 },
-  wreck: { name: 'Ice-hauler wreck', icon: '❄', text: 'Hold to salvage its cargo', hold: 45, credits: 450 },
-  convoy: { name: 'Refugee convoy', icon: '⛭', text: 'Hold when it docks: the world earns +1/s for good', hold: 30, bonus: 1 },
-  cache: { name: 'Supply cache', icon: '▣', text: 'Hold for a free structure upgrade', hold: 30 },
+  comet: { name: 'Comet pass', text: 'Hold to mine it as it passes', hold: 60, pay: 12 },
+  derelict: { name: 'Derelict warship', text: 'Hold to salvage veteran ships', hold: 45, ships: 4 },
+  signal: { name: 'Lost probe signal', text: 'Hold to recover a research level', hold: 40 },
+  wreck: { name: 'Ice-hauler wreck', text: 'Hold to salvage its cargo', hold: 45, credits: 450 },
+  convoy: { name: 'Refugee convoy', text: 'Hold when it docks: the world earns +1/s for good', hold: 30, bonus: 1 },
+  cache: { name: 'Supply cache', text: 'Hold for a free structure upgrade', hold: 30 },
 };
 // First one at 4-6 minutes, then every 7-10 minutes (never quite regular).
 export const EVENT_RULES = { first: 300, every: 510, jitter: 90, notice: 60, grace: 45 };
@@ -319,10 +319,10 @@ export const SYSTEMS = {
   wide: { name: 'Wide and cold', text: 'Few worlds, far apart', gap: 30, moons: 0.5, rocks: 3 },
   crowded: { name: 'Crowded', text: 'Worlds packed close: short, sharp trips', gap: 8, stations: 3 },
   belt: { name: 'Rich belt', text: 'A thick asteroid belt worth mining', rocks: 8, beltW: 12 },
-  binary: { name: 'Binary', text: 'Two suns circling each other', inner: 42, stars: 2 },
+  binary: { name: 'Binary', text: 'A second sun and its worlds swing around the system; its worlds earn +50%', companion: true },
 };
 export const SYSTEM_KEYS = Object.keys(SYSTEMS);
-/** A star's position (binary systems: the two circle their common centre). */
+/** A star's position (binary: the companion circles far out, with its own worlds). */
 export function starPos(game, i, t = game.time) {
   const s = game.stars[i];
   const th = s.phase + (2 * Math.PI * t) / s.period;
@@ -439,7 +439,18 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
-  const stars = sys.stars === 2 ? [0, 1].map((k) => ({ r: 7, period: 90, phase: k * Math.PI, size: 0.62 })) : [{ r: 0, period: 1, phase: 0, size: 1 }];
+  const stars = [{ r: 0, period: 1, phase: 0, size: 1 }];
+  if (sys.companion) {
+    // A smaller companion sun far out on a slow orbit (about half a turn in a
+    // long game), with two worlds of its own: rich, but a long way from home.
+    const edge = Math.max(...bodies.filter((b) => b.parent === null).map((b) => b.r)) + 40;
+    const R = edge + 45;
+    stars.push({ r: R, period: 5200, phase: rand() * Math.PI * 2, size: 0.5, clear: 9 });
+    [[16, 1.9], [30, 2.4]].forEach(([r, size], k) => {
+      const planet = add({ kind: 'planet', name: pick(PLANET_NAMES, names), parent: null, star: 1, r, period: 140 + k * 160, phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.06, size, giant: false, hue: rand() });
+      if (k === 1) add({ kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: size * 3.4 + 6, period: 260, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.7, hue: rand() });
+    });
+  }
   const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
@@ -508,7 +519,7 @@ export const incomeOf = (b, game) => {
   if (b.owner === NEUTRAL) return 0;
   const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
   const S = RULES.structures;
-  return RULES.income[b.kind] + (b.home ? RULES.homeIncome : 0) + (b.bonus || 0) + RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1)
+  return RULES.income[b.kind] * (b.star ? 1.5 : 1) + (b.home ? RULES.homeIncome : 0) + (b.bonus || 0) + RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1)
     + S.skimmer.income * count(b, 'skimmer') + S.exchange.income * count(b, 'exchange');
 };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
@@ -599,6 +610,11 @@ export function orderShip(game, b) {
 export function posAt(game, b, t) {
   const th = b.phase + (2 * Math.PI * t) / b.period;
   const p = { x: Math.cos(th) * b.r, y: Math.sin(th) * b.r * b.incl, z: Math.sin(th) * b.r };
+  if (b.star) {
+    // Worlds of the companion star ride along with it.
+    const q = starPos(game, b.star, t);
+    p.x += q.x; p.z += q.z;
+  }
   if (b.parent !== null) {
     const q = posAt(game, game.bodies[b.parent], t);
     p.x += q.x;
@@ -668,8 +684,14 @@ function along(f, tau) {
   return { x, y, z, vx, vy, vz };
 }
 
-function clearOfSun(f) {
-  for (let k = 1; k < 64; k++) if (len(along(f, (k / 64) * f.T)) < SUN_CLEAR) return false;
+function clearOfSun(f, game, now) {
+  for (let k = 1; k < 64; k++) {
+    const tau = (k / 64) * f.T;
+    const p = along(f, tau);
+    if (len(p) < SUN_CLEAR) return false;
+    // A companion sun: keep clear of it too, wherever it will be.
+    for (let i = 1; i < (game.stars || []).length; i++) if (dist(p, starPos(game, i, now + tau)) < game.stars[i].clear) return false;
+  }
   return true;
 }
 
@@ -740,7 +762,7 @@ function planWith(game, from, to, now, accel, start = null) {
       else hi = mid;
     }
     f = make(hi);
-    if (clearOfSun(f)) return f;
+    if (clearOfSun(f, game, now)) return f;
     prev = T;
   }
   return make(20000);
