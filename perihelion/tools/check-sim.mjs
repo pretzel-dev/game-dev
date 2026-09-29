@@ -259,7 +259,7 @@ assert.ok(finished >= 18);
   const g = createGame({ seed: 9 });
   const home = g.bodies.find((b) => b.owner === 0);
   g.credits[0] = 5000;
-  const far = g.bodies.filter((b) => b.owner === NEUTRAL).sort((a, b) => dist(posAt(g, b, 0), posAt(g, home, 0)) - dist(posAt(g, a, 0), posAt(g, home, 0)))[0];
+  const far = g.bodies.filter((b) => b.owner === NEUTRAL && !b.visitor).sort((a, b) => dist(posAt(g, b, 0), posAt(g, home, 0)) - dist(posAt(g, a, 0), posAt(g, home, 0)))[0];
   assert.ok(!visibility(g, 0).bodies.has(far.id), 'far world starts hidden');
   const p = launchProbe(g, home, far);
   assert.ok(p && p.T < plan(g, home, far).T / 1.5, 'probes are fast');
@@ -378,4 +378,36 @@ assert.ok(finished >= 18);
   const won = e.events.some((x) => x.type === 'event' && x.phase === 'won' && x.owner === 0);
   assert.ok(won, `holding the world wins the ${h.kind}`);
   console.log(`special worlds: ${total} over 40 maps, all ${seen.size} kinds; event ${h.kind} won by holding (credits ${Math.round(c0)} -> ${Math.round(credits())}, ships ${s0} -> ${at.ships})`);
+}
+
+// Visitors fly a pass round the sun and leave; ships there go home.
+{
+  const { present, staysFor } = await import('../src/sim.js');
+  const g = createGame({ seed: 3 });
+  g.nextEvent = 0;
+  while (!g.visit) { g.nextEvent = g.time; step(g, 0.5); }
+  const v = g.bodies.find((b) => b.visitor);
+  assert.ok(present(g, v), 'visitor arrives');
+  let closest = Infinity;
+  const r0 = Math.hypot(posAt(g, v, g.time).x, posAt(g, v, g.time).z);
+  for (let t = g.time; t < g.visit.t0 + g.visit.T; t += 5) { const p = posAt(g, v, t); closest = Math.min(closest, Math.hypot(p.x, p.z)); }
+  assert.ok(r0 > 200 && closest < 110, 'it comes in from far out and whips round the sun');
+  // Park ships on it, then let it leave: they head for home.
+  v.owner = 0; v.ships = 3; v.sieges = [];
+  const home = g.bodies.find((b) => b.owner === 0 && b.home);
+  while (g.visit) step(g, 0.5);
+  assert.ok(!present(g, v) && v.owner === NEUTRAL, 'visitor gone');
+  assert.ok(g.fleets.some((f) => f.owner === 0 && f.n >= 3), 'its garrison flies home');
+  assert.equal(staysFor(g, home), Infinity);
+  console.log(`visitor: in from ${Math.round(r0)}, closest ${Math.round(closest)} to the sun, garrison sent home`);
+}
+
+// Gas giants start well defended; the binary companion swings in and out.
+{
+  const g = createGame({ seed: 6, system: 'binary' });
+  for (const b of g.bodies) if (b.giant && b.owner === NEUTRAL) assert.ok(b.guns >= 5, 'giants start with 5 guns');
+  const d = [];
+  for (let t = 0; t < g.stars[1].period; t += 20) { const p = starPos(g, 1, t); d.push(Math.hypot(p.x, p.z)); }
+  assert.ok(Math.max(...d) > Math.min(...d) * 2, 'companion orbit is eccentric');
+  console.log(`companion: ${Math.round(Math.min(...d))} to ${Math.round(Math.max(...d))} from the main sun`);
 }

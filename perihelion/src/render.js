@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { icon } from './icons.js';
-import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS } from './sim.js';
+import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, present } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
@@ -669,6 +669,7 @@ export function createView(canvas, labelRoot) {
 
   const orbit = { az: 0.4, pol: 0.9, dist: 380, minDist: 1.2, maxDist: 900, target: new THREE.Vector3(), vaz: 0, vpol: 0, follow: null };
 
+  let companionPath = null;
   function build(game) {
     world.clear();
     labelRoot.innerHTML = '';
@@ -676,8 +677,20 @@ export function createView(canvas, labelRoot) {
     views = game.bodies.map((b) => {
       const g = new THREE.Group();
       let body;
+      let hulk = null;
+      let tail = null;
       if (b.kind === 'station') body = stationMesh(b.size);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
+      else if (b.visitor) {
+        // Comet: an icy nucleus with a tail streaming away from the sun.
+        // Derelict: a dark hulk. The same body plays either part.
+        body = asteroidMesh(b);
+        tail = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 16, 1, true).translate(0, -0.5, 0),
+          new THREE.MeshBasicMaterial({ color: '#bfe4ff', transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+        g.add(tail);
+        hulk = stationMesh(0.7);
+        g.add(hulk);
+      }
       else {
         body = new THREE.Mesh(
           new THREE.SphereGeometry(b.size, 48, 32),
@@ -721,8 +734,19 @@ export function createView(canvas, labelRoot) {
       const label = document.createElement('div');
       label.className = 'lbl';
       labelRoot.appendChild(label);
-      return { b, g, body, surface, mark, lineHolder, label, shown: '', owner: null, pulse: 0, sig: null, structs: null };
+      if (b.visitor) lineHolder.visible = false;
+      return { b, g, body, surface, mark, lineHolder, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail };
     });
+    // Binary: the companion sun's (eccentric) path, so you can see where it's headed.
+    if (companionPath) { companionPath.removeFromParent(); companionPath = null; }
+    if (game.stars && game.stars[1]) {
+      const pts = [];
+      for (let i = 0; i <= 256; i++) { const q = starPos(game, 1, (i / 256) * game.stars[1].period); pts.push(new THREE.Vector3(q.x, q.y, q.z)); }
+      companionPath = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineDashedMaterial({ color: '#ffb070', transparent: true, opacity: 0.35, dashSize: 4, gapSize: 4 }));
+      companionPath.computeLineDistances();
+      world.add(companionPath);
+    }
   }
 
   // Ships: meshes with a drive plume and a far-away glint, pooled.
@@ -926,7 +950,7 @@ export function createView(canvas, labelRoot) {
     }
     // Keep the view centre inside the system so it can't drift off into space.
     let extent = 0;
-    for (const p of bodyPos) if (p) extent = Math.max(extent, Math.hypot(p.x, p.z));
+    for (const v of views) if (present(game, v.b, now)) extent = Math.max(extent, Math.hypot(bodyPos[v.b.id].x, bodyPos[v.b.id].z));
     extent = extent * 1.2 + 20;
     const flat = Math.hypot(orbit.target.x, orbit.target.z);
     if (flat > extent) { orbit.target.x *= extent / flat; orbit.target.z *= extent / flat; }
@@ -1013,6 +1037,22 @@ export function createView(canvas, labelRoot) {
       } else if (b.star) {
         const q = starPos(game, b.star, now);
         v.lineHolder.position.set(q.x, q.y, q.z);
+      }
+      if (b.visitor) {
+        const here = present(game, b, now);
+        v.g.visible = here;
+        if (!here) { v.label.style.visibility = 'hidden'; continue; }
+        const comet = game.visit && game.visit.kind === 'comet';
+        v.body.visible = v.tail.visible = comet;
+        v.hulk.visible = !comet;
+        if (comet) {
+          // The tail points away from the sun and grows as the comet nears it.
+          const r = Math.max(1, Math.hypot(p.x, p.y, p.z));
+          tmp2.set(p.x, p.y, p.z).normalize();
+          v.tail.quaternion.setFromUnitVectors(UP, tmp2.negate());
+          const len = THREE.MathUtils.clamp(1400 / r, 5, 34);
+          v.tail.scale.set(0.6 + len * 0.05, len, 0.6 + len * 0.05);
+        } else v.hulk.rotation.y += dt * 0.08;
       }
       // Slow spin; stations turn faster, asteroids tumble.
       if (b.kind === 'station') v.body.rotation.z += dt * 0.5;
@@ -1313,6 +1353,7 @@ export function createView(canvas, labelRoot) {
     let best = null;
     let bestD = Infinity;
     for (const v of views) {
+      if (!v.g.visible) continue; // a visitor that isn't here
       tmp.copy(v.g.position).project(camera);
       if (tmp.z > 1) continue;
       const d = Math.hypot((tmp.x * 0.5 + 0.5) * w - x, (-tmp.y * 0.5 + 0.5) * h - y);

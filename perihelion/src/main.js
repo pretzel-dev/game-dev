@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, dailySeed, PERKS, EVENTS } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, dailySeed, PERKS, EVENTS, staysFor } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -306,7 +306,7 @@ function onHostMessage(m) {
 }
 
 // Snapshots: bodies are updated in place (the renderer holds on to them).
-const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus'];
+const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus', 'name'];
 function snapshot() {
   return {
     time: game.time,
@@ -316,6 +316,7 @@ function snapshot() {
     fleets: game.fleets,
     scans: game.scans,
     happenings: game.happenings,
+    visit: game.visit,
     nextId: game.nextId,
     bodies: game.bodies.map((b) => Object.fromEntries(BODY_KEYS.map((k) => [k, b[k]]))),
     stats: game.winner !== null ? game.stats : undefined,
@@ -330,6 +331,7 @@ function applySnapshot(s) {
   game.fleets = s.fleets;
   game.scans = s.scans;
   game.happenings = s.happenings;
+  game.visit = s.visit;
   game.nextId = s.nextId;
   s.bodies.forEach((x, i) => {
     const b = game.bodies[i];
@@ -384,7 +386,7 @@ function updatePeek() {
   $('peek').hidden = !b;
   if (!b) return;
   const seen = !ui.vis || ui.vis.bodies.has(b.id);
-  const kind = b.kind === 'planet' && b.giant ? 'Gas giant' : b.kind[0].toUpperCase() + b.kind.slice(1);
+  const kind = b.visitor ? (game.visit?.kind === 'comet' ? 'Comet' : 'Derelict') : b.kind === 'planet' && b.giant ? 'Gas giant' : b.kind[0].toUpperCase() + b.kind.slice(1);
   const who = b.owner === NEUTRAL ? 'Independent' : nameOf(b.owner);
   const built = b.structures.filter((x) => x.left <= 0 || x.next).map((x) => `${RULES.structures[x.type].name}${RULES.structures[x.type].maxLevel ? ` ${ROMAN[x.level]}` : ''}`);
   const garrison = seen ? `${icon('fleet')} <b>${b.ships}</b> ship${b.ships === 1 ? '' : 's'} · ${icon('guns')} <b>${Math.ceil(b.guns)}</b> gun${Math.ceil(b.guns) === 1 ? '' : 's'}${built.length ? ` · ${built.join(', ')}` : ''}` : 'Out of sensor range · defences unknown';
@@ -413,7 +415,7 @@ function updateActions() {
   if (!launching) {
     ui.preview = null;
     ui.target = null;
-    const kind = s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
+    const kind = s.visitor ? (game.visit?.kind === 'comet' ? 'Comet' : 'Derelict') : s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
     setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
       + `<div class="econ">${econLine(s)}</div>${specialLine(s)}`);
     // Ships that just arrived need a moment before they can leave again.
@@ -443,9 +445,13 @@ function updateActions() {
     }
     const resting = restingShips(game, s);
     const restNote = resting ? ` · <span class="dim">${resting} more ready in ${fmt(Math.ceil(s.restUntil - game.time))}</span>` : '';
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}${restNote}</span>${specialLine(t)}`);
+    // A visitor only waits so long: say when it leaves, and if we'd miss it.
+    const stay = staysFor(game, t);
+    const late = ui.preview.T > stay - 5;
+    const leaves = Number.isFinite(stay) ? ` · <span class="${late ? 'warn' : 'dim'}">${late ? 'gone before you arrive' : `leaves in ${fmt(stay)}`}</span>` : '';
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}${restNote}${leaves}</span>${specialLine(t)}`);
     $('launch').textContent = 'Confirm';
-    $('launch').disabled = ready < 1;
+    $('launch').disabled = ready < 1 || late;
   }
 }
 // ---- Building ----------------------------------------------------------------
@@ -745,11 +751,14 @@ function drainEvents(evs = game.events.splice(0)) {
         break;
       case 'event': {
         const E = EVENTS[e.kind];
-        if (e.phase === 'soon') toast(`${E.name} at ${nm(e.at)} in 1:00 · ${E.text}`, '#ffd479', e.kind);
+        if (e.phase === 'soon') toast(game.bodies[e.at].visitor ? `${nm(e.at)} is falling in toward the sun · ${E.text}` : `${E.name} at ${nm(e.at)} in 1:00 · ${E.text}`, '#ffd479', e.kind);
         else if (e.phase === 'won') toast(`${e.owner === me ? 'You' : nameOf(e.owner)} secured the ${E.name.toLowerCase()} · ${e.what}`, ownerColor(e.owner), e.kind);
         else toast(`${E.name} at ${nm(e.at)} is gone`, '#858ca6', e.kind);
         break;
       }
+      case 'visitor':
+        toast(`${e.name} has left the system`, '#858ca6', 'comet');
+        break;
       case 'probed':
         if (e.owner === me) toast(`Probe flyby of ${nm(e.at)} · in view for ${Math.round(RULES.probe.scan / 60 * 2) / 2} min`, mine);
         break;

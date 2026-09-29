@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor } from './sim.js';
 
 // One action per turn, like a player: build up the economy and fleet, then
 // pick a target it can take and send enough ships from one site.
@@ -63,7 +63,7 @@ export function tickAI(game, ai, dt) {
   if (smart && !game.fleets.some((f) => f.probe && f.owner === ai.owner) && game.credits[ai.owner] > RULES.probe.cost + 150) {
     const yards = mine.filter((s) => has(s, 'shipyard'));
     const d = (t) => Math.min(...yards.map((s) => dist(posAt(game, s, game.time), posAt(game, t, game.time))));
-    const blind = game.bodies.filter((t) => t.owner !== ai.owner && !vis.bodies.has(t.id) && !scanned(t)).sort((a, b) => d(a) - d(b))[0];
+    const blind = game.bodies.filter((t) => t.owner !== ai.owner && !t.visitor && !vis.bodies.has(t.id) && !scanned(t)).sort((a, b) => d(a) - d(b))[0];
     if (blind && yards.length && d(blind) < 120) {
       const near = (s) => dist(posAt(game, s, game.time), posAt(game, blind, game.time));
       launchProbe(game, yards.sort((a, b) => near(a) - near(b))[0], blind);
@@ -76,8 +76,9 @@ export function tickAI(game, ai, dt) {
     if (spare < 2) continue;
     const vetK = 1 + VET_BONUS * vetLevel(s.vet); // veterans need fewer hulls
     for (const t of game.bodies) {
-      if (t.owner === ai.owner) continue;
+      if (t.owner === ai.owner || !present(game, t)) continue;
       const { T } = plan(game, s, t);
+      if (T > staysFor(game, t) - 10) continue; // a visitor that will be gone first
       // What will be waiting: garrison and guns, plus what it builds meanwhile.
       const growth = t.owner === NEUTRAL || !has(t, 'shipyard') ? 0 : Math.min(t.queue, T / RULES.ship.time);
       const need = Math.ceil(((shipsAt(t) + gunsAt(t) + growth) * ai.d.margin) / vetK) + 1 - coming(t, true);
@@ -123,7 +124,7 @@ export function tickAI(game, ai, dt) {
   let target = null;
   let need = Infinity;
   for (const t of game.bodies) {
-    if (t.owner === ai.owner) continue;
+    if (t.owner === ai.owner || t.visitor) continue;
     const n = Math.ceil((Math.max(shipsAt(t), 6) + gunsAt(t)) * ai.d.margin) + 2;
     if (n <= total && n < need) { target = t; need = n; }
   }
