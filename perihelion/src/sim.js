@@ -258,10 +258,11 @@ export const EVENTS = {
 // Comets and derelicts arrive as visitors: they fly in, whip round the sun on a
 // parabolic (Kepler) pass and leave. Hold one while it's here.
 const VISITS = {
-  comet: { T: 420, q: [30, 50], guns: 0 },
-  derelict: { T: 480, q: [60, 100], guns: 2 },
+  comet: { inside: 240, q: [40, 60], guns: 0 },
+  derelict: { inside: 270, q: [70, 110], guns: 2 },
 };
-const VISIT_FAR = 280; // where a pass starts and ends
+// A pass starts and ends a little beyond the outermost planet; `inside` is
+// how long it spends within the planets' orbits (about 4 minutes).
 /** Is this body on the map right now? (Only the visitor ever isn't.) */
 export const present = (game, b, t = game.time) => !b.visitor || (!!game.visit && t >= game.visit.t0 && t <= game.visit.t0 + game.visit.T);
 /** Seconds until the visitor leaves (Infinity for anything else). */
@@ -281,8 +282,11 @@ function visitPos(game, t) {
 function startVisit(game, kind) {
   const V = VISITS[kind];
   const q = V.q[0] + evRand(game) * (V.q[1] - V.q[0]);
-  const D0 = Math.sqrt(VISIT_FAR / q - 1);
-  game.visit = { kind, t0: game.time, T: V.T, q, w: evRand(game) * Math.PI * 2, tau: V.T / 2 / (D0 + (D0 ** 3) / 3) };
+  const outer = Math.max(...game.bodies.filter((b) => b.parent === null && !b.visitor).map((b) => b.r));
+  const barker = (r) => { const D = Math.sqrt(Math.max(0, r / q - 1)); return D + (D ** 3) / 3; };
+  const tau = V.inside / 2 / barker(outer);
+  const T = 2 * tau * barker(outer + 60);
+  game.visit = { kind, t0: game.time, T, q, w: evRand(game) * Math.PI * 2, tau };
   const b = game.bodies.find((x) => x.visitor);
   b.owner = NEUTRAL; b.ships = 0; b.guns = V.guns; b.sieges = []; b.vet = 0; b.tf = null;
   b.name = kind === 'comet' ? `Comet ${String.fromCharCode(65 + Math.floor(evRand(game) * 26))}/${10 + Math.floor(evRand(game) * 90)}` : `Derelict ${fleetName(game)}`;
@@ -394,9 +398,11 @@ export const SYSTEMS = {
   crowded: { name: 'Crowded', text: 'Worlds packed close: short, sharp trips', gap: 8, stations: 3 },
   belt: { name: 'Rich belt', text: 'A thick asteroid belt worth mining', rocks: 8, beltW: 12 },
   // Test: a much bigger sun whose gravity pulls on ships in flight.
-  titan: { name: 'Giant sun', text: 'A huge star: its gravity bends every flight path', inner: 62, sunSize: 2.6, gravity: true, test: true },
+  titan: { name: 'Sun\u2019s pull', text: 'The sun\u2019s gravity bends every flight path', gravity: true, test: true },
   binary: { name: 'Binary', text: 'A second sun and its worlds swing around the system; its worlds earn +50%', companion: true },
 };
+const SUN_SIZE = 2.6;
+const SUN_RADIUS_SIM = 6; // matches the drawn sun (render.js SUN_RADIUS)
 export const SYSTEM_KEYS = Object.keys(SYSTEMS);
 /** Types Random and the Daily draw from (tests only when picked by hand). */
 export const RANDOM_KEYS = SYSTEM_KEYS.filter((k) => !SYSTEMS[k].test);
@@ -482,7 +488,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   let beltR = 0;
   let prev = null;
   for (const [i, sp] of specs.entries()) {
-    if (!prev) sp.r = sys.inner || 30;
+    if (!prev) sp.r = sys.inner || 56;
     else sp.r = prev.r + prev.reach + sp.reach + GAP + rand() * 10;
     if (i === 4) {
       beltR = prev.r + prev.reach + GAP;
@@ -528,7 +534,8 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
-  const stars = [{ r: 0, period: 1, phase: 0, size: sys.sunSize || 1 }];
+  // The sun is big (2.6× the old size) on every map; planets start further out.
+  const stars = [{ r: 0, period: 1, phase: 0, size: SUN_SIZE }];
   if (sys.companion) {
     // A smaller companion sun on an eccentric orbit, with two worlds of its
     // own: most of the time it hangs far out, then once a game or so it swings
@@ -545,7 +552,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // The visitor: one body that events turn into a comet or a derelict, on a
   // pass in around the sun and out again. Absent (far away) the rest of the time.
   add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
-  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: !!sys.gravity, sunClear: SUN_CLEAR * (sys.sunSize || 1), bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: !!sys.gravity, sunClear: SUN_RADIUS_SIM * SUN_SIZE + 6, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');

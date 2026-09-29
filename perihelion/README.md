@@ -6,6 +6,9 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
 
 ## Systems
 
+Every map has a big sun (about 16 units across); the nearest planet orbits at
+52 and ships keep a few units clear of its surface.
+
 Pick a **System** on the menu (or Random). Each is a different layout; the
 rules don't change:
 
@@ -14,13 +17,12 @@ rules don't change:
 - **Wide and cold:** few worlds, far apart; long trips, probes matter.
 - **Crowded:** worlds packed close; short, sharp trips.
 - **Rich belt:** eight asteroids in a thick belt.
-- **Giant sun (test, pick it by hand; not in Random or the Daily):** a star
-  2.6× the size, and ships feel its gravity for the whole flight, at the same
-  strength that holds the planets in orbit. The planner solves for burns that
-  still land on target, so routes bend round the sun, dives inward are quick
-  and climbs outward cost more. About 1 route in 20 won't settle and falls
-  back to the plain path. To remove it: delete `titan` from `SYSTEMS` in
-  `src/sim.js` (nothing else depends on it).
+- **Sun's pull (test, pick it by hand; not in Random or the Daily):** ships
+  feel the sun's gravity for the whole flight, at the same strength that holds
+  the planets in orbit, so routes bend round the sun; inward dives are quick,
+  climbs outward cost more. About 1 route in 20 won't settle and falls back
+  to the plain path. To remove it: delete `titan` from `SYSTEMS` in
+  `src/sim.js`.
 - **Binary:** a smaller companion sun with two worlds (and a moon) of its own
   on an eccentric orbit (dashed orange line): most of the game it hangs far
   out, then it swings in fast past the outer planets and away again. When
@@ -53,7 +55,8 @@ inside right now).
 
 From about 4–6 minutes in, then every 7–10 minutes, something turns up.
 Comets and derelicts are visitors: they fall in from the edge of the system,
-whip round the sun and fly back out (about 7–8 minutes), so you have to
+whip round the sun and fly back out (about 4 minutes inside the planets'
+orbits, 5–6 in all), so you have to
 catch them on the way; the launch panel warns if they'll be gone before your
 ships arrive, and anyone still aboard when one leaves heads for home. The
 other events happen at a world (never a homeworld). It's announced a minute ahead; then whoever holds
