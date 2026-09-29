@@ -237,9 +237,9 @@ const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
 export const PERKS = {
   seam: { name: 'Rich seam', text: 'Mines here pay double', kinds: ['asteroid', 'moon'] },
   relay: { name: 'Old relay', text: 'See the whole system' },
-  depot: { name: 'Fuel depot', text: 'Fleets from worlds within 60 fly 20% faster', range: 60, boost: 1.2 },
+  depot: { name: 'Fuel depot', text: 'Fleets launched from your worlds inside its ring fly 20% faster', range: 60, boost: 1.2 },
   post: { name: 'Listening post', text: 'Warns of fleets heading for your worlds' },
-  fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on your worlds within 50', range: 50 },
+  fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on each of your worlds inside its ring', range: 50 },
   archive: { name: 'Ancient archive', text: 'Research 25% faster', boost: 1.25 },
   hulk: { name: 'Drydock hulk', text: 'Ships built here start as veterans', vet: 2.5 },
   forge: { name: 'Tidal forge', text: 'Builds and upgrades here 30% faster', boost: 1.3, giantMoon: true },
