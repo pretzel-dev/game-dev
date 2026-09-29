@@ -735,7 +735,20 @@ export function createView(canvas, labelRoot) {
       label.className = 'lbl';
       labelRoot.appendChild(label);
       if (b.visitor) lineHolder.visible = false;
-      return { b, g, body, surface, mark, lineHolder, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail };
+      // Perks with a reach (fuel depot, fortress): a ring on the plane of the
+      // orbits showing it, shown while the world is selected or looked at.
+      let reach = null;
+      if (b.perk && PERKS[b.perk].range) {
+        const rr = PERKS[b.perk].range;
+        const pts = [];
+        for (let i = 0; i <= 96; i++) { const a = (i / 96) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr)); }
+        reach = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+          new THREE.LineDashedMaterial({ color: '#ffd479', transparent: true, opacity: 0.55, dashSize: 2.5, gapSize: 2 }));
+        reach.computeLineDistances();
+        reach.visible = false;
+        world.add(reach);
+      }
+      return { b, g, body, surface, mark, lineHolder, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach };
     });
     // Binary: the companion sun's (eccentric) path, so you can see where it's headed.
     if (companionPath) { companionPath.removeFromParent(); companionPath = null; }
@@ -1037,6 +1050,10 @@ export function createView(canvas, labelRoot) {
       } else if (b.star) {
         const q = starPos(game, b.star, now);
         v.lineHolder.position.set(q.x, q.y, q.z);
+      }
+      if (v.reach) {
+        v.reach.position.set(p.x, 0, p.z);
+        v.reach.visible = ui.selected === b.id || ui.peek === b.id || ui.target === b.id;
       }
       if (b.visitor) {
         const here = present(game, b, now);

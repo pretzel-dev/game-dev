@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -460,7 +460,17 @@ const ROMAN = ['', 'I', 'II', 'III'];
 /** A world's perk and any event there, one short line each. */
 function specialLine(b) {
   const out = [];
-  if (b.perk) out.push(`${icon(b.perk)} <b>${PERKS[b.perk].name}</b> · ${PERKS[b.perk].text}`);
+  if (b.perk) {
+    const P = PERKS[b.perk];
+    // Worlds drift in and out of a ring as they orbit: say which are in now.
+    let inside = '';
+    if (P.range) {
+      const c = posAt(game, b, game.time);
+      const mine = game.bodies.filter((x) => x.owner === me && x !== b && dist(posAt(game, x, game.time), c) <= P.range).map((x) => x.name);
+      inside = ` <span class="dim">· ${mine.length ? `yours inside now: ${mine.join(', ')}` : 'none of yours inside now'}</span>`;
+    }
+    out.push(`${icon(b.perk)} <b>${P.name}</b> · ${P.text}${inside}`);
+  }
   for (const h of game.happenings || []) if (h.at === b.id) out.push(`${icon(h.kind)} <b>${EVENTS[h.kind].name}</b> · ${EVENTS[h.kind].text} (${EVENTS[h.kind].hold}s)`);
   return out.map((t) => `<div class="perkline">${t}</div>`).join('');
 }

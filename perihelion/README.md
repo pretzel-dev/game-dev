@@ -33,15 +33,18 @@ the date). The end screen and share image say which day it was.
 ## Special worlds
 
 Two or three neutral worlds on each map carry a perk (an icon beside the name;
-tap any world to see what it has). Whoever holds the world has the perk.
+tap any world to see what it has). Whoever holds the world has the perk. The fuel depot and fortress rock reach
+nearby worlds: select or tap one to see its reach as a dashed gold ring (worlds
+drift in and out of it as they orbit; the panel lists which of yours are
+inside right now).
 
 | World | While held |
 |---|---|
 | Rich seam (asteroid or moon) | Mines here pay double |
 | Old relay | See the whole system (reading fleets still needs Intel) |
-| Fuel depot | Fleets from your worlds within 60 fly 20% faster |
+| Fuel depot | Fleets launched from your worlds inside its ring fly 20% faster |
 | Listening post | Warnings of fleets heading for your worlds |
-| Fortress rock | Starts with heavy guns; +1 gun on your worlds within 50 |
+| Fortress rock | Starts with heavy guns; +1 gun on each of your worlds inside its ring |
 | Ancient archive | Research 25% faster |
 | Drydock hulk | Comes with a shipyard; ships built here start as veterans |
 | Tidal forge (moon of a gas giant) | Builds and upgrades here 30% faster |
