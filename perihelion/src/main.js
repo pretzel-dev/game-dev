@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, dailySeed, PERKS, EVENTS, staysFor } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -76,7 +76,7 @@ segmented($('difficulty'), () => prefs.difficulty, (v) => (prefs.difficulty = v)
 let aiSeatDiffs = [];
 let daily = null; // the day's key when playing the daily system
 /** The chosen system type, with Random resolved from the seed. */
-const systemFor = (seed) => (prefs.system !== 'random' && SYSTEMS[prefs.system] ? prefs.system : SYSTEM_KEYS[(seed >>> 0) % SYSTEM_KEYS.length]);
+const systemFor = (seed) => (prefs.system !== 'random' && SYSTEMS[prefs.system] ? prefs.system : RANDOM_KEYS[(seed >>> 0) % RANDOM_KEYS.length]);
 function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, aiDiffs = null, mp = false, system = systemFor(seed), day = null } = {}) {
   daily = day;
   game = createGame({ seed, opponents: players - 1, mp, system });
@@ -122,7 +122,7 @@ $('daily').addEventListener('click', startDaily);
 // System picker: tap to cycle Random and each type.
 const SYSTEM_CHOICES = ['random', ...SYSTEM_KEYS];
 function syncSystem() {
-  $('system-pick').textContent = prefs.system === 'random' ? 'Random' : SYSTEMS[prefs.system].name;
+  $('system-pick').textContent = prefs.system === 'random' ? 'Random' : `${SYSTEMS[prefs.system].name}${SYSTEMS[prefs.system].test ? ' (test)' : ''}`;
   const d = dailySeed();
   $('daily').innerHTML = `Daily system<small>${SYSTEMS[d.system].name}</small>`;
 }
