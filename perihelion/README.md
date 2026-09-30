@@ -139,9 +139,13 @@ preview server running).
 - **Incoming:** hostile fleets heading for a world show on its label as
   `▼5 0:42` (ships, time to arrival) in the attacker's colour, and their
   arrival points pulse.
-- **Planetary cover:** a planet's guns also fire, at half strength, on
-  anyone attacking a moon or station held by the same side. Take the planet
-  (or knock out its guns) and its satellites get much easier.
+- **Cover:** worlds in one planet's family (the planet, its moons and its
+  station) back each other up when the same side holds them. The planet's
+  guns fire at half strength on anyone attacking its moons or station; each
+  moon's or station's guns fire at a quarter strength for the planet and the
+  other satellites. Cover can't be shot down by the attackers there; only
+  taking the covering world (or its own guns) removes it. The world panel
+  shows the cover a world gets and which worlds its guns defend.
 - **Battles:** ships arriving at a hostile site circle it and trade fire with
   its docked ships and surface guns until one side is gone. Rounds streak
   between actual ships in the shooter's colour, and each ship lost goes up

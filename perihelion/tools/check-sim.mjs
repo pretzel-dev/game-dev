@@ -411,3 +411,17 @@ assert.ok(finished >= 18);
   assert.ok(Math.max(...d) > Math.min(...d) * 2, 'companion orbit is eccentric');
   console.log(`companion: ${Math.round(Math.min(...d))} to ${Math.round(Math.max(...d))} from the main sun`);
 }
+
+// Cover works both ways within a family (satellites help the planet at a quarter).
+{
+  const { coverFrom, coverOf } = await import('../src/sim.js');
+  const g = createGame({ seed: 5 });
+  const planet = g.bodies.find((b) => g.bodies.some((c) => c.parent === b.id && c.kind === 'moon'));
+  const moon = g.bodies.find((c) => c.parent === planet.id && c.kind === 'moon');
+  planet.owner = moon.owner = 0; planet.guns = 4; moon.guns = 4;
+  assert.equal(coverOf(g, moon), 4 * RULES.coverShare, 'planet covers moon at half');
+  assert.equal(coverOf(g, planet), 4 * RULES.moonCover, 'moon covers planet at a quarter');
+  moon.owner = 1;
+  assert.equal(coverOf(g, planet), 0, 'only your own worlds cover you');
+  console.log('cover both ways: ok');
+}
