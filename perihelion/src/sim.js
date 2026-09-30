@@ -31,12 +31,13 @@ export const RULES = {
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
   coverShare: 0.5, // a planet's guns also fire on attackers at its moons and stations
+  moonCover: 0.25, // and a moon's or station's guns help its planet and the rest of the family
   fire: 0.12, // ships destroyed per second, per firing ship (or gun)
   gunRegen: 0.02, // guns rebuilt per second after a fight
   flipTime: 4, // seconds spent turning around at the midpoint
   demolishFee: 0.25, // share of a structure's cost to tear it down
-  scrapTime: 20,
-  cooldown: 15, // seconds before newly arrived ships can launch again // seconds to tear one down (cancelled if the world is taken)
+  scrapTime: 20, // seconds to tear one down (cancelled if the world is taken)
+  cooldown: 15, // seconds before newly arrived ships can launch again
   // Unmanned probe: fast, single use; a flyby reveals a world for a while.
   probe: { cost: 80, speed: 4, scan: 150 },
   cancelRefund: 0.8, // share of a ship's cost returned when cancelled
@@ -1044,11 +1045,25 @@ export function fleetState(f, t) {
 
 /** Ships attacking b in orbit: resolve a round of fire (ships and guns on both sides). */
 /** Supporting fire from the parent planet's guns, if the same side holds it. */
-export function coverOf(game, b) {
-  if (b.parent === null) return 0;
-  const p = game.bodies[b.parent];
-  return p.owner === b.owner ? p.guns * RULES.coverShare : 0;
+/**
+ * Supporting fire within a planet's family, if the same side holds them: the
+ * planet's guns cover its moons and stations at half strength; each moon's or
+ * station's guns cover the planet and the other satellites at a quarter.
+ * Returns [{ from, n }] (n in guns).
+ */
+export function coverFrom(game, b) {
+  if (b.owner === NEUTRAL || b.visitor) return [];
+  const head = b.parent === null ? b : game.bodies[b.parent];
+  const family = [head, ...game.bodies.filter((x) => x.parent === head.id)];
+  const out = [];
+  for (const x of family) {
+    if (x === b || x.owner !== b.owner || x.guns <= 0) continue;
+    const share = x === head ? RULES.coverShare : RULES.moonCover;
+    out.push({ from: x, n: x.guns * share });
+  }
+  return out;
 }
+export const coverOf = (game, b) => coverFrom(game, b).reduce((n, c) => n + c.n, 0);
 
 function fight(game, b, dt) {
   let taken = false;

@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -391,7 +391,7 @@ function updatePeek() {
   const built = b.structures.filter((x) => x.left <= 0 || x.next).map((x) => `${RULES.structures[x.type].name}${RULES.structures[x.type].maxLevel ? ` ${ROMAN[x.level]}` : ''}`);
   const garrison = seen ? `${icon('fleet')} <b>${b.ships}</b> ship${b.ships === 1 ? '' : 's'} · ${icon('guns')} <b>${Math.ceil(b.guns)}</b> gun${Math.ceil(b.guns) === 1 ? '' : 's'}${built.length ? ` · ${built.join(', ')}` : ''}` : 'Out of sensor range · defences unknown';
   setHTML($('peek'), `<div class="head"><span class="tag">${kind}</span><b>${b.name}</b><span class="grow"></span><span class="tag" style="color:${b.owner === NEUTRAL ? 'var(--dim)' : ownerColor(b.owner)}">${who}</span></div>`
-    + `<div class="row2">${garrison}</div>${specialLine(b)}`);
+    + `<div class="row2">${garrison}</div>${seen ? coverLine(b) : ''}${specialLine(b)}`);
 }
 
 function updateActions() {
@@ -417,7 +417,7 @@ function updateActions() {
     ui.target = null;
     const kind = s.visitor ? (game.visit?.kind === 'comet' ? 'Comet' : 'Derelict') : s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
     setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
-      + `<div class="econ">${econLine(s)}</div>${specialLine(s)}`);
+      + `<div class="econ">${econLine(s)}</div>${coverLine(s)}${specialLine(s)}`);
     // Ships that just arrived need a moment before they can leave again.
     const wait = s.ships && !ready ? Math.ceil(s.restUntil - game.time) : 0;
     $('launch').textContent = wait ? `Ready in ${fmt(wait)}` : 'Launch';
@@ -434,7 +434,7 @@ function updateActions() {
     const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
-    const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${game.bodies[t.parent].name}` : defence;
+    const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${coverFrom(game, t).map((c) => c.from.name).join(', ')}` : defence;
     const assist = ui.preview.assist !== undefined ? ` · <span class="assist">${icon('assist')} assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
     if (probing) {
       const why = cantProbe(game, s, t);
@@ -457,6 +457,16 @@ function updateActions() {
 // ---- Building ----------------------------------------------------------------
 
 const ROMAN = ['', 'I', 'II', 'III'];
+/** Guns shared within a planet's family: what this world gets, and gives. */
+function coverLine(b) {
+  const got = coverFrom(game, b);
+  const gives = game.bodies.filter((x) => x !== b && coverFrom(game, x).some((c) => c.from === b));
+  if (!got.length && !gives.length) return '';
+  const parts = [];
+  if (got.length) parts.push(`<span class="tag">Cover</span> <b class="pos">+${got.reduce((n, c) => n + c.n, 0).toFixed(1)} guns</b> <span class="dim">from ${got.map((c) => c.from.name).join(', ')}</span>`);
+  if (gives.length) parts.push(`<span class="dim">guns here also defend ${gives.map((x) => x.name).join(', ')} (${b.parent === null ? 'half' : 'quarter'} strength)</span>`);
+  return `<div class="econ">${parts.join(' · ')}</div>`;
+}
 /** A world's perk and any event there, one short line each. */
 function specialLine(b) {
   const out = [];
