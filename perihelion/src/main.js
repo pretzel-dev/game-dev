@@ -114,7 +114,7 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   running = true;
   updateActions();
   const sys = SYSTEMS[game.system];
-  toast(`${daily ? 'Daily · ' : ''}${sys.name} · ${sys.text}`, '#aab1c8');
+  toast(`${daily ? 'Daily · ' : ''}${sys.name}`, '#aab1c8');
 }
 function start() { leaveNet(); startGame(); }
 function startDaily() { leaveNet(); const d = dailySeed(); startGame({ seed: d.seed, system: d.system, day: d.key }); }
@@ -123,6 +123,7 @@ $('daily').addEventListener('click', startDaily);
 const SYSTEM_CHOICES = ['random', ...SYSTEM_KEYS];
 function syncSystem() {
   $('system-pick').textContent = prefs.system === 'random' ? 'Random' : `${SYSTEMS[prefs.system].name}${SYSTEMS[prefs.system].test ? ' (test)' : ''}`;
+  $('system-pick').title = prefs.system === 'random' ? 'A different system type each game' : SYSTEMS[prefs.system].text;
   const d = dailySeed();
   $('daily').innerHTML = `Daily system<small>${SYSTEMS[d.system].name}</small>`;
 }
@@ -369,15 +370,15 @@ function updateFleetInfo() {
   if ($('fleet').hidden) return;
   const s = fleetState(f, game.time);
   const left = f.T - (game.time - f.t0);
-  const phase = s.flipping ? 'flipping' : s.phase === 1 ? 'burning toward' : 'braking for';
+  const phase = s.flipping ? 'flipping' : s.phase === 1 ? 'burning' : 'braking';
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
   if (f.probe) {
-    setHTML($('fleet'), `<b>Probe</b> from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>flyby in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}%`);
+    setHTML($('fleet'), `${icon('probe')} <b>Probe</b> → <b>${to.name}</b> · <b>${fmt(left)}</b>`);
     return;
   }
-  setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> ship${f.n === 1 ? '' : 's'} from ${game.bodies[f.from].name}, ${phase} <b>${to.name}</b><br>`
-    + `arrive in <b>${fmt(left)}</b> · ${Math.round(s.progress * 100)}% · ${speed.toFixed(2)} u/s${f.assist !== undefined ? ` · <span class="assist">${icon('assist')} ${game.bodies[f.assist].name}</span>` : ''}`);
+  setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> → <b>${to.name}</b><br><span class="dim">${phase}</span> · `
+    + `arrive in <b>${fmt(left)}</b>${f.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[f.assist].name}`, 'assist')}` : ''} ${tip(`${Math.round(s.progress * 100)}%`, `${speed.toFixed(2)} units/s`, 'dim')}`);
 }
 
 /** Read-only panel for a world that isn't yours: owner, what you can see, perk, events. */
@@ -389,9 +390,9 @@ function updatePeek() {
   const kind = b.visitor ? (game.visit?.kind === 'comet' ? 'Comet' : 'Derelict') : b.kind === 'planet' && b.giant ? 'Gas giant' : b.kind[0].toUpperCase() + b.kind.slice(1);
   const who = b.owner === NEUTRAL ? 'Independent' : nameOf(b.owner);
   const built = b.structures.filter((x) => x.left <= 0 || x.next).map((x) => `${RULES.structures[x.type].name}${RULES.structures[x.type].maxLevel ? ` ${ROMAN[x.level]}` : ''}`);
-  const garrison = seen ? `${icon('fleet')} <b>${b.ships}</b> ship${b.ships === 1 ? '' : 's'} · ${icon('guns')} <b>${Math.ceil(b.guns)}</b> gun${Math.ceil(b.guns) === 1 ? '' : 's'}${built.length ? ` · ${built.join(', ')}` : ''}` : 'Out of sensor range · defences unknown';
+  const garrison = seen ? `${icon('fleet')} <b>${b.ships}</b> ship${b.ships === 1 ? '' : 's'} · ${icon('guns')} <b>${Math.ceil(b.guns)}</b> gun${Math.ceil(b.guns) === 1 ? '' : 's'}${built.length ? ` · ${built.join(', ')}` : ''}` : tip('Defences unknown', 'Out of sensor range: send a probe or get a world nearby to see it');
   setHTML($('peek'), `<div class="head"><span class="tag">${kind}</span><b>${b.name}</b><span class="grow"></span><span class="tag" style="color:${b.owner === NEUTRAL ? 'var(--dim)' : ownerColor(b.owner)}">${who}</span></div>`
-    + `<div class="row2">${garrison}</div>${seen ? coverLine(b) : ''}${specialLine(b)}`);
+    + `<div class="row2">${garrison}</div>${chips(b, { income: false, seen })}`);
 }
 
 function updateActions() {
@@ -417,7 +418,7 @@ function updateActions() {
     ui.target = null;
     const kind = s.visitor ? (game.visit?.kind === 'comet' ? 'Comet' : 'Derelict') : s.kind === 'station' ? 'Station' : s.kind[0].toUpperCase() + s.kind.slice(1);
     setHTML($('info'), `<span class="tag">${kind}</span><b>${s.name}</b><span class="grow"></span>${s.ships ? `${s.tf ? `<span class="tag">TF ${s.tf}</span>` : ''}<span class="num">${s.ships}</span><span class="tag">ship${s.ships === 1 ? '' : 's'}</span>` : '<span class="tag">no ships</span>'}`
-      + `<div class="econ">${econLine(s)}</div>${coverLine(s)}${specialLine(s)}`);
+      + chips(s));
     // Ships that just arrived need a moment before they can leave again.
     const wait = s.ships && !ready ? Math.ceil(s.restUntil - game.time) : 0;
     $('launch').textContent = wait ? `Ready in ${fmt(wait)}` : 'Launch';
@@ -434,22 +435,22 @@ function updateActions() {
     const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
-    const defenceText = !seen ? 'defences unknown' : cover ? `${defence}, +${cover.toFixed(1)} cover from ${coverFrom(game, t).map((c) => c.from.name).join(', ')}` : defence;
-    const assist = ui.preview.assist !== undefined ? ` · <span class="assist">${icon('assist')} assist via ${game.bodies[ui.preview.assist].name}</span>` : '';
+    const defenceText = !seen ? 'unknown' : cover ? `${defence} ${tip(`+${cover.toFixed(1)}`, `Cover from ${coverFrom(game, t).map((c) => c.from.name).join(', ')}`)}` : defence;
+    const assist = ui.preview.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[ui.preview.assist].name}: a faster route`, 'assist')}` : '';
     if (probing) {
       const why = cantProbe(game, s, t);
-      setHTML($('info'), `<span>Probe → <b>${t.name}</b> (${defenceText}) · flyby in <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
+      setHTML($('info'), `<span>Probe → <b>${t.name}</b> · <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
       $('launch').textContent = 'Confirm';
       $('launch').disabled = !!why;
       return;
     }
     const resting = restingShips(game, s);
-    const restNote = resting ? ` · <span class="dim">${resting} more ready in ${fmt(Math.ceil(s.restUntil - game.time))}</span>` : '';
+    const restNote = resting ? ` ${tip(`+${resting} in ${fmt(Math.ceil(s.restUntil - game.time))}`, `${resting} ship${resting === 1 ? '' : 's'} just arrived and can launch in ${fmt(Math.ceil(s.restUntil - game.time))}`, 'dim')}` : '';
     // A visitor only waits so long: say when it leaves, and if we'd miss it.
     const stay = staysFor(game, t);
     const late = ui.preview.T > stay - 5;
-    const leaves = Number.isFinite(stay) ? ` · <span class="${late ? 'warn' : 'dim'}">${late ? 'gone before you arrive' : `leaves in ${fmt(stay)}`}</span>` : '';
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> (${defenceText}) · arrive in <b>${fmt(ui.preview.T)}</b>${assist}${restNote}${leaves}</span>${specialLine(t)}`);
+    const leaves = Number.isFinite(stay) ? ` · <span class="${late ? 'warn' : 'dim'}">${late ? 'too late' : `leaves ${fmt(stay)}`}</span>` : '';
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> <span class="dim">${defenceText}</span> · <b>${fmt(ui.preview.T)}</b>${assist}${restNote}${leaves}</span>${chips(t, { income: false, seen })}`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = ready < 1 || late;
   }
@@ -457,39 +458,43 @@ function updateActions() {
 // ---- Building ----------------------------------------------------------------
 
 const ROMAN = ['', 'I', 'II', 'III'];
-/** Guns shared within a planet's family: what this world gets, and gives. */
-function coverLine(b) {
-  const got = coverFrom(game, b);
-  const gives = game.bodies.filter((x) => x !== b && coverFrom(game, x).some((c) => c.from === b));
-  if (!got.length && !gives.length) return '';
-  const parts = [];
-  if (got.length) parts.push(`<span class="tag">Cover</span> <b class="pos">+${got.reduce((n, c) => n + c.n, 0).toFixed(1)} guns</b> <span class="dim">from ${got.map((c) => c.from.name).join(', ')}</span>`);
-  if (gives.length) parts.push(`<span class="dim">guns here also defend ${gives.map((x) => x.name).join(', ')} (${b.parent === null ? 'half' : 'quarter'} strength)</span>`);
-  return `<div class="econ">${parts.join(' · ')}</div>`;
-}
-/** A world's perk and any event there, one short line each. */
-function specialLine(b) {
+/** A small label with more detail behind it (hover, or tap on touch). */
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const tip = (html, detail, cls = '') => `<span class="chip${cls ? ` ${cls}` : ''}" tabindex="0" data-tip="${esc(detail)}">${html}</span>`;
+/**
+ * One row of short chips for a world: income, cover, perk and any event.
+ * The explanations live in the tooltips.
+ */
+function chips(b, { income = true, seen = true } = {}) {
   const out = [];
+  if (income && b.owner !== NEUTRAL) {
+    const total = incomeOf(b, game);
+    const base = RULES.income[b.kind] * (b.star ? 1.5 : 1);
+    const extra = total - base;
+    out.push(tip(`<b class="pos">+${total.toFixed(1)}/s</b>`, `Income: ${b.home ? 'homeworld' : b.kind} ${base.toFixed(1)}${extra > 0.001 ? ` + ${extra.toFixed(1)} from structures and bonuses` : ''} per second`));
+  }
+  if (seen) {
+    const got = coverFrom(game, b);
+    const gives = game.bodies.filter((x) => x !== b && coverFrom(game, x).some((c) => c.from === b));
+    if (got.length) out.push(tip(`${icon('guns')} +${got.reduce((n, c) => n + c.n, 0).toFixed(1)} cover`, `Guns on ${got.map((c) => c.from.name).join(', ')} also fire on anyone attacking here${gives.length ? `; guns here help defend ${gives.map((x) => x.name).join(', ')}` : ''}`));
+    else if (gives.length) out.push(tip(`${icon('guns')} covers ${gives.length}`, `Guns here also fire on anyone attacking ${gives.map((x) => x.name).join(', ')} (${b.parent === null ? 'half' : 'quarter'} strength)`));
+  }
   if (b.perk) {
     const P = PERKS[b.perk];
-    // Worlds drift in and out of a ring as they orbit: say which are in now.
     let inside = '';
     if (P.range) {
       const c = posAt(game, b, game.time);
       const mine = game.bodies.filter((x) => x.owner === me && x !== b && dist(posAt(game, x, game.time), c) <= P.range).map((x) => x.name);
-      inside = ` <span class="dim">· ${mine.length ? `yours inside now: ${mine.join(', ')}` : 'none of yours inside now'}</span>`;
+      inside = ` (dashed ring). ${mine.length ? `Yours inside now: ${mine.join(', ')}` : 'None of yours inside now'}`;
     }
-    out.push(`${icon(b.perk)} <b>${P.name}</b> · ${P.text}${inside}`);
+    out.push(tip(`${icon(b.perk)} ${P.name}`, `${P.text}${inside}`, 'gold'));
   }
-  for (const h of game.happenings || []) if (h.at === b.id) out.push(`${icon(h.kind)} <b>${EVENTS[h.kind].name}</b> · ${EVENTS[h.kind].text} (${EVENTS[h.kind].hold}s)`);
-  return out.map((t) => `<div class="perkline">${t}</div>`).join('');
-}
-/** What a world earns: its base plus any mines, per second. */
-function econLine(b) {
-  const total = incomeOf(b, game);
-  const base = RULES.income[b.kind];
-  const extra = total - base;
-  return `<span class="tag">Income</span> <b class="pos">+${total.toFixed(1)}/s</b> <span class="dim">· ${b.home ? 'home' : b.kind} ${base.toFixed(1)}${extra > 0.001 ? ` + ${b.home ? 'bonus & ' : ''}industry ${extra.toFixed(1)}` : ''}</span>`;
+  for (const h of game.happenings || []) {
+    if (h.at !== b.id) continue;
+    const E = EVENTS[h.kind];
+    out.push(tip(`${icon(h.kind)} ${E.name}`, `${E.text}. Hold for ${E.hold}s`, 'gold'));
+  }
+  return out.length ? `<div class="chips">${out.join('')}</div>` : '';
 }
 /** What one level of a structure does, for the upgrade breakdown. */
 function levelEffect(type, level) {
@@ -540,7 +545,7 @@ function renderBuildRow(s) {
       }).join('');
       // What the picked option does (touch: tap once to read, again to build).
       const pk = ui.pick && RULES.structures[ui.pick];
-      row += `<div class="desc">${pk ? `<b>${pk.name}</b> · ${pk.desc}` : touchInput ? 'Tap an option to see what it does' : ''}</div>`;
+      if (pk) row += `<div class="desc"><b>${pk.name}</b> · ${pk.desc}</div>`;
     } else {
       const def = RULES.structures[x.type];
       const p = progressOf(x);
@@ -561,7 +566,7 @@ function renderBuildRow(s) {
           steps.push(`<${tag} class="lv ${cls}${next ? ' next' : ''}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${note}</small></${tag.split(' ')[0]}>`);
         }
         row += `<div class="ladder">${steps.join('')}</div>`;
-      row += `<div class="desc">${def.desc}</div>`;
+
       }
     }
     html += `<div class="ctx">${row}</div>`;
@@ -714,6 +719,33 @@ function doLaunch() {
 // Touch or mouse, from the last press: touch builds take a second tap.
 let touchInput = matchMedia('(pointer: coarse)').matches;
 window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; }, true);
+// Tooltips: one floating box for every [data-tip] (hover with a mouse, tap on touch).
+const tipBox = document.createElement('div');
+tipBox.id = 'tipbox';
+tipBox.hidden = true;
+document.body.appendChild(tipBox);
+let tipFor = null;
+function showTip(el) {
+  tipFor = el;
+  tipBox.textContent = el.dataset.tip;
+  tipBox.hidden = false;
+  const r = el.getBoundingClientRect();
+  const w = Math.min(280, window.innerWidth - 24);
+  tipBox.style.maxWidth = `${w}px`;
+  const bw = tipBox.offsetWidth, bh = tipBox.offsetHeight;
+  const x = Math.max(12, Math.min(window.innerWidth - bw - 12, r.left + r.width / 2 - bw / 2));
+  const above = r.top - bh - 8;
+  tipBox.style.left = `${x}px`;
+  tipBox.style.top = `${above > 8 ? above : r.bottom + 8}px`;
+}
+function hideTip() { tipFor = null; tipBox.hidden = true; }
+document.addEventListener('mouseover', (e) => { const el = e.target.closest?.('[data-tip]'); if (el && !touchInput) showTip(el); });
+document.addEventListener('mouseout', (e) => { const el = e.target.closest?.('[data-tip]'); if (el && el === tipFor && !touchInput) hideTip(); });
+document.addEventListener('click', (e) => {
+  const el = e.target.closest?.('[data-tip]');
+  if (el && touchInput) { if (tipFor === el) hideTip(); else showTip(el); return; }
+  if (!el) hideTip();
+}, true);
 let toastTimer = 0;
 // Notifications: a small stack in the top corner; each fades after a while.
 function toast(text, color, ic = null) {
@@ -771,7 +803,7 @@ function drainEvents(evs = game.events.splice(0)) {
         break;
       case 'event': {
         const E = EVENTS[e.kind];
-        if (e.phase === 'soon') toast(game.bodies[e.at].visitor ? `${nm(e.at)} is falling in toward the sun · ${E.text}` : `${E.name} at ${nm(e.at)} in 1:00 · ${E.text}`, '#ffd479', e.kind);
+        if (e.phase === 'soon') toast(game.bodies[e.at].visitor ? `${nm(e.at)} incoming` : `${E.name} at ${nm(e.at)} in 1:00`, '#ffd479', e.kind);
         else if (e.phase === 'won') toast(`${e.owner === me ? 'You' : nameOf(e.owner)} secured the ${E.name.toLowerCase()} · ${e.what}`, ownerColor(e.owner), e.kind);
         else toast(`${E.name} at ${nm(e.at)} is gone`, '#858ca6', e.kind);
         break;
