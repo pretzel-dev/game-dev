@@ -1488,7 +1488,8 @@ export function createView(canvas, labelRoot) {
         const c = !soon && h.holder !== NEUTRAL ? ownerColor(h.holder) : '#ffd479';
         return `<span class="ev" style="color:${c}">${icon(h.kind)} ${soon ? 'in ' : ''}${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</span>`;
       }).join('');
-      const perk = b.perk ? `<i class="perk" title="${PERKS[b.perk].name}">${icon(b.perk)}</i> ` : '';
+      const perk = (b.perk ? `<i class="perk" title="${PERKS[b.perk].name}">${icon(b.perk)}</i> ` : '')
+        + (b.wonder ? `<i class="perk">${icon(b.wonder)}</i> ` : b.project ? `<i class="perk proj">${icon(b.project.key)}</i> ` : '');
       const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}${evs}<small>${perk}${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
       v.label.style.visibility = 'visible';

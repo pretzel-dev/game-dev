@@ -399,3 +399,34 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #info .chips, #peek .chips { flex-basis: 100%; }
 #count { cursor: pointer; min-width: 46px; }
 #count small { font-size: 11px; font-weight: 500; color: var(--dim); margin-left: 1px; }
+
+/* Research hex board. */
+#research .board { display: block; width: min(320px, 100%); margin: 0 auto 6px; }
+.board .hx { fill: rgba(88, 184, 255, 0.06); stroke: rgba(160, 180, 255, 0.28); stroke-width: 1; }
+.board .core { fill: rgba(88, 184, 255, 0.14); }
+.board .hl { fill: var(--fg); font-size: 7.5px; text-anchor: middle; letter-spacing: 0.06em; text-transform: uppercase; }
+.board .hs { fill: var(--dim); font-size: 7px; text-anchor: middle; }
+.board .ic { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.board .hexc { cursor: pointer; color: var(--accent); }
+.board .hexc circle { fill: rgba(160, 180, 255, 0.25); }
+.board .hexc circle.on { fill: var(--accent); }
+.board .hexc.done .hx { fill: rgba(88, 184, 255, 0.24); stroke: var(--accent); }
+.board .hexc.run .hx { stroke: #ffd479; stroke-width: 1.6; animation: hexpulse 1.2s ease-in-out infinite alternate; }
+.board .hexc.locked { color: #5c6680; }
+.board .hexc.locked .hl { fill: #5c6680; }
+.board .hexc.sel .hx { stroke: #fff; stroke-width: 1.8; }
+@keyframes hexpulse { from { fill: rgba(255, 212, 121, 0.05); } to { fill: rgba(255, 212, 121, 0.22); } }
+.tdetail { padding: 8px 6px 2px; border-top: 1px solid var(--line); }
+.tdetail .th { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--fg); letter-spacing: 0.06em; text-transform: uppercase; font-size: 13px; }
+.tdetail .have { font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+.tdetail .have .ic { color: #7ee0a1; }
+.tdetail small { display: block; font-size: 12px; color: var(--dim); }
+.tdetail .nextrow { display: flex; gap: 10px; align-items: center; }
+.tdetail .nextrow > span { flex: 1; }
+.tdetail .nextrow b { color: var(--fg); }
+.tdetail .nextrow button { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--accent); color: var(--accent); background: rgba(88, 184, 255, 0.1); text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
+.tdetail .nextrow button small { display: block; color: var(--dim); font-size: 11px; }
+.tdetail .nextrow button:disabled { opacity: 0.4; }
+.ctx.proj { gap: 6px; }
+.ctx.proj .meter { flex: 1; min-width: 40px; }
+.lbl .perk.proj { opacity: 0.7; animation: blink 1.4s ease-in-out infinite alternate; }

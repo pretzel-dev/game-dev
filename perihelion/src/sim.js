@@ -58,7 +58,7 @@ export const TECH = {
   sensors: {
     name: 'Sensors', cost: [250, 500, 900], time: [80, 140, 220],
     levels: ['Long-baseline telescopes', 'Deep-space listening posts', 'Interferometer net'],
-    text: ['Spot drive flares further out', 'Hear the system’s far side', 'See across the whole system'],
+    text: ['Spot drive flares further out', 'Hear further into the system', 'Wide-field sight, a long way out'],
   },
   intel: {
     name: 'Intel', cost: [300, 550, 850], time: [90, 150, 210],
@@ -81,7 +81,94 @@ export const TECH = {
     text: ['Build 12% faster, mines +15%', 'Build 24% faster, mines +30%'],
   },
 };
-export const SENSOR_RANGE = [70, 110, 160, 240];
+export const SENSOR_RANGE = [70, 100, 135, 175];
+// Joint techs: on the hex board they sit between two branches and need both
+// at level II. Ring order of the branches: intel, sensors, weapons, drives,
+// industry, armour; each joint joins two neighbours.
+export const BRANCH_RING = ['intel', 'sensors', 'weapons', 'drives', 'industry', 'armour'];
+export const JOINTS = {
+  ansible: { name: 'Ansible', needs: ['intel', 'sensors'], cost: 1400, time: 260, text: 'See every world and fleet in the system, and where fleets are going' },
+  targeting: { name: 'Targeting data', needs: ['sensors', 'weapons'], cost: 1100, time: 220, text: '+20% firepower when attacking' },
+  kinetic: { name: 'Kinetic strike', needs: ['weapons', 'drives'], cost: 1100, time: 220, text: 'Fleets arrive firing: an opening volley destroys a fifth of their number in defenders' },
+  torch: { name: 'Torch production', needs: ['drives', 'industry'], cost: 1100, time: 220, text: 'Ships build 25% faster and fly 10% faster' },
+  hardened: { name: 'Hardened colonies', needs: ['industry', 'armour'], cost: 1100, time: 220, text: '+1 gun on every world; guns rebuild twice as fast' },
+  pdnet: { name: 'Point-defence net', needs: ['armour', 'intel'], cost: 1100, time: 220, text: 'Your worlds shoot down 15% of every attacking fleet as it arrives' },
+};
+export const hasJoint = (game, owner, key) => owner !== NEUTRAL && !!game.tech && !!game.tech[owner][key];
+/** Display name of a research key at a level (branches and joints). */
+export const techTitle = (key, level) => (JOINTS[key] ? JOINTS[key].name : TECH[key].levels[level - 1]);
+
+// Megaprojects: built on one of your worlds, one per world. Each kind can be
+// finished only once in a game: several empires can race for the same one,
+// and the first to finish wins it; the others lose the race (half their money
+// back). A captured world's project or wonder goes to the captor.
+export const PROJECTS = {
+  sundiver: { name: 'Sun-diver collectors', where: 'inner', text: '+8 credits/s', cost: 1200, time: 360 },
+  massdriver: { name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 1200, time: 360 },
+  ringyard: { name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 1200, time: 360 },
+  citadel: { name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 1200, time: 360 },
+  telescope: { name: 'Deep-space telescope', where: 'any', text: 'See every enemy fleet: its size, destination and arrival time', cost: 1200, time: 360 },
+};
+export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
+const holdsWonder = (game, owner, key) => owner !== NEUTRAL && game.bodies.some((b) => b.wonder === key && b.owner === owner);
+export function cantProject(game, b, key) {
+  const P = PROJECTS[key];
+  if (b.owner === NEUTRAL || b.visitor) return 'not yours';
+  if (b.project || b.wonder) return 'this world already has one';
+  if (game.wonders && game.wonders[key] !== undefined) return 'already built';
+  if (P.where === 'giant' && !b.giant) return 'gas giants only';
+  if (P.where === 'planet' && b.kind !== 'planet') return 'planets only';
+  if (P.where === 'inner') {
+    const inner = game.bodies.filter((x) => x.kind === 'planet' && x.parent === null && !x.star).sort((a, c) => a.r - c.r)[0];
+    if (b !== inner) return 'the innermost planet only';
+  }
+  if (game.credits[b.owner] < P.cost) return 'not enough credits';
+  return null;
+}
+export function startProject(game, b, key) {
+  if (cantProject(game, b, key)) return false;
+  const P = PROJECTS[key];
+  game.credits[b.owner] -= P.cost;
+  tally(game, b.owner, 'spent', P.cost);
+  b.project = { key, left: P.time, paid: P.cost };
+  note(game, { type: 'project', phase: 'start', owner: b.owner, at: b.id, key });
+  return true;
+}
+/** Speed a project up: pay credits, or break a docked ship up for parts and crew. */
+export function fundProject(game, b, how) {
+  if (!b.project || b.owner === NEUTRAL) return false;
+  if (how === 'ship') {
+    if (readyShips(game, b) < 1) return false;
+    b.ships -= 1;
+    b.project.left = Math.max(1, b.project.left - PROJECT_FUND.crewCut);
+    return true;
+  }
+  if (game.credits[b.owner] < PROJECT_FUND.credits) return false;
+  game.credits[b.owner] -= PROJECT_FUND.credits;
+  tally(game, b.owner, 'spent', PROJECT_FUND.credits);
+  b.project.paid += PROJECT_FUND.credits;
+  b.project.left = Math.max(1, b.project.left - PROJECT_FUND.cut);
+  return true;
+}
+function stepProjects(game, dt) {
+  for (const b of game.bodies) {
+    if (!b.project || b.owner === NEUTRAL || b.sieges.length) continue;
+    b.project.left -= dt * buildSpeed(game, b.owner);
+    if (b.project.left > 0) continue;
+    const key = b.project.key;
+    b.wonder = key;
+    b.project = null;
+    (game.wonders ||= {})[key] = b.id;
+    note(game, { type: 'project', phase: 'done', owner: b.owner, at: b.id, key });
+    // Everyone else racing for it loses; half their money back.
+    for (const o of game.bodies) {
+      if (!o.project || o.project.key !== key) continue;
+      if (o.owner !== NEUTRAL) game.credits[o.owner] += Math.round(o.project.paid / 2);
+      note(game, { type: 'project', phase: 'lost', owner: o.owner, at: o.id, key });
+      o.project = null;
+    }
+  }
+}
 const techLevel = (game, owner, key) => (owner === NEUTRAL || !game.tech ? 0 : game.tech[owner][key]);
 /** Adds to a player's running total (no-op for neutrals). */
 export function tally(game, owner, key, n = 1) {
@@ -101,13 +188,19 @@ function sample(game) {
   });
 }
 
-export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives'));
+export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives')) * (hasJoint(game, owner, 'torch') ? 1.1 : 1);
 export const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
+/** Firepower when attacking (targeting data helps here). */
+export const attackPowerOf = (game, owner) => firepowerOf(game, owner) * (hasJoint(game, owner, 'targeting') ? 1.2 : 1);
 export const damageTaken = (game, owner) => 1 - 0.12 * techLevel(game, owner, 'armour');
 const buildSpeed = (game, owner, b = null) => (1 + 0.12 * techLevel(game, owner, 'industry')) * (b && b.perk === 'forge' ? PERKS.forge.boost : 1);
 
 export function nextTech(game, owner, key) {
-  const lvl = game.tech[owner][key];
+  const lvl = game.tech[owner][key] || 0;
+  if (JOINTS[key]) {
+    const J = JOINTS[key];
+    return lvl ? null : { level: 1, cost: J.cost, time: J.time, text: J.text, title: J.name };
+  }
   const d = TECH[key];
   return lvl < d.cost.length ? { level: lvl + 1, cost: d.cost[lvl], time: d.time[lvl], text: d.text[lvl], title: d.levels[lvl] } : null;
 }
@@ -118,6 +211,7 @@ export function researchSpeed(game, owner) {
 export function cantResearch(game, owner, key) {
   const next = nextTech(game, owner, key);
   if (!next) return 'complete';
+  if (JOINTS[key] && JOINTS[key].needs.some((k) => game.tech[owner][k] < 2)) return 'locked';
   if (game.tech[owner].project) return 'already researching';
   if (game.credits[owner] < next.cost) return 'not enough credits';
   return null;
@@ -147,7 +241,10 @@ export function visibility(game, owner) {
   // An old relay you hold is a huge sensor dish: it sees everything in its ring.
   for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), PERKS.relay.range]);
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
-  return { owner, sees, bodies, intel: techLevel(game, owner, 'intel'), warn: holds(game, owner, 'post') };
+  // The ansible sees everything and reads routes; a deep-space telescope reads every fleet.
+  const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') ? 2 : 0, holdsWonder(game, owner, 'telescope') ? 3 : 0);
+  if (hasJoint(game, owner, 'ansible')) return { owner, sees: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
+  return { owner, sees, bodies, intel, warn: holds(game, owner, 'post') };
 }
 
 export function rng(seed) {
@@ -614,12 +711,14 @@ export function fortressGuns(game, b) {
   const p = posAt(game, b, game.time);
   return game.bodies.some((f) => f.perk === 'fortress' && f.owner === b.owner && dist(posAt(game, f, game.time), p) <= PERKS.fortress.range) ? 1 : 0;
 }
+/** Guns a held world rebuilds to: batteries, fortress cover, hardening, a fortress world. */
+export const topGuns = (game, b) => (maxGuns(b) + fortressGuns(game, b) + (hasJoint(game, b.owner, 'hardened') ? 1 : 0)) * (b.wonder === 'citadel' ? 3 : 1);
 export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
 export const incomeOf = (b, game) => {
   if (b.owner === NEUTRAL) return 0;
   const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
   const S = RULES.structures;
-  return RULES.income[b.kind] * (b.star ? 1.5 : 1) + (b.home ? RULES.homeIncome : 0) + (b.bonus || 0) + RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1)
+  return (b.wonder === 'sundiver' ? 8 : 0) + RULES.income[b.kind] * (b.star ? 1.5 : 1) + (b.home ? RULES.homeIncome : 0) + (b.bonus || 0) + RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1)
     + S.skimmer.income * count(b, 'skimmer') + S.exchange.income * count(b, 'exchange');
 };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
@@ -836,7 +935,7 @@ export function depotBoost(game, from, now = game.time) {
  * gravity solve: a close estimate of the flight time, for AI planning.
  */
 export function plan(game, from, to, now = game.time, speed = 1, quick = false) {
-  speed *= depotBoost(game, from, now);
+  speed *= depotBoost(game, from, now) * (from.wonder === 'massdriver' ? 1.5 : 1);
   const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick);
   const g = assistBy(game, direct, from, to, now);
   if (!g) return direct;
@@ -1059,7 +1158,7 @@ export function coverFrom(game, b) {
   const out = [];
   for (const x of family) {
     if (x === b || x.owner !== b.owner || x.guns <= 0) continue;
-    const share = x === head ? RULES.coverShare : RULES.moonCover;
+    const share = x.wonder === 'citadel' ? 1 : x === head ? RULES.coverShare : RULES.moonCover;
     out.push({ from: x, n: x.guns * share });
   }
   return out;
@@ -1076,7 +1175,7 @@ function fight(game, b, dt) {
   for (const g of b.sieges) {
     const share = attackers > 0 ? g.n / attackers : 0;
     g.dmg = (g.dmg || 0) + RULES.fire * defenders * share * damageTaken(game, g.owner) * dt;
-    attackFire += g.n * (1 + VET_BONUS * vetLevel(g.vet)) * firepowerOf(game, g.owner);
+    attackFire += g.n * (1 + VET_BONUS * vetLevel(g.vet)) * attackPowerOf(game, g.owner);
   }
   b.dmg = (b.dmg || 0) + RULES.fire * attackFire * damageTaken(game, b.owner) * dt;
   b.fighting = true;
@@ -1168,19 +1267,21 @@ export function step(game, dt) {
     if (!b.slips) b.slips = [];
     while (b.slips.length < Math.min(yards, b.queue)) b.slips.push(0);
     b.slips.length = Math.min(b.slips.length, yards, b.queue);
-    b.slips = b.slips.map((p) => p + (dt * speed) / RULES.ship.time);
+    const yardK = (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1);
+    b.slips = b.slips.map((p) => p + (dt * speed * yardK) / RULES.ship.time);
     for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, b.perk === 'hulk' ? PERKS.hulk.vet : 0, 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
     b.build = b.slips.length ? Math.max(...b.slips) : 0;
-    const top = maxGuns(b) + fortressGuns(game, b);
-    if (b.guns < top) b.guns = Math.min(top, b.guns + RULES.gunRegen * dt);
+    const top = topGuns(game, b);
+    const regen = RULES.gunRegen * (hasJoint(game, b.owner, 'hardened') ? 2 : 1);
+    if (b.guns < top) b.guns = Math.min(top, b.guns + regen * dt);
   }
 
   for (const [owner, t] of (game.tech || []).entries()) {
     if (!t.project) continue;
     t.project.left -= dt * researchSpeed(game, owner);
     if (t.project.left <= 0) {
-      t[t.project.key] += 1;
+      t[t.project.key] = (t[t.project.key] || 0) + 1;
       if (t.project.key === 'drives') refit(game, owner); note(game, { type: 'research', owner, key: t.project.key, level: t[t.project.key] }); t.project = null; tally(game, owner, 'research'); }
   }
 
@@ -1201,6 +1302,14 @@ export function step(game, dt) {
       rest(game, b, f.n);
       note(game, { type: 'arrived', owner: f.owner, name: f.name, n: f.n, at: b.id });
     } else {
+      // A point-defence net picks off part of the fleet on the way in; a
+      // kinetic strike opens with a volley that knocks out defenders.
+      if (hasJoint(game, b.owner, 'pdnet')) f.n -= Math.round(f.n * 0.15);
+      if (f.n <= 0) { note(game, { type: 'wiped', owner: f.owner, name: f.name, at: b.id, vs: b.owner }); return false; }
+      if (hasJoint(game, f.owner, 'kinetic')) {
+        let k = Math.round(f.n * 0.2);
+        while (k-- > 0 && b.ships + b.guns > 0) { if (b.ships > 0) b.ships -= 1; else b.guns = Math.max(0, b.guns - 1); }
+      }
       // Odds as the fight is joined, so wins can be judged by them later.
       const defence = b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b);
       b.own0 = Math.max(b.own0 || 0, defence);
@@ -1214,6 +1323,7 @@ export function step(game, dt) {
   });
 
   for (const b of game.bodies) if (b.sieges.length) fight(game, b, dt);
+  stepProjects(game, dt);
   if (game.evSeed !== undefined) events(game, dt);
 
   const alive = new Set();
