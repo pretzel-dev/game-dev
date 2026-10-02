@@ -397,3 +397,5 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #tipbox[hidden] { display: none; }
 .chip .pos { color: #7ee0a1; }
 #info .chips, #peek .chips { flex-basis: 100%; }
+#count { cursor: pointer; min-width: 46px; }
+#count small { font-size: 11px; font-weight: 500; color: var(--dim); margin-left: 1px; }

@@ -905,13 +905,18 @@ export function createView(canvas, labelRoot) {
     for (const v of views) {
       const q = bodyPos[v.b.id];
       if (!q) continue;
+      // Ease ships out round the world over a zone twice its clearance, so
+      // they curve past smoothly instead of snapping to its surface.
       const min = v.b.size * 1.25 + 0.25;
+      const zone = min * 2;
       const dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 >= min * min) continue;
+      if (d2 >= zone * zone) continue;
       const d = Math.sqrt(d2);
       if (d < 1e-6) { p.x = q.x + min; continue; }
-      const k = min / d;
+      // d' = d + (zone - d)² · min / zone²: min at the centre, d at the edge,
+      // with a matching slope there (no kink).
+      const k = (d + ((zone - d) ** 2) * min / (zone * zone)) / d;
       p.set(q.x + dx * k, q.y + dy * k, q.z + dz * k);
     }
   }

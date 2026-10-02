@@ -407,7 +407,7 @@ function updateActions() {
   if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
   const probing = ui.mode === 'probe';
   ui.count = ready ? Math.max(1, Math.min(ui.count, ready)) : 0;
-  $('count').textContent = ui.count;
+  $('count').innerHTML = `${ui.count}<small>/${ready}</small>`;
   const launching = ui.mode === 'launch' || probing;
   $('actions').classList.toggle('launching', launching);
   $('buildrow').hidden = launching;
@@ -476,8 +476,13 @@ function chips(b, { income = true, seen = true } = {}) {
   if (seen) {
     const got = coverFrom(game, b);
     const gives = game.bodies.filter((x) => x !== b && coverFrom(game, x).some((c) => c.from === b));
-    if (got.length) out.push(tip(`${icon('guns')} +${got.reduce((n, c) => n + c.n, 0).toFixed(1)} cover`, `Guns on ${got.map((c) => c.from.name).join(', ')} also fire on anyone attacking here${gives.length ? `; guns here help defend ${gives.map((x) => x.name).join(', ')}` : ''}`));
-    else if (gives.length) out.push(tip(`${icon('guns')} covers ${gives.length}`, `Guns here also fire on anyone attacking ${gives.map((x) => x.name).join(', ')} (${b.parent === null ? 'half' : 'quarter'} strength)`));
+    // Guns: its own, plus cover from the rest of the family, in one chip.
+    const own = Math.ceil(b.guns);
+    const cover = got.reduce((n, c) => n + c.n, 0);
+    const detail = [`${own} gun${own === 1 ? '' : 's'} here`];
+    for (const c of got) detail.push(`+${c.n.toFixed(1)} from ${c.from.name}`);
+    if (gives.length) detail.push(`these guns also help defend ${gives.map((x) => x.name).join(', ')} (${b.parent === null ? 'half' : 'quarter'} strength)`);
+    if (b.owner !== NEUTRAL || own) out.push(tip(`${icon('guns')} ${own}${cover ? ` <span class="pos">+${cover.toFixed(1)}</span>` : ''}`, detail.join(' · ')));
   }
   if (b.perk) {
     const P = PERKS[b.perk];
@@ -541,12 +546,8 @@ function renderBuildRow(s) {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
         const def = RULES.structures[k];
-        const on = ui.pick === k ? ' on' : '';
-        return `<button class="opt${on}" data-b="${k}" title="${def.name}: ${def.desc}" ${why ? 'disabled' : ''}>${ui.pick === k ? 'Build' : ABBR[k]}<small>${def.cost}</small></button>`;
+        return `<button class="opt" data-b="${k}" data-hold="${esc(`${def.name}: ${def.desc}`)}" title="${def.name}: ${def.desc}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${def.cost}</small></button>`;
       }).join('');
-      // What the picked option does (touch: tap once to read, again to build).
-      const pk = ui.pick && RULES.structures[ui.pick];
-      if (pk) row += `<div class="desc"><b>${pk.name}</b> · ${pk.desc}</div>`;
     } else {
       const def = RULES.structures[x.type];
       const p = progressOf(x);
@@ -626,8 +627,7 @@ $('buildrow').addEventListener('click', (e) => {
   if (!btn) return;
   const k = btn.dataset.b;
   // On touch, the first tap on a build option explains it; the second builds.
-  if (k !== 'ship' && touchInput && ui.pick !== k) { ui.pick = k; updateActions(); return; }
-  ui.pick = null;
+  if (holdShown) { holdShown = false; return; } // a press-and-hold only explains
   const ok = act(k === 'ship' ? { type: 'ship', b: s.id } : { type: 'build', b: s.id, k });
   if (ok) {
     toast(k === 'ship' ? `Ship ordered at ${s.name}` : `${RULES.structures[k].name} under construction at ${s.name}`, ownerColor(me));
@@ -688,6 +688,21 @@ $('rlist').addEventListener('click', (e) => {
 $('less').addEventListener('click', () => { ui.count = Math.max(1, ui.count - 1); updateActions(); });
 
 $('more').addEventListener('click', () => { ui.count += 1; updateActions(); });
+// Tap the number to send everything ready (again for half, again for one).
+$('count').addEventListener('click', () => {
+  const s = ui.selected !== null ? game.bodies[ui.selected] : null;
+  if (!s) return;
+  const all = readyShips(game, s);
+  ui.count = ui.count === all ? Math.max(1, Math.ceil(all / 2)) : ui.count === Math.max(1, Math.ceil(all / 2)) && all > 2 ? 1 : all;
+  updateActions();
+});
+// Hold − or + to keep counting.
+for (const [id, d] of [['less', -1], ['more', 1]]) {
+  let timer = null;
+  const stop = () => { clearInterval(timer); timer = null; };
+  $(id).addEventListener('pointerdown', () => { stop(); timer = setTimeout(() => { timer = setInterval(() => { ui.count = Math.max(1, ui.count + d); updateActions(); }, 70); }, 350); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $(id).addEventListener(ev, stop);
+}
 $('launch').addEventListener('click', () => {
   if (!ui.mode) { ui.mode = 'launch'; ui.target = null; updateActions(); return; }
   doLaunch();
@@ -726,9 +741,9 @@ tipBox.id = 'tipbox';
 tipBox.hidden = true;
 document.body.appendChild(tipBox);
 let tipFor = null;
-function showTip(el) {
+function showTip(el, text = el.dataset.tip) {
   tipFor = el;
-  tipBox.textContent = el.dataset.tip;
+  tipBox.textContent = text;
   tipBox.hidden = false;
   const r = el.getBoundingClientRect();
   const w = Math.min(280, window.innerWidth - 24);
@@ -743,10 +758,22 @@ function hideTip() { tipFor = null; tipBox.hidden = true; }
 document.addEventListener('mouseover', (e) => { const el = e.target.closest?.('[data-tip]'); if (el && !touchInput) showTip(el); });
 document.addEventListener('mouseout', (e) => { const el = e.target.closest?.('[data-tip]'); if (el && el === tipFor && !touchInput) hideTip(); });
 document.addEventListener('click', (e) => {
+  if (holdShown) return; // releasing a press-and-hold: keep its tip up
   const el = e.target.closest?.('[data-tip]');
   if (el && touchInput) { if (tipFor === el) hideTip(); else showTip(el); return; }
   if (!el) hideTip();
 }, true);
+// Press and hold anything with data-hold (build options) to read what it does.
+let holdTimer = null;
+let holdShown = false;
+document.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest?.('[data-hold]');
+  clearTimeout(holdTimer);
+  holdShown = false;
+  if (!el || e.pointerType === 'mouse') return;
+  holdTimer = setTimeout(() => { holdShown = true; showTip(el, el.dataset.hold); }, 450);
+}, true);
+for (const ev of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(ev, (e) => { if (ev !== 'pointermove' || Math.hypot(e.movementX || 0, e.movementY || 0) > 6) clearTimeout(holdTimer); }, true);
 let toastTimer = 0;
 // Notifications: a small stack in the top corner; each fades after a while.
 function toast(text, color, ic = null) {
@@ -826,11 +853,13 @@ function drainEvents(evs = game.events.splice(0)) {
 }
 
 function tap(id, x, y, mouse = false) {
-  // Tapping one of your fleets in flight shows where it's going (fleets win
-  // over the world behind them, unless you're picking a target).
-  if (ui.selected === null) {
+  // Tapping one of your fleets in flight shows where it's going. If a world is
+  // under the tap too, the world wins; tap the same spot again for the fleet.
+  if (!ui.mode) {
     const f = view.pickFleet(game, x, y, me);
-    if (f !== null) {
+    const again = id !== null && (id === ui.peek || id === ui.selected);
+    if (f !== null && (id === null || again) && ui.fleet !== f) {
+      ui.selected = ui.target = ui.peek = null;
       ui.fleet = f;
       updateActions();
       return;
