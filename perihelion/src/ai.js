@@ -138,13 +138,15 @@ function attack(game, ai, { vis, coming, route }) {
     for (const t of game.bodies) {
       if (t.owner === ai.owner || !present(game, t)) continue;
       if (calm && t.owner !== NEUTRAL) continue;
+      // One strike at a time: small top-ups arrive alone and get picked off.
+      if (sending(t) > 0) continue;
       const T = route(s, t);
       if (T > staysFor(game, t) - 10) continue; // a visitor that will be gone first
       const def = believed(game, ai, vis, t);
       // What it builds meanwhile, and enemy ships already on their way there.
       if (t.owner !== NEUTRAL && has(t, 'shipyard')) def.ships += Math.min(t.queue || 1, T / RULES.ship.time);
       def.ships += coming(t, false);
-      const need = cost(shipsToTake(game, ai.owner, t, s.vet, true, def), t) - sending(t);
+      const need = cost(shipsToTake(game, ai.owner, t, s.vet, true, def), t);
       if (need < 1 || need > sp) continue;
       let value = t.kind === 'planet' ? (t.giant ? 4 : 3) : t.kind === 'station' ? 2 : 1.5;
       // Smart: once the land grab is over, hurting a rival beats a neutral.
