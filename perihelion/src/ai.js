@@ -18,8 +18,8 @@ import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, o
 export const DIFFICULTY = {
   cadet: { think: 12, acts: 1, margin: 1.9, extra: 2, skill: 0.1, eco: 0.7, calm: 480 },
   easy: { think: 7, acts: 1, margin: 1.5, extra: 1, skill: 0.4, eco: 0.9, calm: 240 },
-  normal: { think: 4, acts: 2, margin: 1.25, extra: 1, skill: 0.7 },
-  hard: { think: 2.5, acts: 3, margin: 1.1, extra: 1, skill: 0.9, smart: true },
+  normal: { think: 5, acts: 1, margin: 1.35, extra: 1, skill: 0.6 },
+  hard: { think: 2.5, acts: 2, margin: 1.1, extra: 1, skill: 0.95, smart: true },
   brutal: { think: 1.2, acts: 4, margin: 1, extra: 1, skill: 1, eco: 1.15, smart: true },
 };
 
