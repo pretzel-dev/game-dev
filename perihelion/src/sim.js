@@ -102,8 +102,8 @@ function sample(game) {
 }
 
 export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives'));
-const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
-const damageTaken = (game, owner) => 1 - 0.12 * techLevel(game, owner, 'armour');
+export const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
+export const damageTaken = (game, owner) => 1 - 0.12 * techLevel(game, owner, 'armour');
 const buildSpeed = (game, owner, b = null) => (1 + 0.12 * techLevel(game, owner, 'industry')) * (b && b.perk === 'forge' ? PERKS.forge.boost : 1);
 
 export function nextTech(game, owner, key) {
