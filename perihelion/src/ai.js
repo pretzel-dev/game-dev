@@ -17,11 +17,11 @@ import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, o
 //   smart   scouts with probes, reads fleets closing on its worlds, keeps a
 //           home garrison, goes after rivals' worlds, gathers big strikes
 export const DIFFICULTY = {
-  cadet: { think: 14, acts: 1, margin: 0.9, extra: 0, seenExtra: 0, skill: 0.1, eco: 0.65, calm: 480 },
-  easy: { think: 8, acts: 1, margin: 1, extra: 0, seenExtra: 0, skill: 0.35, eco: 0.85, calm: 240 },
-  normal: { think: 4, acts: 2, margin: 1.15, extra: 1, seenExtra: 1, skill: 0.7 },
-  hard: { think: 2, acts: 3, margin: 1.3, extra: 1, seenExtra: 1, skill: 0.95, eco: 1.1, smart: true },
-  brutal: { think: 1, acts: 4, margin: 1.35, extra: 2, seenExtra: 1, skill: 1, eco: 1.3, smart: true },
+  cadet: { think: 14, acts: 1, margin: 0.85, extra: 0, seenExtra: 0, skill: 0.1, eco: 0.55, calm: 480 },
+  easy: { think: 8, acts: 1, margin: 1, extra: 1, seenExtra: 0, skill: 0.35, eco: 0.8, calm: 240 },
+  normal: { think: 4, acts: 2, margin: 1.2, extra: 1, seenExtra: 1, skill: 0.7 },
+  hard: { think: 2, acts: 3, margin: 1.3, extra: 1, seenExtra: 1, skill: 0.95, eco: 1.2, smart: true },
+  brutal: { think: 1, acts: 4, margin: 1.4, extra: 2, seenExtra: 1, skill: 1, eco: 1.45, smart: true },
 };
 
 export function createAI(owner, difficulty, rand) {
