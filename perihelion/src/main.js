@@ -1,5 +1,5 @@
-import { icon } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist } from './sim.js';
+import { icon, iconPath } from './icons.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -45,6 +45,8 @@ function applyCmd(owner, c) {
     case 'demolish': return !!b.structures[c.i] && demolish(game, b, b.structures[c.i]);
     case 'research': return research(game, owner, c.k);
     case 'probe': return !!launchProbe(game, b, game.bodies[c.to]);
+    case 'project': return startProject(game, b, c.k);
+    case 'fund': return fundProject(game, b, c.how === 'ship' ? 'ship' : 'cash');
     default: return false;
   }
 }
@@ -307,7 +309,7 @@ function onHostMessage(m) {
 }
 
 // Snapshots: bodies are updated in place (the renderer holds on to them).
-const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus', 'name'];
+const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus', 'name', 'project', 'wonder'];
 function snapshot() {
   return {
     time: game.time,
@@ -317,6 +319,7 @@ function snapshot() {
     fleets: game.fleets,
     scans: game.scans,
     happenings: game.happenings,
+    wonders: game.wonders,
     visit: game.visit,
     nextId: game.nextId,
     bodies: game.bodies.map((b) => Object.fromEntries(BODY_KEYS.map((k) => [k, b[k]]))),
@@ -332,6 +335,7 @@ function applySnapshot(s) {
   game.fleets = s.fleets;
   game.scans = s.scans;
   game.happenings = s.happenings;
+  game.wonders = s.wonders;
   game.visit = s.visit;
   game.nextId = s.nextId;
   s.bodies.forEach((x, i) => {
@@ -458,6 +462,31 @@ function updateActions() {
 // ---- Building ----------------------------------------------------------------
 
 const ROMAN = ['', 'I', 'II', 'III'];
+const PROJECT_SHORT = { sundiver: 'Sun-diver', massdriver: 'Driver', ringyard: 'Ring yard', citadel: 'Fortress', telescope: 'Telescope' };
+/** The world panel's megaproject line: a wonder, a project under way, or the choice. */
+function projectRow(s) {
+  if (s.wonder) {
+    const P = PROJECTS[s.wonder];
+    return `<div class="ctx proj">${tip(`${icon(s.wonder)} <b>${P.name}</b>`, P.text, 'gold')}</div>`;
+  }
+  if (s.project) {
+    const P = PROJECTS[s.project.key];
+    const rivals = game.bodies.filter((b) => b !== s && b.project && b.project.key === s.project.key).length;
+    const pctv = 1 - s.project.left / P.time;
+    return `<div class="ctx proj">${tip(`${icon(s.project.key)} <b>${P.name}</b>`, `${P.text}.${rivals ? ` ${rivals} rival${rivals === 1 ? ' is' : 's are'} racing for it: the first to finish wins.` : ''}`, 'gold')}`
+      + `<i class="meter"><i style="width:${pct(pctv)}"></i></i><span class="what">${fmt(s.project.left)}</span>`
+      + `<button data-fund="cash" title="Pay to speed it up" ${game.credits[me] < PROJECT_FUND.credits ? 'disabled' : ''}>+${PROJECT_FUND.cut}s<small>${PROJECT_FUND.credits}</small></button>`
+      + `<button data-fund="ship" title="Break up a docked ship for parts and crew" ${readyShips(game, s) < 1 ? 'disabled' : ''}>+${PROJECT_FUND.crewCut}s<small>1 ship</small></button></div>`;
+  }
+  const keys = Object.keys(PROJECTS).filter((k) => { const why = cantProject(game, s, k); return !why || why === 'not enough credits'; });
+  if (!keys.length) return '';
+  if (!ui.projOpen) return `<div class="ctx proj"><button data-projopen="1">${icon('star')} Megaproject</button></div>`;
+  return `<div class="ctx proj">${keys.map((k) => {
+    const P = PROJECTS[k];
+    const racing = game.bodies.some((b) => b.project && b.project.key === k);
+    return `<button data-proj="${k}" data-hold="${esc(`${P.name}: ${P.text}${racing ? ' (someone is already building one)' : ''}`)}" title="${P.name}: ${P.text}" ${game.credits[me] < P.cost ? 'disabled' : ''}>${icon(k)} ${PROJECT_SHORT[k]}<small>${P.cost}</small></button>`;
+  }).join('')}<button data-projopen="0">${icon('close')}</button></div>`;
+}
 /** A small label with more detail behind it (hover, or tap on touch). */
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const tip = (html, detail, cls = '') => `<span class="chip${cls ? ` ${cls}` : ''}" tabindex="0" data-tip="${esc(detail)}">${html}</span>`;
@@ -495,6 +524,8 @@ function chips(b, { income = true, seen = true } = {}) {
     }
     out.push(tip(`${icon(b.perk)} ${P.name}`, `${P.text}${inside}`, 'gold'));
   }
+  if (b.wonder) out.push(tip(`${icon(b.wonder)} ${PROJECTS[b.wonder].name}`, PROJECTS[b.wonder].text, 'gold'));
+  if (b.project && b.owner !== me) out.push(tip(`${icon(b.project.key)} ${Math.floor((1 - b.project.left / PROJECTS[b.project.key].time) * 100)}%`, `Building the ${PROJECTS[b.project.key].name}: ${PROJECTS[b.project.key].text}. Take the world and it's yours.`, 'gold'));
   for (const h of game.happenings || []) {
     if (h.at !== b.id) continue;
     const E = EVENTS[h.kind];
@@ -574,6 +605,8 @@ function renderBuildRow(s) {
     html += `<div class="ctx">${row}</div>`;
   }
 
+  // Megaprojects: one per world; each kind can only be finished once.
+  html += projectRow(s);
   // Ships: only where a yard can build them.
   const yards = yardsOf(s);
   if (yards) {
@@ -598,6 +631,18 @@ $('buildrow').addEventListener('click', (e) => {
     updateActions();
     return;
   }
+  const po = e.target.closest('button[data-projopen]');
+  if (po) { ui.projOpen = po.dataset.projopen === '1'; updateActions(); return; }
+  const pj = e.target.closest('button[data-proj]');
+  if (pj) {
+    if (holdShown) { holdShown = false; return; }
+    if (act({ type: 'project', b: s.id, k: pj.dataset.proj })) toast(`${PROJECTS[pj.dataset.proj].name} begun at ${s.name}`, ownerColor(me), pj.dataset.proj);
+    ui.projOpen = false;
+    updateActions();
+    return;
+  }
+  const fd = e.target.closest('button[data-fund]');
+  if (fd) { act({ type: 'fund', b: s.id, how: fd.dataset.fund }); updateActions(); return; }
   if (e.target.closest('button[data-probe]')) {
     ui.mode = 'probe'; ui.target = null; ui.slot = null;
     updateActions();
@@ -638,6 +683,58 @@ $('buildrow').addEventListener('click', (e) => {
 
 // ---- Research --------------------------------------------------------------------
 
+// Research is a hex board: the six branches round a centre hex, and between
+// each neighbouring pair a joint tech that needs both at level II.
+const HEX_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+const JOINT_SHORT = { ansible: 'Ansible', targeting: 'Targeting', kinetic: 'Kinetic', torch: 'Torch', hardened: 'Hardened', pdnet: 'PD net' };
+function hexBoard() {
+  const S = 30;
+  const xy = ([q, r]) => [S * 1.5 * q, S * Math.sqrt(3) * (r + q / 2)];
+  const hex = (cx, cy, s = S - 2) => Array.from({ length: 6 }, (_, i) => `${(cx + s * Math.cos((Math.PI / 3) * i)).toFixed(1)},${(cy + s * Math.sin((Math.PI / 3) * i)).toFixed(1)}`).join(' ');
+  const cells = [];
+  BRANCH_RING.forEach((key, i) => {
+    const [cx, cy] = xy(HEX_DIRS[i]);
+    cells.push({ key, cx, cy, branch: true });
+    const a = HEX_DIRS[i], b = HEX_DIRS[(i + 1) % 6];
+    const jkey = Object.keys(JOINTS).find((k) => JOINTS[k].needs.includes(key) && JOINTS[k].needs.includes(BRANCH_RING[(i + 1) % 6]));
+    const [jx, jy] = xy([a[0] + b[0], a[1] + b[1]]);
+    cells.push({ key: jkey, cx: jx, cy: jy });
+  });
+  const t = game.tech[me];
+  const p = t.project;
+  const out = [`<polygon points="${hex(0, 0)}" class="hx core"/><text x="0" y="-2" class="hl">R&amp;D</text><text x="0" y="11" class="hs">×${researchSpeed(game, me).toFixed(1)}</text>`];
+  for (const c of cells) {
+    const lvl = t[c.key] || 0;
+    const max = c.branch ? TECH[c.key].cost.length : 1;
+    const why = cantResearch(game, me, c.key);
+    const state = lvl >= max ? 'done' : p && p.key === c.key ? 'run' : why === 'locked' ? 'locked' : 'open';
+    const sel = ui.techSel === c.key ? ' sel' : '';
+    const pips = c.branch ? Array.from({ length: max }, (_, k) => `<circle cx="${(k - (max - 1) / 2) * 6}" cy="17" r="1.8" class="${k < lvl ? 'on' : ''}"/>`).join('') : '';
+    out.push(`<g data-hex="${c.key}" transform="translate(${c.cx.toFixed(1)},${c.cy.toFixed(1)})" class="hexc ${state}${sel}"><polygon points="${hex(0, 0)}" class="hx"/>`
+      + `<svg x="-8" y="-16" width="16" height="16" viewBox="0 0 16 16" class="ic"><path d="${iconPath(c.key)}"/></svg>`
+      + `<text x="0" y="9" class="hl">${c.branch ? TECH[c.key].name : JOINT_SHORT[c.key]}</text>${pips}</g>`);
+  }
+  return `<svg class="board" viewBox="-124 -114 248 228">${out.join('')}</svg>`;
+}
+function techDetail(key) {
+  const t = game.tech[me];
+  const p = t.project;
+  const joint = JOINTS[key];
+  const next = nextTech(game, me, key);
+  const why = cantResearch(game, me, key);
+  const lvl = t[key] || 0;
+  const name = joint ? joint.name : TECH[key].name;
+  const done = joint ? (lvl ? [joint.text] : []) : TECH[key].levels.slice(0, lvl).map((n, i) => `${n}: ${TECH[key].text[i]}`);
+  let body = done.length ? `<div class="have">${done.map((d) => `<div>${icon('star')} ${d}</div>`).join('')}</div>` : '';
+  if (!next) body += '<small class="dim">Complete</small>';
+  else if (p && p.key === key) body += `<small>Researching ${next.title} · ${Math.floor((1 - p.left / p.total) * 100)}%</small>`;
+  else {
+    const needs = joint && why === 'locked' ? `<small class="dim">Needs ${joint.needs.map((k) => `${TECH[k].name} II`).join(' and ')}</small>` : '';
+    body += `<div class="nextrow"><span><b>${next.title}</b><small>${next.text} · ${fmt(next.time / researchSpeed(game, me))}</small>${needs}</span>`
+      + `<button data-k="${key}" ${why ? 'disabled' : ''}>Research<small>${next.cost}</small></button></div>`;
+  }
+  return `<div class="tdetail"><div class="th">${icon(key)} <b>${name}</b></div>${body}</div>`;
+}
 function renderResearch() {
   const t = game.tech[me];
   const p = t.project;
@@ -645,21 +742,17 @@ function renderResearch() {
   if (p) {
     const pct = Math.floor((1 - p.left / p.total) * 100);
     const eta = fmt(p.left / researchSpeed(game, me));
-    setHTML($('rbar'), `Researching <b>${TECH[p.key].levels[t[p.key]]}</b> · ${pct}% · ${eta}`);
+    setHTML($('rbar'), `Researching <b>${techTitle(p.key, (t[p.key] || 0) + 1)}</b> · ${pct}% · ${eta}`);
   }
   if ($('research').hidden) return;
-  $('rstatus').textContent = `speed ×${researchSpeed(game, me).toFixed(1)}`;
-  setHTML($('rlist'), Object.entries(TECH).map(([key, d]) => {
-    const lvl = t[key];
-    const pips = '●'.repeat(lvl) + '○'.repeat(d.cost.length - lvl);
-    const next = nextTech(game, me, key);
-    if (!next) return `<button class="tech-row" disabled><span class="t"><em>${d.name}</em><b>${d.levels.at(-1)}<span class="pips">${pips}</span></b><small>Complete</small></span></button>`;
-    const running = p && p.key === key;
-    const why = cantResearch(game, me, key);
-    const note = running ? `Researching · ${Math.floor((1 - p.left / p.total) * 100)}%` : `${next.text} · ${fmt(next.time / researchSpeed(game, me))}`;
-    return `<button class="tech-row" data-k="${key}" ${why ? 'disabled' : ''}><span class="t"><em>${d.name} ${ROMAN[next.level]}</em><b>${next.title}<span class="pips">${pips}</span></b><small>${note}</small></span><span class="c">${running ? '' : next.cost}</span></button>`;
-  }).join(''));
+  $('rstatus').textContent = '';
+  if (!ui.techSel) ui.techSel = p ? p.key : BRANCH_RING.find((k) => nextTech(game, me, k)) || 'ansible';
+  setHTML($('rlist'), hexBoard() + techDetail(ui.techSel));
 }
+$('rlist').addEventListener('click', (e) => {
+  const h = e.target.closest('[data-hex]');
+  if (h) { ui.techSel = h.dataset.hex; renderResearch(); }
+});
 $('rnd').addEventListener('click', () => {
   $('research').hidden = !$('research').hidden;
   ui.selected = ui.target = null;
@@ -677,7 +770,7 @@ for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.addEventLi
 $('rlist').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-k]');
   if (!b) return;
-  const title = TECH[b.dataset.k].levels[game.tech[me][b.dataset.k]];
+  const title = techTitle(b.dataset.k, (game.tech[me][b.dataset.k] || 0) + 1);
   if (act({ type: 'research', k: b.dataset.k })) {
     toast(`Researching ${title}`, ownerColor(me));
     $('research').hidden = true;
@@ -839,6 +932,13 @@ function drainEvents(evs = game.events.splice(0)) {
       case 'visitor':
         toast(`${e.name} has left the system`, '#858ca6', 'comet');
         break;
+      case 'project': {
+        const P = PROJECTS[e.key];
+        if (e.phase === 'start' && e.owner !== me) toast(`${nameOf(e.owner)} began the ${P.name} at ${nm(e.at)}`, ownerColor(e.owner), e.key);
+        if (e.phase === 'done') toast(`${e.owner === me ? 'You' : nameOf(e.owner)} completed the ${P.name}`, ownerColor(e.owner), e.key);
+        if (e.phase === 'lost' && e.owner === me) toast(`Beaten to the ${P.name}: half refunded`, '#ff7a4d', e.key);
+        break;
+      }
       case 'probed':
         if (e.owner === me) toast(`Probe flyby of ${nm(e.at)} · in view for ${Math.round(RULES.probe.scan / 60 * 2) / 2} min`, mine);
         break;
@@ -846,7 +946,7 @@ function drainEvents(evs = game.events.splice(0)) {
         if (e.owner === me) toast(`${RULES.structures[e.what].name} scrapped at ${nm(e.at)}`, mine);
         break;
       case 'research':
-        if (e.owner === me) toast(`${TECH[e.key].levels[e.level - 1]} complete`, mine);
+        if (e.owner === me) toast(`${techTitle(e.key, e.level)} complete`, mine, e.key);
         break;
     }
   }
@@ -876,7 +976,7 @@ function tap(id, x, y, mouse = false) {
   } else if (id === null || id === ui.selected) {
     ui.selected = ui.target = null;
   } else if (game.bodies[id].owner === me) {
-    ui.selected = id; ui.slot = null; ui.pick = null; ui.target = null;
+    ui.selected = id; ui.slot = null; ui.pick = null; ui.projOpen = false; ui.target = null;
   } else {
     // Someone else's world (or a neutral): show what's known about it.
     ui.selected = ui.target = null;

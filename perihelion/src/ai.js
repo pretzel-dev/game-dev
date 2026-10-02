@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -35,7 +35,7 @@ export function createAI(owner, difficulty, rand) {
  */
 export function shipsToTake(game, owner, t, vet = 0, _known = true, def = null) {
   const d = def || { ships: t.ships, vet: t.vet, guns: t.guns, cover: coverOf(game, t) };
-  const aFp = firepowerOf(game, owner) * (1 + VET_BONUS * vetLevel(vet));
+  const aFp = attackPowerOf(game, owner) * (1 + VET_BONUS * vetLevel(vet));
   const aDmg = damageTaken(game, owner);
   const defOwner = t.owner;
   const dFp = defOwner === NEUTRAL ? 1 : firepowerOf(game, defOwner);
@@ -277,6 +277,18 @@ function economy(game, ai, mine, coming, will) {
       if (x.type === 'defence' && threatened(b) && will()) return upgrade(game, b, x);
     }
   }
+  // 2e. Megaprojects (smart levels): one at a time, on a safe world, and
+  // speeded up with spare cash.
+  if (smart) {
+    const own = mine.find((b) => b.project);
+    if (own && credits > 900 && !threatened(own)) return fundProject(game, own, 'cash');
+    if (!own && credits > 1700 && mine.length >= 4) {
+      for (const key of ['sundiver', 'ringyard', 'citadel', 'massdriver', 'telescope']) {
+        const site = mine.filter((b) => !threatened(b) && !cantProject(game, b, key)).sort((a, b) => (b.home ? 1 : 0) - (a.home ? 1 : 0))[0];
+        if (site) return startProject(game, site, key);
+      }
+    }
+  }
   // 3. More shipyards as the empire grows (one per three worlds).
   const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
   if (yards.length < 1 + Math.floor(mine.length / 3) && will()) {
@@ -285,7 +297,9 @@ function economy(game, ai, mine, coming, will) {
   }
   // 2c. Research, in a sensible order, when it can afford it and still build.
   const order = smart ? ['industry', 'sensors', 'intel', 'drives', 'weapons', 'armour', 'industry', 'drives', 'weapons', 'armour', 'sensors', 'intel', 'drives', 'sensors', 'intel'] : ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors', 'intel'];
-  const key = order.find((k) => nextTech(game, ai.owner, k));
+  // Joint techs once their two branches are at II.
+  const joints = ['torch', 'hardened', 'targeting', 'kinetic', 'pdnet', 'ansible'];
+  const key = [...order, ...joints].find((k) => nextTech(game, ai.owner, k) && cantResearch(game, ai.owner, k) !== 'locked');
   if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost * 2 && mine.length >= 3) {
     return research(game, ai.owner, key);
   }

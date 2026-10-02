@@ -430,3 +430,28 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.equal(coverOf(g, planet), 0, 'only your own worlds cover you');
   console.log('cover both ways: ok');
 }
+
+// Hex research: joint techs need both branches at II; megaprojects race.
+{
+  const S = await import('../src/sim.js');
+  const g = createGame({ seed: 14 });
+  g.credits[0] = g.credits[1] = 99999;
+  assert.equal(S.cantResearch(g, 0, 'ansible'), 'locked');
+  g.tech[0].intel = 2; g.tech[0].sensors = 2;
+  assert.ok(S.research(g, 0, 'ansible'), 'unlocked once both are at II');
+  g.tech[0].project.left = 0.1; step(g, 0.5);
+  assert.equal(visibility(g, 0).bodies.size, g.bodies.length, 'ansible sees all');
+  // Two empires race for the same project; the first to finish wins it.
+  const homes = [0, 1].map((o) => g.bodies.find((b) => b.owner === o && b.home));
+  assert.ok(S.startProject(g, homes[0], 'citadel') && S.startProject(g, homes[1], 'citadel'));
+  assert.equal(S.cantProject(g, homes[0], 'telescope'), 'this world already has one');
+  const c1 = g.credits[1];
+  homes[0].project.left = 5;
+  S.fundProject(g, homes[0], 'cash');
+  for (let t = 0; t < 10; t += 0.5) step(g, 0.5);
+  assert.equal(homes[0].wonder, 'citadel', 'first to finish wins');
+  assert.ok(!homes[1].project && g.credits[1] > c1, 'the loser is refunded half');
+  assert.equal(S.cantProject(g, homes[1], 'citadel'), 'already built');
+  assert.ok(S.topGuns(g, homes[0]) >= 3 * S.maxGuns(homes[0]), 'fortress world triples guns');
+  console.log('hex research and megaprojects: ok');
+}

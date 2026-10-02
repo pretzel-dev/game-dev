@@ -67,6 +67,40 @@ Losing the world resets the clock. The label shows the icon and countdown.
 | Refugee convoy | 30 s | That world earns +1/s for good |
 | Supply cache | 30 s | A free structure upgrade there |
 
+## Research board
+
+R&D opens a hex board: the six branches (Drives, Sensors, Intel, Weapons,
+Armour, Industry) round a centre hex, and between each neighbouring pair a
+**joint tech** that needs both at level II. Tap a hex for what it does.
+
+| Joint tech | Between | Effect |
+|---|---|---|
+| Ansible | Intel + Sensors | See every world and fleet, and where fleets are going |
+| Targeting data | Sensors + Weapons | +20% firepower when attacking |
+| Kinetic strike | Weapons + Drives | Arriving fleets open with a volley: a fifth of their number in defenders destroyed |
+| Torch production | Drives + Industry | Ships build 25% faster and fly 10% faster |
+| Hardened colonies | Industry + Armour | +1 gun on every world; guns rebuild twice as fast |
+| Point-defence net | Armour + Intel | Your worlds shoot down 15% of every attacking fleet as it arrives |
+
+Sensors levels reach less far than before (the Ansible is the way to see it all).
+
+## Megaprojects
+
+Like wonders: build one on one of your worlds (one per world, 1200 credits,
+6 minutes). Each kind can be finished only once per game; several empires can
+race for the same one, and the first to finish wins it; the rest get half
+their money back. Speed one up by paying (200 for 30 s) or breaking up a docked
+ship for parts and crew (20 s). Everyone is told when a project starts, and a
+captured world's project or wonder goes to the captor.
+
+| Megaproject | Where | Effect |
+|---|---|---|
+| Sun-diver collectors | Innermost planet | +8 credits/s |
+| Mass driver | Any planet | Fleets launched here fly 50% faster |
+| Ring yard | Gas giant | Ships build three times as fast here |
+| Fortress world | Any world | Three times the guns; its cover reaches its family at full strength |
+| Deep-space telescope | Any world | See every enemy fleet's size, destination and arrival time |
+
 ## How to play
 
 The menu's **How to play** page has the basics with screenshots
