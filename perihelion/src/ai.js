@@ -69,8 +69,10 @@ export function tickAI(game, ai, dt) {
   const vis = visibility(game, ai.owner);
   // A smart AI reads intent from a visible fleet closing on one of its worlds
   // (as a player would), even without the intel to read its route.
+  // Any level can see a fleet closing on its world (a player can); the
+  // weaker ones just don't always react.
   const closing = (f) => {
-    if (!ai.d.smart || !vis.sees(fleetState(f, game.time))) return false;
+    if (!vis.sees(fleetState(f, game.time))) return false;
     const t = game.bodies[f.to];
     return t.owner === ai.owner && dist(fleetState(f, game.time), posAt(game, t, game.time)) < 60;
   };
@@ -244,6 +246,9 @@ function economy(game, ai, mine, coming, will) {
     if (free(rock, 'mine')) return buildStructure(game, rock, 'mine');
     if (!threatened(rock) && will()) return 'save';
   }
+  // 2'. Ships first: every yard keeps at least one in the queue.
+  const idle = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 1)[0];
+  if (idle) return orderShip(game, idle);
   // 2a. Skimmers on held gas giants, an exchange at home: steady income.
   for (const type of ['exchange', 'skimmer']) {
     const site = mine.find((b) => free(b, type) && !threatened(b) && !b.structures.some((x) => x.type === type));
@@ -264,10 +269,16 @@ function economy(game, ai, mine, coming, will) {
       if (x.type === 'defence' && threatened(b) && will()) return upgrade(game, b, x);
     }
   }
+  // 3. More shipyards as the empire grows (one per three worlds).
+  const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
+  if (yards.length < 1 + Math.floor(mine.length / 3) && will()) {
+    const site = mine.filter((b) => b.kind === 'planet' && free(b, 'shipyard')).sort((a, b) => b.size - a.size)[0];
+    if (site) return buildStructure(game, site, 'shipyard');
+  }
   // 2c. Research, in a sensible order, when it can afford it and still build.
   const order = smart ? ['industry', 'sensors', 'intel', 'drives', 'weapons', 'armour', 'industry', 'drives', 'weapons', 'armour', 'sensors', 'intel', 'drives', 'sensors', 'intel'] : ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors', 'intel'];
   const key = order.find((k) => nextTech(game, ai.owner, k));
-  if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost) {
+  if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost * 2 && mine.length >= 3) {
     return research(game, ai.owner, key);
   }
   // 2d. Research stations once things are comfortable: one, then a second.
@@ -280,12 +291,6 @@ function economy(game, ai, mine, coming, will) {
       && b.structures.filter((x) => x.type === 'defence').length > 1);
     const x = safe && safe.structures.find((y) => y.type === 'defence' && y.level === 1 && !cantDemolish(game, safe, y));
     if (x && credits > 900) return demolish(game, safe, x);
-  }
-  // 3. A second shipyard, on the planet with the most room.
-  const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
-  if (yards.length < 2 && ai.rand() < 0.5) {
-    const site = mine.filter((b) => b.kind === 'planet' && free(b, 'shipyard')).sort((a, b) => b.size - a.size)[0];
-    if (site) return buildStructure(game, site, 'shipyard');
   }
   // 4. Ships: keep every yard busy, but leave credits for the rest now and then.
   const yard = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 3).sort((a, b) => a.queue - b.queue)[0];
