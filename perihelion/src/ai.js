@@ -84,7 +84,7 @@ export function tickAI(game, ai, dt) {
   const power = (b) => b.ships * (1 + VET_BONUS * vetLevel(b.vet));
   // Routes and battle estimates are reused within one think.
   const routes = new Map();
-  const route = (s, t) => { const k = s.id * 1000 + t.id; if (!routes.has(k)) routes.set(k, plan(game, s, t).T); return routes.get(k); };
+  const route = (s, t) => { const k = s.id * 1000 + t.id; if (!routes.has(k)) routes.set(k, plan(game, s, t, game.time, 1, true).T); return routes.get(k); };
   const ctx = { vis, known, sizeOf, coming, will, power, route };
 
   defend(game, ai, game.bodies.filter((b) => b.owner === ai.owner), vis, known, sizeOf, power, will);
@@ -219,7 +219,7 @@ function defend(game, ai, mine, vis, known, sizeOf, power, will) {
     const gap = Math.ceil(enemy - held) + 1;
     // Sources that can get there first and still keep a garrison of their own.
     const help = mine.filter((s) => s !== b && readyShips(game, s) >= 3 && !game.fleets.some((f) => f.to === s.id && f.owner !== ai.owner && known(f)))
-      .map((s) => ({ s, T: plan(game, s, b).T }))
+      .map((s) => ({ s, T: plan(game, s, b, game.time, 1, true).T }))
       .filter((x) => x.T < eta - 5)
       .sort((x, y) => x.T - y.T);
     // A reinforcement too small to hold just dies with the garrison: smart AIs

@@ -257,8 +257,9 @@ export const EVENTS = {
 // Comets and derelicts arrive as visitors: they fly in, whip round the sun on a
 // parabolic (Kepler) pass and leave. Hold one while it's here.
 const VISITS = {
-  comet: { inside: 240, q: [40, 60], guns: 0 },
-  derelict: { inside: 270, q: [70, 110], guns: 2 },
+  // Slow enough to catch: ships must match a visitor's speed to board it.
+  comet: { inside: 420, q: [70, 120], guns: 0 },
+  derelict: { inside: 480, q: [100, 160], guns: 2 },
 };
 // A pass starts and ends a little beyond the outermost planet; `inside` is
 // how long it spends within the planets' orbits (about 4 minutes).
@@ -396,8 +397,6 @@ export const SYSTEMS = {
   wide: { name: 'Wide and cold', text: 'Few worlds, far apart', gap: 30, moons: 0.5, rocks: 3 },
   crowded: { name: 'Crowded', text: 'Worlds packed close: short, sharp trips', gap: 8, stations: 3 },
   belt: { name: 'Rich belt', text: 'A thick asteroid belt worth mining', rocks: 8, beltW: 12 },
-  // Test: a much bigger sun whose gravity pulls on ships in flight.
-  titan: { name: 'Sun\u2019s pull', text: 'The sun\u2019s gravity bends every flight path', gravity: true, test: true },
   binary: { name: 'Binary', text: 'A second sun and its worlds swing around the system; its worlds earn +50%', companion: true },
 };
 const SUN_SIZE = 2.6;
@@ -551,7 +550,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // The visitor: one body that events turn into a comet or a derelict, on a
   // pass in around the sun and out again. Absent (far away) the rest of the time.
   add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
-  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: !!sys.gravity, sunClear: SUN_RADIUS_SIM * SUN_SIZE + 6, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * SUN_SIZE + 6, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -832,12 +831,16 @@ export function depotBoost(game, from, now = game.time) {
   return game.bodies.some((d) => d.perk === 'depot' && d.owner === from.owner && dist(posAt(game, d, now), p) <= PERKS.depot.range) ? PERKS.depot.boost : 1;
 }
 
-export function plan(game, from, to, now = game.time, speed = 1) {
+/**
+ * The route a fleet will fly (with the sun's gravity). `quick` skips the
+ * gravity solve: a close estimate of the flight time, for AI planning.
+ */
+export function plan(game, from, to, now = game.time, speed = 1, quick = false) {
   speed *= depotBoost(game, from, now);
-  const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed);
+  const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick);
   const g = assistBy(game, direct, from, to, now);
   if (!g) return direct;
-  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * speed * ASSIST.boost);
+  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * speed * ASSIST.boost, null, quick);
   // Only if the faster path still swings past the same giant.
   return fast.T < direct.T && assistBy(game, fast, from, to, now) === g ? { ...fast, assist: g.id } : direct;
 }
@@ -874,7 +877,7 @@ function lerpDrift(gs, u) {
   return a.map((v, j) => v + (b[j] - v) * k);
 }
 
-function planWith(game, from, to, now, accel, start = null) {
+function planWith(game, from, to, now, accel, start = null, quick = false) {
   const p0 = start ? start.p : posAt(game, from, now);
   const v0 = start ? start.v : velAt(game, from, now);
   const make0 = (T) => {
@@ -927,7 +930,7 @@ function planWith(game, from, to, now, accel, start = null) {
       else hi = mid;
     }
     f = make(hi);
-    if (game.gravity && clearOfSun(f, game, now)) {
+    if (game.gravity && !quick && clearOfSun(f, game, now)) {
       // Now with the sun's pull: from the gravity-free time upward. If no
       // flight settles, fall back to the plain path (rare, very long hauls).
       for (let T2 = hi; T2 < hi * 2.5 + 40; T2 *= 1.06) {
@@ -939,7 +942,7 @@ function planWith(game, from, to, now, accel, start = null) {
     if (clearOfSun(f, game, now)) return f;
     prev = T;
   }
-  return game.gravity ? makeG(20000) : make(20000);
+  return game.gravity && !quick ? makeG(20000) : make(20000);
 }
 
 /** Ships that just arrived need a short turnaround before they can leave. */

@@ -17,12 +17,6 @@ rules don't change:
 - **Wide and cold:** few worlds, far apart; long trips, probes matter.
 - **Crowded:** worlds packed close; short, sharp trips.
 - **Rich belt:** eight asteroids in a thick belt.
-- **Sun's pull (test, pick it by hand; not in Random or the Daily):** ships
-  feel the sun's gravity for the whole flight, at the same strength that holds
-  the planets in orbit, so routes bend round the sun; inward dives are quick,
-  climbs outward cost more. About 1 route in 20 won't settle and falls back
-  to the plain path. To remove it: delete `titan` from `SYSTEMS` in
-  `src/sim.js`.
 - **Binary:** a smaller companion sun with two worlds (and a moon) of its own
   on an eccentric orbit (dashed orange line): most of the game it hangs far
   out, then it swings in fast past the outer planets and away again. When
@@ -55,8 +49,9 @@ inside right now).
 
 From about 4–6 minutes in, then every 7–10 minutes, something turns up.
 Comets and derelicts are visitors: they fall in from the edge of the system,
-whip round the sun and fly back out (about 4 minutes inside the planets'
-orbits, 5–6 in all), so you have to
+whip round the sun and fly back out (about 7–8 minutes inside the planets'
+orbits; slow enough to catch, since ships must match a visitor's speed to
+board it), so you have to
 catch them on the way; the launch panel warns if they'll be gone before your
 ships arrive, and anyone still aboard when one leaves heads for home. The
 other events happen at a world (never a homeworld). It's announced a minute ahead; then whoever holds
@@ -92,7 +87,11 @@ preview server running).
   orbital velocity, burn with one thrust vector for the first half, flip, and
   burn with a second, arriving in a parking orbit beside the target at its
   speed (they don't overshoot or fly into it). The planner picks the fastest transfer the drive allows
-  that stays clear of the sun; the sun's gravity is ignored during burns.
+  that stays clear of the sun. The sun's gravity pulls on ships all through
+  the flight (at the strength that holds the planets in orbit), so routes
+  bend round it: dives inward are quick, climbs outward cost more. The
+  planner solves for burns that still land on target (about 1 route in 20
+  is too awkward and flies the plain path).
   A hop to your own moon takes under a minute; crossing the system takes
   minutes. Drive plumes are visible from far away. Ships can't be recalled.
 - **Credits:** every world you hold earns credits (planets 1/s, stations
