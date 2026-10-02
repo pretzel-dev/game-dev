@@ -238,6 +238,7 @@ console.log('homes: one companion each, evenly spaced');
 
 // AI-only matches finish.
 let finished = 0;
+let hardWins = 0;
 const lengths = [];
 for (let seed = 1; seed <= 20; seed++) {
   // Every system type gets matches (three or four each).
@@ -249,10 +250,11 @@ for (let seed = 1; seed <= 20; seed++) {
     for (const ai of ais) tickAI(g, ai, 0.5);
     step(g, 0.5);
   }
-  if (g.winner !== null) { finished++; lengths.push(Math.round(t / 60)); }
+  if (g.winner !== null) { finished++; lengths.push(Math.round(t / 60)); if (g.winner > 0) hardWins++; }
 }
-console.log(`sim ok: ${finished}/20 AI matches finished; minutes: ${lengths.join(' ')}`);
+console.log(`sim ok: ${finished}/20 AI matches finished (Hard won ${hardWins}); minutes: ${lengths.join(' ')}`);
 assert.ok(finished >= 18);
+assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
 
 // Probes, gas skimmers, exchanges, and scrapping cut short by a capture.
 {
