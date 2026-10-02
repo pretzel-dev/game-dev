@@ -287,9 +287,9 @@ function shipGeometries() {
     cyl(r * 0.9, r * 1.05, 0.1, z, 'dark'), // engine block
     tag(new THREE.CylinderGeometry(r * 0.45, r * 0.9, 0.14, 12, 1, true).rotateX(-X).translate(0, 0, z - 0.11), 'dark'), // bell
   ];
-  const HULL = new THREE.Color('#c9ced6');
-  const DARK = new THREE.Color('#3b414c');
-  const build = (parts) => {
+  const HULL = new THREE.Color('#d5dae2');
+  const DARK = new THREE.Color('#6b7280'); // dark grey, not black: reads against space
+  const build = (parts, port = null) => {
     const base = [];
     const accent = [];
     for (const g of parts) {
@@ -301,7 +301,36 @@ function shipGeometries() {
       n.setAttribute('color', new THREE.BufferAttribute(col, 3));
       base.push(n);
     }
-    return { base: mergeGeometries(base), accent: mergeGeometries(accent) };
+    const merged = { base: mergeGeometries(base), accent: mergeGeometries(accent) };
+    // Lights, worked out from the hull's size: red to port, green to
+    // starboard, a white light on the bow, and rows of lit portholes.
+    merged.base.computeBoundingBox();
+    const bb = merged.base.boundingBox;
+    const light = (x, y, z, c, sz = 0.012) => {
+      const n = new THREE.BoxGeometry(sz, sz, sz).translate(x, y, z).toNonIndexed();
+      const col = new Float32Array(n.attributes.position.count * 3);
+      const cc = new THREE.Color(c);
+      for (let i = 0; i < col.length; i += 3) col.set([cc.r, cc.g, cc.b], i);
+      n.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return n;
+    };
+    const lights = [
+      light(bb.min.x - 0.004, 0, (bb.min.z + bb.max.z) / 2, '#ff3b30', 0.016),
+      light(bb.max.x + 0.004, 0, (bb.min.z + bb.max.z) / 2, '#3bff6a', 0.016),
+      light(0, bb.max.y + 0.006, bb.max.z - 0.06, '#ffffff', 0.014),
+    ];
+    // Portholes along the crew section: [half-width of the hull there, from z, to z, count].
+    if (port) {
+      const [px, z0, z1, n] = port;
+      for (let i = 0; i < n; i++) {
+        const z = z0 + ((z1 - z0) * i) / Math.max(1, n - 1);
+        for (const sx of [-1, 1]) lights.push(light(sx * (px + 0.002), 0.012, z, '#ffd9a0', 0.008));
+      }
+    }
+    merged.lights = mergeGeometries(lights);
+    // A little broader than drawn, so they read at a glance.
+    for (const g of [merged.base, merged.accent, merged.lights]) g.scale(1.35, 1.35, 1);
+    return merged;
   };
   const ribs = (w, h, z0, z1, n) => Array.from({ length: n }, (_, i) => box(w, h, 0.006, 0, 0, z0 + ((z1 - z0) * i) / (n - 1), 'dark'));
   const pdc = (x, y, z) => box(0.016, 0.012, 0.016, x, y, z, 'dark'); // point-defence turret
@@ -318,7 +347,7 @@ function shipGeometries() {
     box(0.004, 0.004, 0.07, 0.02, 0.05, 0.1, 'dark'), // antenna mast
     cyl(0.045, 0.05, 0.05, -0.16, 'dark'),
     ...drive(0.06, -0.2),
-  ]);
+  ], [0.0375, 0.24, 0.1, 4]);
   // Frigate: a long, armoured box hull in segments, a small command tower,
   // flank radiators and a heavy drive.
   const gunboat = build([
@@ -331,7 +360,7 @@ function shipGeometries() {
     pdc(0.044, 0.044, 0.28), pdc(-0.044, 0.044, 0.28), pdc(0.044, -0.044, -0.05), pdc(-0.044, -0.044, -0.05),
     box(0.02, 0.02, 0.06, 0, -0.05, 0.25, 'dark'), // keel railgun
     ...drive(0.07, -0.25),
-  ]);
+  ], [0.04, 0.27, -0.02, 6]);
   // Hauler: a cab, a thin spine carrying cargo containers, and a drive.
   const carrier = build([
     box(0.07, 0.06, 0.08, 0, 0, 0.3),
@@ -344,7 +373,7 @@ function shipGeometries() {
     box(0.12, 0.003, 0.06, 0, 0.03, -0.18, 'dark'),
     cyl(0.04, 0.045, 0.05, -0.2, 'dark'),
     ...drive(0.055, -0.24),
-  ]);
+  ], [0.035, 0.32, 0.28, 2]);
   return [frigate, gunboat, carrier];
 }
 
@@ -447,7 +476,7 @@ function orbitLine(b) {
   geo.setIndex(idx);
   const moon = b.parent !== null;
   const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-    uniforms: { uTh: { value: 0 }, uRes: screenRes, uWidth: { value: moon ? 2.2 : 3.4 }, uColor: { value: new THREE.Color(moon ? '#5d6a8c' : '#7383ad') }, uOpacity: { value: moon ? 0.55 : 0.75 } },
+    uniforms: { uTh: { value: 0 }, uRes: screenRes, uWidth: { value: moon ? 1.4 : 2.2 }, uColor: { value: new THREE.Color(moon ? '#5d6a8c' : '#7383ad') }, uOpacity: { value: moon ? 0.55 : 0.75 } },
     vertexShader: `attribute vec3 nextPos; attribute float ang; attribute float side;
       uniform float uTh; uniform vec2 uRes; uniform float uWidth;
       varying float vF; varying float vSide;
@@ -897,10 +926,14 @@ export function createView(canvas, labelRoot) {
   function ship(i) {
     if (i >= MAX_SHIPS) return null;
     if (!ships[i]) {
-      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.45 }));
+      // A faint self-glow so the shadow side is dark grey, never black.
+      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.5, emissive: '#2a2f38' }));
       // Owner-coloured paint: stripes, bows and pods, lit a little so it reads.
       const accent = new THREE.Mesh(shipGeos[0].accent, new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.5 }));
       mesh.add(accent);
+      // Navigation lights and portholes: unlit, so they glow on the dark side.
+      const lights = new THREE.Mesh(shipGeos[0].lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
+      mesh.add(lights);
       const plume = new THREE.Mesh(
         // A long, thin, bright drive flame (an Epstein-style torch).
         new THREE.ConeGeometry(0.035, 1.6, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -1.16),
@@ -909,7 +942,7 @@ export function createView(canvas, labelRoot) {
       mesh.add(plume);
       const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       scene.add(mesh, glint);
-      ships[i] = { mesh, accent, plume, glint };
+      ships[i] = { mesh, accent, lights, plume, glint };
     }
     return ships[i];
   }
@@ -1051,6 +1084,7 @@ export function createView(canvas, labelRoot) {
     if (sh.mesh.geometry !== shipGeos[v].base) {
       sh.mesh.geometry = shipGeos[v].base;
       sh.accent.geometry = shipGeos[v].accent;
+      sh.lights.geometry = shipGeos[v].lights;
     }
     const k = 0.9 + hash(id, 5) * 0.25;
     sh.mesh.scale.set(0.8, 0.8, 0.8 * k);
