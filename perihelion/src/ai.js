@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -143,8 +143,10 @@ function attack(game, ai, { vis, coming, route }) {
       const T = route(s, t);
       if (T > staysFor(game, t) - 10) continue; // a visitor that will be gone first
       const def = believed(game, ai, vis, t);
-      // What it builds meanwhile, and enemy ships already on their way there.
+      // What it builds meanwhile, guns rebuilt by the time we arrive, and
+      // enemy ships already on their way there.
       if (t.owner !== NEUTRAL && has(t, 'shipyard')) def.ships += Math.min(t.queue || 1, T / RULES.ship.time);
+      if (t.owner !== NEUTRAL) def.guns = Math.max(def.guns, Math.min(maxGuns(t) + fortressGuns(game, t), def.guns + RULES.gunRegen * T));
       def.ships += coming(t, false);
       const need = cost(shipsToTake(game, ai.owner, t, s.vet, true, def), t);
       if (need < 1 || need > sp) continue;
@@ -220,7 +222,9 @@ function defend(game, ai, mine, vis, known, sizeOf, power, will) {
       .map((s) => ({ s, T: plan(game, s, b).T }))
       .filter((x) => x.T < eta - 5)
       .sort((x, y) => x.T - y.T);
-    const src = help.find((x) => readyShips(game, x.s) - 1 >= gap) || help[0];
+    // A reinforcement too small to hold just dies with the garrison: smart AIs
+    // only send one that's enough.
+    const src = help.find((x) => readyShips(game, x.s) - 1 >= gap) || (ai.d.smart ? null : help[0]);
     if (src && will()) {
       launch(game, src.s, b, Math.min(readyShips(game, src.s) - 1, gap));
       return true;
