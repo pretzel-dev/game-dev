@@ -385,3 +385,15 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #peek .tag { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
 #peek .row2 { margin-top: 4px; }
 .warn { color: #ff9a6a; }
+
+/* Chips: short labels; the detail is in a tooltip (hover, or tap on touch). */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--line); font-size: 12px; color: var(--dim); cursor: help; white-space: nowrap; }
+.chip.gold { color: #ffd479; border-color: rgba(255, 212, 121, 0.35); }
+.chip.dim { border: none; padding: 0 2px; }
+.chip.assist { border: none; padding: 0 2px; color: var(--accent); }
+#info .chip { margin: 0 2px; }
+#tipbox { position: fixed; z-index: 30; padding: 8px 10px; background: rgba(6, 10, 18, 0.96); border: 1px solid var(--line); color: var(--fg); font-size: 12px; line-height: 1.4; pointer-events: none; text-align: left; }
+#tipbox[hidden] { display: none; }
+.chip .pos { color: #7ee0a1; }
+#info .chips, #peek .chips { flex-basis: 100%; }

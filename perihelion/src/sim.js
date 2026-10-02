@@ -19,14 +19,14 @@ export const RULES = {
   mineIncome: 1.5,
   ship: { cost: 150, time: 45 }, // each shipyard builds one at a time
   structures: {
-    shipyard: { name: 'Shipyard', cost: 400, time: 90, desc: 'Builds ships here, one at a time per yard' },
-    mine: { name: 'Mine', cost: 200, time: 45, only: ['asteroid', 'moon'], maxLevel: 3, desc: 'Digs ore: +1.5 credits/s per level (moons and asteroids)' },
+    shipyard: { name: 'Shipyard', cost: 400, time: 90, desc: 'Builds ships, one at a time' },
+    mine: { name: 'Mine', cost: 200, time: 45, only: ['asteroid', 'moon'], maxLevel: 3, desc: '+1.5/s per level' },
     // Gas giants: harvesters scoop fusion fuel from the upper atmosphere; homeworlds (the only
     // living worlds) can float bonds on the system's exchanges.
-    skimmer: { name: 'Gas harvester', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2, desc: 'Scoops fusion fuel from a gas giant’s clouds: +2 credits/s per level' },
-    exchange: { name: 'Orbital exchange', cost: 450, time: 80, where: 'home', maxLevel: 2, income: 2.5, desc: 'Your homeworld’s trading house sells shares in the war: +2.5 credits/s per level' },
-    defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3, desc: 'Gun batteries: +2 guns per level to defend this world (a planet’s guns also cover its moons)' },
-    lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3, desc: 'Speeds all research by 50% per level' },
+    skimmer: { name: 'Gas harvester', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2, desc: 'Skims fuel from the clouds: +2/s per level' },
+    exchange: { name: 'Orbital exchange', cost: 450, time: 80, where: 'home', maxLevel: 2, income: 2.5, desc: 'Sells war bonds: +2.5/s per level' },
+    defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3, desc: '+2 guns per level' },
+    lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3, desc: 'Research +50% per level' },
   },
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
