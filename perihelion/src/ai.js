@@ -17,8 +17,8 @@ import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, o
 //   smart   scouts with probes, reads fleets closing on its worlds, keeps a
 //           home garrison, goes after rivals' worlds, gathers big strikes
 export const DIFFICULTY = {
-  cadet: { think: 14, acts: 1, margin: 0.85, extra: 0, seenExtra: 0, skill: 0.1, eco: 0.55, calm: 480 },
-  easy: { think: 8, acts: 1, margin: 1, extra: 1, seenExtra: 0, skill: 0.35, eco: 0.8, calm: 240 },
+  cadet: { think: 14, acts: 1, margin: 0.85, extra: 0, seenExtra: 0, skill: 0.1, eco: 0.5, calm: 480 },
+  easy: { think: 8, acts: 1, margin: 1, extra: 1, seenExtra: 0, skill: 0.35, eco: 0.7, calm: 240 },
   normal: { think: 4, acts: 2, margin: 1.2, extra: 1, seenExtra: 1, skill: 0.7 },
   hard: { think: 2, acts: 3, margin: 1.3, extra: 1, seenExtra: 1, skill: 0.95, eco: 1.4, smart: true },
   brutal: { think: 0.8, acts: 5, margin: 1.4, extra: 2, seenExtra: 1, skill: 1, eco: 2.1, smart: true },
