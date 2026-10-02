@@ -16,11 +16,11 @@ import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, o
 //   smart   scouts with probes, reads fleets closing on its worlds, keeps a
 //           home garrison, goes after rivals' worlds, gathers big strikes
 export const DIFFICULTY = {
-  cadet: { think: 12, acts: 1, margin: 1.9, extra: 2, skill: 0.1, eco: 0.7, calm: 480 },
-  easy: { think: 7, acts: 1, margin: 1.5, extra: 1, skill: 0.4, eco: 0.9, calm: 240 },
-  normal: { think: 5, acts: 1, margin: 1.35, extra: 1, skill: 0.6 },
-  hard: { think: 2.5, acts: 2, margin: 1.1, extra: 1, skill: 0.95, smart: true },
-  brutal: { think: 1.2, acts: 4, margin: 1, extra: 1, skill: 1, eco: 1.15, smart: true },
+  cadet: { think: 14, acts: 1, margin: 2, extra: 2, seenExtra: 2, skill: 0.1, eco: 0.65, calm: 480 },
+  easy: { think: 8, acts: 1, margin: 1.6, extra: 1, seenExtra: 1, skill: 0.35, eco: 0.85, calm: 240 },
+  normal: { think: 4, acts: 2, margin: 1.3, extra: 1, seenExtra: 1, skill: 0.7 },
+  hard: { think: 2, acts: 3, margin: 1.1, extra: 1, seenExtra: 0, skill: 0.95, smart: true },
+  brutal: { think: 1, acts: 4, margin: 1, extra: 1, seenExtra: 0, skill: 1, eco: 1.15, smart: true },
 };
 
 export function createAI(owner, difficulty, rand) {
@@ -109,12 +109,13 @@ function attack(game, ai, { vis, coming, route }) {
   const smart = ai.d.smart;
   const calm = ai.d.calm && game.time < ai.d.calm;
   // A home garrison once the opening's over (the first minutes are for expanding).
-  const keep = (s) => (s.home && game.time > 300 ? (smart ? 3 : 2) : 1);
+  const keep = (s) => (s.home && game.time > 900 ? 2 : 1);
   const spare = (s) => readyShips(game, s) - Math.ceil(coming(s, false) * 1.2) - keep(s);
   const scanned = (t) => (game.scans || []).some((x) => x.owner === ai.owner && x.body === t.id);
   const probing = (t) => game.fleets.some((f) => f.probe && f.owner === ai.owner && f.to === t.id);
   const sending = (t) => game.fleets.filter((f) => !f.probe && f.owner === ai.owner && f.to === t.id).reduce((n, f) => n + f.n, 0);
-  const cost = (need) => Math.ceil(need * ai.d.margin) + ai.d.extra;
+  // Exact need × margin, plus a ship or two for doubt (less when it can see).
+  const cost = (need, t) => Math.ceil(need * ai.d.margin) + (vis.bodies.has(t.id) ? ai.d.seenExtra : ai.d.extra);
 
   // Smart: scout the nearest enemy-held world it can't see, one probe at a time.
   if (smart && !game.fleets.some((f) => f.probe && f.owner === ai.owner) && game.credits[ai.owner] > RULES.probe.cost + 200) {
@@ -140,7 +141,7 @@ function attack(game, ai, { vis, coming, route }) {
       // What it builds meanwhile, and enemy ships already on their way there.
       if (t.owner !== NEUTRAL && has(t, 'shipyard')) def.ships += Math.min(t.queue || 1, T / RULES.ship.time);
       def.ships += coming(t, false);
-      const need = cost(shipsToTake(game, ai.owner, t, s.vet, true, def)) - sending(t);
+      const need = cost(shipsToTake(game, ai.owner, t, s.vet, true, def), t) - sending(t);
       if (need < 1 || need > sp) continue;
       let value = t.kind === 'planet' ? (t.giant ? 4 : 3) : t.kind === 'station' ? 2 : 1.5;
       if (smart && t.owner !== NEUTRAL) value *= t.home ? 2 : 1.5;
@@ -183,7 +184,7 @@ function attack(game, ai, { vis, coming, route }) {
   let need = Infinity;
   for (const t of game.bodies) {
     if (t.owner === ai.owner || t.visitor || (calm && t.owner !== NEUTRAL)) continue;
-    const n = cost(shipsToTake(game, ai.owner, t, 0, true, believed(game, ai, vis, t))) + 1;
+    const n = cost(shipsToTake(game, ai.owner, t, 0, true, believed(game, ai, vis, t)), t) + 1;
     if (n <= total && n < need) { target = t; need = n; }
   }
   if (target && mine.length > 1) {
