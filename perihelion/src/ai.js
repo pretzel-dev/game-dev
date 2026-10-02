@@ -9,18 +9,19 @@ import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, o
 //   think   seconds between thinks
 //   acts    attack and build actions per think
 //   margin  ships sent = exact need × margin + extra (exact need from a replay
-//           of the battle rules)
+//           of the battle rules). Weak levels cut it fine and lose fights
+//           they shouldn't; strong ones send enough to be sure.
 //   skill   chance it follows through on each smart move it spots
 //   eco     income multiplier (the ends of the ladder only)
 //   calm    seconds before it attacks another player (it still expands)
 //   smart   scouts with probes, reads fleets closing on its worlds, keeps a
 //           home garrison, goes after rivals' worlds, gathers big strikes
 export const DIFFICULTY = {
-  cadet: { think: 14, acts: 1, margin: 2, extra: 2, seenExtra: 2, skill: 0.1, eco: 0.65, calm: 480 },
-  easy: { think: 8, acts: 1, margin: 1.6, extra: 1, seenExtra: 1, skill: 0.35, eco: 0.85, calm: 240 },
-  normal: { think: 4, acts: 2, margin: 1.3, extra: 1, seenExtra: 1, skill: 0.7 },
-  hard: { think: 2, acts: 3, margin: 1.1, extra: 1, seenExtra: 0, skill: 0.95, eco: 1.1, smart: true },
-  brutal: { think: 1, acts: 4, margin: 1, extra: 1, seenExtra: 0, skill: 1, eco: 1.3, smart: true },
+  cadet: { think: 14, acts: 1, margin: 0.9, extra: 0, seenExtra: 0, skill: 0.1, eco: 0.65, calm: 480 },
+  easy: { think: 8, acts: 1, margin: 1, extra: 0, seenExtra: 0, skill: 0.35, eco: 0.85, calm: 240 },
+  normal: { think: 4, acts: 2, margin: 1.15, extra: 1, seenExtra: 1, skill: 0.7 },
+  hard: { think: 2, acts: 3, margin: 1.3, extra: 1, seenExtra: 1, skill: 0.95, eco: 1.1, smart: true },
+  brutal: { think: 1, acts: 4, margin: 1.35, extra: 2, seenExtra: 1, skill: 1, eco: 1.3, smart: true },
 };
 
 export function createAI(owner, difficulty, rand) {
