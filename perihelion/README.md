@@ -169,12 +169,18 @@ Up to 3 empires. Enter a name, tap **Host** and share the 5-letter code (tap
 it to copy); friends tap **Join** and type it. The host can add AI players to
 empty seats, then starts the game.
 
-AI levels: **Cadet** (slow, poor economy, won't attack for the first 7
-minutes), **Easy**, **Normal**, **Hard**, and **Brutal**. Brutal thinks fastest
-and earns 25% more, but mostly plays smarter with the same information you
-have: it scouts with probes before attacking blind, reads fleets closing on
-its worlds, builds its economy first, keeps a garrison at home and goes after
-rivals' worlds (homeworlds most of all) rather than neutrals.
+AI levels: **Cadet**, **Easy**, **Normal**, **Hard** and **Brutal**. Every
+level judges fights with a replay of the real battle rules and sees only what
+its sensors show. Going up the ladder each level thinks more often, does more
+per turn (defend, attack and build in the same turn), sends safer fleets
+(weak levels cut it fine and lose fights they shouldn't), runs its economy
+better (ships before tech) and earns more (Cadet ×0.5, Easy ×0.7, Normal ×1,
+Hard ×1.4, Brutal ×2.1). Cadet and Easy leave other empires alone for the first 8 and 4
+minutes. Hard and Brutal also scout rivals with probes, read fleets closing
+on their worlds, keep a home garrison later on, prefer rivals' worlds and
+gather big strikes. Tested over 24 games per pairing, each level beats the
+one below about 23 times in 24. `node tools/ai-ladder.mjs` plays every level against
+every other (and a quick "human" stand-in) to check the order holds.
 
 - The host's browser runs the whole game, AIs included. Guests send orders and
   receive the state four times a second over WebRTC. The free PeerJS cloud only

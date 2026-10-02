@@ -1,25 +1,62 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns } from './sim.js';
 
-// One action per turn, like a player: build up the economy and fleet, then
-// pick a target it can take and send enough ships from one site.
-// Difficulty: how often it thinks, how much margin it wants before attacking,
-// and `skill`, the chance it follows through on each smart move it spots
-// (defending, rescuing credits, tech and upgrades). At the ends, `eco` scales
-// its income (cadet runs a lean economy, brutal a rich one) and `calm` keeps a
-// cadet from attacking anyone for its first few minutes. `smart` (brutal)
-// plays better without seeing more: it scouts with probes before attacking
-// blind, builds its economy first, prefers hurting rivals over grabbing
-// neutrals, and keeps a garrison home.
+// The AI plays like a player with the same information: it sees only what its
+// sensors show (plus what anyone can read off the map: neutral worlds keep no
+// ships, and their guns follow a pattern). Each "think" it can defend, attack
+// and build; better levels think more often, take more actions per think,
+// judge battles more tightly and play more cleverly.
+//
+//   think   seconds between thinks
+//   acts    attack and build actions per think
+//   margin  ships sent = exact need × margin + extra (exact need from a replay
+//           of the battle rules). Weak levels cut it fine and lose fights
+//           they shouldn't; strong ones send enough to be sure.
+//   skill   chance it follows through on each smart move it spots
+//   eco     income multiplier (the ends of the ladder only)
+//   calm    seconds before it attacks another player (it still expands)
+//   smart   scouts with probes, reads fleets closing on its worlds, keeps a
+//           home garrison, goes after rivals' worlds, gathers big strikes
 export const DIFFICULTY = {
-  cadet: { think: 14, margin: 2.4, skill: 0.1, eco: 0.6, calm: 420 },
-  easy: { think: 9, margin: 1.6, skill: 0.35 },
-  normal: { think: 5, margin: 1.6, skill: 0.7 },
-  hard: { think: 3, margin: 1.6, skill: 1 },
-  brutal: { think: 1.5, margin: 1.6, skill: 1, eco: 1.25, smart: true },
+  cadet: { think: 14, acts: 1, margin: 0.85, extra: 0, seenExtra: 0, skill: 0.1, eco: 0.5, calm: 480 },
+  easy: { think: 8, acts: 1, margin: 1, extra: 1, seenExtra: 0, skill: 0.35, eco: 0.7, calm: 240 },
+  normal: { think: 4, acts: 2, margin: 1.2, extra: 1, seenExtra: 1, skill: 0.7 },
+  hard: { think: 2, acts: 3, margin: 1.3, extra: 1, seenExtra: 1, skill: 0.95, eco: 1.4, smart: true },
+  brutal: { think: 0.8, acts: 5, margin: 1.4, extra: 2, seenExtra: 1, skill: 1, eco: 2.1, smart: true },
 };
 
 export function createAI(owner, difficulty, rand) {
-  return { owner, d: DIFFICULTY[difficulty], rand, clock: 5 + rand() * 5, plan: null };
+  return { owner, d: DIFFICULTY[difficulty], rand, clock: 2 + rand() * 3, plan: null };
+}
+
+/**
+ * Fewest ships that take world t (a replay of the battle rules: both sides
+ * fire each half second until one is gone). `def` overrides what's there
+ * ({ ships, vet, guns, cover }); by default the world as it is.
+ */
+export function shipsToTake(game, owner, t, vet = 0, _known = true, def = null) {
+  const d = def || { ships: t.ships, vet: t.vet, guns: t.guns, cover: coverOf(game, t) };
+  const aFp = firepowerOf(game, owner) * (1 + VET_BONUS * vetLevel(vet));
+  const aDmg = damageTaken(game, owner);
+  const defOwner = t.owner;
+  const dFp = defOwner === NEUTRAL ? 1 : firepowerOf(game, defOwner);
+  const dDmg = defOwner === NEUTRAL ? 1 : damageTaken(game, defOwner);
+  const dVet = 1 + VET_BONUS * vetLevel(d.vet);
+  const wins = (n) => {
+    let a = n, aD = 0, s = d.ships, g = d.guns, bD = 0;
+    for (let k = 0; k < 1200; k++) {
+      aD += RULES.fire * (s * dVet + g + d.cover) * dFp * aDmg * 0.5;
+      bD += RULES.fire * a * aFp * dDmg * 0.5;
+      while (bD >= 1 && s + g > 0) { bD -= 1; if (s > 0) s -= 1; else g = Math.max(0, g - 1); }
+      while (aD >= 1 && a > 0) { aD -= 1; a -= 1; }
+      if (a <= 0) return false;
+      if (s + g <= 0) return true;
+    }
+    return false;
+  };
+  let lo = 1, hi = 1;
+  while (!wins(hi)) { hi *= 2; if (hi > 256) return Infinity; }
+  while (lo < hi) { const m = (lo + hi) >> 1; if (wins(m)) hi = m; else lo = m + 1; }
+  return hi;
 }
 
 export function tickAI(game, ai, dt) {
@@ -28,110 +65,141 @@ export function tickAI(game, ai, dt) {
   }
   ai.clock -= dt;
   if (ai.clock > 0 || game.winner !== null) return;
-  ai.clock = ai.d.think * (0.7 + ai.rand() * 0.6);
+  ai.clock = ai.d.think * (0.8 + ai.rand() * 0.4);
 
-  const mine = game.bodies.filter((b) => b.owner === ai.owner);
-  // Same limits as the player: only what its sensors show. Enemy fleets it
-  // can see but can't read (no intel) are assumed to be a medium force; their
-  // destinations are only known with intel II.
   const vis = visibility(game, ai.owner);
   // A smart AI reads intent from a visible fleet closing on one of its worlds
   // (as a player would), even without the intel to read its route.
+  // Any level can see a fleet closing on its world (a player can); the
+  // weaker ones just don't always react.
   const closing = (f) => {
-    if (!ai.d.smart || !vis.sees(fleetState(f, game.time))) return false;
+    if (!vis.sees(fleetState(f, game.time))) return false;
     const t = game.bodies[f.to];
-    return t.owner === ai.owner && dist(fleetState(f, game.time), posAt(game, t, game.time)) < 45;
+    return t.owner === ai.owner && dist(fleetState(f, game.time), posAt(game, t, game.time)) < 60;
   };
   const known = (f) => f.owner === ai.owner || (vis.intel >= 2 && vis.sees(fleetState(f, game.time))) || closing(f);
   const sizeOf = (f) => (f.owner === ai.owner || vis.intel >= 1 ? f.n : 5);
-  const coming = (b, own) => game.fleets.filter((f) => f.to === b.id && (f.owner === ai.owner) === own && known(f)).reduce((n, f) => n + sizeOf(f), 0);
-  // Worlds out of sensor range: guess a modest garrison.
-  const shipsAt = (t) => (vis.bodies.has(t.id) ? t.ships * (1 + VET_BONUS * vetLevel(t.vet)) : 4);
-  const gunsAt = (t) => (vis.bodies.has(t.id) ? t.guns + coverOf(game, t) : 3);
+  const coming = (b, own) => game.fleets.filter((f) => !f.probe && f.to === b.id && (f.owner === ai.owner) === own && known(f)).reduce((n, f) => n + sizeOf(f), 0);
   const will = () => ai.rand() < ai.d.skill;
   const power = (b) => b.ships * (1 + VET_BONUS * vetLevel(b.vet));
-  if (defend(game, ai, mine, vis, known, sizeOf, power, will)) return;
-  if (economy(game, ai, mine, coming, will)) return;
-  if (ai.d.calm && game.time < ai.d.calm) return;
+  // Routes and battle estimates are reused within one think.
+  const routes = new Map();
+  const route = (s, t) => { const k = s.id * 1000 + t.id; if (!routes.has(k)) routes.set(k, plan(game, s, t).T); return routes.get(k); };
+  const ctx = { vis, known, sizeOf, coming, will, power, route };
 
+  defend(game, ai, game.bodies.filter((b) => b.owner === ai.owner), vis, known, sizeOf, power, will);
+  for (let i = 0; i < ai.d.acts; i++) if (!attack(game, ai, ctx)) break;
+  for (let i = 0; i < ai.d.acts; i++) {
+    const r = economy(game, ai, game.bodies.filter((b) => b.owner === ai.owner), coming, will);
+    if (!r || r === 'save') break;
+  }
+}
+
+/** What the AI believes defends t: exact if in sensor range, else a guess. */
+function believed(game, ai, vis, t) {
+  if (vis.bodies.has(t.id)) return { ships: t.ships, vet: t.vet, guns: t.guns, cover: coverOf(game, t) };
+  if (t.owner === NEUTRAL) {
+    // Neutral garrisons are public knowledge: no ships, a few guns.
+    const guns = t.perk === 'fortress' ? 6 : t.giant ? 5 : t.kind === 'planet' ? 2 : 2;
+    return { ships: 0, vet: 0, guns, cover: 0 };
+  }
+  return { ships: 6, vet: 1, guns: 3, cover: 1 };
+}
+
+/** One attack (or a step toward one); returns true if it acted. */
+function attack(game, ai, { vis, coming, route }) {
+  const mine = game.bodies.filter((b) => b.owner === ai.owner);
   const smart = ai.d.smart;
-  // Smart: never strip the homeworld bare.
-  const keep = (s) => (smart && s.home ? 3 : 1);
+  const calm = ai.d.calm && game.time < ai.d.calm;
+  // A home garrison once the opening's over (the first minutes are for expanding).
+  const keep = (s) => (s.home && game.time > 900 ? 2 : 1);
+  const spare = (s) => readyShips(game, s) - Math.ceil(coming(s, false) * 1.2) - keep(s);
   const scanned = (t) => (game.scans || []).some((x) => x.owner === ai.owner && x.body === t.id);
   const probing = (t) => game.fleets.some((f) => f.probe && f.owner === ai.owner && f.to === t.id);
-  // Smart: scout the nearest world it can't see, one probe at a time.
-  if (smart && !game.fleets.some((f) => f.probe && f.owner === ai.owner) && game.credits[ai.owner] > RULES.probe.cost + 150) {
+  const sending = (t) => game.fleets.filter((f) => !f.probe && f.owner === ai.owner && f.to === t.id).reduce((n, f) => n + f.n, 0);
+  // Exact need × margin, plus a ship or two for doubt (less when it can see).
+  const cost = (need, t) => Math.ceil(need * ai.d.margin) + (vis.bodies.has(t.id) ? ai.d.seenExtra : ai.d.extra);
+
+  // Smart: scout the nearest enemy-held world it can't see, one probe at a time.
+  if (smart && !game.fleets.some((f) => f.probe && f.owner === ai.owner) && game.credits[ai.owner] > RULES.probe.cost + 200) {
     const yards = mine.filter((s) => has(s, 'shipyard'));
     const d = (t) => Math.min(...yards.map((s) => dist(posAt(game, s, game.time), posAt(game, t, game.time))));
-    const blind = game.bodies.filter((t) => t.owner !== ai.owner && !t.visitor && !vis.bodies.has(t.id) && !scanned(t)).sort((a, b) => d(a) - d(b))[0];
-    if (blind && yards.length && d(blind) < 120) {
+    const blind = game.bodies.filter((t) => t.owner !== ai.owner && t.owner !== NEUTRAL && !t.visitor && !vis.bodies.has(t.id) && !scanned(t)).sort((a, b) => d(a) - d(b))[0];
+    if (blind && yards.length && d(blind) < 160 && ai.rand() < 0.5) {
       const near = (s) => dist(posAt(game, s, game.time), posAt(game, blind, game.time));
-      launchProbe(game, yards.sort((a, b) => near(a) - near(b))[0], blind);
-      return;
+      if (launchProbe(game, yards.sort((a, b) => near(a) - near(b))[0], blind)) return true;
     }
   }
+
   let best = null;
   for (const s of mine) {
-    const spare = readyShips(game, s) - Math.ceil(coming(s, false) * 1.2) - keep(s);
-    if (spare < 2) continue;
-    const vetK = 1 + VET_BONUS * vetLevel(s.vet); // veterans need fewer hulls
+    const sp = spare(s);
+    if (sp < 1) continue;
     for (const t of game.bodies) {
       if (t.owner === ai.owner || !present(game, t)) continue;
-      const { T } = plan(game, s, t);
+      if (calm && t.owner !== NEUTRAL) continue;
+      // One strike at a time: small top-ups arrive alone and get picked off.
+      if (sending(t) > 0) continue;
+      const T = route(s, t);
       if (T > staysFor(game, t) - 10) continue; // a visitor that will be gone first
-      // What will be waiting: garrison and guns, plus what it builds meanwhile.
-      const growth = t.owner === NEUTRAL || !has(t, 'shipyard') ? 0 : Math.min(t.queue, T / RULES.ship.time);
-      const need = Math.ceil(((shipsAt(t) + gunsAt(t) + growth) * ai.d.margin) / vetK) + 1 - coming(t, true);
-      if (need < 1 || need > spare) continue;
-      let value = t.kind === 'planet' ? 3 : t.kind === 'station' ? 2 : 1;
-      // Smart: taking from a rival hurts them twice; homeworlds most of all.
-      if (smart && t.owner !== NEUTRAL) value *= t.home ? 2 : 1.5;
-      // Special worlds and events are worth going for.
+      const def = believed(game, ai, vis, t);
+      // What it builds meanwhile, guns rebuilt by the time we arrive, and
+      // enemy ships already on their way there.
+      if (t.owner !== NEUTRAL && has(t, 'shipyard')) def.ships += Math.min(t.queue || 1, T / RULES.ship.time);
+      if (t.owner !== NEUTRAL) def.guns = Math.max(def.guns, Math.min(maxGuns(t) + fortressGuns(game, t), def.guns + RULES.gunRegen * T));
+      def.ships += coming(t, false);
+      const need = cost(shipsToTake(game, ai.owner, t, s.vet, true, def), t);
+      if (need < 1 || need > sp) continue;
+      let value = t.kind === 'planet' ? (t.giant ? 4 : 3) : t.kind === 'station' ? 2 : 1.5;
+      // Smart: once the land grab is over, hurting a rival beats a neutral.
+      if (smart && t.owner !== NEUTRAL && game.time > 900) value *= t.home ? 1.6 : 1.25;
       if (t.perk) value *= 1.5;
       if ((game.happenings || []).some((h) => h.at === t.id)) value *= 2;
-      const score = value / (need + T / 30);
+      const score = value / (need + T / 25);
       if (!best || score > best.score) best = { s, t, need, score };
     }
   }
-  if (best && smart && !vis.bodies.has(best.t.id) && !scanned(best.t)) {
-    // Don't attack blind: look first (then plan with what the probe saw).
-    const yard = mine.find((s) => !cantProbe(game, s, best.t));
-    if (yard && !probing(best.t)) { launchProbe(game, yard, best.t); return; }
+  if (best && smart && best.t.owner !== NEUTRAL && !vis.bodies.has(best.t.id) && !scanned(best.t)) {
+    // Don't attack a rival blind: look first.
     if (probing(best.t)) best = null;
+    else {
+      const yard = mine.find((s) => !cantProbe(game, s, best.t));
+      if (yard && launchProbe(game, yard, best.t)) return true;
+    }
   }
-  if (best) { launch(game, best.s, best.t, best.need); return; }
+  if (best) { launch(game, best.s, best.t, best.need); return true; }
 
-  // Nothing one site can take: gather ships at the site nearest a target, one
-  // transfer per turn, then strike with all of them at once.
-  const spare = (s) => readyShips(game, s) - Math.ceil(coming(s, false) * 1.2) - keep(s);
+  // Nothing one site can take alone: gather ships at the site nearest a
+  // target, then strike with all of them at once.
   if (ai.plan) {
     const t = game.bodies[ai.plan.target];
     const stage = game.bodies[ai.plan.stage];
     if (t.owner === ai.owner || stage.owner !== ai.owner || game.time > ai.plan.until) {
       ai.plan = null;
-    } else if (readyShips(game, stage) >= ai.plan.need) {
-      launch(game, stage, t, readyShips(game, stage) - 1);
+    } else if (readyShips(game, stage) - keep(stage) >= ai.plan.need) {
+      launch(game, stage, t, readyShips(game, stage) - keep(stage));
       ai.plan = null;
-      return;
+      return true;
     } else {
-      const src = mine.filter((s) => s !== stage && spare(s) >= 2 && !game.fleets.some((f) => f.from === s.id && f.to === stage.id))
-        .sort((a, b) => plan(game, a, stage).T - plan(game, b, stage).T)[0];
-      if (src) launch(game, src, stage, spare(src));
-      return;
+      const src = mine.filter((s) => s !== stage && spare(s) >= 1 && !game.fleets.some((f) => f.from === s.id && f.to === stage.id))
+        .sort((a, b) => route(a, stage) - route(b, stage))[0];
+      if (src) { launch(game, src, stage, spare(src)); return true; }
+      return false;
     }
   }
   const total = mine.reduce((n, s) => n + Math.max(0, spare(s)), 0);
   let target = null;
   let need = Infinity;
   for (const t of game.bodies) {
-    if (t.owner === ai.owner || t.visitor) continue;
-    const n = Math.ceil((Math.max(shipsAt(t), 6) + gunsAt(t)) * ai.d.margin) + 2;
+    if (t.owner === ai.owner || t.visitor || (calm && t.owner !== NEUTRAL)) continue;
+    const n = cost(shipsToTake(game, ai.owner, t, 0, true, believed(game, ai, vis, t)), t) + 1;
     if (n <= total && n < need) { target = t; need = n; }
   }
   if (target && mine.length > 1) {
-    const stage = mine.slice().sort((a, b) => plan(game, a, target).T - plan(game, b, target).T)[0];
-    ai.plan = { target: target.id, stage: stage.id, need, until: game.time + 900 };
+    const stage = mine.slice().sort((a, b) => route(a, target) - route(b, target))[0];
+    ai.plan = { target: target.id, stage: stage.id, need, until: game.time + 600 };
   }
+  return false;
 }
 
 /** One economic action if there's something worth doing; returns true if it acted. */
@@ -154,7 +222,9 @@ function defend(game, ai, mine, vis, known, sizeOf, power, will) {
       .map((s) => ({ s, T: plan(game, s, b).T }))
       .filter((x) => x.T < eta - 5)
       .sort((x, y) => x.T - y.T);
-    const src = help.find((x) => readyShips(game, x.s) - 1 >= gap) || help[0];
+    // A reinforcement too small to hold just dies with the garrison: smart AIs
+    // only send one that's enough.
+    const src = help.find((x) => readyShips(game, x.s) - 1 >= gap) || (ai.d.smart ? null : help[0]);
     if (src && will()) {
       launch(game, src.s, b, Math.min(readyShips(game, src.s) - 1, gap));
       return true;
@@ -182,8 +252,11 @@ function economy(game, ai, mine, coming, will) {
     && (free(b, 'mine') || cantBuild(game, b, 'mine') === 'not enough credits'));
   if (rock) {
     if (free(rock, 'mine')) return buildStructure(game, rock, 'mine');
-    if (!threatened(rock) && will()) return true;
+    if (!threatened(rock) && will()) return 'save';
   }
+  // 2'. Ships first: every yard keeps at least one in the queue.
+  const idle = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 1)[0];
+  if (idle) return orderShip(game, idle);
   // 2a. Skimmers on held gas giants, an exchange at home: steady income.
   for (const type of ['exchange', 'skimmer']) {
     const site = mine.find((b) => free(b, type) && !threatened(b) && !b.structures.some((x) => x.type === type));
@@ -194,7 +267,7 @@ function economy(game, ai, mine, coming, will) {
   // Save for the next mine upgrade too: extra income compounds.
   const nextMine = mine.flatMap((b) => b.structures.filter((x) => x.type === 'mine' && cantUpgrade(game, b, x) === 'not enough credits').map((x) => [b, x]))[0];
   if (nextMine && !threatened(nextMine[0]) && mine.reduce((n, b) => n + b.ships, 0) >= 6 && will()) {
-    if (credits < upgradeCost(nextMine[1])) return true;
+    if (credits < upgradeCost(nextMine[1])) return 'save';
   }
   for (const b of mine) {
     for (const x of b.structures) {
@@ -204,10 +277,16 @@ function economy(game, ai, mine, coming, will) {
       if (x.type === 'defence' && threatened(b) && will()) return upgrade(game, b, x);
     }
   }
+  // 3. More shipyards as the empire grows (one per three worlds).
+  const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
+  if (yards.length < 1 + Math.floor(mine.length / 3) && will()) {
+    const site = mine.filter((b) => b.kind === 'planet' && free(b, 'shipyard')).sort((a, b) => b.size - a.size)[0];
+    if (site) return buildStructure(game, site, 'shipyard');
+  }
   // 2c. Research, in a sensible order, when it can afford it and still build.
   const order = smart ? ['industry', 'sensors', 'intel', 'drives', 'weapons', 'armour', 'industry', 'drives', 'weapons', 'armour', 'sensors', 'intel', 'drives', 'sensors', 'intel'] : ['sensors', 'drives', 'intel', 'industry', 'weapons', 'armour', 'drives', 'sensors', 'weapons', 'armour', 'industry', 'intel', 'drives', 'sensors', 'intel'];
   const key = order.find((k) => nextTech(game, ai.owner, k));
-  if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost) {
+  if (key && !cantResearch(game, ai.owner, key) && credits > nextTech(game, ai.owner, key).cost + RULES.ship.cost * 2 && mine.length >= 3) {
     return research(game, ai.owner, key);
   }
   // 2d. Research stations once things are comfortable: one, then a second.
@@ -221,15 +300,9 @@ function economy(game, ai, mine, coming, will) {
     const x = safe && safe.structures.find((y) => y.type === 'defence' && y.level === 1 && !cantDemolish(game, safe, y));
     if (x && credits > 900) return demolish(game, safe, x);
   }
-  // 3. A second shipyard, on the planet with the most room.
-  const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
-  if (yards.length < 2 && ai.rand() < 0.5) {
-    const site = mine.filter((b) => b.kind === 'planet' && free(b, 'shipyard')).sort((a, b) => b.size - a.size)[0];
-    if (site) return buildStructure(game, site, 'shipyard');
-  }
   // 4. Ships: keep every yard busy, but leave credits for the rest now and then.
   const yard = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 3).sort((a, b) => a.queue - b.queue)[0];
-  if (yard && ai.rand() < 0.8) return orderShip(game, yard);
+  if (yard && (smart || ai.rand() < 0.8)) return orderShip(game, yard);
   // 5. More guns at home once things are running.
   const home = mine.find((b) => b.home) || mine[0];
   if (home && game.credits[ai.owner] > 600 && free(home, 'defence') && home.structures.filter((x) => x.type === 'defence').length < 2) return buildStructure(game, home, 'defence');
