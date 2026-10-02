@@ -147,7 +147,8 @@ function attack(game, ai, { vis, coming, route }) {
       const need = cost(shipsToTake(game, ai.owner, t, s.vet, true, def), t) - sending(t);
       if (need < 1 || need > sp) continue;
       let value = t.kind === 'planet' ? (t.giant ? 4 : 3) : t.kind === 'station' ? 2 : 1.5;
-      if (smart && t.owner !== NEUTRAL) value *= t.home ? 2 : 1.5;
+      // Smart: once the land grab is over, hurting a rival beats a neutral.
+      if (smart && t.owner !== NEUTRAL && game.time > 900) value *= t.home ? 1.6 : 1.25;
       if (t.perk) value *= 1.5;
       if ((game.happenings || []).some((h) => h.at === t.id)) value *= 2;
       const score = value / (need + T / 25);
