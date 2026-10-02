@@ -482,7 +482,8 @@ function chips(b, { income = true, seen = true } = {}) {
   if (b.perk) {
     const P = PERKS[b.perk];
     let inside = '';
-    if (P.range) {
+    if (P.range && b.perk === 'relay') inside = ' (dashed ring)';
+    else if (P.range) {
       const c = posAt(game, b, game.time);
       const mine = game.bodies.filter((x) => x.owner === me && x !== b && dist(posAt(game, x, game.time), c) <= P.range).map((x) => x.name);
       inside = ` (dashed ring). ${mine.length ? `Yours inside now: ${mine.join(', ')}` : 'None of yours inside now'}`;

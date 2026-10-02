@@ -144,10 +144,8 @@ export function visibility(game, owner) {
   for (const b of game.bodies) if (b.sieges.some((g) => g.owner === owner)) eyes.push([posAt(game, b, game.time), 20]);
   for (const x of game.scans || []) if (x.owner === owner && x.until > game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 14]);
   const sees = (p) => eyes.some(([e, r]) => dist(e, p) <= r);
-  if (holds(game, owner, 'relay')) {
-    // The old relay sees everything (reading fleets still takes Intel).
-    return { owner, sees: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel: techLevel(game, owner, 'intel'), warn: holds(game, owner, 'post') };
-  }
+  // An old relay you hold is a huge sensor dish: it sees everything in its ring.
+  for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), PERKS.relay.range]);
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
   return { owner, sees, bodies, intel: techLevel(game, owner, 'intel'), warn: holds(game, owner, 'post') };
 }
@@ -237,10 +235,10 @@ const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
 // Special worlds: a few neutrals carry a perk for whoever holds them.
 export const PERKS = {
   seam: { name: 'Rich seam', text: 'Mines here pay double', kinds: ['asteroid', 'moon'] },
-  relay: { name: 'Old relay', text: 'See the whole system' },
-  depot: { name: 'Fuel depot', text: 'Fleets launched from your worlds inside its ring fly 20% faster', range: 60, boost: 1.2 },
+  relay: { name: 'Old relay', text: 'See everything inside its ring', range: 160 },
+  depot: { name: 'Fuel depot', text: 'Fleets launched from your worlds inside its ring fly 20% faster', range: 120, boost: 1.2 },
   post: { name: 'Listening post', text: 'Warns of fleets heading for your worlds' },
-  fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on each of your worlds inside its ring', range: 50 },
+  fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on each of your worlds inside its ring', range: 100 },
   archive: { name: 'Ancient archive', text: 'Research 25% faster', boost: 1.25 },
   hulk: { name: 'Drydock hulk', text: 'Ships built here start as veterans', vet: 2.5 },
   forge: { name: 'Tidal forge', text: 'Builds and upgrades here 30% faster', boost: 1.3, giantMoon: true },
