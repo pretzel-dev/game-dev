@@ -119,7 +119,7 @@ function surfaceTex(b) {
   return canvasTex(256, 128, (g, w, h) => {
     drawSurface(g, w, h);
     grain(g, w, h, r, b.giant ? 0.05 : 0.12);
-  }, b.home ? 2 : b.kind === 'planet' ? 4 : 2);
+  }, b.giant ? 2 : b.home ? 2 : b.kind === 'planet' ? 4 : 2);
 
   function drawSurface(g, w, h) {
     if (b.home) {
@@ -165,19 +165,32 @@ function surfaceTex(b) {
       return;
     }
     if (b.kind === 'planet' && b.giant) {
+      // Cloud bands that shear and swirl: latitude bands, pushed sideways by
+      // turbulence that's strongest where neighbouring bands meet, and a
+      // great oval storm.
+      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
+      const W = img.width, H = img.height, dd = img.data;
+      const seed = b.id * 13 + 5;
       const base = 0.05 + b.hue * 0.12;
-      for (let y = 0; y < h; y++) {
-        const band = Math.sin(y * 0.18 + Math.sin(y * 0.05) * 3) * 0.5 + 0.5;
-        col.setHSL(base + band * 0.04, 0.35 + band * 0.2, 0.35 + band * 0.25 + (r() - 0.5) * 0.03);
-        g.fillStyle = `#${col.getHexString()}`;
-        g.fillRect(0, y, w, 1);
+      const sx = r(), sy = 0.3 + r() * 0.4;
+      for (let y = 0; y < H; y++) {
+        const lat = (y / H - 0.5) * Math.PI;
+        const cl = Math.cos(lat);
+        for (let x = 0; x < W; x++) {
+          const lon = (x / W) * Math.PI * 2;
+          const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
+          const turb = fbm(px * 4, py * 10, pz * 4, seed, 5) - 0.5;
+          const shear = Math.sin(py * 14 + turb * 3.2);
+          // The storm: a swirl in a small oval.
+          const ox = ((x / W - sx + 1.5) % 1) - 0.5, oy = y / H - sy;
+          const st = Math.exp(-((ox / 0.06) ** 2 + (oy / 0.035) ** 2));
+          const band = shear * 0.5 + 0.5 + st * 0.6;
+          col.setHSL(base + band * 0.05 - st * 0.03, 0.3 + band * 0.25, 0.32 + band * 0.28 + turb * 0.08);
+          const i = (y * W + x) * 4;
+          dd[i] = col.r * 255; dd[i + 1] = col.g * 255; dd[i + 2] = col.b * 255; dd[i + 3] = 255;
+        }
       }
-      // A great storm.
-      col.setHSL(base, 0.6, 0.55);
-      g.fillStyle = `#${col.getHexString()}`;
-      g.beginPath();
-      g.ellipse(w * r(), h * (0.3 + r() * 0.4), 14, 6, 0, 0, Math.PI * 2);
-      g.fill();
+      g.putImageData(img, 0, 0);
     } else {
       const moon = b.kind !== 'planet';
       const hue = moon ? 0.08 : [0.08, 0.55, 0.02, 0.33][Math.floor(b.hue * 4)];
@@ -290,45 +303,47 @@ function shipGeometries() {
     }
     return { base: mergeGeometries(base), accent: mergeGeometries(accent) };
   };
-  // Frigate: stacked hull sections on a spine, flat bow, radiators amidships.
+  const ribs = (w, h, z0, z1, n) => Array.from({ length: n }, (_, i) => box(w, h, 0.006, 0, 0, z0 + ((z1 - z0) * i) / (n - 1), 'dark'));
+  const pdc = (x, y, z) => box(0.016, 0.012, 0.016, x, y, z, 'dark'); // point-defence turret
+  // Corvette: a slim wedge-nosed hull in two sections, ribbed, with PDC
+  // turrets at the corners, a thin dorsal stripe and a big drive.
   const frigate = build([
-    box(0.16, 0.14, 0.16, 0, 0, 0.26),
-    box(0.165, 0.03, 0.12, 0, 0.06, 0.26, 'accent'), // bow stripe
-    box(0.12, 0.12, 0.06, 0, 0, 0.36, 'accent'), // bow cap
-    cyl(0.1, 0.1, 0.18, 0.08),
-    cyl(0.105, 0.105, 0.03, 0.08, 'accent'), // hull band
-    box(0.2, 0.18, 0.12, 0, 0, -0.08, 'dark'),
-    box(0.36, 0.008, 0.14, 0, 0.05, -0.08, 'dark'),
-    box(0.36, 0.008, 0.14, 0, -0.05, -0.08, 'dark'),
-    box(0.035, 0.035, 0.08, 0.1, 0.07, 0.26, 'dark'),
-    box(0.035, 0.035, 0.08, -0.1, -0.07, 0.26, 'dark'),
-    ...drive(0.1, -0.2),
+    tag(new THREE.ConeGeometry(0.05, 0.12, 4).rotateY(Math.PI / 4).rotateX(X).translate(0, 0, 0.33), 'hull'), // bow
+    box(0.075, 0.07, 0.2, 0, 0, 0.17),
+    box(0.09, 0.08, 0.2, 0, 0, -0.03),
+    ...ribs(0.094, 0.084, -0.12, 0.06, 4),
+    box(0.06, 0.012, 0.16, 0, 0.037, 0.17, 'accent'),
+    box(0.01, 0.084, 0.03, 0.046, 0, 0.0, 'accent'),
+    pdc(0.042, 0.04, 0.22), pdc(-0.042, -0.04, 0.22), pdc(0.05, -0.044, -0.06), pdc(-0.05, 0.044, -0.06),
+    box(0.004, 0.004, 0.07, 0.02, 0.05, 0.1, 'dark'), // antenna mast
+    cyl(0.045, 0.05, 0.05, -0.16, 'dark'),
+    ...drive(0.06, -0.2),
   ]);
-  // Gunboat: squat and wide, a keel of armour and twin gun pods.
+  // Frigate: a long, armoured box hull in segments, a small command tower,
+  // flank radiators and a heavy drive.
   const gunboat = build([
-    box(0.26, 0.1, 0.4, 0, 0, 0.05),
-    box(0.2, 0.06, 0.1, 0, 0.07, 0.12, 'accent'), // bridge
-    box(0.06, 0.06, 0.38, 0.17, 0, 0.08, 'accent'), // gun pods
-    box(0.06, 0.06, 0.38, -0.17, 0, 0.08, 'accent'),
-    box(0.02, 0.02, 0.14, 0.17, 0, 0.32, 'dark'),
-    box(0.02, 0.02, 0.14, -0.17, 0, 0.32, 'dark'),
-    box(0.3, 0.12, 0.08, 0, 0, -0.18, 'dark'),
-    ...drive(0.11, -0.26),
+    box(0.08, 0.08, 0.5, 0, 0, 0.04),
+    box(0.07, 0.07, 0.05, 0, 0, 0.31),
+    ...ribs(0.086, 0.086, -0.18, 0.26, 7),
+    box(0.04, 0.03, 0.06, 0, 0.055, 0.1), // command tower
+    box(0.082, 0.014, 0.12, 0, 0.034, 0.2, 'accent'),
+    box(0.16, 0.003, 0.08, 0, 0, -0.1, 'dark'), // radiators
+    pdc(0.044, 0.044, 0.28), pdc(-0.044, 0.044, 0.28), pdc(0.044, -0.044, -0.05), pdc(-0.044, -0.044, -0.05),
+    box(0.02, 0.02, 0.06, 0, -0.05, 0.25, 'dark'), // keel railgun
+    ...drive(0.07, -0.25),
   ]);
-  // Carrier: a long open truss with a command block, cargo pods and radiators.
+  // Hauler: a cab, a thin spine carrying cargo containers, and a drive.
   const carrier = build([
-    box(0.14, 0.14, 0.12, 0, 0, 0.32),
-    box(0.145, 0.04, 0.125, 0, 0.05, 0.32, 'accent'),
-    box(0.03, 0.03, 0.56, 0.05, 0.05, 0, 'dark'),
-    box(0.03, 0.03, 0.56, -0.05, -0.05, 0, 'dark'),
-    box(0.03, 0.03, 0.56, 0.05, -0.05, 0, 'dark'),
-    box(0.03, 0.03, 0.56, -0.05, 0.05, 0, 'dark'),
-    box(0.1, 0.1, 0.1, 0.12, 0, 0.1),
-    box(0.1, 0.1, 0.1, -0.12, 0, 0.1, 'accent'),
-    box(0.1, 0.1, 0.1, 0, 0.12, -0.04),
-    box(0.42, 0.006, 0.1, 0, 0, -0.14, 'dark'),
-    box(0.18, 0.16, 0.08, 0, 0, -0.22),
-    ...drive(0.09, -0.3),
+    box(0.07, 0.06, 0.08, 0, 0, 0.3),
+    box(0.071, 0.014, 0.05, 0, 0.03, 0.3, 'accent'),
+    box(0.02, 0.02, 0.5, 0, 0, 0.04, 'dark'),
+    ...[0.18, 0.08, -0.02, -0.12].flatMap((z, i) => [
+      box(0.05, 0.04, 0.08, 0.04, 0, z, i % 2 ? 'accent' : 'hull'),
+      box(0.05, 0.04, 0.08, -0.04, 0, z, i % 2 ? 'hull' : 'dark'),
+    ]),
+    box(0.12, 0.003, 0.06, 0, 0.03, -0.18, 'dark'),
+    cyl(0.04, 0.045, 0.05, -0.2, 'dark'),
+    ...drive(0.055, -0.24),
   ]);
   return [frigate, gunboat, carrier];
 }
@@ -408,16 +423,55 @@ function asteroidMesh(b) {
   return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#8a7f72', roughness: 0.95, metalness: 0.05 }));
 }
 
+// Screen size in pixels, for anything drawn at a fixed on-screen width.
+const screenRes = { value: new THREE.Vector2(1, 1) };
+/**
+ * An orbit as a trail: a ribbon of fixed on-screen width that is thickest
+ * just behind the world and tapers (and fades) to nothing a full turn later.
+ * `uTh` is the world's current angle, set every frame.
+ */
 function orbitLine(b) {
-  const pts = [];
-  for (let i = 0; i <= 128; i++) {
-    const th = (i / 128) * Math.PI * 2;
-    pts.push(new THREE.Vector3(Math.cos(th) * b.r, Math.sin(th) * b.r * b.incl, Math.sin(th) * b.r));
+  const N = 256;
+  const pos = [], next = [], ang = [], side = [], idx = [];
+  const at = (a) => [Math.cos(a) * b.r, Math.sin(a) * b.r * b.incl, Math.sin(a) * b.r];
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    for (const sd of [-1, 1]) { pos.push(...at(a)); next.push(...at(a + 0.01)); ang.push(a); side.push(sd); }
+    if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
   }
-  return new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color: '#3a4460', transparent: true, opacity: b.parent === null ? 0.5 : 0.35 }),
-  );
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('nextPos', new THREE.Float32BufferAttribute(next, 3));
+  geo.setAttribute('ang', new THREE.Float32BufferAttribute(ang, 1));
+  geo.setAttribute('side', new THREE.Float32BufferAttribute(side, 1));
+  geo.setIndex(idx);
+  const moon = b.parent !== null;
+  const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    uniforms: { uTh: { value: 0 }, uRes: screenRes, uWidth: { value: moon ? 2.2 : 3.4 }, uColor: { value: new THREE.Color(moon ? '#5d6a8c' : '#7383ad') }, uOpacity: { value: moon ? 0.55 : 0.75 } },
+    vertexShader: `attribute vec3 nextPos; attribute float ang; attribute float side;
+      uniform float uTh; uniform vec2 uRes; uniform float uWidth;
+      varying float vF; varying float vSide;
+      void main() {
+        vec4 c = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 n = projectionMatrix * modelViewMatrix * vec4(nextPos, 1.0);
+        vec2 dir = normalize((n.xy / n.w - c.xy / c.w) * uRes + 1e-6);
+        vF = fract((uTh - ang) / 6.2831853); // 0 just behind the world, 1 a full turn later
+        float w = uWidth * pow(1.0 - vF, 0.9);
+        c.xy += vec2(-dir.y, dir.x) * side * w / uRes * c.w;
+        vSide = side;
+        gl_Position = c;
+      }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uOpacity; varying float vF; varying float vSide;
+      void main() {
+        float a = uOpacity * pow(1.0 - vF, 1.3) * smoothstep(1.0, 0.35, abs(vSide));
+        gl_FragColor = vec4(uColor, a);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }));
+  mesh.frustumCulled = false;
+  return mesh;
 }
 
 /** A thin atmosphere: a shell that glows toward the limb (fresnel). */
@@ -586,6 +640,71 @@ export function createView(canvas, labelRoot) {
     scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.3, sizeAttenuation: false, color: '#9aa6c8', transparent: true, opacity: 0.7 })));
   }
 
+  // The Milky Way: the galaxy's disc seen edge-on from inside it, a band of
+  // star clouds round the sky with a brighter core and dark dust lanes; and
+  // a small spiral galaxy far beyond it.
+  {
+    const W = 768, H = 384;
+    const tex = canvasTex(W, H, (g) => {
+      const img = g.getImageData(0, 0, W, H);
+      const d = img.data;
+      const N = new THREE.Vector3(0.32, 0.86, 0.4).normalize(); // galactic pole
+      const X = new THREE.Vector3(1, 0, 0).sub(N.clone().multiplyScalar(N.x)).normalize(); // towards the core
+      const Y = new THREE.Vector3().crossVectors(N, X);
+      const v = new THREE.Vector3();
+      for (let y = 0; y < H; y++) {
+        const th = (y / H) * Math.PI;
+        for (let x = 0; x < W; x++) {
+          const ph = (x / W) * Math.PI * 2;
+          v.set(-Math.cos(ph) * Math.sin(th), Math.cos(th), Math.sin(ph) * Math.sin(th));
+          const lat = Math.asin(Math.max(-1, Math.min(1, v.dot(N))));
+          const lon = Math.atan2(v.dot(Y), v.dot(X));
+          const band = Math.exp(-((lat / 0.17) ** 2));
+          if (band < 0.01) continue;
+          const core = Math.exp(-((lon / 0.7) ** 2)) * Math.exp(-((lat / 0.28) ** 2));
+          const clouds = fbm(v.x * 5, v.y * 5, v.z * 5, 41, 5);
+          const dust = Math.exp(-(((lat - 0.01 * Math.sin(lon * 3)) / 0.035) ** 2)) * Math.max(0, fbm(v.x * 9, v.y * 9, v.z * 9, 77, 4) + 0.15);
+          let k = band * (0.35 + clouds * 1.1) + core * 0.9;
+          k *= 1 - Math.min(0.85, dust * 1.4);
+          k = Math.max(0, k) * 0.38;
+          const i = (y * W + x) * 4;
+          d[i] = Math.min(255, (150 + core * 105) * k);
+          d[i + 1] = Math.min(255, (160 + core * 60) * k);
+          d[i + 2] = Math.min(255, (205 - core * 40) * k);
+          d[i + 3] = 255;
+        }
+      }
+      g.putImageData(img, 0, 0);
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true }));
+    sky.renderOrder = -2;
+    scene.add(sky);
+    // A distant spiral galaxy: two arms of soft light round a bright bulge.
+    const spiral = canvasTex(256, 256, (g) => {
+      g.translate(128, 128);
+      const r = rng(5);
+      for (let i = 0; i < 2600; i++) {
+        const arm = i % 2;
+        const t = r() ** 0.7 * 4.2;
+        const a = t * 1.25 + arm * Math.PI + (r() - 0.5) * 0.55;
+        const rad = 8 + t * 26 + (r() - 0.5) * 8;
+        g.fillStyle = `rgba(${200 + r() * 55 | 0},${200 + r() * 40 | 0},255,${0.05 + r() * 0.12 * (1 - t / 4.5)})`;
+        g.beginPath();
+        g.arc(Math.cos(a) * rad, Math.sin(a) * rad * 0.55, 1 + r() * 2.5, 0, Math.PI * 2);
+        g.fill();
+      }
+      const core = g.createRadialGradient(0, 0, 0, 0, 0, 30);
+      core.addColorStop(0, 'rgba(255,240,215,0.9)');
+      core.addColorStop(1, 'rgba(255,240,215,0)');
+      g.fillStyle = core;
+      g.fillRect(-30, -30, 60, 60);
+    });
+    const gal = new THREE.Sprite(new THREE.SpriteMaterial({ map: spiral, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55, rotation: 0.6 }));
+    gal.position.set(-5200, 2600, -4600);
+    gal.scale.setScalar(700);
+    scene.add(gal);
+  }
+
   // The sun: bright core, layered glow, and the only real light.
   // Churning granulation with dark-edged cells, limb darkening, and slow
   // brighter faculae, dark sunspots, and a soft glow around it.
@@ -699,10 +818,14 @@ export function createView(canvas, labelRoot) {
         g.add(hulk);
       }
       else {
+        // Rocky worlds get relief from their own surface (craters and
+        // highlands catch the light); gas giants stay smooth.
+        const surf = surfaceTex(b);
         body = new THREE.Mesh(
-          new THREE.SphereGeometry(b.size, 48, 32),
+          new THREE.SphereGeometry(b.size, 64, 40),
           nightOnly(new THREE.MeshStandardMaterial({
-            map: surfaceTex(b), roughness: 1, metalness: 0,
+            map: surf, roughness: b.home ? 0.8 : 1, metalness: 0,
+            bumpMap: b.giant ? null : surf, bumpScale: b.home ? 0.6 : b.kind === 'moon' ? 2 : 1.2,
             emissiveMap: lightsTex(b), emissive: '#ffd08a', emissiveIntensity: 0,
           })),
         );
@@ -755,7 +878,7 @@ export function createView(canvas, labelRoot) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach };
     });
     // Binary: the companion sun's (eccentric) path, so you can see where it's headed.
     if (companionPath) { companionPath.removeFromParent(); companionPath = null; }
@@ -779,7 +902,8 @@ export function createView(canvas, labelRoot) {
       const accent = new THREE.Mesh(shipGeos[0].accent, new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.5 }));
       mesh.add(accent);
       const plume = new THREE.Mesh(
-        new THREE.ConeGeometry(0.07, 1, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.92),
+        // A long, thin, bright drive flame (an Epstein-style torch).
+        new THREE.ConeGeometry(0.035, 1.6, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -1.16),
         new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
       mesh.add(plume);
@@ -880,6 +1004,7 @@ export function createView(canvas, labelRoot) {
 
   function resize() {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
+    screenRes.value.set(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
   }
@@ -946,6 +1071,96 @@ export function createView(canvas, labelRoot) {
     sh.glint.material.color.set(burning ? '#cfe8ff' : color);
     sh.glint.material.opacity = ppu > 60 ? 0 : burning ? 1 : 0.7;
     sh.glint.scale.setScalar((burning ? 9 : 5) / ppu);
+  }
+
+  // Events at a world get something you can see there: a probe beacon, a
+  // tumbling wreck, an incoming convoy, a cluster of supply crates. Each has a
+  // gold glint so it shows from afar.
+  const eventObjs = new Map();
+  const evHull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.5, roughness: 0.5 });
+  const evDark = new THREE.MeshStandardMaterial({ color: '#4a505c', metalness: 0.4, roughness: 0.7 });
+  const evShip = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.45 });
+  function eventObj(kind) {
+    const g = new THREE.Group();
+    const box = (w, h, d, m = evHull) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    if (kind === 'signal') {
+      g.add(box(0.12, 0.12, 0.18));
+      const dish = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 6, 0, Math.PI * 2, 0, Math.PI / 3), evHull);
+      dish.position.z = 0.12; dish.rotation.x = -Math.PI / 2;
+      g.add(dish, box(0.5, 0.004, 0.08, evDark));
+    } else if (kind === 'wreck') {
+      // Torn hull sections drifting apart, and glittering ice.
+      for (let i = 0; i < 4; i++) {
+        const m = box(0.12 + i * 0.03, 0.1, 0.22 - i * 0.03, i % 2 ? evDark : evHull);
+        m.position.set((i - 1.5) * 0.18, Math.sin(i * 2) * 0.08, Math.cos(i * 3) * 0.1);
+        m.rotation.set(i, i * 2, i * 0.5);
+        g.add(m);
+      }
+      for (let i = 0; i < 6; i++) {
+        const ice = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#cfe8ff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 }));
+        ice.position.set(Math.sin(i * 5) * 0.35, Math.cos(i * 3) * 0.2, Math.sin(i * 7) * 0.3);
+        ice.scale.setScalar(0.12);
+        g.add(ice);
+      }
+    } else if (kind === 'convoy') {
+      // Three haulers in line astern.
+      for (let i = 0; i < 3; i++) {
+        const m = new THREE.Mesh(shipGeos[2].base, evShip);
+        m.position.set((i - 1) * 0.25, 0, -i * 0.5);
+        m.scale.setScalar(0.8);
+        g.add(m);
+      }
+    } else {
+      // Supply cache: a cluster of crates on a frame.
+      for (let i = 0; i < 6; i++) {
+        const m = box(0.12, 0.1, 0.12, i % 3 ? evHull : evDark);
+        m.position.set((i % 3 - 1) * 0.14, Math.floor(i / 3) * 0.11, 0);
+        g.add(m);
+      }
+      g.add(box(0.46, 0.02, 0.16, evDark));
+    }
+    const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffd479', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    scene.add(g, glint);
+    return { g, glint, kind };
+  }
+  function renderEvents(game, now, t) {
+    const live = new Set();
+    for (const h of game.happenings || []) {
+      const b = game.bodies[h.at];
+      if (b.visitor || !bodyPos[b.id]) continue;
+      live.add(h.id);
+      if (!eventObjs.has(h.id)) eventObjs.set(h.id, eventObj(h.kind));
+      const o = eventObjs.get(h.id);
+      const p = bodyPos[b.id];
+      // A slow orbit round the world, just outside its parked ships.
+      const rad = b.size * 2.9 + 1.2;
+      const a = t * 0.15 + h.id;
+      tmp.set(p.x + Math.cos(a) * rad, p.y + 0.4, p.z + Math.sin(a) * rad);
+      if (o.kind === 'convoy') {
+        // Flying in from deep space until it arrives.
+        const k = THREE.MathUtils.clamp((h.starts - now) / 60, 0, 1);
+        const dirA = h.id * 2.399;
+        tmp.x += Math.cos(dirA) * k * 70;
+        tmp.z += Math.sin(dirA) * k * 70;
+        tmp2.set(-Math.cos(dirA), 0, -Math.sin(dirA));
+        if (k <= 0) tmp2.set(-Math.sin(a), 0, Math.cos(a));
+        o.g.lookAt(tmp.clone().add(tmp2));
+      } else {
+        o.g.rotation.x += 0.004;
+        o.g.rotation.y += o.kind === 'wreck' ? 0.01 : 0.003;
+      }
+      o.g.position.copy(tmp);
+      o.g.visible = true;
+      const ppu = ppuAt(o.g.position);
+      o.glint.position.copy(tmp);
+      o.glint.scale.setScalar(((o.kind === 'signal' ? 0.6 + 0.4 * Math.sin(t * 5) : 1) * 9) / ppu);
+      o.glint.material.opacity = ppu > 80 ? 0.3 : 0.9;
+    }
+    for (const [id, o] of eventObjs) {
+      if (live.has(id)) continue;
+      o.g.removeFromParent(); o.glint.removeFromParent();
+      eventObjs.delete(id);
+    }
   }
 
   function render(game, ui, dt, t) {
@@ -1056,6 +1271,8 @@ export function createView(canvas, labelRoot) {
       const { b } = v;
       const p = bodyPos[b.id];
       v.g.position.set(p.x, p.y, p.z);
+      // The trail starts at the world's current angle.
+      if (v.line.material.uniforms) v.line.material.uniforms.uTh.value = b.phase + (2 * Math.PI * now) / b.period;
       if (b.parent !== null) {
         const q = bodyPos[b.parent];
         v.lineHolder.position.set(q.x, q.y, q.z);
@@ -1245,6 +1462,8 @@ export function createView(canvas, labelRoot) {
       const y = (-tmp.y * 0.5 + 0.5) * h;
       v.label.style.transform = `translate(${x}px, ${y + markPx / 2 + 2}px) translate(-50%, 0)`;
     }
+
+    renderEvents(game, now, t);
 
     // Fleets in flight.
     let routeN = 0;
