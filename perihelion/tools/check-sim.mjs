@@ -463,11 +463,13 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   const g = createGame({ seed: 21 });
   const homes = [0, 1].map((o) => g.bodies.find((b) => b.owner === o && b.home));
   const t = g.bodies.find((b) => b.owner === NEUTRAL && !b.visitor);
-  const lit = S.plan(g, homes[0], t), dark = S.plan(g, homes[0], t, g.time, S.DARK.speed);
+  const lit = S.plan(g, homes[0], t), dark = S.plan(g, homes[0], t, g.time, 1, false, S.DARK.burn);
   assert.ok(dark.T > lit.T * 1.2, 'running dark is slower');
   homes[0].ships = 6; homes[0].restUntil = 0;
   const f = launch(g, homes[0], t, 3, true);
   assert.ok(f && f.dark);
+  assert.ok(fleetState(f, g.time + 1).burning && !fleetState(f, g.time + f.T * 0.3).burning && fleetState(f, g.time + f.T * 0.95).burning, 'dark: burn, coast, burn');
+  { const e = fleetState(f, g.time + f.T); assert.ok(dist(e, posAt(g, t, g.time + f.T)) < 6, 'dark fleets still arrive'); }
   step(g, f.T * 0.5);
   const v = visibility(g, 1);
   const p = fleetState(f, g.time);

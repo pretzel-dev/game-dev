@@ -158,9 +158,9 @@ preview server running).
   structures; anything unfinished and any queued ships are lost. Nothing is
   built while a world is under attack.
 - **Running dark:** while picking a destination, tap **Dark** (or D). The
-  fleet makes a short burn and coasts the rest of the way: it takes about
-  twice as long, but enemy sensors only spot it at a third of their usual
-  range, and a launch from a world they can't see goes unannounced.
+  fleet makes a short burn, coasts with its drive off, then makes a short
+  braking burn: it takes about half as long again, but while coasting enemy
+  sensors only spot it at a third of their usual range (a ☾ on its tag), and a launch from a world they can't see goes unannounced.
 - **Spies:** with Signals intercept (Intel I), tap an enemy world and
   **Plant spy** (250 credits). The agent takes 40 seconds to slip in, then shows you that world, its launches
   (even dark ones) and its surroundings, skims part of its income, and slows

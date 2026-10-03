@@ -300,7 +300,12 @@ function shipGeometries() {
     for (const g of parts) {
       const n = g.toNonIndexed();
       if (g.userData.tag === 'accent') { accent.push(n); continue; }
-      const c = g.userData.tag === 'dark' ? DARK : HULL;
+      // Each plate a slightly different shade (some warmer, some cooler), so
+      // the hull reads as assembled panels rather than one flat grey.
+      const k = 0.86 + ((base.length * 0.618) % 1) * 0.22;
+      const warm = (((base.length * 0.377) % 1) - 0.5) * 0.06;
+      const c0 = g.userData.tag === 'dark' ? DARK : HULL;
+      const c = { r: c0.r * k * (1 + warm), g: c0.g * k, b: c0.b * k * (1 - warm) };
       const col = new Float32Array(n.attributes.position.count * 3);
       for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
       n.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -929,13 +934,38 @@ export function createView(canvas, labelRoot) {
     }
   }
 
+  // Hull plating: panels of slightly different tone, seams, hatches and a few
+  // scuffs. Multiplies the hull colour, and doubles as bump and roughness.
+  const hullTex = canvasTex(128, 128, (g) => {
+    const r = rng(17);
+    g.fillStyle = '#e4e4e4';
+    g.fillRect(0, 0, 128, 128);
+    const plate = (x, y, w, h) => {
+      if (w < 10 || h < 10 || r() < 0.15) {
+        const v = 200 + r() * 55 | 0;
+        g.fillStyle = `rgb(${v},${v},${v})`;
+        g.fillRect(x + 1, y + 1, w - 2, h - 2);
+        g.strokeStyle = 'rgba(40,44,52,0.55)';
+        g.lineWidth = 1;
+        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        if (r() < 0.25) { g.fillStyle = 'rgba(60,64,72,0.35)'; g.fillRect(x + w * 0.3, y + h * 0.3, w * 0.25, h * 0.2); }
+        return;
+      }
+      if (w > h) { const c = w * (0.3 + r() * 0.4) | 0; plate(x, y, c, h); plate(x + c, y, w - c, h); }
+      else { const c = h * (0.3 + r() * 0.4) | 0; plate(x, y, w, c); plate(x, y + c, w, h - c); }
+    };
+    plate(0, 0, 128, 128);
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(30,30,36,${0.04 + r() * 0.06})`; g.fillRect(r() * 128, r() * 128, 1 + r() * 6, 1); }
+  });
+  hullTex.wrapS = hullTex.wrapT = THREE.RepeatWrapping;
+
   // Ships: meshes with a drive plume and a far-away glint, pooled.
   const ships = [];
   function ship(i) {
     if (i >= MAX_SHIPS) return null;
     if (!ships[i]) {
       // A faint self-glow so the shadow side is dark grey, never black.
-      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.5, emissive: '#2a2f38' }));
+      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, map: hullTex, bumpMap: hullTex, bumpScale: 0.6, roughnessMap: hullTex, metalness: 0.5, roughness: 0.62, emissive: '#2a2f38' }));
       // Owner-coloured paint: stripes, bows and pods, lit a little so it reads.
       const accent = new THREE.Mesh(shipGeos[0].accent, new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.5 }));
       mesh.add(accent);
@@ -1580,7 +1610,7 @@ export function createView(canvas, labelRoot) {
       if (tmp.z > 1 || !seesFleet(f)) { el.style.visibility = 'hidden'; continue; }
       const mine = f.owner === (ui.me ?? 0);
       // Probes: just an icon from afar, named when the camera is close.
-      const text = f.probe ? `${icon('probe')}${camera.position.distanceTo(tmp2.set(s.x, s.y, s.z)) < 60 ? ' probe' : ''}` : `${icon('fleet')}${knowsSize(f) ? f.n : '?'}`;
+      const text = f.probe ? `${icon('probe')}${camera.position.distanceTo(tmp2.set(s.x, s.y, s.z)) < 60 ? ' probe' : ''}` : `${icon('fleet')}${knowsSize(f) ? f.n : '?'}${f.dark ? ` ${icon('dark')}` : ''}`;
       const lv = knowsSize(f) ? vetLevel(f.vet) : 0;
       if (el._v !== lv) { el._v = lv; el.dataset.v = lv; }
       if (el._t !== text) { el._t = text; el.innerHTML = text; }
