@@ -726,7 +726,21 @@ function hexBoard() {
       + (() => { const i = iconBody(c.key); return `<svg x="-8" y="-17" width="16" height="16" viewBox="${i.vb}" class="ic${i.lu ? ' lu' : ''}">${i.body}</svg>`; })()
       + `<text x="0" y="9" class="hl">${c.branch ? TECH[c.key].name : JOINT_SHORT[c.key]}</text>${pips}</g>`);
   }
-  return `<svg class="board" viewBox="-124 -114 248 228">${out.join('')}</svg>`;
+  // Megaprojects: small gold hexes just outside the joint tech that unlocks each.
+  for (const c of cells.filter((x) => JOINTS[x.key])) {
+    const key = Object.keys(PROJECTS).find((k) => PROJECTS[k].needs === c.key);
+    if (!key) continue;
+    const l = Math.hypot(c.cx, c.cy);
+    const mx = c.cx * (1 + (S * 1.5) / l), my = c.cy * (1 + (S * 1.5) / l);
+    const ownerB = game.wonders && game.wonders[key] !== undefined ? game.bodies[game.wonders[key]] : null;
+    const building = game.bodies.some((b) => b.owner === me && b.project && b.project.key === key);
+    const state = ownerB ? (ownerB.owner === me ? 'done' : 'taken') : building ? 'run' : !t[c.key] ? 'locked' : game.credits[me] < PROJECTS[key].cost ? 'open poor' : 'open';
+    const sel = ui.techSel === `mega:${key}` ? ' sel' : '';
+    const i = iconBody(key);
+    out.push(`<g data-hex="mega:${key}" transform="translate(${mx.toFixed(1)},${my.toFixed(1)})" class="hexc mega ${state}${sel}"><polygon points="${hex(0, 0, S * 0.62)}" class="hx"/>`
+      + `<svg x="-7" y="-7" width="14" height="14" viewBox="${i.vb}" class="ic${i.lu ? ' lu' : ''}">${i.body}</svg></g>`);
+  }
+  return `<svg class="board" viewBox="-146 -132 292 264">${out.join('')}</svg>`;
 }
 function techDetail(key) {
   const t = game.tech[me];
@@ -745,7 +759,10 @@ function techDetail(key) {
     body += `<div class="nextrow"><span>${joint ? '' : `<b>${next.title}</b>`}<small>${next.text} · ${fmt(next.time / researchSpeed(game, me))}</small>${needs}</span>`
       + `<button data-k="${key}" ${why ? 'disabled' : ''}>Research<small>${next.cost}</small></button></div>`;
   }
-  if (joint) body += megaDetail(key);
+  if (joint) {
+    const mk = Object.keys(PROJECTS).find((k) => PROJECTS[k].needs === key);
+    if (mk) body += `<small class="dim unlocks">Unlocks ${icon(mk)} ${PROJECTS[mk].name}</small>`;
+  }
   return `<div class="tdetail"><div class="th">${icon(key)} <b>${name}</b></div>${body}</div>`;
 }
 /** The megaproject a joint tech unlocks: build it, or watch and speed it up. */
@@ -766,7 +783,7 @@ function megaDetail(joint) {
   }
   const ready = game.tech[me][joint];
   const sites = game.bodies.filter((b) => b.owner === me && !cantProject(game, b, key));
-  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? fmt(P.time / researchSpeed(game, me)) : 'No world of yours can take it yet') : ''}</small></span>`
+  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? fmt(P.time / researchSpeed(game, me)) : 'No world of yours can take it yet') : `Needs ${JOINTS[joint].name}`}</small></span>`
     + `<button data-mega="${key}" ${ready && sites.length ? '' : 'disabled'}>Build<small>${P.cost}</small></button></div></div>`;
 }
 function renderResearch() {
@@ -782,7 +799,8 @@ function renderResearch() {
   if ($('research').hidden) return;
   $('rstatus').textContent = '';
   if (!ui.techSel) ui.techSel = p ? p.key : BRANCH_RING.find((k) => nextTech(game, me, k)) || 'ansible';
-  setHTML($('rlist'), hexBoard() + techDetail(ui.techSel));
+  const sel = ui.techSel;
+  setHTML($('rlist'), hexBoard() + (sel.startsWith('mega:') ? `<div class="tdetail">${megaDetail(PROJECTS[sel.slice(5)].needs)}</div>` : techDetail(sel)));
 }
 $('rlist').addEventListener('click', (e) => {
   const h = e.target.closest('[data-hex]');

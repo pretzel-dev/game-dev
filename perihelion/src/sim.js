@@ -112,11 +112,11 @@ export const techTitle = (key, level) => (JOINTS[key] ? JOINTS[key].name : TECH[
 // and the first to finish wins it; the others lose the race (half their money
 // back). A captured world's project or wonder goes to the captor.
 export const PROJECTS = {
-  sundiver: { needs: 'torch', name: 'Sun-diver collectors', where: 'inner', text: '+8 credits/s', cost: 1200, time: 360 },
-  massdriver: { needs: 'kinetic', name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 1200, time: 360 },
-  ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 1200, time: 360 },
-  citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 1200, time: 360 },
-  telescope: { needs: 'targeting', name: 'Deep-space telescope', where: 'any', text: 'See every enemy fleet: its size, destination and arrival time', cost: 1200, time: 360 },
+  sundiver: { needs: 'torch', name: 'Sun-diver collectors', where: 'inner', text: '+8 credits/s', cost: 2000, time: 480 },
+  massdriver: { needs: 'kinetic', name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 2000, time: 480 },
+  ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 2000, time: 480 },
+  citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 2000, time: 480 },
+  telescope: { needs: 'targeting', name: 'Deep-space telescope', where: 'any', text: 'See every enemy fleet: its size, destination and arrival time', cost: 2000, time: 480 },
 };
 export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
 const holdsWonder = (game, owner, key) => owner !== NEUTRAL && game.bodies.some((b) => b.wonder === key && b.owner === owner);
@@ -405,7 +405,7 @@ export const PERKS = {
   fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on each of your worlds inside its ring', range: 100 },
   archive: { name: 'Ancient archive', text: 'Research 25% faster', boost: 1.25 },
   hulk: { name: 'Drydock hulk', text: 'Ships built here start as veterans', vet: 2.5 },
-  forge: { name: 'Tidal forge', text: 'Builds and upgrades here 30% faster', boost: 1.3, giantMoon: true },
+  forge: { name: 'Tidal forge', text: 'Tidal heat runs the foundries: structures, upgrades and ships build twice as fast here', boost: 2, giantMoon: true },
 };
 // Events: announced a minute ahead at a world; whoever holds that world for
 // the hold time (without losing it) gets the reward.
@@ -714,7 +714,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // The visitor: one body that events turn into a comet or a derelict, on a
   // pass in around the sun and out again. Absent (far away) the rest of the time.
   add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
-  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * SUN_SIZE + 6, bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * SUN_SIZE * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -975,8 +975,8 @@ function pureAlong(f, tau) {
 }
 
 function clearOfSun(f, game, now) {
-  for (let k = 1; k < 64; k++) {
-    const tau = (k / 64) * f.T;
+  for (let k = 1; k < 128; k++) {
+    const tau = (k / 128) * f.T;
     const p = along(f, tau);
     if (len(p) < (game.sunClear || SUN_CLEAR)) return false;
     // A companion sun: keep clear of it too, wherever it will be.

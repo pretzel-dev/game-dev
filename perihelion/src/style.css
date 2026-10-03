@@ -401,7 +401,7 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #count small { font-size: 11px; font-weight: 500; color: var(--dim); margin-left: 1px; }
 
 /* Research hex board. */
-#research .board { display: block; width: min(320px, 100%); margin: 0 auto 6px; }
+#research .board { display: block; width: min(370px, 100%); margin: 0 auto 6px; }
 .board .hx { fill: rgba(88, 184, 255, 0.06); stroke: rgba(160, 180, 255, 0.28); stroke-width: 1; }
 .board .core { fill: rgba(88, 184, 255, 0.14); }
 .board .hl { fill: var(--fg); font-size: 7.5px; text-anchor: middle; letter-spacing: 0.06em; text-transform: uppercase; }
@@ -471,3 +471,13 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #menu .row.mp .primary.daily small { font-size: 9px; letter-spacing: 0.06em; }
 #menu.paused #play { background: none; border: 1px solid var(--accent); color: var(--accent); }
 #menu #resume { margin: 8px 0 6px; }
+
+/* Megaprojects on the board: small gold hexes outside their joint tech. */
+.board .hexc.mega { color: #ffd479; }
+.board .hexc.mega .hx { fill: rgba(255, 212, 121, 0.07); stroke: rgba(255, 212, 121, 0.4); }
+.board .hexc.mega.done .hx { fill: rgba(255, 212, 121, 0.3); stroke: #ffd479; }
+.board .hexc.mega.taken { opacity: 0.3; }
+.board .hexc.mega.locked { color: #6d6650; }
+.board .hexc.mega.locked .hx { stroke: rgba(255, 212, 121, 0.18); }
+.tdetail > .mega:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.tdetail .unlocks { display: block; margin-top: 6px; color: #ffd479; }
