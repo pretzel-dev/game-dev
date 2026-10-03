@@ -693,10 +693,13 @@ export function createView(canvas, labelRoot) {
           v.set(-Math.cos(ph) * Math.sin(th), Math.cos(th), Math.sin(ph) * Math.sin(th));
           const lat = Math.asin(Math.max(-1, Math.min(1, v.dot(N))));
           const lon = Math.atan2(v.dot(Y), v.dot(X));
-          const band = Math.exp(-((lat / 0.17) ** 2));
-          if (band < 0.01) continue;
-          const core = Math.exp(-((lon / 0.7) ** 2)) * Math.exp(-((lat / 0.28) ** 2));
+          // A ragged, wide falloff (no hard edge): the band's width wanders with
+          // the clouds, and a faint halo fades it into the dark.
           const clouds = fbm(v.x * 5, v.y * 5, v.z * 5, 41, 5);
+          const wob = 0.17 * (0.75 + 0.6 * fbm(v.x * 2.5, v.y * 2.5, v.z * 2.5, 13, 3));
+          const band = Math.exp(-((lat / wob) ** 2)) + 0.22 * Math.exp(-((lat / 0.5) ** 2));
+          if (band < 0.003) continue;
+          const core = Math.exp(-((lon / 0.7) ** 2)) * Math.exp(-((lat / 0.32) ** 2));
           const dust = Math.exp(-(((lat - 0.01 * Math.sin(lon * 3)) / 0.035) ** 2)) * Math.max(0, fbm(v.x * 9, v.y * 9, v.z * 9, 77, 4) + 0.15);
           let k = band * (0.35 + clouds * 1.1) + core * 0.9;
           k *= 1 - Math.min(0.85, dust * 1.4);
