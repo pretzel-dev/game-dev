@@ -43,7 +43,7 @@ inside right now).
 | Fortress rock | Starts with heavy guns; +1 gun on each of your worlds inside its ring |
 | Ancient archive | Research 25% faster |
 | Drydock hulk | Comes with a shipyard; ships built here start as veterans |
-| Tidal forge (moon of a gas giant) | Builds and upgrades here 30% faster |
+| Tidal forge (moon of a gas giant) | Structures, upgrades and ships build twice as fast here |
 
 ## Events
 
@@ -90,8 +90,9 @@ Sensors levels reach less far than before (the Ansible is the way to see it all)
 ## Megaprojects
 
 The end of each joint tech: researching it unlocks a megaproject (a wonder).
-Start one from the R&D board (the joint tech's panel: Build, then tap one of
-your worlds); one per world, 1200 credits, 6 minutes, and your research
+Each sits on the R&D board as a small gold hex just outside its joint tech:
+tap it, Build, then tap one of your worlds. One per world, 2000 credits,
+8 minutes, and your research
 stations speed it up. Each kind can be finished only once per game; several
 empires can race for the same one, and the first to finish wins it; the rest
 get half their money back. Speed one up by paying (200 for 30 s) or breaking up

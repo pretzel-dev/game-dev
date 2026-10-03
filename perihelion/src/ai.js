@@ -282,7 +282,7 @@ function economy(game, ai, mine, coming, will) {
   if (smart) {
     const own = mine.find((b) => b.project);
     if (own && credits > 900 && !threatened(own)) return fundProject(game, own, 'cash');
-    if (!own && credits > 1700 && mine.length >= 4) {
+    if (!own && credits > 2500 && mine.length >= 4) {
       for (const key of ['sundiver', 'ringyard', 'citadel', 'massdriver', 'telescope']) {
         const site = mine.filter((b) => !threatened(b) && !cantProject(game, b, key)).sort((a, b) => (b.home ? 1 : 0) - (a.home ? 1 : 0))[0];
         if (site) return startProject(game, site, key);
