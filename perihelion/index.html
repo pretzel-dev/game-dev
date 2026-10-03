@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#03040a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Perihelion</title>
+    <link rel="icon" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" />
+    <script type="module" crossorigin src="./assets/index-DFmYqYaB.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index--Sy1Pn2u.css">
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="labels"></div>
+    <div id="feed"></div>
+
+    <div id="hud" hidden>
+      <span id="clock"></span>
+      <span class="grow"></span>
+      <button id="system" aria-label="Reset view" title="Reset view (H)"><svg class="ic" viewBox="0 0 16 16"><path d="M8 8m-5.5 0a5.5 5.5 0 1 0 11 0a5.5 5.5 0 1 0-11 0M8 8m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0"/></svg></button>
+      <button id="warp" aria-label="Time speed" title="Time speed (1–5)">1×</button>
+      <button id="pause" aria-label="Pause" title="Pause (Space)"><svg class="ic" viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg></button>
+    </div>
+
+    <div id="rbar" hidden></div>
+    <button id="rnd" hidden aria-label="Research" title="Research (R)"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6.5L4.5 19a1.5 1.5 0 0 0 1.3 2.2h12.4a1.5 1.5 0 0 0 1.3-2.2L14 9.5V3"/><path d="M7 15h10"/></svg><span>R&amp;D<small id="rndsub"></small></span><i class="meter"><i id="rndbar"></i></i></button>
+
+    <div id="research" hidden>
+      <div class="sheet-head"><span>Research</span><span id="rstatus"></span><button id="rclose" aria-label="Close"><svg class="ic" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+      <div id="rlist"></div>
+    </div>
+
+    <div id="actions" hidden>
+      <div id="info"></div>
+      <div class="bar build" id="buildrow"></div>
+      <div class="bar">
+        <button id="cancel" hidden>Cancel</button>
+        <div class="stepper" id="stepper" hidden>
+          <button id="less" aria-label="Fewer ships">−</button>
+          <span id="count" title="Tap: all ready ships, then half, then one"></span>
+          <button id="more" aria-label="More ships">+</button>
+        </div>
+        <button id="dark" hidden title="Run dark: a short burn, then coast. Slower, but hard to spot (D)" aria-label="Run dark"><svg class="ic" viewBox="0 0 16 16"><path d="M10.5 2.5a5.5 5.5 0 1 0 3 9.5a4.5 4.5 0 0 1-3-9.5z"/></svg></button>
+        <button id="launch" title="Send ships from this world (L)">Launch</button>
+        <button id="focus" aria-label="Zoom to" title="Fly the camera here (F)"><svg class="ic" viewBox="0 0 16 16"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3M8 8m-3.5 0a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0"/></svg></button>
+      </div>
+    </div>
+
+    <div id="fleet" hidden></div>
+    <div id="peek" hidden></div>
+
+    <div id="menu" class="overlay">
+      <h1>Perihelion</h1>
+      <button id="resume" class="primary" hidden>Resume</button>
+      <div class="row"><span>Name</span><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /></div>
+      <div class="row"><span>Rivals</span>
+        <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button></div>
+      </div>
+      <div class="row"><span>AI</span>
+        <div class="seg tight" id="difficulty"><button data-v="cadet">Cadet</button><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button><button data-v="brutal">Brutal</button></div>
+      </div>
+      <div class="row"><span>System</span><button id="system-pick" class="pick">Random</button></div>
+      <button id="play" class="primary">Play vs AI</button>
+      <p class="how more">More ways to play</p>
+      <div class="row mp" id="mp-buttons">
+        <button id="daily" class="primary ghost daily">Daily</button>
+        <button id="host" class="primary ghost">Host</button>
+        <button id="join" class="primary ghost">Join</button>
+      </div>
+      <div class="row mp" id="join-row" hidden>
+        <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" />
+        <button id="join-go" class="primary">Join</button>
+        <button id="join-back" class="primary ghost" aria-label="Back"><svg class="ic" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </div>
+      <p class="how" id="menu-msg"></p>
+      <button id="howto" class="link">How to play</button>
+    </div>
+
+    <div id="tutorial" class="overlay" hidden>
+      <div class="tut-head"><h1>How to play</h1><button id="tut-close" aria-label="Close"><svg class="ic" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+      <div class="tut-list">
+        <figure><img src="tutorial/worlds.jpg" alt="" loading="lazy" /><figcaption><b>Your worlds</b>Blue rings are yours. Every world earns credits (top left). Take the whole system by knocking out every rival.</figcaption></figure>
+        <figure><img src="tutorial/launch.jpg" alt="" loading="lazy" /><figcaption><b>Send ships</b>Tap your world, press Launch, tap a target and set how many with − / +, then Confirm.</figcaption></figure>
+        <figure><img src="tutorial/flight.jpg" alt="" loading="lazy" /><figcaption><b>Everything orbits</b>Ships fly to where the target <em>will</em> be, flipping halfway to brake. Far worlds take minutes, so plan ahead.</figcaption></figure>
+        <figure><img src="tutorial/build.jpg" alt="" loading="lazy" /><figcaption><b>Build</b>Select a world to build: shipyards make ships; mines, gas skimmers and exchanges add credits; guns defend; research speeds up R&amp;D.</figcaption></figure>
+        <figure><img src="tutorial/battle.jpg" alt="" loading="lazy" /><figcaption><b>Battles</b>Ships fight a world's ships and guns until one side is gone. A down-arrow on a label means enemies are coming.</figcaption></figure>
+        <figure><img src="tutorial/research.jpg" alt="" loading="lazy" /><figcaption><b>Research</b>R&amp;D improves drives, sensors, weapons and more. Beyond your sensors, enemy worlds and fleets are hidden.</figcaption></figure>
+      </div>
+      <p class="how" id="keys"></p>
+    </div>
+
+    <div id="lobby" class="overlay" hidden>
+      <h1>Lobby</h1>
+      <p class="how">Room code</p>
+      <div id="lobby-code" class="bigcode">·····</div>
+      <p class="how" id="lobby-hint">Share the code. Up to 3 empires.</p>
+      <div id="seats"></div>
+      <div class="row" id="lobby-ai">
+        <div class="seg tight" id="ai-diff"><button data-v="cadet">Cadet</button><button data-v="easy">Easy</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hard</button><button data-v="brutal">Brutal</button></div>
+        <button id="add-ai" class="primary ghost">Add AI</button>
+      </div>
+      <button id="lobby-start" class="primary">Start</button>
+      <button id="lobby-leave" class="primary ghost">Leave</button>
+    </div>
+
+    <div id="banner" hidden></div>
+
+    <div id="end" class="overlay" hidden>
+      <h1 id="end-title"></h1>
+      <p id="end-sub" class="how"></p>
+      <div id="report"></div>
+      <div class="row end-actions"><button id="share" class="primary ghost">Share</button><button id="again" class="primary">Play again</button></div>
+    </div>
+
+  </body>
+</html>
