@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { icon } from './icons.js';
-import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, present } from './sim.js';
+import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
@@ -312,8 +312,7 @@ function shipGeometries() {
       base.push(n);
     }
     const merged = { base: mergeGeometries(base), accent: mergeGeometries(accent) };
-    // Lights, worked out from the hull's size: red to port, green to
-    // starboard, a white light on the bow, and rows of lit portholes.
+    // Rows of lit portholes, worked out from the hull's size.
     merged.base.computeBoundingBox();
     const bb = merged.base.boundingBox;
     const light = (x, y, z, c, sz = 0.012) => {
@@ -324,11 +323,7 @@ function shipGeometries() {
       n.setAttribute('color', new THREE.BufferAttribute(col, 3));
       return n;
     };
-    const lights = [
-      light(bb.min.x - 0.004, 0, (bb.min.z + bb.max.z) / 2, '#ff3b30', 0.016),
-      light(bb.max.x + 0.004, 0, (bb.min.z + bb.max.z) / 2, '#3bff6a', 0.016),
-      light(0, bb.max.y + 0.006, bb.max.z - 0.06, '#ffffff', 0.014),
-    ];
+    const lights = [light(0, 0, (bb.min.z + bb.max.z) / 2, '#000000', 0.0001)]; // (inside the hull)
     // Portholes along the crew section: [half-width of the hull there, from z, to z, count].
     if (port) {
       const [px, z0, z1, n] = port;
@@ -1504,6 +1499,23 @@ export function createView(canvas, labelRoot) {
       }
       b.lostDef = b.lostAtk = 0;
       if (b.captured) { v.pulse = 1; b.captured = false; }
+
+      // A megaproject: a gold ring round the world, drawn as far round as the
+      // work has got; a full, brighter ring once it's finished.
+      const prog = b.wonder ? 1 : b.project ? Math.max(0.02, Math.min(1, 1 - b.project.left / PROJECTS[b.project.key].time)) : 0;
+      const step = Math.round(prog * 60);
+      if (v.megaStep !== step) {
+        v.megaStep = step;
+        if (v.mega) { v.g.remove(v.mega); v.mega.geometry.dispose(); v.mega = null; }
+        if (step) {
+          const R = b.size * 2.1 + 0.6;
+          v.mega = new THREE.Mesh(new THREE.TorusGeometry(R, Math.max(0.05, b.size * 0.04), 6, 96, (step / 60) * Math.PI * 2),
+            new THREE.MeshBasicMaterial({ color: '#ffd479', transparent: true, opacity: b.wonder ? 0.9 : 0.55, depthWrite: false }));
+          v.mega.rotation.x = Math.PI / 2;
+          v.g.add(v.mega);
+        }
+      }
+      if (v.mega) v.mega.rotation.z = t * 0.05;
 
       // Label: ship count big, name small. Moons and stations hide their label
       // while they're crowded against their planet on screen (unless busy).

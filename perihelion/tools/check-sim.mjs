@@ -440,7 +440,13 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   g.tech[0].intel = 2; g.tech[0].sensors = 2;
   assert.ok(S.research(g, 0, 'ansible'), 'unlocked once both are at II');
   g.tech[0].project.left = 0.1; step(g, 0.5);
-  assert.equal(visibility(g, 0).bodies.size, g.bodies.length, 'ansible sees all');
+  assert.equal(visibility(g, 0).intel, 3, 'entangled signals read every fleet');
+  {
+    const h0 = g.bodies.find((b) => b.owner === 0 && b.home);
+    S.startProject(g, h0, 'array'); h0.project.left = 0.1; step(g, 0.5);
+    assert.equal(visibility(g, 0).bodies.size, g.bodies.length, 'an ansible array sees all');
+    h0.wonder = null; delete g.wonders.array;
+  }
   // Two empires race for the same project; the first to finish wins it.
   const homes = [0, 1].map((o) => g.bodies.find((b) => b.owner === o && b.home));
   assert.equal(S.cantProject(g, homes[1], 'citadel'), 'needs Point-defence net', 'megaprojects come from research');

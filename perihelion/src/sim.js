@@ -96,7 +96,7 @@ export const SENSOR_RANGE = [70, 100, 135, 175];
 // industry, armour; each joint joins two neighbours.
 export const BRANCH_RING = ['intel', 'sensors', 'weapons', 'drives', 'industry', 'armour'];
 export const JOINTS = {
-  ansible: { name: 'Ansible', needs: ['intel', 'sensors'], cost: 1400, time: 260, text: 'See every world and fleet in the system, and where fleets are going' },
+  ansible: { name: 'Entangled signals', needs: ['intel', 'sensors'], cost: 1100, time: 220, text: 'Read every fleet you can see: its size, destination and arrival time; get warnings' },
   targeting: { name: 'Targeting data', needs: ['sensors', 'weapons'], cost: 1100, time: 220, text: '+20% firepower when attacking' },
   kinetic: { name: 'Kinetic strike', needs: ['weapons', 'drives'], cost: 1100, time: 220, text: 'Fleets arrive firing: an opening volley destroys a fifth of their number in defenders' },
   torch: { name: 'Torch production', needs: ['drives', 'industry'], cost: 1100, time: 220, text: 'Ships build 25% faster and fly 10% faster' },
@@ -116,6 +116,7 @@ export const PROJECTS = {
   massdriver: { needs: 'kinetic', name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 2000, time: 480 },
   ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 2000, time: 480 },
   citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 2000, time: 480 },
+  array: { needs: 'ansible', name: 'Ansible array', where: 'any', text: 'See every world and fleet in the system, and where they are going', cost: 2000, time: 480 },
   telescope: { needs: 'targeting', name: 'Deep-space telescope', where: 'any', text: 'See every enemy fleet: its size, destination and arrival time', cost: 2000, time: 480 },
 };
 export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
@@ -150,21 +151,25 @@ export function fundProject(game, b, how) {
   if (how === 'ship') {
     if (readyShips(game, b) < 1) return false;
     b.ships -= 1;
-    b.project.left = Math.max(1, b.project.left - PROJECT_FUND.crewCut);
+    b.project.rush = (b.project.rush || 0) + PROJECT_FUND.crewCut;
     return true;
   }
   if (game.credits[b.owner] < PROJECT_FUND.credits) return false;
   game.credits[b.owner] -= PROJECT_FUND.credits;
   tally(game, b.owner, 'spent', PROJECT_FUND.credits);
   b.project.paid += PROJECT_FUND.credits;
-  b.project.left = Math.max(1, b.project.left - PROJECT_FUND.cut);
+  b.project.rush = (b.project.rush || 0) + PROJECT_FUND.cut;
   return true;
 }
 function stepProjects(game, dt) {
   for (const b of game.bodies) {
     if (!b.project || b.owner === NEUTRAL || b.sieges.length) continue;
     // Research stations work for megaprojects too.
-    b.project.left -= dt * researchSpeed(game, b.owner) * (spyOn(game, b).length ? 1 - SPY.slow : 1);
+    // Funding doesn't jump ahead: it buys rush time, during which work goes
+    // twice as fast (so each payment saves its seconds, spread out).
+    const rush = b.project.rush > 0 ? 2 : 1;
+    if (b.project.rush > 0) b.project.rush = Math.max(0, b.project.rush - dt);
+    b.project.left -= dt * rush * researchSpeed(game, b.owner) * (spyOn(game, b).length ? 1 - SPY.slow : 1);
     if (b.project.left > 0) continue;
     const key = b.project.key;
     b.wonder = key;
@@ -303,15 +308,15 @@ export function visibility(game, owner) {
   // An old relay you hold is a huge sensor dish: it sees everything in its ring.
   for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), PERKS.relay.range]);
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
-  // The ansible sees everything and reads routes; a deep-space telescope reads every fleet.
-  const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') ? 2 : 0, holdsWonder(game, owner, 'telescope') ? 3 : 0);
+  // Entangled signals and a deep-space telescope read every fleet you see; an ansible array sees everything.
+  const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') || holdsWonder(game, owner, 'telescope') || holdsWonder(game, owner, 'array') ? 3 : 0);
   // A dark fleet shows only close in, unless a spy sits on the world it left.
   const tele = holdsWonder(game, owner, 'telescope');
   const spied = new Set((game.spies || []).filter((x) => x.owner === owner && x.since <= game.time).map((x) => x.body));
   const seesFleet = (f, p = fleetState(f, game.time)) => f.owner === owner || tele || spied.has(f.from)
     || (f.dark && !p.burning ? eyes.some(([e, r]) => dist(e, p) <= r * DARK.seen) : sees(p));
-  if (hasJoint(game, owner, 'ansible')) return { owner, sees: () => true, seesFleet: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
-  return { owner, sees, seesFleet, bodies, intel, warn: holds(game, owner, 'post') };
+  if (holdsWonder(game, owner, 'array')) return { owner, sees: () => true, seesFleet: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
+  return { owner, sees, seesFleet, bodies, intel, warn: holds(game, owner, 'post') || hasJoint(game, owner, 'ansible') };
 }
 
 export function rng(seed) {

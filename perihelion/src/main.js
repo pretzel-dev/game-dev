@@ -635,7 +635,9 @@ function renderBuildRow(s) {
   const yards = yardsOf(s);
   if (yards) {
     const why = cantOrderShip(game, s);
-    const q = s.queue ? `<span class="what">Queue <b class="num">${s.queue}</b><i class="meter"><i style="width:${pct(s.build)}"></i></i> <span class="dim">${fmt((1 - s.build) * shipTime(game, s))}</span></span>`
+    // One line per yard at work, each with its own progress and time left.
+    const slips = (s.slips && s.slips.length ? s.slips : [s.build || 0]).map((p) => `<span class="slip"><i class="meter"><i style="width:${pct(p)}"></i></i> <span class="dim">${fmt((1 - p) * shipTime(game, s))}</span></span>`).join('');
+    const q = s.queue ? `<span class="what">Queue <b class="num">${s.queue}</b><span class="slips">${slips}</span></span>`
       : `<span class="what">${yards} yard${yards === 1 ? '' : 's'} idle</span>`;
     html += `<div class="ctx ships">${q}`
       + (s.queue ? `<button data-cancel="1" class="danger" title="Cancel the last queued ship">${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
@@ -698,7 +700,7 @@ $('buildrow').addEventListener('click', (e) => {
 // Research is a hex board: the six branches round a centre hex, and between
 // each neighbouring pair a joint tech that needs both at level II.
 const HEX_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
-const JOINT_SHORT = { ansible: 'Ansible', targeting: 'Targeting', kinetic: 'Kinetic', torch: 'Torch', hardened: 'Hardened', pdnet: 'PD net' };
+const JOINT_SHORT = { ansible: 'Signals', targeting: 'Targeting', kinetic: 'Kinetic', torch: 'Torch', hardened: 'Hardened', pdnet: 'PD net' };
 function hexBoard() {
   const S = 30;
   const xy = ([q, r]) => [S * 1.5 * q, S * Math.sqrt(3) * (r + q / 2)];
@@ -726,21 +728,16 @@ function hexBoard() {
       + (() => { const i = iconBody(c.key); return `<svg x="-8" y="-17" width="16" height="16" viewBox="${i.vb}" class="ic${i.lu ? ' lu' : ''}">${i.body}</svg>`; })()
       + `<text x="0" y="9" class="hl">${c.branch ? TECH[c.key].name : JOINT_SHORT[c.key]}</text>${pips}</g>`);
   }
-  // Megaprojects: small gold hexes just outside the joint tech that unlocks each.
-  for (const c of cells.filter((x) => JOINTS[x.key])) {
-    const key = Object.keys(PROJECTS).find((k) => PROJECTS[k].needs === c.key);
-    if (!key) continue;
-    const l = Math.hypot(c.cx, c.cy);
-    const mx = c.cx * (1 + (S * 1.5) / l), my = c.cy * (1 + (S * 1.5) / l);
+  // Megaprojects: a row of gold tiles under the board, one per joint tech.
+  const megas = Object.keys(PROJECTS).map((key) => {
+    const joint = PROJECTS[key].needs;
     const ownerB = game.wonders && game.wonders[key] !== undefined ? game.bodies[game.wonders[key]] : null;
     const building = game.bodies.some((b) => b.owner === me && b.project && b.project.key === key);
-    const state = ownerB ? (ownerB.owner === me ? 'done' : 'taken') : building ? 'run' : !t[c.key] ? 'locked' : game.credits[me] < PROJECTS[key].cost ? 'open poor' : 'open';
+    const state = ownerB ? (ownerB.owner === me ? 'done' : 'taken') : building ? 'run' : !t[joint] ? 'locked' : game.credits[me] < PROJECTS[key].cost ? 'poor' : 'open';
     const sel = ui.techSel === `mega:${key}` ? ' sel' : '';
-    const i = iconBody(key);
-    out.push(`<g data-hex="mega:${key}" transform="translate(${mx.toFixed(1)},${my.toFixed(1)})" class="hexc mega ${state}${sel}"><polygon points="${hex(0, 0, S * 0.62)}" class="hx"/>`
-      + `<svg x="-7" y="-7" width="14" height="14" viewBox="${i.vb}" class="ic${i.lu ? ' lu' : ''}">${i.body}</svg></g>`);
-  }
-  return `<svg class="board" viewBox="-146 -132 292 264">${out.join('')}</svg>`;
+    return `<button data-hex="mega:${key}" class="mtile ${state}${sel}" title="${esc(PROJECTS[key].name)}">${icon(key)}</button>`;
+  }).join('');
+  return `<svg class="board" viewBox="-124 -114 248 228">${out.join('')}</svg><div class="megarow"><span>Megaprojects</span>${megas}</div>`;
 }
 function techDetail(key) {
   const t = game.tech[me];
@@ -777,13 +774,13 @@ function megaDetail(joint) {
   const rivals = game.bodies.filter((b) => b.owner !== me && b.project && b.project.key === key).length;
   const race = rivals ? `<small class="warn">${rivals} rival${rivals === 1 ? '' : 's'} building it</small>` : '';
   if (mine) {
-    return `${head}${race}<div class="nextrow"><span><small>At ${mine.name} · ${fmt(mine.project.left / researchSpeed(game, me))} left</small><i class="meter"><i style="width:${pct(1 - mine.project.left / P.time)}"></i></i></span>`
-      + `<button data-fund="cash" data-fb="${mine.id}" ${game.credits[me] < PROJECT_FUND.credits ? 'disabled' : ''}>+${PROJECT_FUND.cut}s<small>${PROJECT_FUND.credits}</small></button>`
-      + `<button data-fund="ship" data-fb="${mine.id}" ${readyShips(game, mine) < 1 ? 'disabled' : ''} title="Break up a docked ship there for parts and crew">+${PROJECT_FUND.crewCut}s<small>1 ship</small></button></div></div>`;
+    return `${head}${race}<div class="nextrow"><span><small>At ${mine.name} · ${fmt(Math.max(0, mine.project.left / researchSpeed(game, me) - Math.min(mine.project.rush || 0, mine.project.left / researchSpeed(game, me) / 2)))} left${mine.project.rush > 0 ? ` · ${tip('rushing', `Twice as fast for ${fmt(mine.project.rush)}`, 'gold')}` : ''}</small><i class="meter"><i style="width:${pct(1 - mine.project.left / P.time)}"></i></i></span>`
+      + `<button data-fund="cash" data-fb="${mine.id}" ${game.credits[me] < PROJECT_FUND.credits ? 'disabled' : ''} title="Pay for overtime: work goes twice as fast for ${PROJECT_FUND.cut}s">Rush<small>${PROJECT_FUND.credits}</small></button>`
+      + `<button data-fund="ship" data-fb="${mine.id}" ${readyShips(game, mine) < 1 ? 'disabled' : ''} title="Break up a docked ship there for parts and crew: work goes twice as fast for ${PROJECT_FUND.crewCut}s">Rush<small>1 ship</small></button></div></div>`;
   }
   const ready = game.tech[me][joint];
   const sites = game.bodies.filter((b) => b.owner === me && !cantProject(game, b, key));
-  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? fmt(P.time / researchSpeed(game, me)) : 'No world of yours can take it yet') : `Needs ${JOINTS[joint].name}`}</small></span>`
+  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? fmt(P.time / researchSpeed(game, me)) : 'No world of yours can take it yet') : `Needs ${JOINTS[joint].name}${game.tech[me][JOINTS[joint].needs[0]] < 2 || game.tech[me][JOINTS[joint].needs[1]] < 2 ? ` (after ${JOINTS[joint].needs.map((k) => `${TECH[k].name} II`).join(' and ')})` : ''}`}</small></span>`
     + `<button data-mega="${key}" ${ready && sites.length ? '' : 'disabled'}>Build<small>${P.cost}</small></button></div></div>`;
 }
 function renderResearch() {
@@ -792,7 +789,7 @@ function renderResearch() {
   // The R&D button sits bottom left, out of the way of the world panels, and
   // shows what's being researched.
   $('rbar').hidden = true;
-  $('rnd').hidden = !running || knockedOut || !$('menu').hidden || !$('actions').hidden || !$('peek').hidden || !$('fleet').hidden || !$('research').hidden;
+  $('rnd').hidden = !running || knockedOut || !$('menu').hidden || !$('end').hidden || !$('actions').hidden || !$('peek').hidden || !$('fleet').hidden || !$('research').hidden;
   $('rnd').classList.toggle('idle', !p);
   setHTML($('rndsub'), p ? `${TECH[p.key] ? TECH[p.key].name : JOINTS[p.key].name} · ${fmt(p.left / researchSpeed(game, me))}` : 'idle');
   $('rndbar').style.width = p ? pct(1 - p.left / p.total) : '0%';
@@ -1445,6 +1442,7 @@ function renderReport() {
 
 function finish() {
   running = false;
+  $('rnd').hidden = true;
   ui.selected = ui.target = null;
   updateActions();
   const won = game.winner === me;

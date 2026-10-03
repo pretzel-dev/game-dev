@@ -401,7 +401,7 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #count small { font-size: 11px; font-weight: 500; color: var(--dim); margin-left: 1px; }
 
 /* Research hex board. */
-#research .board { display: block; width: min(370px, 100%); margin: 0 auto 6px; }
+#research .board { display: block; width: min(330px, 100%); margin: 0 auto 6px; }
 .board .hx { fill: rgba(88, 184, 255, 0.06); stroke: rgba(160, 180, 255, 0.28); stroke-width: 1; }
 .board .core { fill: rgba(88, 184, 255, 0.14); }
 .board .hl { fill: var(--fg); font-size: 7.5px; text-anchor: middle; letter-spacing: 0.06em; text-transform: uppercase; }
@@ -481,3 +481,20 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .board .hexc.mega.locked .hx { stroke: rgba(255, 212, 121, 0.18); }
 .tdetail > .mega:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 .tdetail .unlocks { display: block; margin-top: 6px; color: #ffd479; }
+
+.megarow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 0 8px; }
+.megarow span { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin-right: 4px; }
+.megarow .mtile { width: 38px; height: 38px; display: grid; place-items: center; color: #ffd479; border: 1px solid rgba(255, 212, 121, 0.4); background: rgba(255, 212, 121, 0.06);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px); }
+.megarow .mtile .ic { width: 18px; height: 18px; }
+.megarow .mtile.locked { color: #6d6650; border-color: rgba(255, 212, 121, 0.16); }
+.megarow .mtile.poor { opacity: 0.45; }
+.megarow .mtile.run { border-color: #ffd479; animation: hexpulse 1.2s ease-in-out infinite alternate; }
+.megarow .mtile.done { background: rgba(255, 212, 121, 0.3); border-color: #ffd479; }
+.megarow .mtile.taken { opacity: 0.3; }
+.megarow .mtile.sel { border-color: #fff; box-shadow: inset 0 0 0 1px #fff; }
+.ctx.ships .slips { display: inline-flex; flex-direction: column; gap: 3px; margin-left: 8px; vertical-align: middle; }
+.ctx.ships .slip { display: flex; align-items: center; gap: 6px; }
+.ctx.ships .what { min-width: 150px; flex: 1 1 auto; }
+.ctx.ships .slip .meter { width: 36px; }
+.ctx.ships .slip .dim { font-size: 11px; letter-spacing: 0.04em; }
