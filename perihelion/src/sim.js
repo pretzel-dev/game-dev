@@ -26,6 +26,7 @@ export const RULES = {
     skimmer: { name: 'Gas harvester', cost: 350, time: 70, where: 'giant', maxLevel: 3, income: 2, desc: 'Skims fuel from the clouds: +2/s per level' },
     exchange: { name: 'Orbital exchange', cost: 450, time: 80, where: 'home', maxLevel: 2, income: 2.5, desc: 'Sells war bonds: +2.5/s per level' },
     defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3, desc: '+2 guns per level' },
+    bureau: { name: 'Security bureau', cost: 250, time: 50, maxLevel: 2, desc: 'Hunts enemy spies here and on nearby worlds' },
     lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3, desc: 'Research +50% per level' },
   },
   baseGuns: 1, // guns any held world has
@@ -81,6 +82,14 @@ export const TECH = {
     text: ['Build 12% faster, mines +15%', 'Build 24% faster, mines +30%'],
   },
 };
+// Running dark: a short burn, then a long silent coast. Slower, but enemy
+// sensors only pick the fleet up close (a fraction of their normal range).
+export const DARK = { speed: 0.55, seen: 0.3 };
+// Spies: planted on an enemy world. While there they show you the world and
+// its fleets, skim its income and slow its research and megaproject. Each
+// second there's a chance they're caught; the owner's Intel and any security
+// bureau nearby raise it.
+export const SPY = { cost: 250, catch: 1 / 300, intel: 0.5, bureau: 1.5, bureauRange: 40, skim: 0.4, slow: 0.25 };
 export const SENSOR_RANGE = [70, 100, 135, 175];
 // Joint techs: on the hex board they sit between two branches and need both
 // at level II. Ring order of the branches: intel, sensors, weapons, drives,
@@ -155,7 +164,7 @@ function stepProjects(game, dt) {
   for (const b of game.bodies) {
     if (!b.project || b.owner === NEUTRAL || b.sieges.length) continue;
     // Research stations work for megaprojects too.
-    b.project.left -= dt * researchSpeed(game, b.owner);
+    b.project.left -= dt * researchSpeed(game, b.owner) * (spyOn(game, b).length ? 1 - SPY.slow : 1);
     if (b.project.left > 0) continue;
     const key = b.project.key;
     b.wonder = key;
@@ -232,6 +241,55 @@ export function research(game, owner, key) {
  * around its fleets. Beyond that, worlds hide their ships and structures and
  * enemy fleets are invisible. Intel sets how much a visible enemy fleet shows.
  */
+/** Why `owner` can't plant a spy on world t, or null. */
+export function cantSpy(game, owner, t) {
+  if (owner === NEUTRAL || !t || t.owner === NEUTRAL || t.owner === owner) return 'enemy worlds only';
+  if (techLevel(game, owner, 'intel') < 1) return 'needs Signals intercept';
+  if ((game.spies || []).some((x) => x.owner === owner && x.body === t.id)) return 'already a spy there';
+  if (game.credits[owner] < SPY.cost) return 'not enough credits';
+  return null;
+}
+export function plantSpy(game, owner, t) {
+  if (cantSpy(game, owner, t) || game.winner !== null) return null;
+  game.credits[owner] -= SPY.cost;
+  tally(game, owner, 'spent', SPY.cost);
+  const x = { id: game.nextId++, owner, body: t.id, since: game.time };
+  (game.spies ||= []).push(x);
+  return x;
+}
+export const spyOn = (game, b) => (game.spies || []).filter((x) => x.body === b.id && x.owner !== b.owner);
+/** Chance per second a spy on world b gets caught. */
+export function catchRate(game, b) {
+  if (b.owner === NEUTRAL) return 1;
+  const here = posAt(game, b, game.time);
+  let bureau = 0;
+  for (const w of game.bodies) {
+    if (w.owner !== b.owner) continue;
+    const s = w.structures.find((y) => y.type === 'bureau' && y.left <= 0);
+    if (s && (w === b || dist(posAt(game, w, game.time), here) <= SPY.bureauRange)) bureau = Math.max(bureau, s.level);
+  }
+  return SPY.catch * (1 + SPY.intel * techLevel(game, b.owner, 'intel')) * (1 + SPY.bureau * bureau);
+}
+// A repeatable coin per spy per second (the sim stays deterministic).
+const coin = (id, k) => { const v = Math.sin(id * 12.9898 + k * 78.233) * 43758.5453; return v - Math.floor(v); };
+function stepSpies(game, dt) {
+  if (!game.spies || !game.spies.length) return;
+  const before = Math.floor(game.time - dt);
+  game.spies = game.spies.filter((x) => {
+    const b = game.bodies[x.body];
+    if (b.owner === x.owner || b.owner === NEUTRAL) return false; // the world changed hands
+    // Skim income while hidden.
+    const skim = Math.min(game.credits[b.owner], incomeOf(b, game) * SPY.skim * dt);
+    game.credits[b.owner] -= skim; game.credits[x.owner] += skim;
+    const rate = catchRate(game, b);
+    for (let k = before + 1; k <= Math.floor(game.time); k++) {
+      if (coin(x.id, k) < rate) { note(game, { type: 'spycaught', owner: x.owner, by: b.owner, at: b.id, after: game.time - x.since }); return false; }
+    }
+    return true;
+  });
+}
+export const spiedBy = (game, owner) => (game.spies || []).filter((x) => x.owner !== owner && game.bodies[x.body].owner === owner).length;
+
 export function visibility(game, owner) {
   const range = SENSOR_RANGE[techLevel(game, owner, 'sensors')];
   const eyes = [];
@@ -239,14 +297,20 @@ export function visibility(game, owner) {
   for (const f of game.fleets) if (f.owner === owner) eyes.push([fleetState(f, game.time), 20]);
   for (const b of game.bodies) if (b.sieges.some((g) => g.owner === owner)) eyes.push([posAt(game, b, game.time), 20]);
   for (const x of game.scans || []) if (x.owner === owner && x.until > game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 14]);
+  for (const x of game.spies || []) if (x.owner === owner) eyes.push([posAt(game, game.bodies[x.body], game.time), 30]);
   const sees = (p) => eyes.some(([e, r]) => dist(e, p) <= r);
   // An old relay you hold is a huge sensor dish: it sees everything in its ring.
   for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), PERKS.relay.range]);
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
   // The ansible sees everything and reads routes; a deep-space telescope reads every fleet.
   const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') ? 2 : 0, holdsWonder(game, owner, 'telescope') ? 3 : 0);
-  if (hasJoint(game, owner, 'ansible')) return { owner, sees: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
-  return { owner, sees, bodies, intel, warn: holds(game, owner, 'post') };
+  // A dark fleet shows only close in, unless a spy sits on the world it left.
+  const tele = holdsWonder(game, owner, 'telescope');
+  const spied = new Set((game.spies || []).filter((x) => x.owner === owner).map((x) => x.body));
+  const seesFleet = (f, p = fleetState(f, game.time)) => f.owner === owner || tele || spied.has(f.from)
+    || (f.dark ? eyes.some(([e, r]) => dist(e, p) <= r * DARK.seen) : sees(p));
+  if (hasJoint(game, owner, 'ansible')) return { owner, sees: () => true, seesFleet: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
+  return { owner, sees, seesFleet, bodies, intel, warn: holds(game, owner, 'post') };
 }
 
 export function rng(seed) {
@@ -1054,13 +1118,14 @@ function rest(game, b, n) {
   b.restUntil = game.time + RULES.cooldown;
 }
 
-export function launch(game, from, to, n) {
+export function launch(game, from, to, n, dark = false) {
   n = Math.min(Math.floor(n), readyShips(game, from));
   if (n < 1 || from === to || game.winner !== null) return null;
-  const p = plan(game, from, to);
+  const p = plan(game, from, to, game.time, dark ? DARK.speed : 1);
   if (p.T > staysFor(game, to) - 5 || !present(game, to)) return null;
   from.ships -= n;
   const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time, vet: from.vet || 0 };
+  if (dark) f.dark = true;
   // The bulk of a garrison keeps its task force name; a small detachment gets a new one.
   if (from.tf && n * 2 >= n + from.ships) { f.name = from.tf; from.tf = null; }
   else f.name = fleetName(game);
@@ -1080,7 +1145,7 @@ function refit(game, owner) {
     const left = f.T - (game.time - f.t0);
     if (left < 10) continue;
     const s = fleetState(f, game.time);
-    const accel = accelOf(game, owner) * (f.probe ? RULES.probe.speed : 1);
+    const accel = accelOf(game, owner) * (f.probe ? RULES.probe.speed : f.dark ? DARK.speed : 1);
     const p = planWith(game, null, game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
     if (p.T >= left) continue;
     delete f.assist;
@@ -1288,6 +1353,7 @@ export function step(game, dt) {
   }
 
   if (game.scans) game.scans = game.scans.filter((x) => x.until > game.time);
+  stepSpies(game, dt);
   game.fleets = game.fleets.filter((f) => {
     if (game.time - f.t0 < f.T) return true;
     const b = game.bodies[f.to];
