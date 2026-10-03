@@ -204,7 +204,7 @@ export const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'w
 /** Firepower when attacking (targeting data helps here). */
 export const attackPowerOf = (game, owner) => firepowerOf(game, owner) * (hasJoint(game, owner, 'targeting') ? 1.2 : 1);
 export const damageTaken = (game, owner) => 1 - 0.12 * techLevel(game, owner, 'armour');
-const buildSpeed = (game, owner, b = null) => (1 + 0.12 * techLevel(game, owner, 'industry')) * (b && b.perk === 'forge' ? PERKS.forge.boost : 1);
+export const buildSpeed = (game, owner, b = null) => (1 + 0.12 * techLevel(game, owner, 'industry')) * (b && b.perk === 'forge' ? PERKS.forge.boost : 1);
 
 export function nextTech(game, owner, key) {
   const lvl = game.tech[owner][key] || 0;
@@ -840,6 +840,8 @@ export function buildStructure(game, b, type) {
 
 /** Upgrading costs more at each level and takes longer. */
 export const upgradeCost = (x) => Math.round(RULES.structures[x.type].cost * (x.level + 1) * 0.75);
+/** Seconds for one yard here to build a ship. */
+export const shipTime = (game, b) => RULES.ship.time / (buildSpeed(game, b.owner, b) * (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1));
 export const upgradeTime = (x) => RULES.structures[x.type].time * (1 + x.level * 0.5);
 export function cantUpgrade(game, b, x) {
   const def = RULES.structures[x.type];

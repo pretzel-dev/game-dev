@@ -1489,9 +1489,13 @@ export function createView(canvas, labelRoot) {
       const evs = (game.happenings || []).filter((h) => h.at === b.id).map((h) => {
         const E = EVENTS[h.kind];
         const soon = now < h.starts;
-        const left = soon ? h.starts - now : E.hold - h.held;
-        const c = !soon && h.holder !== NEUTRAL ? ownerColor(h.holder) : '#ffd479';
-        return `<span class="ev" style="color:${c}">${icon(h.kind)} ${soon ? 'in ' : ''}${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}</span>`;
+        // Before it starts: time until it does. Held: hold time left (in the
+        // holder's colour). Unheld: time until it's gone.
+        const holding = !soon && h.holder !== NEUTRAL;
+        const left = Math.max(0, soon ? h.starts - now : holding ? E.hold - h.held : h.ends - now);
+        const c = holding ? ownerColor(h.holder) : '#ffd479';
+        const t = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
+        return `<span class="ev" style="color:${c}">${icon(h.kind)} ${soon ? `in ${t}` : holding ? `hold ${t}` : `gone ${t}`}</span>`;
       }).join('');
       const perk = (b.perk ? `<i class="perk" title="${PERKS[b.perk].name}">${icon(b.perk)}</i> ` : '')
         + (b.wonder ? `<i class="perk">${icon(b.wonder)}</i> ` : b.project ? `<i class="perk proj">${icon(b.project.key)}</i> ` : '');
