@@ -162,7 +162,7 @@ preview server running).
   twice as long, but enemy sensors only spot it at a third of their usual
   range, and a launch from a world they can't see goes unannounced.
 - **Spies:** with Signals intercept (Intel I), tap an enemy world and
-  **Plant spy** (250 credits). The agent shows you that world, its launches
+  **Plant spy** (250 credits). The agent takes 40 seconds to slip in, then shows you that world, its launches
   (even dark ones) and its surroundings, skims part of its income, and slows
   any megaproject there by a quarter. Every second there's a small chance the
   agent is caught (about five minutes on average); the owner's Intel level

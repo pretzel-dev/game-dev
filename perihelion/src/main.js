@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -128,7 +128,8 @@ function syncSystem() {
   $('system-pick').textContent = prefs.system === 'random' ? 'Random' : `${SYSTEMS[prefs.system].name}${SYSTEMS[prefs.system].test ? ' (test)' : ''}`;
   $('system-pick').title = prefs.system === 'random' ? 'A different system type each game' : SYSTEMS[prefs.system].text;
   const d = dailySeed();
-  $('daily').innerHTML = `Daily system<small>${SYSTEMS[d.system].name}</small>`;
+  $('daily').innerHTML = `Daily<small>${SYSTEMS[d.system].name}</small>`;
+  $('daily').title = `Today's system, the same for everyone: ${SYSTEMS[d.system].name}`;
 }
 $('system-pick').addEventListener('click', () => {
   prefs.system = SYSTEM_CHOICES[(SYSTEM_CHOICES.indexOf(prefs.system) + 1) % SYSTEM_CHOICES.length];
@@ -143,10 +144,11 @@ $('again').addEventListener('click', () => {
   if (daily) { startDaily(); return; }
   $('menu').hidden = false;
   $('resume').hidden = true;
+  $('menu').classList.remove('paused');
   $('play').textContent = 'Play vs AI';
 });
 $('pause').addEventListener('click', pause);
-$('resume').addEventListener('click', () => { $('menu').hidden = true; running = true; });
+$('resume').addEventListener('click', () => { $('menu').hidden = true; $('menu').classList.remove('paused'); running = true; });
 function pause() {
   if (!game || game.winner !== null || !running) return;
   if (net) {
@@ -160,6 +162,8 @@ function pause() {
   running = false;
   $('menu').hidden = false;
   $('resume').hidden = false;
+  $('rnd').hidden = true;
+  $('menu').classList.add('paused');
   $('play').textContent = 'New game';
 }
 function showPaused() {
@@ -401,10 +405,26 @@ function updatePeek() {
   setHTML($('peek'), `<div class="head"><span class="tag">${kind}</span><b>${b.name}</b><span class="grow"></span><span class="tag" style="color:${b.owner === NEUTRAL ? 'var(--dim)' : ownerColor(b.owner)}">${who}</span></div>`
     + `<div class="row2">${garrison}</div>${chips(b, { income: false, seen })}${spyLine(b)}`);
 }
+/** Where your credits per second come from, one source per line. */
+function incomeBreakdown() {
+  const sum = { worlds: 0, mines: 0, skimmers: 0, exchanges: 0, bonuses: 0 };
+  let n = 0;
+  for (const b of game.bodies) {
+    if (b.owner !== me) continue;
+    n += 1;
+    const p = incomeParts(b, game);
+    for (const k in sum) sum[k] += p[k];
+  }
+  const agents = (game.spies || []).filter((x) => x.owner === me && x.since <= game.time).reduce((t, x) => t + incomeOf(game.bodies[x.body], game) * SPY.skim, 0);
+  const comet = (game.happenings || []).some((h) => h.kind === 'comet' && h.holder === me && game.time >= h.starts) ? EVENTS.comet.pay : 0;
+  const rows = [[`${n} world${n === 1 ? '' : 's'}`, sum.worlds], ['Mines', sum.mines], ['Gas harvesters', sum.skimmers], ['Exchanges', sum.exchanges], ['Bonuses and wonders', sum.bonuses], ['Agents', agents], ['Comet mining', comet]];
+  return rows.filter(([, v]) => v > 0.001).map(([k, v]) => `${k}  +${v.toFixed(1)}/s`).join('\n');
+}
 /** Spy line on an enemy world: plant one, or how long yours has been there. */
 function spyLine(b) {
   if (b.owner === NEUTRAL || b.owner === me || b.visitor || knockedOut) return '';
   const mine = (game.spies || []).find((x) => x.owner === me && x.body === b.id);
+  if (mine && mine.since > game.time) return `<div class="spy">${icon('spy')} ${tip(`Agent on the way · ${fmt(mine.since - game.time)}`, 'Slipping in quietly: they start work when they arrive')}</div>`;
   if (mine) {
     const risk = catchRate(game, b) * 60;
     const odds = risk < 0.25 ? 'low' : risk < 0.5 ? 'rising' : 'high';
@@ -418,7 +438,7 @@ $('peek').addEventListener('click', (e) => {
   const sb = e.target.closest('button[data-spy]');
   if (!sb) return;
   const b = game.bodies[+sb.dataset.spy];
-  if (act({ type: 'spy', b: b.id })) toast(`Agent sent to ${b.name}`, ownerColor(me), 'spy');
+  if (act({ type: 'spy', b: b.id })) toast(`Agent on the way to ${b.name}`, ownerColor(me), 'spy');
   updateActions();
 });
 
@@ -752,12 +772,13 @@ function megaDetail(joint) {
 function renderResearch() {
   const t = game.tech[me];
   const p = t.project;
-  $('rbar').hidden = !running || !p;
-  if (p) {
-    const pct = Math.floor((1 - p.left / p.total) * 100);
-    const eta = fmt(p.left / researchSpeed(game, me));
-    setHTML($('rbar'), `Researching <b>${techTitle(p.key, (t[p.key] || 0) + 1)}</b> · ${pct}% · ${eta}`);
-  }
+  // The R&D button sits bottom left, out of the way of the world panels, and
+  // shows what's being researched.
+  $('rbar').hidden = true;
+  $('rnd').hidden = !running || knockedOut || !$('menu').hidden || !$('actions').hidden || !$('peek').hidden || !$('fleet').hidden || !$('research').hidden;
+  $('rnd').classList.toggle('idle', !p);
+  setHTML($('rndsub'), p ? `${TECH[p.key] ? TECH[p.key].name : JOINTS[p.key].name} · ${fmt(p.left / researchSpeed(game, me))}` : 'idle');
+  $('rndbar').style.width = p ? pct(1 - p.left / p.total) : '0%';
   if ($('research').hidden) return;
   $('rstatus').textContent = '';
   if (!ui.techSel) ui.techSel = p ? p.key : BRANCH_RING.find((k) => nextTech(game, me, k)) || 'ansible';
@@ -1464,7 +1485,7 @@ function frame(now) {
         ui.vis = knockedOut ? null : visibility(game, me);
         updateActions();
         renderResearch();
-        $('clock').innerHTML = `<b>₵ ${Math.floor(game.credits[me])}</b> +${income(game, me).toFixed(1)}/s · T+${fmt(game.time)}`;
+        setHTML($('clock'), `<b>₵ ${Math.floor(game.credits[me])}</b> ${tip(`+${income(game, me).toFixed(1)}/s`, incomeBreakdown(), 'inc')} · T+${fmt(game.time)}`);
       }
       if (game.winner !== null) finish();
     }

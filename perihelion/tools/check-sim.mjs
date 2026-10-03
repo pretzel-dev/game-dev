@@ -477,6 +477,8 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.equal(S.cantSpy(g, 0, homes[1]), 'needs Signals intercept');
   g.tech[0].intel = 1;
   assert.ok(S.plantSpy(g, 0, homes[1]));
+  assert.equal(S.spyOn(g, homes[1]).length, 0, 'agents take a while to get in');
+  step(g, S.SPY.travel + 1);
   assert.ok(visibility(g, 0).bodies.has(homes[1].id), 'a spy shows you the world');
   const r0 = S.catchRate(g, homes[1]);
   g.tech[1].intel = 2;

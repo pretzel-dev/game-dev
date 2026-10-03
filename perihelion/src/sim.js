@@ -89,7 +89,7 @@ export const DARK = { speed: 0.55, seen: 0.3 };
 // its fleets, skim its income and slow its research and megaproject. Each
 // second there's a chance they're caught; the owner's Intel and any security
 // bureau nearby raise it.
-export const SPY = { cost: 250, catch: 1 / 300, intel: 0.5, bureau: 1.5, bureauRange: 40, skim: 0.4, slow: 0.25 };
+export const SPY = { travel: 40, cost: 250, catch: 1 / 300, intel: 0.5, bureau: 1.5, bureauRange: 40, skim: 0.4, slow: 0.25 };
 export const SENSOR_RANGE = [70, 100, 135, 175];
 // Joint techs: on the hex board they sit between two branches and need both
 // at level II. Ring order of the branches: intel, sensors, weapons, drives,
@@ -253,11 +253,11 @@ export function plantSpy(game, owner, t) {
   if (cantSpy(game, owner, t) || game.winner !== null) return null;
   game.credits[owner] -= SPY.cost;
   tally(game, owner, 'spent', SPY.cost);
-  const x = { id: game.nextId++, owner, body: t.id, since: game.time };
+  const x = { id: game.nextId++, owner, body: t.id, since: game.time + SPY.travel };
   (game.spies ||= []).push(x);
   return x;
 }
-export const spyOn = (game, b) => (game.spies || []).filter((x) => x.body === b.id && x.owner !== b.owner);
+export const spyOn = (game, b) => (game.spies || []).filter((x) => x.body === b.id && x.owner !== b.owner && x.since <= game.time);
 /** Chance per second a spy on world b gets caught. */
 export function catchRate(game, b) {
   if (b.owner === NEUTRAL) return 1;
@@ -278,11 +278,12 @@ function stepSpies(game, dt) {
   game.spies = game.spies.filter((x) => {
     const b = game.bodies[x.body];
     if (b.owner === x.owner || b.owner === NEUTRAL) return false; // the world changed hands
+    if (x.since > game.time) return true; // still on the way in
     // Skim income while hidden.
     const skim = Math.min(game.credits[b.owner], incomeOf(b, game) * SPY.skim * dt);
     game.credits[b.owner] -= skim; game.credits[x.owner] += skim;
     const rate = catchRate(game, b);
-    for (let k = before + 1; k <= Math.floor(game.time); k++) {
+    for (let k = Math.max(before, Math.floor(x.since)) + 1; k <= Math.floor(game.time); k++) {
       if (coin(x.id, k) < rate) { note(game, { type: 'spycaught', owner: x.owner, by: b.owner, at: b.id, after: game.time - x.since }); return false; }
     }
     return true;
@@ -297,7 +298,7 @@ export function visibility(game, owner) {
   for (const f of game.fleets) if (f.owner === owner) eyes.push([fleetState(f, game.time), 20]);
   for (const b of game.bodies) if (b.sieges.some((g) => g.owner === owner)) eyes.push([posAt(game, b, game.time), 20]);
   for (const x of game.scans || []) if (x.owner === owner && x.until > game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 14]);
-  for (const x of game.spies || []) if (x.owner === owner) eyes.push([posAt(game, game.bodies[x.body], game.time), 30]);
+  for (const x of game.spies || []) if (x.owner === owner && x.since <= game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 30]);
   const sees = (p) => eyes.some(([e, r]) => dist(e, p) <= r);
   // An old relay you hold is a huge sensor dish: it sees everything in its ring.
   for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), PERKS.relay.range]);
@@ -306,7 +307,7 @@ export function visibility(game, owner) {
   const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') ? 2 : 0, holdsWonder(game, owner, 'telescope') ? 3 : 0);
   // A dark fleet shows only close in, unless a spy sits on the world it left.
   const tele = holdsWonder(game, owner, 'telescope');
-  const spied = new Set((game.spies || []).filter((x) => x.owner === owner).map((x) => x.body));
+  const spied = new Set((game.spies || []).filter((x) => x.owner === owner && x.since <= game.time).map((x) => x.body));
   const seesFleet = (f, p = fleetState(f, game.time)) => f.owner === owner || tele || spied.has(f.from)
     || (f.dark ? eyes.some(([e, r]) => dist(e, p) <= r * DARK.seen) : sees(p));
   if (hasJoint(game, owner, 'ansible')) return { owner, sees: () => true, seesFleet: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
@@ -781,13 +782,20 @@ export function fortressGuns(game, b) {
 /** Guns a held world rebuilds to: batteries, fortress cover, hardening, a fortress world. */
 export const topGuns = (game, b) => (maxGuns(b) + fortressGuns(game, b) + (hasJoint(game, b.owner, 'hardened') ? 1 : 0)) * (b.wonder === 'citadel' ? 3 : 1);
 export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
-export const incomeOf = (b, game) => {
-  if (b.owner === NEUTRAL) return 0;
+/** Where a world's income comes from. */
+export const incomeParts = (b, game) => {
+  if (b.owner === NEUTRAL) return { worlds: 0, mines: 0, skimmers: 0, exchanges: 0, bonuses: 0 };
   const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
   const S = RULES.structures;
-  return (b.wonder === 'sundiver' ? 8 : 0) + RULES.income[b.kind] * (b.star ? 1.5 : 1) + (b.home ? RULES.homeIncome : 0) + (b.bonus || 0) + RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1)
-    + S.skimmer.income * count(b, 'skimmer') + S.exchange.income * count(b, 'exchange');
+  return {
+    worlds: RULES.income[b.kind] * (b.star ? 1.5 : 1) + (b.home ? RULES.homeIncome : 0),
+    mines: RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1),
+    skimmers: S.skimmer.income * count(b, 'skimmer'),
+    exchanges: S.exchange.income * count(b, 'exchange'),
+    bonuses: (b.wonder === 'sundiver' ? 8 : 0) + (b.bonus || 0),
+  };
 };
+export const incomeOf = (b, game) => { const p = incomeParts(b, game); return p.worlds + p.mines + p.skimmers + p.exchanges + p.bonuses; };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
 /** Working shipyards here: each builds one ship at a time. */
 export const yardsOf = (b) => b.structures.filter((x) => x.type === 'shipyard' && working(x)).length;

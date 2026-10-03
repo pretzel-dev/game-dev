@@ -393,7 +393,7 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .chip.dim { border: none; padding: 0 2px; }
 .chip.assist { border: none; padding: 0 2px; color: var(--accent); }
 #info .chip { margin: 0 2px; }
-#tipbox { position: fixed; z-index: 30; padding: 8px 10px; background: rgba(6, 10, 18, 0.96); border: 1px solid var(--line); color: var(--fg); font-size: 12px; line-height: 1.4; pointer-events: none; text-align: left; }
+#tipbox { white-space: pre-line; position: fixed; z-index: 30; padding: 8px 10px; background: rgba(6, 10, 18, 0.96); border: 1px solid var(--line); color: var(--fg); font-size: 12px; line-height: 1.4; pointer-events: none; text-align: left; }
 #tipbox[hidden] { display: none; }
 .chip .pos { color: #7ee0a1; }
 #info .chips, #peek .chips { flex-basis: 100%; }
@@ -447,3 +447,27 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #peek .spy .grow { flex: 1; }
 #peek .spy button { padding: 4px 10px; font-size: 12px; }
 #peek .spy small { margin-left: 6px; color: var(--dim); }
+
+#clock .chip.inc { pointer-events: auto; border: none; padding: 0 2px; font-size: inherit; color: var(--dim); text-decoration: underline dotted rgba(160, 180, 255, 0.4); text-underline-offset: 3px; }
+
+/* R&D: its own console button, bottom left, apart from the view controls. */
+#rnd { position: fixed; left: 16px; bottom: calc(var(--safe-b) + 18px); z-index: 4; display: flex; align-items: center; gap: 10px;
+  min-width: 132px; height: 52px; padding: 0 14px 0 12px; background: var(--panel); border: 1px solid var(--line); color: var(--fg); text-align: left;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+#rnd[hidden] { display: none; }
+#rnd .ic { width: 22px; height: 22px; color: var(--accent); stroke-width: 1.8; }
+#rnd span { display: flex; flex-direction: column; font-weight: 700; letter-spacing: 0.12em; font-size: 14px; line-height: 1.1; }
+#rnd small { font-weight: 500; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+#rnd .meter { position: absolute; left: 0; right: 0; width: auto; bottom: 0; height: 2px; background: none; }
+#rnd .meter i { display: block; height: 100%; background: var(--accent); }
+#rnd.idle { border-color: rgba(255, 212, 121, 0.45); }
+#rnd.idle small { color: #ffd479; }
+
+/* Menu: one obvious way to start. Resume leads when paused and New game steps
+   back; the daily system and multiplayer sit together as smaller options. */
+#menu .more { margin: 14px 0 0; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+#menu .row.mp .primary { min-width: 100px; flex: 1 1 0; max-width: 120px; height: 44px; font-size: 13px; letter-spacing: 0.14em; }
+#menu .row.mp .primary.daily { padding: 4px 8px; }
+#menu .row.mp .primary.daily small { font-size: 9px; letter-spacing: 0.06em; }
+#menu.paused #play { background: none; border: 1px solid var(--accent); color: var(--accent); }
+#menu #resume { margin: 8px 0 6px; }

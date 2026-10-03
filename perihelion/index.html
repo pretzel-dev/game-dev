@@ -21,12 +21,12 @@
       <span id="clock"></span>
       <span class="grow"></span>
       <button id="system" aria-label="Reset view" title="Reset view (H)"><svg class="ic" viewBox="0 0 16 16"><path d="M8 8m-5.5 0a5.5 5.5 0 1 0 11 0a5.5 5.5 0 1 0-11 0M8 8m-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0"/></svg></button>
-      <button id="rnd" aria-label="Research" title="Research (R)">R&amp;D</button>
       <button id="warp" aria-label="Time speed" title="Time speed (1–5)">1×</button>
       <button id="pause" aria-label="Pause" title="Pause (Space)"><svg class="ic" viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg></button>
     </div>
 
     <div id="rbar" hidden></div>
+    <button id="rnd" hidden aria-label="Research" title="Research (R)"><svg class="ic" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6.5L4.5 19a1.5 1.5 0 0 0 1.3 2.2h12.4a1.5 1.5 0 0 0 1.3-2.2L14 9.5V3"/><path d="M7 15h10"/></svg><span>R&amp;D<small id="rndsub"></small></span><i class="meter"><i id="rndbar"></i></i></button>
 
     <div id="research" hidden>
       <div class="sheet-head"><span>Research</span><span id="rstatus"></span><button id="rclose" aria-label="Close"><svg class="ic" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
@@ -54,6 +54,7 @@
 
     <div id="menu" class="overlay">
       <h1>Perihelion</h1>
+      <button id="resume" class="primary" hidden>Resume</button>
       <div class="row"><span>Name</span><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /></div>
       <div class="row"><span>Rivals</span>
         <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button></div>
@@ -63,9 +64,9 @@
       </div>
       <div class="row"><span>System</span><button id="system-pick" class="pick">Random</button></div>
       <button id="play" class="primary">Play vs AI</button>
-      <button id="daily" class="primary ghost daily">Daily system</button>
-      <button id="resume" class="primary" hidden>Resume</button>
+      <p class="how more">More ways to play</p>
       <div class="row mp" id="mp-buttons">
+        <button id="daily" class="primary ghost daily">Daily</button>
         <button id="host" class="primary ghost">Host</button>
         <button id="join" class="primary ghost">Join</button>
       </div>
