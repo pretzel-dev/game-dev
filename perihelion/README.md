@@ -78,25 +78,26 @@ Armour, Industry) round a centre hex, and between each neighbouring pair a
 
 | Joint tech | Between | Effect |
 |---|---|---|
-| Ansible | Intel + Sensors | See every world and fleet, and where fleets are going |
+| Entangled signals | Intel + Sensors | Read every fleet you can see (size, destination, arrival); get warnings |
 | Targeting data | Sensors + Weapons | +20% firepower when attacking |
 | Kinetic strike | Weapons + Drives | Arriving fleets open with a volley: a fifth of their number in defenders destroyed |
 | Torch production | Drives + Industry | Ships build 25% faster and fly 10% faster |
 | Hardened colonies | Industry + Armour | +1 gun on every world; guns rebuild twice as fast |
 | Point-defence net | Armour + Intel | Your worlds shoot down 15% of every attacking fleet as it arrives |
 
-Sensors levels reach less far than before (the Ansible is the way to see it all).
+Sensors levels reach less far than before (the Ansible array megaproject is the way to see it all).
 
 ## Megaprojects
 
 The end of each joint tech: researching it unlocks a megaproject (a wonder).
-Each sits on the R&D board as a small gold hex just outside its joint tech:
-tap it, Build, then tap one of your worlds. One per world, 2000 credits,
+Each has a gold tile in the row under the R&D board:
+tap it to see what it needs, Build, then tap one of your worlds. One per world, 2000 credits,
 8 minutes, and your research
 stations speed it up. Each kind can be finished only once per game; several
 empires can race for the same one, and the first to finish wins it; the rest
-get half their money back. Speed one up by paying (200 for 30 s) or breaking up
-a docked ship there for parts and crew (20 s). Everyone is told when a project
+get half their money back. **Rush** one by paying 200 (work goes twice as
+fast for 30 s) or breaking up a docked ship there (20 s); it never jumps
+ahead. A gold ring round the world shows how far along it is, to everyone. Everyone is told when a project
 starts, and a captured world's project or wonder goes to the captor.
 
 | Megaproject | Unlocked by | Where | Effect |
@@ -105,6 +106,7 @@ starts, and a captured world's project or wonder goes to the captor.
 | Mass driver | Kinetic strike | Any planet | Fleets launched here fly 50% faster |
 | Ring yard | Hardened colonies | Gas giant | Ships build three times as fast here |
 | Fortress world | Point-defence net | Any world | Three times the guns; its cover reaches its family at full strength |
+| Ansible array | Entangled signals | Any world | See every world and fleet in the system, and where they are going |
 | Deep-space telescope | Targeting data | Any world | See every enemy fleet's size, destination and arrival time |
 
 ## How to play
