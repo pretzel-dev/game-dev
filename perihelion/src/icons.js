@@ -54,5 +54,8 @@ const P = {
   telescope: 'M2 10l9-5 1.5 3-9 5zM6.5 11.5l-2 3M7.5 11l2 3.5M11 5l1.5-1 1.5 3-1.5 1',
   star: 'M8 1.5l1.9 4.2 4.6.4-3.5 3 1.1 4.5L8 11.2l-4.1 2.4 1.1-4.5-3.5-3 4.6-.4z',
 };
-export const icon = (name, cls = '') => `<svg class="ic${cls ? ` ${cls}` : ''}" viewBox="0 0 16 16" aria-hidden="true"><path d="${P[name]}"/></svg>`;
-export const iconPath = (name) => P[name];
+import { LUCIDE } from './lucide.js';
+/** Inner SVG markup and viewBox for an icon (Lucide ones are on a 24 grid). */
+export const iconBody = (name) => (LUCIDE[name] ? { vb: '0 0 24 24', body: LUCIDE[name], lu: true } : { vb: '0 0 16 16', body: `<path d="${P[name]}"/>`, lu: false });
+export const icon = (name, cls = '') => { const i = iconBody(name); return `<svg class="ic${i.lu ? ' lu' : ''}${cls ? ` ${cls}` : ''}" viewBox="${i.vb}" aria-hidden="true">${i.body}</svg>`; };
+

@@ -48,6 +48,9 @@ inside right now).
 ## Events
 
 From about 4–6 minutes in, then every 7–10 minutes, something turns up.
+The label on the map counts down: **in m:ss** until it starts, **gone m:ss**
+while nobody holds it, and **hold m:ss** (in the holder's colour) for the
+time still needed to claim it.
 Comets and derelicts are visitors: they fall in from the edge of the system,
 whip round the sun and fly back out (about 7–8 minutes inside the planets'
 orbits; slow enough to catch, since ships must match a visitor's speed to

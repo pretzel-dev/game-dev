@@ -1,5 +1,5 @@
-import { icon, iconPath } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate } from './sim.js';
+import { icon, iconBody } from './icons.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -529,7 +529,10 @@ function chips(b, { income = true, seen = true } = {}) {
   for (const h of game.happenings || []) {
     if (h.at !== b.id) continue;
     const E = EVENTS[h.kind];
-    out.push(tip(`${icon(h.kind)} ${E.name}`, `${E.text}. Hold for ${E.hold}s`, 'gold'));
+    const soon = game.time < h.starts;
+    const holding = !soon && h.holder !== NEUTRAL;
+    const state = soon ? `starts in ${fmt(h.starts - game.time)}` : holding ? `${h.holder === me ? 'you hold it' : `${nameOf(h.holder)} holds it`}: ${fmt(Math.max(0, E.hold - h.held))} to go` : `gone in ${fmt(Math.max(0, h.ends - game.time))}`;
+    out.push(tip(`${icon(h.kind)} ${E.name}`, `${E.text}. Hold it for ${fmt(E.hold)} without a fight. Now: ${state}`, 'gold'));
   }
   return out.length ? `<div class="chips">${out.join('')}</div>` : '';
 }
@@ -565,7 +568,8 @@ function renderBuildRow(s) {
     const p = progressOf(x);
     const pips = def.maxLevel ? `<i class="pips">${'▮'.repeat(x.level)}${'▯'.repeat(def.maxLevel - x.level)}</i>` : '';
     const bar = p === null ? '' : `<i class="prog" style="width:${pct(p)}"></i>`;
-    cells.push(`<button class="cell${p === null ? '' : ' busy'}${on}" data-slot="${i}"><b>${ABBR[x.type]}</b>${pips}${bar}</button>`);
+    const left = p !== null && !x.scrap ? `<i class="pips">${fmt(x.left / buildSpeed(game, me, s))}</i>` : pips;
+    cells.push(`<button class="cell${p === null ? '' : ' busy'}${on}" data-slot="${i}"><b>${ABBR[x.type]}</b>${left}${bar}</button>`);
   }
   let html = `<div class="cells">${cells.join('')}</div>`;
 
@@ -578,7 +582,7 @@ function renderBuildRow(s) {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
         const def = RULES.structures[k];
-        return `<button class="opt" data-b="${k}" data-hold="${esc(`${def.name}: ${def.desc}`)}" title="${def.name}: ${def.desc}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${def.cost}</small></button>`;
+        return `<button class="opt" data-b="${k}" data-hold="${esc(`${def.name}: ${def.desc}`)}" title="${def.name}: ${def.desc}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${def.cost} · ${fmt(def.time / buildSpeed(game, me, s))}</small></button>`;
       }).join('');
     } else {
       const def = RULES.structures[x.type];
@@ -596,7 +600,7 @@ function renderBuildRow(s) {
           // The next level is the upgrade button itself.
           const next = k === x.level + 1 && !x.next && (!why || why === 'not enough credits');
           const tag = next ? `button data-u="${ui.slot}" ${why ? 'disabled' : ''}` : 'span';
-          const note = k <= x.level ? '✓' : k === x.next ? 'upgrading' : next ? `Upgrade · ${cost}` : cost;
+          const note = k <= x.level ? '✓' : k === x.next ? fmt(x.left / buildSpeed(game, me, s)) : next ? `Upgrade · ${cost} · ${fmt(upgradeTime({ type: x.type, level: k - 1 }) / buildSpeed(game, me, s))}` : cost;
           steps.push(`<${tag} class="lv ${cls}${next ? ' next' : ''}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${note}</small></${tag.split(' ')[0]}>`);
         }
         row += `<div class="ladder">${steps.join('')}</div>`;
@@ -611,11 +615,11 @@ function renderBuildRow(s) {
   const yards = yardsOf(s);
   if (yards) {
     const why = cantOrderShip(game, s);
-    const q = s.queue ? `<span class="what">Queue <b class="num">${s.queue}</b><i class="meter"><i style="width:${pct(s.build)}"></i></i></span>`
+    const q = s.queue ? `<span class="what">Queue <b class="num">${s.queue}</b><i class="meter"><i style="width:${pct(s.build)}"></i></i> <span class="dim">${fmt((1 - s.build) * shipTime(game, s))}</span></span>`
       : `<span class="what">${yards} yard${yards === 1 ? '' : 's'} idle</span>`;
     html += `<div class="ctx ships">${q}`
       + (s.queue ? `<button data-cancel="1" class="danger" title="Cancel the last queued ship">${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
-      + `<button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost}</small></button>`
+      + `<button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost} · ${fmt(shipTime(game, s))}</small></button>`
       + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
   }
   setHTML($('buildrow'), html);
@@ -690,16 +694,16 @@ function hexBoard() {
   });
   const t = game.tech[me];
   const p = t.project;
-  const out = [`<polygon points="${hex(0, 0)}" class="hx core"/><text x="0" y="-2" class="hl">R&amp;D</text><text x="0" y="11" class="hs">×${researchSpeed(game, me).toFixed(1)}</text>`];
+  const out = [`<title>One project at a time. A joint tech needs both neighbours at II. Research stations speed everything up.</title><polygon points="${hex(0, 0)}" class="hx core"/><text x="0" y="-2" class="hl">R&amp;D</text><text x="0" y="11" class="hs">×${researchSpeed(game, me).toFixed(1)}</text>`];
   for (const c of cells) {
     const lvl = t[c.key] || 0;
     const max = c.branch ? TECH[c.key].cost.length : 1;
     const why = cantResearch(game, me, c.key);
-    const state = lvl >= max ? 'done' : p && p.key === c.key ? 'run' : why === 'locked' ? 'locked' : 'open';
+    const state = lvl >= max ? 'done' : p && p.key === c.key ? 'run' : why === 'locked' ? 'locked' : game.credits[me] < nextTech(game, me, c.key).cost ? 'open poor' : 'open';
     const sel = ui.techSel === c.key ? ' sel' : '';
     const pips = c.branch ? Array.from({ length: max }, (_, k) => `<circle cx="${(k - (max - 1) / 2) * 6}" cy="17" r="1.8" class="${k < lvl ? 'on' : ''}"/>`).join('') : '';
     out.push(`<g data-hex="${c.key}" transform="translate(${c.cx.toFixed(1)},${c.cy.toFixed(1)})" class="hexc ${state}${sel}"><polygon points="${hex(0, 0)}" class="hx"/>`
-      + `<svg x="-8" y="-16" width="16" height="16" viewBox="0 0 16 16" class="ic"><path d="${iconPath(c.key)}"/></svg>`
+      + (() => { const i = iconBody(c.key); return `<svg x="-8" y="-17" width="16" height="16" viewBox="${i.vb}" class="ic${i.lu ? ' lu' : ''}">${i.body}</svg>`; })()
       + `<text x="0" y="9" class="hl">${c.branch ? TECH[c.key].name : JOINT_SHORT[c.key]}</text>${pips}</g>`);
   }
   return `<svg class="board" viewBox="-124 -114 248 228">${out.join('')}</svg>`;
@@ -718,7 +722,7 @@ function techDetail(key) {
   else if (p && p.key === key) body += `<small>Researching ${next.title} · ${Math.floor((1 - p.left / p.total) * 100)}%</small>`;
   else {
     const needs = joint && why === 'locked' ? `<small class="dim">Needs ${joint.needs.map((k) => `${TECH[k].name} II`).join(' and ')}</small>` : '';
-    body += `<div class="nextrow"><span><b>${next.title}</b><small>${next.text} · ${fmt(next.time / researchSpeed(game, me))}</small>${needs}</span>`
+    body += `<div class="nextrow"><span>${joint ? '' : `<b>${next.title}</b>`}<small>${next.text} · ${fmt(next.time / researchSpeed(game, me))}</small>${needs}</span>`
       + `<button data-k="${key}" ${why ? 'disabled' : ''}>Research<small>${next.cost}</small></button></div>`;
   }
   if (joint) body += megaDetail(key);
@@ -729,7 +733,7 @@ function megaDetail(joint) {
   const key = Object.keys(PROJECTS).find((k) => PROJECTS[k].needs === joint);
   if (!key) return '';
   const P = PROJECTS[key];
-  const head = `<div class="mega"><div class="th">${icon(key)} <b>${P.name}</b> <span class="dim">megaproject</span></div><small>${P.text}. ${P.where === 'giant' ? 'Gas giants only. ' : P.where === 'inner' ? 'Innermost planet only. ' : P.where === 'planet' ? 'Planets only. ' : ''}Only one empire can finish it.</small>`;
+  const head = `<div class="mega"><div class="th">${icon(key)} <b>${P.name}</b> ${tip('megaproject', `${P.where === 'giant' ? 'Gas giants only. ' : P.where === 'inner' ? 'Innermost planet only. ' : P.where === 'planet' ? 'Planets only. ' : 'Any world of yours. '}One per world, and only one empire can finish it`, 'dim')}</div><small>${P.text}</small>`;
   const owner = game.wonders && game.wonders[key] !== undefined ? game.bodies[game.wonders[key]] : null;
   if (owner) return `${head}<small>${owner.owner === me ? 'Yours' : `Built by ${nameOf(owner.owner)}`}, at ${owner.name}</small></div>`;
   const mine = game.bodies.find((b) => b.owner === me && b.project && b.project.key === key);
@@ -742,7 +746,7 @@ function megaDetail(joint) {
   }
   const ready = game.tech[me][joint];
   const sites = game.bodies.filter((b) => b.owner === me && !cantProject(game, b, key));
-  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? `${fmt(P.time / researchSpeed(game, me))} with your research stations` : 'No world of yours can take it yet') : `Unlocked by ${JOINTS[joint].name}`}</small></span>`
+  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? fmt(P.time / researchSpeed(game, me)) : 'No world of yours can take it yet') : ''}</small></span>`
     + `<button data-mega="${key}" ${ready && sites.length ? '' : 'disabled'}>Build<small>${P.cost}</small></button></div></div>`;
 }
 function renderResearch() {

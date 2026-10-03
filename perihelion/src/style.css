@@ -412,6 +412,8 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .board .hexc circle.on { fill: var(--accent); }
 .board .hexc.done .hx { fill: rgba(88, 184, 255, 0.24); stroke: var(--accent); }
 .board .hexc.run .hx { stroke: #ffd479; stroke-width: 1.6; animation: hexpulse 1.2s ease-in-out infinite alternate; }
+.board .ic.lu, .ic.lu { stroke-width: 2; }
+.board .hexc.poor { opacity: 0.4; }
 .board .hexc.locked { color: #5c6680; }
 .board .hexc.locked .hl { fill: #5c6680; }
 .board .hexc.sel .hx { stroke: #fff; stroke-width: 1.8; }
