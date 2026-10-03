@@ -1266,7 +1266,7 @@ export function createView(canvas, labelRoot) {
     // Fog of war: what the player's sensors and intel reveal.
     const vis = ui.vis;
     const knowsWorld = (b) => !vis || vis.bodies.has(b.id);
-    const seesFleet = (f) => !vis || f.owner === vis.owner || vis.sees(fleetState(f, now));
+    const seesFleet = (f) => !vis || f.owner === vis.owner || vis.seesFleet(f, fleetState(f, now));
     // Intel II: routes and landing points; Intel III: arrival times and warnings.
     const knowsDest = (f) => !vis || f.owner === vis.owner || (vis.intel >= 2 && seesFleet(f));
     // A listening post warns of anything heading for your worlds.

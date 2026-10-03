@@ -1,5 +1,5 @@
 import { icon, iconPath } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -25,7 +25,7 @@ let paused = false; // multiplayer pause, set by the host
 const WARPS = [0.5, 1, 2, 4, 8];
 let warp = 1;
 
-const ui = { peek: null, pick: null, selected: null, target: null, fleet: null, count: 1, preview: null, dragging: false, vis: null, slot: null, mode: null };
+const ui = { peek: null, pick: null, selected: null, target: null, fleet: null, count: 1, dark: false, preview: null, dragging: false, vis: null, slot: null, mode: null };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -35,9 +35,10 @@ const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(
 
 function applyCmd(owner, c) {
   const b = game.bodies[c.b];
-  if (c.type !== 'research' && (!b || b.owner !== owner)) return false;
+  if (c.type !== 'research' && c.type !== 'spy' && (!b || b.owner !== owner)) return false;
   switch (c.type) {
-    case 'launch': return !!launch(game, b, game.bodies[c.to], c.n);
+    case 'launch': return !!launch(game, b, game.bodies[c.to], c.n, !!c.dark);
+    case 'spy': return !!plantSpy(game, owner, b);
     case 'ship': return orderShip(game, b);
     case 'cancel': return cancelShip(game, b);
     case 'build': return buildStructure(game, b, c.k);
@@ -318,6 +319,7 @@ function snapshot() {
     tech: game.tech,
     fleets: game.fleets,
     scans: game.scans,
+    spies: game.spies,
     happenings: game.happenings,
     wonders: game.wonders,
     visit: game.visit,
@@ -334,6 +336,7 @@ function applySnapshot(s) {
   game.tech = s.tech;
   game.fleets = s.fleets;
   game.scans = s.scans;
+  game.spies = s.spies;
   game.happenings = s.happenings;
   game.wonders = s.wonders;
   game.visit = s.visit;
@@ -396,8 +399,28 @@ function updatePeek() {
   const built = b.structures.filter((x) => x.left <= 0 || x.next).map((x) => `${RULES.structures[x.type].name}${RULES.structures[x.type].maxLevel ? ` ${ROMAN[x.level]}` : ''}`);
   const garrison = seen ? `${icon('fleet')} <b>${b.ships}</b> ship${b.ships === 1 ? '' : 's'} · ${icon('guns')} <b>${Math.ceil(b.guns)}</b> gun${Math.ceil(b.guns) === 1 ? '' : 's'}${built.length ? ` · ${built.join(', ')}` : ''}` : tip('Defences unknown', 'Out of sensor range: send a probe or get a world nearby to see it');
   setHTML($('peek'), `<div class="head"><span class="tag">${kind}</span><b>${b.name}</b><span class="grow"></span><span class="tag" style="color:${b.owner === NEUTRAL ? 'var(--dim)' : ownerColor(b.owner)}">${who}</span></div>`
-    + `<div class="row2">${garrison}</div>${chips(b, { income: false, seen })}`);
+    + `<div class="row2">${garrison}</div>${chips(b, { income: false, seen })}${spyLine(b)}`);
 }
+/** Spy line on an enemy world: plant one, or how long yours has been there. */
+function spyLine(b) {
+  if (b.owner === NEUTRAL || b.owner === me || b.visitor || knockedOut) return '';
+  const mine = (game.spies || []).find((x) => x.owner === me && x.body === b.id);
+  if (mine) {
+    const risk = catchRate(game, b) * 60;
+    const odds = risk < 0.25 ? 'low' : risk < 0.5 ? 'rising' : 'high';
+    return `<div class="spy">${icon('spy')} ${tip(`Agent in place · ${fmt(game.time - mine.since)}`, 'Shows you this world and its launches, skims its income and slows any megaproject here')}<span class="grow"></span>${tip(`risk ${odds}`, 'Each minute there\'s a chance the agent is caught. Their Intel and a security bureau nearby raise it', odds === 'high' ? 'warn' : 'dim')}</div>`;
+  }
+  const why = cantSpy(game, me, b);
+  if (why === 'needs Signals intercept') return `<div class="spy dim">${icon('spy')} Spies need Signals intercept</div>`;
+  return `<div class="spy">${icon('spy')} <span class="dim">No agent here</span><span class="grow"></span><button data-spy="${b.id}" ${why ? 'disabled' : ''} title="Plant a spy">Plant spy<small>${SPY.cost}</small></button></div>`;
+}
+$('peek').addEventListener('click', (e) => {
+  const sb = e.target.closest('button[data-spy]');
+  if (!sb) return;
+  const b = game.bodies[+sb.dataset.spy];
+  if (act({ type: 'spy', b: b.id })) toast(`Agent sent to ${b.name}`, ownerColor(me), 'spy');
+  updateActions();
+});
 
 function updateActions() {
   updateFleetInfo();
@@ -417,6 +440,8 @@ function updateActions() {
   $('buildrow').hidden = launching;
   $('stepper').hidden = !launching || probing;
   $('cancel').hidden = !launching;
+  $('dark').hidden = !launching || probing;
+  $('dark').classList.toggle('on', ui.dark);
   if (!launching) {
     ui.preview = null;
     ui.target = null;
@@ -435,7 +460,7 @@ function updateActions() {
     $('launch').disabled = true;
   } else {
     const t = game.bodies[ui.target];
-    ui.preview = probing ? plan(game, s, t, game.time, RULES.probe.speed) : plan(game, s, t);
+    ui.preview = plan(game, s, t, game.time, probing ? RULES.probe.speed : ui.dark ? DARK.speed : 1);
     const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
@@ -454,7 +479,7 @@ function updateActions() {
     const stay = staysFor(game, t);
     const late = ui.preview.T > stay - 5;
     const leaves = Number.isFinite(stay) ? ` · <span class="${late ? 'warn' : 'dim'}">${late ? 'too late' : `leaves ${fmt(stay)}`}</span>` : '';
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> <span class="dim">${defenceText}</span> · <b>${fmt(ui.preview.T)}</b>${assist}${restNote}${leaves}</span>${chips(t, { income: false, seen })}`);
+    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> <span class="dim">${defenceText}</span> · <b>${fmt(ui.preview.T)}</b>${ui.dark ? ` ${tip('dark', 'Running dark: enemies only spot this fleet close in', 'dim')}` : ''}${assist}${restNote}${leaves}</span>${chips(t, { income: false, seen })}`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = ready < 1 || late;
   }
@@ -514,10 +539,11 @@ function levelEffect(type, level) {
   if (type === 'mine') return `+${(RULES.mineIncome * level * mining).toFixed(1)}/s`;
   if (RULES.structures[type].income) return `+${(RULES.structures[type].income * level).toFixed(1)}/s`;
   if (type === 'defence') return `${RULES.gunsPerDefence * level} guns`;
+  if (type === 'bureau') return `${level === 1 ? '2.5' : '4'}× catch`;
   if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * 100)}% research`;
   return '';
 }
-const ABBR = { shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Gas rig', exchange: 'Exchange' };
+const ABBR = { bureau: 'Security', shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Gas rig', exchange: 'Exchange' };
 const pct = (v) => `${Math.max(0, Math.min(100, Math.floor(v * 100)))}%`;
 function progressOf(x) {
   if (x.scrap) return 1 - x.scrap / RULES.scrapTime;
@@ -548,7 +574,7 @@ function renderBuildRow(s) {
     const x = s.structures[ui.slot];
     let row = '';
     if (!x) {
-      row = ['shipyard', 'mine', 'skimmer', 'exchange', 'defence', 'lab'].map((k) => {
+      row = ['shipyard', 'mine', 'skimmer', 'exchange', 'defence', 'lab', 'bureau'].map((k) => {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
         const def = RULES.structures[k];
@@ -795,6 +821,7 @@ $('launch').addEventListener('click', () => {
   if (!ui.mode) { ui.mode = 'launch'; ui.target = null; updateActions(); return; }
   doLaunch();
 });
+$('dark').addEventListener('click', () => { ui.dark = !ui.dark; updateActions(); });
 $('cancel').addEventListener('click', () => { ui.mode = null; ui.target = null; updateActions(); });
 $('focus').addEventListener('click', () => {
   const id = ui.target ?? ui.selected;
@@ -814,7 +841,7 @@ function doLaunch() {
     return;
   }
   if (ui.count < 1) return;
-  act({ type: 'launch', b: ui.selected, to: ui.target, n: ui.count });
+  act({ type: 'launch', b: ui.selected, to: ui.target, n: ui.count, dark: ui.dark });
   ui.mode = null;
   ui.selected = ui.target = null;
   updateActions();
@@ -894,6 +921,7 @@ function drainEvents(evs = game.events.splice(0)) {
           break;
         }
         if (!vis || vis.intel < 1 || !vis.bodies.has(e.from)) break;
+        { const f = game.fleets.find((x) => x.id === e.fleet); if (f && f.dark && !vis.seesFleet(f)) break; }
         toast(`Launch detected at ${nm(e.from)} · ${e.n} ship${e.n === 1 ? '' : 's'}${vis.intel >= 2 ? ` → ${nm(e.to)}` : ''}`, c);
         break;
       case 'arrived':
@@ -934,6 +962,10 @@ function drainEvents(evs = game.events.splice(0)) {
         if (e.phase === 'lost' && e.owner === me) toast(`Beaten to the ${P.name}: half refunded`, '#ff7a4d', e.key);
         break;
       }
+      case 'spycaught':
+        if (e.owner === me) toast(`Agent caught on ${nm(e.at)} after ${fmt(e.after)}`, '#ff7a4d', 'spy');
+        else if (e.by === me) toast(`Security caught a ${nameOf(e.owner)} spy on ${nm(e.at)}`, mine, 'spy');
+        break;
       case 'probed':
         if (e.owner === me) toast(`Probe flyby of ${nm(e.at)} · in view for ${Math.round(RULES.probe.scan / 60 * 2) / 2} min`, mine);
         break;
@@ -1153,6 +1185,8 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'l' || k === 'enter') {
     // L: launch, then confirm.
     if (ui.selected !== null && !$('launch').disabled) $('launch').click();
+  } else if (k === 'd') {
+    if (!$('dark').hidden) $('dark').click();
   } else if (k === 'p') {
     const b = document.querySelector('#buildrow button[data-probe]');
     if (b && !b.disabled) b.click();

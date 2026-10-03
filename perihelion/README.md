@@ -154,6 +154,17 @@ preview server running).
   and guns, 4 ships and 400 credits. A captured world keeps its finished
   structures; anything unfinished and any queued ships are lost. Nothing is
   built while a world is under attack.
+- **Running dark:** while picking a destination, tap **Dark** (or D). The
+  fleet makes a short burn and coasts the rest of the way: it takes about
+  twice as long, but enemy sensors only spot it at a third of their usual
+  range, and a launch from a world they can't see goes unannounced.
+- **Spies:** with Signals intercept (Intel I), tap an enemy world and
+  **Plant spy** (250 credits). The agent shows you that world, its launches
+  (even dark ones) and its surroundings, skims part of its income, and slows
+  any megaproject there by a quarter. Every second there's a small chance the
+  agent is caught (about five minutes on average); the owner's Intel level
+  and a **Security bureau** (on the world or within reach of it) make that
+  much quicker. One agent per enemy world.
 - **Probes:** select a world with a shipyard and tap **Probe** (80 credits)
   next to **+ Ship**, then tap a destination and Confirm. A probe flies four
   times faster than ships and is used up on a flyby: the target stays in view
@@ -237,7 +248,7 @@ the host and nobody can pause.
   around whatever is under the cursor, scroll to zoom toward the cursor,
   double-click to fly to a world.
 - Keys: WASD/arrows pan, Q/E rotate, +/- zoom, F focus the selection,
-  H whole system, Esc back out.
+  H whole system, D run dark, Esc back out.
 
 ## Run
 

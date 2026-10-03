@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf, cantSpy, plantSpy } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -73,11 +73,11 @@ export function tickAI(game, ai, dt) {
   // Any level can see a fleet closing on its world (a player can); the
   // weaker ones just don't always react.
   const closing = (f) => {
-    if (!vis.sees(fleetState(f, game.time))) return false;
+    if (!vis.seesFleet(f)) return false;
     const t = game.bodies[f.to];
     return t.owner === ai.owner && dist(fleetState(f, game.time), posAt(game, t, game.time)) < 60;
   };
-  const known = (f) => f.owner === ai.owner || (vis.intel >= 2 && vis.sees(fleetState(f, game.time))) || closing(f);
+  const known = (f) => f.owner === ai.owner || (vis.intel >= 2 && vis.seesFleet(f)) || closing(f);
   const sizeOf = (f) => (f.owner === ai.owner || vis.intel >= 1 ? f.n : 5);
   const coming = (b, own) => game.fleets.filter((f) => !f.probe && f.to === b.id && (f.owner === ai.owner) === own && known(f)).reduce((n, f) => n + sizeOf(f), 0);
   const will = () => ai.rand() < ai.d.skill;
@@ -289,6 +289,14 @@ function economy(game, ai, mine, coming, will) {
       }
     }
   }
+  // 2f. Spies (smart levels): one agent at a time on a rival's project or
+  // homeworld; a security bureau at home once the empire is big.
+  if (smart && credits > 1100 && !(game.spies || []).some((x) => x.owner === ai.owner)) {
+    const t = game.bodies.filter((b) => !cantSpy(game, ai.owner, b)).sort((a, b) => (b.project ? 2 : b.home ? 1 : 0) - (a.project ? 2 : a.home ? 1 : 0))[0];
+    if (t && will()) return !!plantSpy(game, ai.owner, t);
+  }
+  const home0 = mine.find((b) => b.home);
+  if (smart && home0 && mine.length >= 6 && credits > 1000 && free(home0, 'bureau') && !home0.structures.some((x) => x.type === 'bureau')) return buildStructure(game, home0, 'bureau');
   // 3. More shipyards as the empire grows (one per three worlds).
   const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
   if (yards.length < 1 + Math.floor(mine.length / 3) && will()) {

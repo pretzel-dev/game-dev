@@ -434,3 +434,14 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .tdetail .mega .th { color: #ffd479; font-size: 12px; }
 .tdetail .mega .meter { display: block; width: 100%; margin-top: 4px; }
 .tdetail .nextrow button + button { margin-left: 4px; }
+
+/* Running dark toggle; spy line in the peek panel. */
+#dark { flex: 0 0 auto; height: 42px; padding: 0 12px; border: 1px solid var(--line); background: var(--panel); color: var(--dim); }
+#actions.launching #launch { min-width: 0; letter-spacing: 0.04em; padding: 0 6px; font-size: 14px; }
+#actions.launching #cancel { padding: 0 10px; letter-spacing: 0.06em; }
+#dark.on { color: var(--accent); border-color: var(--accent); }
+#dark[hidden] { display: none; }
+#peek .spy { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+#peek .spy .grow { flex: 1; }
+#peek .spy button { padding: 4px 10px; font-size: 12px; }
+#peek .spy small { margin-left: 6px; color: var(--dim); }

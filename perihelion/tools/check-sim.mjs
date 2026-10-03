@@ -457,3 +457,32 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.ok(S.topGuns(g, homes[0]) >= 3 * S.maxGuns(homes[0]), 'fortress world triples guns');
   console.log('hex research and megaprojects: ok');
 }
+// Running dark and spies.
+{
+  const S = await import('../src/sim.js');
+  const g = createGame({ seed: 21 });
+  const homes = [0, 1].map((o) => g.bodies.find((b) => b.owner === o && b.home));
+  const t = g.bodies.find((b) => b.owner === NEUTRAL && !b.visitor);
+  const lit = S.plan(g, homes[0], t), dark = S.plan(g, homes[0], t, g.time, S.DARK.speed);
+  assert.ok(dark.T > lit.T * 1.2, 'running dark is slower');
+  homes[0].ships = 6; homes[0].restUntil = 0;
+  const f = launch(g, homes[0], t, 3, true);
+  assert.ok(f && f.dark);
+  step(g, f.T * 0.5);
+  const v = visibility(g, 1);
+  const p = fleetState(f, g.time);
+  assert.ok(!v.seesFleet(f) || dist(p, posAt(g, homes[1], g.time)) < 60, 'dark fleets only show close in');
+  // Spies: need Intel I, skim, and get caught in the end; Intel and a bureau make it faster.
+  g.credits[0] = g.credits[1] = 5000;
+  assert.equal(S.cantSpy(g, 0, homes[1]), 'needs Signals intercept');
+  g.tech[0].intel = 1;
+  assert.ok(S.plantSpy(g, 0, homes[1]));
+  assert.ok(visibility(g, 0).bodies.has(homes[1].id), 'a spy shows you the world');
+  const r0 = S.catchRate(g, homes[1]);
+  g.tech[1].intel = 2;
+  homes[1].structures.push({ type: 'bureau', level: 2, left: 0 });
+  assert.ok(S.catchRate(g, homes[1]) > r0 * 5, 'intel and a bureau raise the catch rate');
+  for (let k = 0; k < 2000 && (g.spies || []).length; k++) step(g, 1);
+  assert.equal(g.spies.length, 0, 'spies get caught eventually');
+  console.log('running dark and spies: ok');
+}
