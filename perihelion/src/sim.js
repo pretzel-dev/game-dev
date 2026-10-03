@@ -82,9 +82,9 @@ export const TECH = {
     text: ['Build 12% faster, mines +15%', 'Build 24% faster, mines +30%'],
   },
 };
-// Running dark: a short burn, then a long silent coast. Slower, but enemy
-// sensors only pick the fleet up close (a fraction of their normal range).
-export const DARK = { speed: 0.55, seen: 0.3 };
+// Running dark: a short burn, then a long silent coast, then a short braking
+// burn. Slower, but while coasting enemy sensors only pick the fleet up close.
+export const DARK = { burn: 0.12, seen: 0.3 }; // each burn is 12% of the flight; the rest is a silent coast
 // Spies: planted on an enemy world. While there they show you the world and
 // its fleets, skim its income and slow its research and megaproject. Each
 // second there's a chance they're caught; the owner's Intel and any security
@@ -309,7 +309,7 @@ export function visibility(game, owner) {
   const tele = holdsWonder(game, owner, 'telescope');
   const spied = new Set((game.spies || []).filter((x) => x.owner === owner && x.since <= game.time).map((x) => x.body));
   const seesFleet = (f, p = fleetState(f, game.time)) => f.owner === owner || tele || spied.has(f.from)
-    || (f.dark ? eyes.some(([e, r]) => dist(e, p) <= r * DARK.seen) : sees(p));
+    || (f.dark && !p.burning ? eyes.some(([e, r]) => dist(e, p) <= r * DARK.seen) : sees(p));
   if (hasJoint(game, owner, 'ansible')) return { owner, sees: () => true, seesFleet: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
   return { owner, sees, seesFleet, bodies, intel, warn: holds(game, owner, 'post') };
 }
@@ -930,12 +930,17 @@ export const parkRadius = (b) => b.size * 1.8 + 0.4;
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const len = (a) => Math.hypot(a.x, a.y, a.z);
 
-function burns(p0, v0, p1, v1, T) {
+/**
+ * The two burns of a transfer: a1 for the first tb seconds, a coast, then a2
+ * for the last tb (tb = T/2 is the usual burn-flip-burn with no coast).
+ */
+function burns(p0, v0, p1, v1, T, tb = T / 2) {
   const dp = { x: p1.x - p0.x - v0.x * T, y: p1.y - p0.y - v0.y * T, z: p1.z - p0.z - v0.z * T };
   const dv = sub(v1, v0);
-  const k1 = 4 / (T * T);
-  const a1 = { x: k1 * dp.x - dv.x / T, y: k1 * dp.y - dv.y / T, z: k1 * dp.z - dv.z / T };
-  const a2 = { x: (3 * dv.x) / T - k1 * dp.x, y: (3 * dv.y) / T - k1 * dp.y, z: (3 * dv.z) / T - k1 * dp.z };
+  const B = (tb * tb) / 2;
+  const k = 1 / (tb * (T - tb));
+  const a1 = { x: (dp.x - (B * dv.x) / tb) * k, y: (dp.y - (B * dv.y) / tb) * k, z: (dp.z - (B * dv.z) / tb) * k };
+  const a2 = { x: dv.x / tb - a1.x, y: dv.y / tb - a1.y, z: dv.z / tb - a1.z };
   return { a1, a2, need: Math.max(len(a1), len(a2)) };
 }
 
@@ -947,7 +952,7 @@ function along(f, tau) {
   return { x: p.x + d[0], y: p.y + d[1], z: p.z + d[2], vx: p.vx + d[3], vy: p.vy + d[4], vz: p.vz + d[5] };
 }
 function pureAlong(f, tau) {
-  const h = f.T / 2;
+  const h = f.bf ? f.bf * f.T : f.T / 2; // length of each burn
   const t1 = Math.min(tau, h);
   let x = f.p0.x + f.v0.x * t1 + 0.5 * f.a1.x * t1 * t1;
   let y = f.p0.y + f.v0.y * t1 + 0.5 * f.a1.y * t1 * t1;
@@ -955,8 +960,10 @@ function pureAlong(f, tau) {
   let vx = f.v0.x + f.a1.x * t1;
   let vy = f.v0.y + f.a1.y * t1;
   let vz = f.v0.z + f.a1.z * t1;
-  if (tau > h) {
-    const t2 = tau - h;
+  const tc = Math.max(0, Math.min(tau, f.T - h) - h); // coasting
+  x += vx * tc; y += vy * tc; z += vz * tc;
+  if (tau > f.T - h) {
+    const t2 = tau - (f.T - h);
     x += vx * t2 + 0.5 * f.a2.x * t2 * t2;
     y += vy * t2 + 0.5 * f.a2.y * t2 * t2;
     z += vz * t2 + 0.5 * f.a2.z * t2 * t2;
@@ -1011,12 +1018,12 @@ export function depotBoost(game, from, now = game.time) {
  * The route a fleet will fly (with the sun's gravity). `quick` skips the
  * gravity solve: a close estimate of the flight time, for AI planning.
  */
-export function plan(game, from, to, now = game.time, speed = 1, quick = false) {
+export function plan(game, from, to, now = game.time, speed = 1, quick = false, bf = 0.5) {
   speed *= depotBoost(game, from, now) * (from.wonder === 'massdriver' ? 1.5 : 1);
-  const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick);
+  const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick, bf);
   const g = assistBy(game, direct, from, to, now);
   if (!g) return direct;
-  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * speed * ASSIST.boost, null, quick);
+  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * speed * ASSIST.boost, null, quick, bf);
   // Only if the faster path still swings past the same giant.
   return fast.T < direct.T && assistBy(game, fast, from, to, now) === g ? { ...fast, assist: g.id } : direct;
 }
@@ -1053,7 +1060,7 @@ function lerpDrift(gs, u) {
   return a.map((v, j) => v + (b[j] - v) * k);
 }
 
-function planWith(game, from, to, now, accel, start = null, quick = false) {
+function planWith(game, from, to, now, accel, start = null, quick = false, bf = 0.5) {
   const p0 = start ? start.p : posAt(game, from, now);
   const v0 = start ? start.v : velAt(game, from, now);
   const make0 = (T) => {
@@ -1064,7 +1071,7 @@ function planWith(game, from, to, now, accel, start = null, quick = false) {
     const park = parkRadius(to);
     const p1 = { x: c.x + (away.x / l) * park, y: c.y + (away.y / l) * park, z: c.z + (away.z / l) * park };
     const v1 = velAt(game, to, now + T);
-    return { p0, v0, p1, v1, T, ...burns(p0, v0, p1, v1, T) };
+    return { p0, v0, p1, v1, T, ...(bf < 0.5 ? { bf } : {}), ...burns(p0, v0, p1, v1, T, T * bf) };
   };
   // With gravity: solve for burns that land on target once the pull is added
   // (a few rounds: guess burns, work out the drift, correct the burns).
@@ -1076,7 +1083,7 @@ function planWith(game, from, to, now, accel, start = null, quick = false) {
       const g = gs[GSTEPS];
       const p1 = { x: f.p1.x - g[0], y: f.p1.y - g[1], z: f.p1.z - g[2] };
       const v1 = { x: f.v1.x - g[3], y: f.v1.y - g[4], z: f.v1.z - g[5] };
-      const nb = burns(p0, v0, p1, v1, T);
+      const nb = burns(p0, v0, p1, v1, T, T * bf);
       // Damped: move most of the way to the new burns (steadier near the sun).
       const k = i < 2 ? 1 : 0.7;
       const mixv = (a, c) => ({ x: a.x + (c.x - a.x) * k, y: a.y + (c.y - a.y) * k, z: a.z + (c.z - a.z) * k });
@@ -1132,7 +1139,7 @@ function rest(game, b, n) {
 export function launch(game, from, to, n, dark = false) {
   n = Math.min(Math.floor(n), readyShips(game, from));
   if (n < 1 || from === to || game.winner !== null) return null;
-  const p = plan(game, from, to, game.time, dark ? DARK.speed : 1);
+  const p = plan(game, from, to, game.time, 1, false, dark ? DARK.burn : 0.5);
   if (p.T > staysFor(game, to) - 5 || !present(game, to)) return null;
   from.ships -= n;
   const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time, vet: from.vet || 0 };
@@ -1156,8 +1163,8 @@ function refit(game, owner) {
     const left = f.T - (game.time - f.t0);
     if (left < 10) continue;
     const s = fleetState(f, game.time);
-    const accel = accelOf(game, owner) * (f.probe ? RULES.probe.speed : f.dark ? DARK.speed : 1);
-    const p = planWith(game, null, game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
+    const accel = accelOf(game, owner) * (f.probe ? RULES.probe.speed : 1);
+    const p = planWith(game, null, game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, f.bf || 0.5);
     if (p.T >= left) continue;
     delete f.assist;
     Object.assign(f, p, { t0: game.time });
@@ -1214,7 +1221,7 @@ export function fleetState(f, t) {
     vx: s.vx, vy: s.vy, vz: s.vz,
     nx: n.x, ny: n.y, nz: n.z,
     progress: tau / f.T,
-    burning: !flipping && tau < f.T,
+    burning: !flipping && tau < f.T && (!f.bf || tau < f.bf * f.T || tau > f.T - f.bf * f.T),
     flipping,
     phase: tau < h ? 1 : 2,
   };

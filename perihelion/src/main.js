@@ -381,7 +381,7 @@ function updateFleetInfo() {
   if ($('fleet').hidden) return;
   const s = fleetState(f, game.time);
   const left = f.T - (game.time - f.t0);
-  const phase = s.flipping ? 'flipping' : s.phase === 1 ? 'burning' : 'braking';
+  const phase = f.dark && !s.burning ? tip(`${icon('dark')} coasting dark`, 'Drive off: enemies only spot this fleet close in', 'dim') : s.flipping ? 'flipping' : s.phase === 1 ? 'burning' : 'braking';
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
   if (f.probe) {
@@ -480,7 +480,7 @@ function updateActions() {
     $('launch').disabled = true;
   } else {
     const t = game.bodies[ui.target];
-    ui.preview = plan(game, s, t, game.time, probing ? RULES.probe.speed : ui.dark ? DARK.speed : 1);
+    ui.preview = plan(game, s, t, game.time, probing ? RULES.probe.speed : 1, false, !probing && ui.dark ? DARK.burn : 0.5);
     const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
