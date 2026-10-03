@@ -103,17 +103,18 @@ export const techTitle = (key, level) => (JOINTS[key] ? JOINTS[key].name : TECH[
 // and the first to finish wins it; the others lose the race (half their money
 // back). A captured world's project or wonder goes to the captor.
 export const PROJECTS = {
-  sundiver: { name: 'Sun-diver collectors', where: 'inner', text: '+8 credits/s', cost: 1200, time: 360 },
-  massdriver: { name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 1200, time: 360 },
-  ringyard: { name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 1200, time: 360 },
-  citadel: { name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 1200, time: 360 },
-  telescope: { name: 'Deep-space telescope', where: 'any', text: 'See every enemy fleet: its size, destination and arrival time', cost: 1200, time: 360 },
+  sundiver: { needs: 'torch', name: 'Sun-diver collectors', where: 'inner', text: '+8 credits/s', cost: 1200, time: 360 },
+  massdriver: { needs: 'kinetic', name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 1200, time: 360 },
+  ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 1200, time: 360 },
+  citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 1200, time: 360 },
+  telescope: { needs: 'targeting', name: 'Deep-space telescope', where: 'any', text: 'See every enemy fleet: its size, destination and arrival time', cost: 1200, time: 360 },
 };
 export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
 const holdsWonder = (game, owner, key) => owner !== NEUTRAL && game.bodies.some((b) => b.wonder === key && b.owner === owner);
 export function cantProject(game, b, key) {
   const P = PROJECTS[key];
   if (b.owner === NEUTRAL || b.visitor) return 'not yours';
+  if (!hasJoint(game, b.owner, P.needs)) return `needs ${JOINTS[P.needs].name}`;
   if (b.project || b.wonder) return 'this world already has one';
   if (game.wonders && game.wonders[key] !== undefined) return 'already built';
   if (P.where === 'giant' && !b.giant) return 'gas giants only';
@@ -153,7 +154,8 @@ export function fundProject(game, b, how) {
 function stepProjects(game, dt) {
   for (const b of game.bodies) {
     if (!b.project || b.owner === NEUTRAL || b.sieges.length) continue;
-    b.project.left -= dt * buildSpeed(game, b.owner);
+    // Research stations work for megaprojects too.
+    b.project.left -= dt * researchSpeed(game, b.owner);
     if (b.project.left > 0) continue;
     const key = b.project.key;
     b.wonder = key;

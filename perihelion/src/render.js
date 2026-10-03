@@ -112,6 +112,11 @@ function cloudTex(b) {
   }, 1);
 }
 
+/** A gas giant's colouring [hue, saturation, lightness]: ochre, ice blue, teal, rust, violet or cream. */
+function giantPalette(b) {
+  const P = [[0.08, 0.42, 0.32], [0.57, 0.38, 0.34], [0.47, 0.3, 0.3], [0.02, 0.45, 0.3], [0.74, 0.22, 0.32], [0.11, 0.2, 0.42]];
+  return P[Math.floor(b.hue * P.length) % P.length];
+}
 /** Gas giant: soft horizontal bands. Rocky world: mottled continents and craters. */
 function surfaceTex(b) {
   const r = rng(Math.floor(b.hue * 1e6) + b.id);
@@ -171,7 +176,7 @@ function surfaceTex(b) {
       const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
       const W = img.width, H = img.height, dd = img.data;
       const seed = b.id * 13 + 5;
-      const base = 0.05 + b.hue * 0.12;
+      const [base, sat, lit] = giantPalette(b);
       const sx = r(), sy = 0.3 + r() * 0.4;
       for (let y = 0; y < H; y++) {
         const lat = (y / H - 0.5) * Math.PI;
@@ -185,7 +190,7 @@ function surfaceTex(b) {
           const ox = ((x / W - sx + 1.5) % 1) - 0.5, oy = y / H - sy;
           const st = Math.exp(-((ox / 0.06) ** 2 + (oy / 0.035) ** 2));
           const band = shear * 0.5 + 0.5 + st * 0.6;
-          col.setHSL(base + band * 0.05 - st * 0.03, 0.3 + band * 0.25, 0.32 + band * 0.28 + turb * 0.08);
+          col.setHSL(base + band * 0.05 - st * 0.03, sat * (0.75 + band * 0.6), lit + band * 0.26 + turb * 0.08);
           const i = (y * W + x) * 4;
           dd[i] = col.r * 255; dd[i + 1] = col.g * 255; dd[i + 2] = col.b * 255; dd[i + 3] = 255;
         }
@@ -505,7 +510,7 @@ function orbitLine(b) {
 
 /** A thin atmosphere: a shell that glows toward the limb (fresnel). */
 function atmosphere(b) {
-  const color = new THREE.Color(b.home ? '#6fb6ff' : b.giant ? '#e8d2a8' : '#b9c8dc');
+  const color = b.giant ? new THREE.Color().setHSL(giantPalette(b)[0], 0.5, 0.75) : new THREE.Color(b.home ? '#6fb6ff' : '#b9c8dc');
   const strength = b.home ? 1.1 : b.giant ? 0.45 : 0.6;
   return new THREE.Mesh(
     new THREE.SphereGeometry(b.size * 1.05, 48, 32),
