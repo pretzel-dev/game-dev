@@ -764,6 +764,7 @@ export function slotsOf(b) {
   if (b.kind === 'station') return 2;
   if (b.kind === 'asteroid') return 1;
   if (b.kind === 'moon') return b.size > 0.8 ? 2 : 1;
+  if (b.home) return 5; // homeworlds: room to build a capital
   return b.giant ? 4 : b.size > 2.2 ? 3 : 2;
 }
 /** A structure works once built; while upgrading it keeps working at its old level. */
