@@ -83,6 +83,22 @@ block it; append `?peer=127.0.0.1:9000` to the URL to use a local
   networks. The owner has a Cloudflare account and a Cloudflare MCP connector,
   which can manage storage but not deploy code; deploys need Git integration in the
   dashboard or an API token.
+- Public lobby: a list of open games to tap and join, no code needed (on the
+  same Cloudflare server; codes stay for private games).
+- Stats and leaderboards (on the same Cloudflare server, with a D1 database):
+  - Anonymous player ID per browser plus their chosen name; no logins, emails
+    or tracking cookies. Add a short privacy note and a name filter first.
+  - Per match: mode, AI level, system, length, winner, and each player's
+    summary (worlds, ships built/lost, research, megaprojects, spies caught),
+    mostly from the existing end-report stats. Key moments too (first capture,
+    megaproject done, knocked out, quit part-way) to spot drop-off and balance.
+  - Leaderboards: daily system (fastest win per AI level), all-time wins and
+    streaks per level, a multiplayer rating once there are enough players.
+    Solo results come from the browser, so they can be faked; fine for a
+    casual board, and multiplayer is trustworthy once the server runs games.
+  - A password-protected owner page: players per day, matches, win rates by
+    AI level, match length, popular systems.
+  - In game: a leaderboard button on the menu, and your placing on the end screen.
 - Possibly move hosting from GitHub Pages to Cloudflare with a custom domain,
   and one repo per project.
 - Balance idea: make gun upgrades a little cheaper than a new battery.
