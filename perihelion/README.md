@@ -86,20 +86,22 @@ Sensors levels reach less far than before (the Ansible is the way to see it all)
 
 ## Megaprojects
 
-Like wonders: build one on one of your worlds (one per world, 1200 credits,
-6 minutes). Each kind can be finished only once per game; several empires can
-race for the same one, and the first to finish wins it; the rest get half
-their money back. Speed one up by paying (200 for 30 s) or breaking up a docked
-ship for parts and crew (20 s). Everyone is told when a project starts, and a
-captured world's project or wonder goes to the captor.
+The end of each joint tech: researching it unlocks a megaproject (a wonder).
+Start one from the R&D board (the joint tech's panel: Build, then tap one of
+your worlds); one per world, 1200 credits, 6 minutes, and your research
+stations speed it up. Each kind can be finished only once per game; several
+empires can race for the same one, and the first to finish wins it; the rest
+get half their money back. Speed one up by paying (200 for 30 s) or breaking up
+a docked ship there for parts and crew (20 s). Everyone is told when a project
+starts, and a captured world's project or wonder goes to the captor.
 
-| Megaproject | Where | Effect |
-|---|---|---|
-| Sun-diver collectors | Innermost planet | +8 credits/s |
-| Mass driver | Any planet | Fleets launched here fly 50% faster |
-| Ring yard | Gas giant | Ships build three times as fast here |
-| Fortress world | Any world | Three times the guns; its cover reaches its family at full strength |
-| Deep-space telescope | Any world | See every enemy fleet's size, destination and arrival time |
+| Megaproject | Unlocked by | Where | Effect |
+|---|---|---|---|
+| Sun-diver collectors | Torch production | Innermost planet | +8 credits/s |
+| Mass driver | Kinetic strike | Any planet | Fleets launched here fly 50% faster |
+| Ring yard | Hardened colonies | Gas giant | Ships build three times as fast here |
+| Fortress world | Point-defence net | Any world | Three times the guns; its cover reaches its family at full strength |
+| Deep-space telescope | Targeting data | Any world | See every enemy fleet's size, destination and arrival time |
 
 ## How to play
 

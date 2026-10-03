@@ -405,7 +405,7 @@ function updateActions() {
   const s = ui.selected !== null && game ? game.bodies[ui.selected] : null;
   const show = !!s && s.owner === me && running;
   $('actions').hidden = !show;
-  if (!show) { ui.preview = null; ui.mode = null; return; }
+  if (!show) { ui.preview = null; if (ui.mode !== 'project') ui.mode = null; return; }
   if (!s.ships && ui.mode === 'launch') ui.mode = null;
   const ready = readyShips(game, s);
   if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
@@ -462,31 +462,6 @@ function updateActions() {
 // ---- Building ----------------------------------------------------------------
 
 const ROMAN = ['', 'I', 'II', 'III'];
-const PROJECT_SHORT = { sundiver: 'Sun-diver', massdriver: 'Driver', ringyard: 'Ring yard', citadel: 'Fortress', telescope: 'Telescope' };
-/** The world panel's megaproject line: a wonder, a project under way, or the choice. */
-function projectRow(s) {
-  if (s.wonder) {
-    const P = PROJECTS[s.wonder];
-    return `<div class="ctx proj">${tip(`${icon(s.wonder)} <b>${P.name}</b>`, P.text, 'gold')}</div>`;
-  }
-  if (s.project) {
-    const P = PROJECTS[s.project.key];
-    const rivals = game.bodies.filter((b) => b !== s && b.project && b.project.key === s.project.key).length;
-    const pctv = 1 - s.project.left / P.time;
-    return `<div class="ctx proj">${tip(`${icon(s.project.key)} <b>${P.name}</b>`, `${P.text}.${rivals ? ` ${rivals} rival${rivals === 1 ? ' is' : 's are'} racing for it: the first to finish wins.` : ''}`, 'gold')}`
-      + `<i class="meter"><i style="width:${pct(pctv)}"></i></i><span class="what">${fmt(s.project.left)}</span>`
-      + `<button data-fund="cash" title="Pay to speed it up" ${game.credits[me] < PROJECT_FUND.credits ? 'disabled' : ''}>+${PROJECT_FUND.cut}s<small>${PROJECT_FUND.credits}</small></button>`
-      + `<button data-fund="ship" title="Break up a docked ship for parts and crew" ${readyShips(game, s) < 1 ? 'disabled' : ''}>+${PROJECT_FUND.crewCut}s<small>1 ship</small></button></div>`;
-  }
-  const keys = Object.keys(PROJECTS).filter((k) => { const why = cantProject(game, s, k); return !why || why === 'not enough credits'; });
-  if (!keys.length) return '';
-  if (!ui.projOpen) return `<div class="ctx proj"><button data-projopen="1">${icon('star')} Megaproject</button></div>`;
-  return `<div class="ctx proj">${keys.map((k) => {
-    const P = PROJECTS[k];
-    const racing = game.bodies.some((b) => b.project && b.project.key === k);
-    return `<button data-proj="${k}" data-hold="${esc(`${P.name}: ${P.text}${racing ? ' (someone is already building one)' : ''}`)}" title="${P.name}: ${P.text}" ${game.credits[me] < P.cost ? 'disabled' : ''}>${icon(k)} ${PROJECT_SHORT[k]}<small>${P.cost}</small></button>`;
-  }).join('')}<button data-projopen="0">${icon('close')}</button></div>`;
-}
 /** A small label with more detail behind it (hover, or tap on touch). */
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const tip = (html, detail, cls = '') => `<span class="chip${cls ? ` ${cls}` : ''}" tabindex="0" data-tip="${esc(detail)}">${html}</span>`;
@@ -525,7 +500,7 @@ function chips(b, { income = true, seen = true } = {}) {
     out.push(tip(`${icon(b.perk)} ${P.name}`, `${P.text}${inside}`, 'gold'));
   }
   if (b.wonder) out.push(tip(`${icon(b.wonder)} ${PROJECTS[b.wonder].name}`, PROJECTS[b.wonder].text, 'gold'));
-  if (b.project && b.owner !== me) out.push(tip(`${icon(b.project.key)} ${Math.floor((1 - b.project.left / PROJECTS[b.project.key].time) * 100)}%`, `Building the ${PROJECTS[b.project.key].name}: ${PROJECTS[b.project.key].text}. Take the world and it's yours.`, 'gold'));
+  if (b.project) out.push(tip(`${icon(b.project.key)} ${Math.floor((1 - b.project.left / PROJECTS[b.project.key].time) * 100)}%`, `Building the ${PROJECTS[b.project.key].name}: ${PROJECTS[b.project.key].text}. Take the world and it's yours.`, 'gold'));
   for (const h of game.happenings || []) {
     if (h.at !== b.id) continue;
     const E = EVENTS[h.kind];
@@ -606,7 +581,6 @@ function renderBuildRow(s) {
   }
 
   // Megaprojects: one per world; each kind can only be finished once.
-  html += projectRow(s);
   // Ships: only where a yard can build them.
   const yards = yardsOf(s);
   if (yards) {
@@ -631,18 +605,6 @@ $('buildrow').addEventListener('click', (e) => {
     updateActions();
     return;
   }
-  const po = e.target.closest('button[data-projopen]');
-  if (po) { ui.projOpen = po.dataset.projopen === '1'; updateActions(); return; }
-  const pj = e.target.closest('button[data-proj]');
-  if (pj) {
-    if (holdShown) { holdShown = false; return; }
-    if (act({ type: 'project', b: s.id, k: pj.dataset.proj })) toast(`${PROJECTS[pj.dataset.proj].name} begun at ${s.name}`, ownerColor(me), pj.dataset.proj);
-    ui.projOpen = false;
-    updateActions();
-    return;
-  }
-  const fd = e.target.closest('button[data-fund]');
-  if (fd) { act({ type: 'fund', b: s.id, how: fd.dataset.fund }); updateActions(); return; }
   if (e.target.closest('button[data-probe]')) {
     ui.mode = 'probe'; ui.target = null; ui.slot = null;
     updateActions();
@@ -733,7 +695,29 @@ function techDetail(key) {
     body += `<div class="nextrow"><span><b>${next.title}</b><small>${next.text} · ${fmt(next.time / researchSpeed(game, me))}</small>${needs}</span>`
       + `<button data-k="${key}" ${why ? 'disabled' : ''}>Research<small>${next.cost}</small></button></div>`;
   }
+  if (joint) body += megaDetail(key);
   return `<div class="tdetail"><div class="th">${icon(key)} <b>${name}</b></div>${body}</div>`;
+}
+/** The megaproject a joint tech unlocks: build it, or watch and speed it up. */
+function megaDetail(joint) {
+  const key = Object.keys(PROJECTS).find((k) => PROJECTS[k].needs === joint);
+  if (!key) return '';
+  const P = PROJECTS[key];
+  const head = `<div class="mega"><div class="th">${icon(key)} <b>${P.name}</b> <span class="dim">megaproject</span></div><small>${P.text}. ${P.where === 'giant' ? 'Gas giants only. ' : P.where === 'inner' ? 'Innermost planet only. ' : P.where === 'planet' ? 'Planets only. ' : ''}Only one empire can finish it.</small>`;
+  const owner = game.wonders && game.wonders[key] !== undefined ? game.bodies[game.wonders[key]] : null;
+  if (owner) return `${head}<small>${owner.owner === me ? 'Yours' : `Built by ${nameOf(owner.owner)}`}, at ${owner.name}</small></div>`;
+  const mine = game.bodies.find((b) => b.owner === me && b.project && b.project.key === key);
+  const rivals = game.bodies.filter((b) => b.owner !== me && b.project && b.project.key === key).length;
+  const race = rivals ? `<small class="warn">${rivals} rival${rivals === 1 ? '' : 's'} building it</small>` : '';
+  if (mine) {
+    return `${head}${race}<div class="nextrow"><span><small>At ${mine.name} · ${fmt(mine.project.left / researchSpeed(game, me))} left</small><i class="meter"><i style="width:${pct(1 - mine.project.left / P.time)}"></i></i></span>`
+      + `<button data-fund="cash" data-fb="${mine.id}" ${game.credits[me] < PROJECT_FUND.credits ? 'disabled' : ''}>+${PROJECT_FUND.cut}s<small>${PROJECT_FUND.credits}</small></button>`
+      + `<button data-fund="ship" data-fb="${mine.id}" ${readyShips(game, mine) < 1 ? 'disabled' : ''} title="Break up a docked ship there for parts and crew">+${PROJECT_FUND.crewCut}s<small>1 ship</small></button></div></div>`;
+  }
+  const ready = game.tech[me][joint];
+  const sites = game.bodies.filter((b) => b.owner === me && !cantProject(game, b, key));
+  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? `${fmt(P.time / researchSpeed(game, me))} with your research stations` : 'No world of yours can take it yet') : `Unlocked by ${JOINTS[joint].name}`}</small></span>`
+    + `<button data-mega="${key}" ${ready && sites.length ? '' : 'disabled'}>Build<small>${P.cost}</small></button></div></div>`;
 }
 function renderResearch() {
   const t = game.tech[me];
@@ -751,7 +735,18 @@ function renderResearch() {
 }
 $('rlist').addEventListener('click', (e) => {
   const h = e.target.closest('[data-hex]');
-  if (h) { ui.techSel = h.dataset.hex; renderResearch(); }
+  if (h) { ui.techSel = h.dataset.hex; renderResearch(); return; }
+  const fd = e.target.closest('button[data-fund]');
+  if (fd) { act({ type: 'fund', b: Number(fd.dataset.fb), how: fd.dataset.fund }); renderResearch(); return; }
+  const mg = e.target.closest('button[data-mega]');
+  if (mg) {
+    // Pick the world: the sheet closes and the next tap on one of yours builds it.
+    ui.mode = 'project'; ui.projKey = mg.dataset.mega;
+    ui.selected = ui.target = null;
+    $('research').hidden = true;
+    toast(`Tap one of your worlds to build the ${PROJECTS[ui.projKey].name}`, '#ffd479', ui.projKey);
+    updateActions();
+  }
 });
 $('rnd').addEventListener('click', () => {
   $('research').hidden = !$('research').hidden;
@@ -969,6 +964,15 @@ function tap(id, x, y, mouse = false) {
   // On touch the camera locks onto whatever you tap; a mouse click only
   // selects (the mouse steers the camera itself).
   if (id !== null && !mouse) view.focus(game, id, false);
+  if (ui.mode === 'project') {
+    const b = id !== null ? game.bodies[id] : null;
+    const why = b ? cantProject(game, b, ui.projKey) : 'cancelled';
+    if (b && !why) { if (act({ type: 'project', b: id, k: ui.projKey })) toast(`${PROJECTS[ui.projKey].name} begun at ${b.name}`, ownerColor(me), ui.projKey); }
+    else toast(why === 'cancelled' ? 'Megaproject cancelled' : `Can't build it there: ${why}`, '#858ca6');
+    ui.mode = null;
+    updateActions();
+    return;
+  }
   if (ui.mode === 'launch' || ui.mode === 'probe') {
     // Picking a destination: any other world becomes the target; empty
     // space backs out of launching and deselects.
@@ -976,7 +980,7 @@ function tap(id, x, y, mouse = false) {
   } else if (id === null || id === ui.selected) {
     ui.selected = ui.target = null;
   } else if (game.bodies[id].owner === me) {
-    ui.selected = id; ui.slot = null; ui.pick = null; ui.projOpen = false; ui.target = null;
+    ui.selected = id; ui.slot = null; ui.pick = null; ui.target = null;
   } else {
     // Someone else's world (or a neutral): show what's known about it.
     ui.selected = ui.target = null;
