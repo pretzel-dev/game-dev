@@ -498,3 +498,9 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .ctx.ships .what { min-width: 150px; flex: 1 1 auto; }
 .ctx.ships .slip .meter { width: 36px; }
 .ctx.ships .slip .dim { font-size: 11px; letter-spacing: 0.04em; }
+
+.ctx.ships { min-height: 0; }
+.ctx.ships .bars { display: inline-flex; flex-direction: column; gap: 2px; margin-left: 4px; }
+.ctx.ships .bars .meter { width: 54px; height: 2px; }
+.ctx.shipbtns { flex-wrap: nowrap; }
+.ctx.shipbtns button[data-b='ship'] { flex: 1 1 auto; }
