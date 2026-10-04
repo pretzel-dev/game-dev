@@ -635,13 +635,15 @@ function renderBuildRow(s) {
   const yards = yardsOf(s);
   if (yards) {
     const why = cantOrderShip(game, s);
-    // One line per yard at work, each with its own progress and time left.
-    const slips = (s.slips && s.slips.length ? s.slips : [s.build || 0]).map((p) => `<span class="slip"><i class="meter"><i style="width:${pct(p)}"></i></i> <span class="dim">${fmt((1 - p) * shipTime(game, s))}</span></span>`).join('');
-    const q = s.queue ? `<span class="what">Queue <b class="num">${s.queue}</b><span class="slips">${slips}</span></span>`
-      : `<span class="what">${yards} yard${yards === 1 ? '' : 's'} idle</span>`;
-    html += `<div class="ctx ships">${q}`
-      + (s.queue ? `<button data-cancel="1" class="danger" title="Cancel the last queued ship">${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>` : '')
-      + `<button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost} · ${fmt(shipTime(game, s))}</small></button>`
+    // Status above, buttons below in a fixed order: the layout never shifts
+    // as ships are ordered, so tapping + Ship repeatedly stays on + Ship.
+    // One thin bar per yard (always all of them, so the height is steady).
+    const slips = Array.from({ length: yards }, (_, k) => s.slips && s.slips[k] !== undefined ? s.slips[k] : 0);
+    const bars = slips.map((p) => `<i class="meter"><i style="width:${pct(p)}"></i></i>`).join('');
+    const next = s.queue && s.slips && s.slips.length ? fmt((1 - Math.max(...s.slips)) * shipTime(game, s)) : '';
+    html += `<div class="ctx ships"><span class="what">${s.queue ? `Queue <b class="num">${s.queue}</b>` : `${yards} yard${yards === 1 ? '' : 's'} idle`}<span class="bars">${bars}</span><span class="dim">${next}</span></span></div>`
+      + `<div class="ctx shipbtns"><button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost} · ${fmt(shipTime(game, s))}</small></button>`
+      + `<button data-cancel="1" class="danger" title="Cancel the last queued ship" ${s.queue ? '' : 'disabled'}>${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>`
       + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
   }
   setHTML($('buildrow'), html);
