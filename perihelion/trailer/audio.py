@@ -28,39 +28,40 @@ def noise_hit(at, g, dec, fc):
     nz = rng.standard_normal(n) * np.exp(-tt/dec)
     x[i0:i0+n] = nz; x = lp(x, fc) if fc else x
     add(x, rng.uniform(-0.6, 0.6), g)
-CUTS = [0, 2.5, 4.5, 7.5, 10.5, 12.5]
+CUTS = [0, 2.5, 4.5, 6.0, 8.0, 9.5, 11.5, 12.0, 12.5, 13.0]
+TITLE = 13.0
 # drone: A1 + E2, detuned saws, filter opens over time
-drone_env = np.clip(t/2.0, 0, 1) * np.clip((12.45 - t)/0.05, 0, 1)
-fc = 180 + 900 * (t/12.5)**2
+drone_env = np.clip(t/2.0, 0, 1) * np.clip((TITLE - 0.05 - t)/0.05, 0, 1)
+fc = 180 + 900 * (t/TITLE)**2
 for det, pan in [(-0.12, -0.7), (0.0, 0), (0.15, 0.7)]:
     d = saw(55*(1+det/100*6)) + 0.6*saw(82.4*(1+det/100*6), 0.3)
-    add(lp(d, fc) * drone_env * (0.10 + 0.10*t/12.5), pan)
+    add(lp(d, fc) * drone_env * (0.10 + 0.10*t/TITLE), pan)
 # high shimmer (sun)
 add(np.sin(2*np.pi*880*t + 0.3*np.sin(2*np.pi*0.3*t)) * env(0, 4.6, 1.5, 1.5) * 0.025, -0.3)
 add(np.sin(2*np.pi*1318.5*t) * env(0.5, 4.6, 1.5, 1.5) * 0.018, 0.3)
 # booms on cuts
-for c, g in zip(CUTS[:-1], [0.55, 0.6, 0.7, 0.9, 0.5]): boom(c + (0.02 if c == 0 else 0), g)
+for c, g in zip(CUTS[:-1], [0.55, 0.55, 0.6, 0.6, 0.65, 0.9, 0.45, 0.45, 0.5]): boom(c + (0.02 if c == 0 else 0), g)
 # pulse from 4.5: kick on beats, ticks on 8ths, 16ths in battle
-for k in np.arange(4.5, 10.5, 0.5): boom(k, 0.32 if k < 7.5 else 0.42, 90, 45, 0.18)
-for k in np.arange(4.5, 12.45, 0.25):
-    noise_hit(k, 0.06 if k < 7.5 else 0.09, 0.02, None)
-for k in np.arange(7.5, 10.5, 0.125): noise_hit(k + 0.0625, 0.035, 0.012, None)
+for k in np.arange(2.5, 11.5, 0.5): boom(k, 0.3 if k < 8.0 else 0.4, 90, 45, 0.18)
+for k in np.arange(2.5, TITLE - 0.05, 0.25):
+    noise_hit(k, 0.05 if k < 6.0 else 0.08, 0.02, None)
+for k in np.arange(8.0, 11.5, 0.125): noise_hit(k + 0.0625, 0.035, 0.012, None)
 # battle explosions
-for k, g in [(7.55, 0.5), (8.05, 0.35), (8.55, 0.45), (8.9, 0.3), (9.3, 0.4), (9.55, 0.35)]: noise_hit(k, g, 0.35, 900)
+for k, g in [(9.55, 0.5), (9.9, 0.35), (10.3, 0.45), (10.6, 0.3), (10.95, 0.4), (11.2, 0.35)]: noise_hit(k, g, 0.35, 900)
 # riser 10.5 -> 12.45
-r_env = np.clip((t-10.5)/1.95, 0, 1)**2 * (t < 12.45)
+r_env = np.clip((t-11.5)/1.45, 0, 1)**2 * (t < TITLE - 0.05)
 nz = rng.standard_normal(N)
 add(lp(nz, 300 + 6000*r_env) * r_env * 0.35, 0)
 rf = 110 * 2**(r_env*2)
 add((saw(rf) * 0.5 + saw(rf*1.5, 0.2)*0.3) * r_env * 0.12, 0)
 # title hit: big boom + brass-ish A minor chord braam, then pad
-boom(12.5, 1.0, 140, 30, 2.0)
-noise_hit(12.5, 0.4, 0.6, 2500)
-ch = env(12.5, 15.0, 0.02, 1.4)
-br = sum(lp(saw(f) + saw(f*1.004, 0.5), 300 + 2500*np.exp(-np.maximum(t-12.5, 0)*3)) for f in [55, 110, 130.8, 164.8, 246.9])
+boom(TITLE, 1.0, 140, 30, 2.0)
+noise_hit(TITLE, 0.4, 0.6, 2500)
+ch = env(TITLE, 15.0, 0.02, 1.2)
+br = sum(lp(saw(f) + saw(f*1.004, 0.5), 300 + 2500*np.exp(-np.maximum(t-TITLE, 0)*3)) for f in [55, 110, 130.8, 164.8, 246.9])
 add(br * ch * 0.06, 0)
 pad = sum(np.sin(2*np.pi*f*t) for f in [440, 523.25, 659.25, 987.77]) 
-add(pad * env(12.6, 15.0, 0.5, 1.6) * 0.03, 0.2)
+add(pad * env(TITLE + 0.1, 15.0, 0.4, 1.4) * 0.03, 0.2)
 # reverb: convolve with decaying noise IR
 def reverb(x, sec=2.2, mix=0.28):
     n = int(sec*SR); ir = rng.standard_normal(n) * np.exp(-np.arange(n)/SR*3.2); ir /= np.sqrt((ir**2).sum())
