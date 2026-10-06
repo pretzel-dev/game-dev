@@ -151,7 +151,7 @@ preview server running).
   - **Gas harvester** (350, 70 s): gas giants only; +2 credits/s per level.
   - **Orbital exchange** (450, 80 s): homeworlds only; +2.5 credits/s per level (up to II).
   - **Upgrades:** mines, guns, research stations and gas harvesters go up to level 3.
-  - **Scrap:** tearing a structure down costs 25% of its price and takes 20 s;
+  - **Scrap:** tearing a structure down gives back 40% of what it cost (all its levels) and takes 20 s;
     it stops working at once. If the world is taken first, the scrapping is
     cancelled and the captor gets the structure.
   - **Ship** (150, 45 s): ordered at a shipyard. Queued ships can be

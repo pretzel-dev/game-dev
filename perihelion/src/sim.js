@@ -36,7 +36,7 @@ export const RULES = {
   fire: 0.12, // ships destroyed per second, per firing ship (or gun)
   gunRegen: 0.02, // guns rebuilt per second after a fight
   flipTime: 4, // seconds spent turning around at the midpoint
-  demolishFee: 0.25, // share of a structure's cost to tear it down
+  scrapRefund: 0.4, // share of what a structure cost (all its levels) you get back for scrapping it
   scrapTime: 20, // seconds to tear one down (cancelled if the world is taken)
   cooldown: 15, // seconds before newly arrived ships can launch again
   // Unmanned probe: fast, single use; a flyby reveals a world for a while.
@@ -744,8 +744,14 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     const P = PERKS[k];
     const spots = bodies.filter((b) => b.owner === NEUTRAL && !b.perk && !b.visitor && !homeFamily.has(b.id)
       && (!P.kinds || P.kinds.includes(b.kind)) && (!P.giantMoon || (b.kind === 'moon' && bodies[b.parent].giant)));
-    if (!spots.length) continue;
-    const b = spots[Math.floor(rand() * spots.length)];
+    // Spread them out: prefer a family (a planet and its moons and stations)
+    // with no special world yet; never more than two in one family.
+    const fam = (b) => (b.parent === null ? b.id : b.parent);
+    const inFam = (b) => bodies.filter((x) => x.perk && fam(x) === fam(b)).length;
+    const fresh = spots.filter((b) => inFam(b) === 0);
+    const pool = fresh.length ? fresh : spots.filter((b) => inFam(b) < 2);
+    if (!pool.length) continue;
+    const b = pool[Math.floor(rand() * pool.length)];
     b.perk = k;
     if (k === 'fortress') { b.structures.push({ type: 'defence', level: 2, left: 0 }); b.guns = maxGuns(b) + 1; }
     if (k === 'hulk' && !b.structures.some((x) => x.type === 'shipyard')) b.structures.push({ type: 'shipyard', level: 1, left: 0 });
@@ -806,17 +812,21 @@ export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner
 export const yardsOf = (b) => b.structures.filter((x) => x.type === 'shipyard' && working(x)).length;
 
 /** Tear a structure down for a fee (a share of what it cost). */
-export const demolishFee = (x) => Math.round(RULES.structures[x.type].cost * RULES.demolishFee);
+/** Credits back for scrapping a structure: a share of everything spent on it. */
+export const demolishFee = (x) => {
+  let spent = RULES.structures[x.type].cost;
+  for (let l = 1; l < (x.level || 1); l++) spent += upgradeCost({ type: x.type, level: l });
+  return Math.round(spent * RULES.scrapRefund);
+};
 export function cantDemolish(game, b, x) {
   if (b.owner === NEUTRAL) return 'not yours';
   if (x.scrap) return 'already scrapping';
-  if (game.credits[b.owner] < demolishFee(x)) return 'not enough credits';
   return null;
 }
 export function demolish(game, b, x) {
   if (cantDemolish(game, b, x)) return false;
-  game.credits[b.owner] -= demolishFee(x);
-  tally(game, b.owner, 'spent', demolishFee(x));
+  game.credits[b.owner] += demolishFee(x);
+  tally(game, b.owner, 'earned', demolishFee(x));
   // It stops working now and is gone once the crews finish.
   x.scrap = RULES.scrapTime;
   if (!yardsOf(b)) b.build = 0;
