@@ -960,7 +960,7 @@ export function createView(canvas, labelRoot) {
     if (i >= MAX_SHIPS) return null;
     if (!ships[i]) {
       // A faint self-glow so the shadow side is dark grey, never black.
-      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, map: hullTex, bumpMap: hullTex, bumpScale: 0.6, roughnessMap: hullTex, metalness: 0.5, roughness: 0.62, emissive: '#2a2f38' }));
+      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, map: hullTex, bumpMap: hullTex, bumpScale: 0.6, roughnessMap: hullTex, metalness: 0.55, roughness: 0.45, emissive: '#0b0d12' }));
       // Owner-coloured paint: stripes, bows and pods, lit a little so it reads.
       const accent = new THREE.Mesh(shipGeos[0].accent, new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.5 }));
       mesh.add(accent);
@@ -982,7 +982,7 @@ export function createView(canvas, labelRoot) {
 
   // Routes and intercept points.
   const routeGeo = new THREE.BufferGeometry();
-  const SEGS = 16; // route curves are drawn as this many segments
+  const SEGS = 64; // route curves are drawn as this many segments (enough to stay smooth)
   const routePos = new Float32Array(200 * SEGS * 6);
   const routeCol = new Float32Array(200 * SEGS * 6);
   routeGeo.setAttribute('position', new THREE.BufferAttribute(routePos, 3));
@@ -1001,7 +1001,7 @@ export function createView(canvas, labelRoot) {
   }
 
   // Order preview: dashed path to where the target will be.
-  const previewGeo = new THREE.BufferGeometry().setFromPoints(Array.from({ length: 33 }, () => new THREE.Vector3()));
+  const previewGeo = new THREE.BufferGeometry().setFromPoints(Array.from({ length: 129 }, () => new THREE.Vector3()));
   const preview = new THREE.Line(previewGeo, new THREE.LineDashedMaterial({ color: OWNER_COLORS[0], dashSize: 1.5, gapSize: 1 }));
   preview.frustumCulled = false;
   scene.add(preview);
@@ -1680,8 +1680,8 @@ export function createView(canvas, labelRoot) {
       const { p1 } = ui.preview;
       preview.visible = true;
       const pf = { ...ui.preview, t0: 0 };
-      for (let k = 0; k <= 32; k++) {
-        const q = fleetState(pf, (k / 32) * pf.T);
+      for (let k = 0; k <= 128; k++) {
+        const q = fleetState(pf, (k / 128) * pf.T);
         previewGeo.attributes.position.setXYZ(k, q.x, q.y, q.z);
       }
       previewGeo.attributes.position.needsUpdate = true;
