@@ -265,7 +265,7 @@ table.totals th { font-weight: 600; }
 }
 .note.gone { opacity: 0; }
 @keyframes slidein { from { transform: translateX(14px); opacity: 0; } }
-.vet { color: #ffd479; font-size: 11px; letter-spacing: 1px; }
+.vet { color: #c7a6ff; font-size: 11px; letter-spacing: 1px; }
 .tech-row .t em { display: block; font-style: normal; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
 #rbar { right: auto; max-width: 42vw; }
 
@@ -363,8 +363,8 @@ input:focus { border-color: var(--accent); }
 .primary.daily small { margin-left: 8px; font-size: 11px; opacity: 0.7; letter-spacing: 0.1em; }
 #menu > *, #lobby > *, #tutorial > * { flex-shrink: 0; }
 .lbl .ev { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
-.lbl .perk { font-style: normal; color: #ffd479; }
-.perkline { font-size: 12px; color: #ffd479; margin-top: 2px; }
+.lbl .perk { font-style: normal; color: #c7a6ff; }
+.perkline { font-size: 12px; color: #c7a6ff; margin-top: 2px; }
 .ctx .desc { flex-basis: 100%; font-size: 12px; color: var(--dim); line-height: 1.35; min-height: 16px; }
 .ctx .desc b { color: var(--fg); font-weight: 600; }
 .ctx button.opt.on { border-color: var(--accent); color: var(--accent); }
@@ -389,7 +389,7 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 /* Chips: short labels; the detail is in a tooltip (hover, or tap on touch). */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--line); font-size: 12px; color: var(--dim); cursor: help; white-space: nowrap; }
-.chip.gold { color: #ffd479; border-color: rgba(255, 212, 121, 0.35); }
+.chip.gold { color: #c7a6ff; border-color: rgba(199, 166, 255, 0.35); }
 .chip.dim { border: none; padding: 0 2px; }
 .chip.assist { border: none; padding: 0 2px; color: var(--accent); }
 #info .chip { margin: 0 2px; }
@@ -411,13 +411,13 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .board .hexc circle { fill: rgba(160, 180, 255, 0.25); }
 .board .hexc circle.on { fill: var(--accent); }
 .board .hexc.done .hx { fill: rgba(88, 184, 255, 0.24); stroke: var(--accent); }
-.board .hexc.run .hx { stroke: #ffd479; stroke-width: 1.6; animation: hexpulse 1.2s ease-in-out infinite alternate; }
+.board .hexc.run .hx { stroke: #c7a6ff; stroke-width: 1.6; animation: hexpulse 1.2s ease-in-out infinite alternate; }
 .board .ic.lu, .ic.lu { stroke-width: 2; }
 .board .hexc.poor { opacity: 0.4; }
 .board .hexc.locked { color: #5c6680; }
 .board .hexc.locked .hl { fill: #5c6680; }
 .board .hexc.sel .hx { stroke: #fff; stroke-width: 1.8; }
-@keyframes hexpulse { from { fill: rgba(255, 212, 121, 0.05); } to { fill: rgba(255, 212, 121, 0.22); } }
+@keyframes hexpulse { from { fill: rgba(199, 166, 255, 0.05); } to { fill: rgba(199, 166, 255, 0.22); } }
 .tdetail { padding: 8px 6px 2px; border-top: 1px solid var(--line); }
 .tdetail .th { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--fg); letter-spacing: 0.06em; text-transform: uppercase; font-size: 13px; }
 .tdetail .have { font-size: 12px; color: var(--dim); margin-bottom: 6px; }
@@ -433,7 +433,7 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .ctx.proj .meter { flex: 1; min-width: 40px; }
 .lbl .perk.proj { opacity: 0.7; animation: blink 1.4s ease-in-out infinite alternate; }
 .tdetail .mega { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
-.tdetail .mega .th { color: #ffd479; font-size: 12px; }
+.tdetail .mega .th { color: #c7a6ff; font-size: 12px; }
 .tdetail .mega .meter { display: block; width: 100%; margin-top: 4px; }
 .tdetail .nextrow button + button { margin-left: 4px; }
 
@@ -460,8 +460,8 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #rnd small { font-weight: 500; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
 #rnd .meter { position: absolute; left: 0; right: 0; width: auto; bottom: 0; height: 2px; background: none; }
 #rnd .meter i { display: block; height: 100%; background: var(--accent); }
-#rnd.idle { border-color: rgba(255, 212, 121, 0.45); }
-#rnd.idle small { color: #ffd479; }
+#rnd.idle { border-color: rgba(199, 166, 255, 0.45); }
+#rnd.idle small { color: #c7a6ff; }
 
 /* Menu: one obvious way to start. Resume leads when paused and New game steps
    back; the daily system and multiplayer sit together as smaller options. */
@@ -473,24 +473,24 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #menu #resume { margin: 8px 0 6px; }
 
 /* Megaprojects on the board: small gold hexes outside their joint tech. */
-.board .hexc.mega { color: #ffd479; }
-.board .hexc.mega .hx { fill: rgba(255, 212, 121, 0.07); stroke: rgba(255, 212, 121, 0.4); }
-.board .hexc.mega.done .hx { fill: rgba(255, 212, 121, 0.3); stroke: #ffd479; }
+.board .hexc.mega { color: #c7a6ff; }
+.board .hexc.mega .hx { fill: rgba(199, 166, 255, 0.07); stroke: rgba(199, 166, 255, 0.4); }
+.board .hexc.mega.done .hx { fill: rgba(199, 166, 255, 0.3); stroke: #c7a6ff; }
 .board .hexc.mega.taken { opacity: 0.3; }
 .board .hexc.mega.locked { color: #6d6650; }
-.board .hexc.mega.locked .hx { stroke: rgba(255, 212, 121, 0.18); }
+.board .hexc.mega.locked .hx { stroke: rgba(199, 166, 255, 0.18); }
 .tdetail > .mega:first-child { margin-top: 0; padding-top: 0; border-top: none; }
-.tdetail .unlocks { display: block; margin-top: 6px; color: #ffd479; }
+.tdetail .unlocks { display: block; margin-top: 6px; color: #c7a6ff; }
 
 .megarow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 0 8px; }
 .megarow span { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); margin-right: 4px; }
-.megarow .mtile { width: 38px; height: 38px; display: grid; place-items: center; color: #ffd479; border: 1px solid rgba(255, 212, 121, 0.4); background: rgba(255, 212, 121, 0.06);
+.megarow .mtile { width: 38px; height: 38px; display: grid; place-items: center; color: #c7a6ff; border: 1px solid rgba(199, 166, 255, 0.4); background: rgba(199, 166, 255, 0.06);
   clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px); }
 .megarow .mtile .ic { width: 18px; height: 18px; }
-.megarow .mtile.locked { color: #6d6650; border-color: rgba(255, 212, 121, 0.16); }
+.megarow .mtile.locked { color: #6d6650; border-color: rgba(199, 166, 255, 0.16); }
 .megarow .mtile.poor { opacity: 0.45; }
-.megarow .mtile.run { border-color: #ffd479; animation: hexpulse 1.2s ease-in-out infinite alternate; }
-.megarow .mtile.done { background: rgba(255, 212, 121, 0.3); border-color: #ffd479; }
+.megarow .mtile.run { border-color: #c7a6ff; animation: hexpulse 1.2s ease-in-out infinite alternate; }
+.megarow .mtile.done { background: rgba(199, 166, 255, 0.3); border-color: #c7a6ff; }
 .megarow .mtile.taken { opacity: 0.3; }
 .megarow .mtile.sel { border-color: #fff; box-shadow: inset 0 0 0 1px #fff; }
 .ctx.ships .slips { display: inline-flex; flex-direction: column; gap: 3px; margin-left: 8px; vertical-align: middle; }
@@ -504,3 +504,6 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .ctx.ships .bars .meter { width: 54px; height: 2px; }
 .ctx.shipbtns { flex-wrap: nowrap; }
 .ctx.shipbtns button[data-b='ship'] { flex: 1 1 auto; }
+/* Notes about a place: tap to fly there. */
+.note.go { pointer-events: auto; cursor: pointer; }
+.note.go:hover { background: rgba(14, 22, 38, 0.92); }

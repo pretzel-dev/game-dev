@@ -610,7 +610,7 @@ function renderBuildRow(s) {
       const state = x.scrap ? `scrapping · ${pct(p)}` : x.next ? `upgrading → ${ROMAN[x.next]} · ${pct(p)}` : x.left > 0 ? `building · ${pct(p)}` : def.maxLevel ? `level ${ROMAN[x.level]}` : 'online';
       const why = cantUpgrade(game, s, x);
       const dwhy = cantDemolish(game, s, x);
-      row = `<span class="what" title="${def.desc}">${def.name} · ${state}</span><button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>${demolishFee(x)}</small></button>`;
+      row = `<span class="what" title="${def.desc}">${def.name} · ${state}</span><button class="danger" data-d="${ui.slot}" ${dwhy ? 'disabled' : ''}>Scrap<small>+${demolishFee(x)}</small></button>`;
       // Every level at a glance: what it gives and what it costs to reach.
       if (def.maxLevel) {
         const steps = [];
@@ -812,7 +812,7 @@ $('rlist').addEventListener('click', (e) => {
     ui.mode = 'project'; ui.projKey = mg.dataset.mega;
     ui.selected = ui.target = null;
     $('research').hidden = true;
-    toast(`Tap one of your worlds to build the ${PROJECTS[ui.projKey].name}`, '#ffd479', ui.projKey);
+    toast(`Tap one of your worlds to build the ${PROJECTS[ui.projKey].name}`, '#c7a6ff', ui.projKey);
     updateActions();
   }
 });
@@ -934,10 +934,18 @@ document.addEventListener('pointerdown', (e) => {
 for (const ev of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(ev, (e) => { if (ev !== 'pointermove' || Math.hypot(e.movementX || 0, e.movementY || 0) > 6) clearTimeout(holdTimer); }, true);
 let toastTimer = 0;
 // Notifications: a small stack in the top corner; each fades after a while.
+// The world an event happened at, set while turning sim events into notes:
+// tapping the note flies the camera there.
+let toastAt = null;
 function toast(text, color, ic = null) {
   const feed = $('feed');
   const el = document.createElement('div');
   el.className = 'note';
+  if (toastAt !== null && game && game.bodies[toastAt]) {
+    const at = toastAt;
+    el.classList.add('go');
+    el.addEventListener('click', () => { view.focus(game, at); ui.mode = null; ui.fleet = null; ui.selected = game.bodies[at].owner === me ? at : null; ui.peek = at; updateActions(); });
+  }
   el.style.setProperty('--c', color);
   el.textContent = text;
   if (ic) el.insertAdjacentHTML('afterbegin', `${icon(ic)} `);
@@ -955,6 +963,7 @@ function drainEvents(evs = game.events.splice(0)) {
   const nm = (id) => game.bodies[id].name;
   const mine = ownerColor(me);
   for (const e of evs) {
+    toastAt = e.at ?? e.to ?? e.from ?? null;
     const c = ownerColor(e.owner);
     switch (e.type) {
       case 'launch':
@@ -990,7 +999,7 @@ function drainEvents(evs = game.events.splice(0)) {
         break;
       case 'event': {
         const E = EVENTS[e.kind];
-        if (e.phase === 'soon') toast(game.bodies[e.at].visitor ? `${nm(e.at)} incoming` : `${E.name} at ${nm(e.at)} in 1:00`, '#ffd479', e.kind);
+        if (e.phase === 'soon') toast(game.bodies[e.at].visitor ? `${nm(e.at)} incoming` : `${E.name} at ${nm(e.at)} in 1:00`, '#c7a6ff', e.kind);
         else if (e.phase === 'won') toast(`${e.owner === me ? 'You' : nameOf(e.owner)} secured the ${E.name.toLowerCase()} · ${e.what}`, ownerColor(e.owner), e.kind);
         else toast(`${E.name} at ${nm(e.at)} is gone`, '#858ca6', e.kind);
         break;
@@ -1020,6 +1029,7 @@ function drainEvents(evs = game.events.splice(0)) {
         break;
     }
   }
+  toastAt = null;
 }
 
 function tap(id, x, y, mouse = false) {

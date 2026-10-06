@@ -379,7 +379,18 @@ function shipGeometries() {
     cyl(0.04, 0.045, 0.05, -0.2, 'dark'),
     ...drive(0.055, -0.24),
   ], [0.035, 0.32, 0.28, 2]);
-  return [frigate, gunboat, carrier];
+  // Probe: a small bus with a dish and two solar wings, no crew section.
+  const probe = build([
+    box(0.05, 0.05, 0.07, 0, 0, 0),
+    tag(new THREE.CylinderGeometry(0.045, 0.01, 0.025, 14, 1, true).rotateX(X).translate(0, 0, 0.05), 'hull'), // dish
+    box(0.004, 0.004, 0.05, 0, 0, 0.07, 'dark'), // feed
+    box(0.16, 0.004, 0.045, 0.11, 0, 0, 'dark'), box(0.16, 0.004, 0.045, -0.11, 0, 0, 'dark'), // solar wings
+    box(0.05, 0.008, 0.012, 0, 0.029, 0, 'accent'),
+    ...drive(0.018, -0.045),
+  ]);
+  const ships = [frigate, gunboat, carrier];
+  ships.probe = probe;
+  return ships;
 }
 
 function stationMesh(size) {
@@ -910,7 +921,7 @@ export function createView(canvas, labelRoot) {
         const pts = [];
         for (let i = 0; i <= 96; i++) { const a = (i / 96) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr)); }
         reach = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
-          new THREE.LineDashedMaterial({ color: '#ffd479', transparent: true, opacity: 0.55, dashSize: 2.5, gapSize: 2 }));
+          new THREE.LineDashedMaterial({ color: '#c7a6ff', transparent: true, opacity: 0.55, dashSize: 2.5, gapSize: 2 }));
         reach.computeLineDistances();
         reach.visible = false;
         world.add(reach);
@@ -1057,6 +1068,7 @@ export function createView(canvas, labelRoot) {
 
   const tmp = new THREE.Vector3();
   const tmp2 = new THREE.Vector3();
+  const tmp3 = new THREE.Vector3();
   const dir = new THREE.Vector3();
   const perp = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
@@ -1111,18 +1123,20 @@ export function createView(canvas, labelRoot) {
       p.set(q.x + dx * k, q.y + dy * k, q.z + dz * k);
     }
   }
-  function placeShip(sh, p, n, color, burning, t, seed, id = seed, plume = 1) {
+  function placeShip(sh, p, n, color, burning, t, seed, id = seed, plume = 1, probe = false) {
     sh.mesh.visible = true;
-    const v = Math.floor(hash(id, 3) * shipGeos.length);
-    if (sh.mesh.geometry !== shipGeos[v].base) {
-      sh.mesh.geometry = shipGeos[v].base;
-      sh.accent.geometry = shipGeos[v].accent;
-      sh.lights.geometry = shipGeos[v].lights;
+    const G = probe ? shipGeos.probe : shipGeos[Math.floor(hash(id, 3) * shipGeos.length)];
+    if (sh.mesh.geometry !== G.base) {
+      sh.mesh.geometry = G.base;
+      sh.accent.geometry = G.accent;
+      sh.lights.geometry = G.lights;
     }
     const k = 0.9 + hash(id, 5) * 0.25;
-    sh.mesh.scale.set(0.8, 0.8, 0.8 * k);
-    // A slight per-ship tint on the hull (vertex colours carry the light/dark split).
-    sh.mesh.material.color.setHSL(0.6, 0.05 + hash(id, 9) * 0.08, 0.85 + hash(id, 11) * 0.15);
+    if (probe) sh.mesh.scale.setScalar(0.45);
+    else sh.mesh.scale.set(0.8, 0.8, 0.8 * k);
+    // A slight per-ship tint on the hull (vertex colours carry the light/dark
+    // split); kept mid-grey so the lit side shines and the far side goes dark.
+    sh.mesh.material.color.setHSL(0.6, 0.05 + hash(id, 9) * 0.08, 0.5 + hash(id, 11) * 0.12);
     unclip(p);
     sh.mesh.position.copy(p);
     tmp2.copy(p).add(n);
@@ -1130,7 +1144,7 @@ export function createView(canvas, labelRoot) {
     sh.accent.material.color.set(color);
     sh.accent.material.emissive.set(color).multiplyScalar(0.35);
     sh.plume.visible = burning;
-    if (burning) sh.plume.scale.set(0.8 + plume * 0.2, 0.8 + plume * 0.2, plume * (0.8 + Math.sin(t * 40 + seed) * 0.15));
+    if (burning) sh.plume.scale.set(0.8 + plume * 0.2, 0.8 + plume * 0.2, plume * (0.8 + Math.sin(t * 40 + seed) * 0.15) * (probe ? 0.35 : 1));
     // Visible from afar as a point of light; brighter while the drive burns.
     const ppu = ppuAt(p);
     sh.glint.visible = true;
@@ -1186,7 +1200,7 @@ export function createView(canvas, labelRoot) {
       }
       g.add(box(0.46, 0.02, 0.16, evDark));
     }
-    const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffd479', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#c7a6ff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     scene.add(g, glint);
     return { g, glint, kind };
   }
@@ -1510,7 +1524,7 @@ export function createView(canvas, labelRoot) {
         if (step) {
           const R = b.size * 2.1 + 0.6;
           v.mega = new THREE.Mesh(new THREE.TorusGeometry(R, Math.max(0.05, b.size * 0.04), 6, 96, (step / 60) * Math.PI * 2),
-            new THREE.MeshBasicMaterial({ color: '#ffd479', transparent: true, opacity: b.wonder ? 0.9 : 0.55, depthWrite: false }));
+            new THREE.MeshBasicMaterial({ color: '#c7a6ff', transparent: true, opacity: b.wonder ? 0.9 : 0.55, depthWrite: false }));
           v.mega.rotation.x = Math.PI / 2;
           v.g.add(v.mega);
         }
@@ -1538,7 +1552,7 @@ export function createView(canvas, labelRoot) {
         // holder's colour). Unheld: time until it's gone.
         const holding = !soon && h.holder !== NEUTRAL;
         const left = Math.max(0, soon ? h.starts - now : holding ? E.hold - h.held : h.ends - now);
-        const c = holding ? ownerColor(h.holder) : '#ffd479';
+        const c = holding ? ownerColor(h.holder) : '#c7a6ff';
         const t = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
         return `<span class="ev" style="color:${c}">${icon(h.kind)} ${soon ? `in ${t}` : holding ? `hold ${t}` : `gone ${t}`}</span>`;
       }).join('');
@@ -1585,7 +1599,10 @@ export function createView(canvas, labelRoot) {
           .addScaledVector(perp, (col * (0.9 + h3 * 0.5) + (row % 2) * 0.45 + (h1 - 0.5) * 0.7 + Math.sin(drift) * 0.08) * open)
           .addScaledVector(UP, ((h2 - 0.5) * 0.9 + Math.cos(drift * 0.8) * 0.06) * open)
           .addScaledVector(dir, (-row * (1.1 + h3 * 0.5) - (h2 - 0.5) * 0.8) * open);
-        placeShip(sh, tmp, nose, color, s.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'));
+        // Each ship turns over for braking at its own moment (a few seconds
+        // either side), so a task force doesn't flip as one.
+        const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 7);
+        placeShip(sh, tmp, tmp3.set(sj.nx, sj.ny, sj.nz), color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.

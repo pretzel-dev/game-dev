@@ -143,13 +143,15 @@ import { rng } from '../src/sim.js';
   orderShip(g, home); orderShip(g, home);
   for (let t = 0; t < RULES.ship.time + 1; t += 0.5) step(g, 0.5);
   assert.equal(home.ships, ships + 2, 'two yards build two ships in one build time');
-  // Cancel refunds; demolish costs a fee and frees the slot.
+  // Cancel refunds; scrapping gives some money back and frees the slot.
   orderShip(g, home);
   const c = g.credits[0];
   assert.ok(cancelShip(g, home));
   assert.equal(g.credits[0], c + RULES.ship.cost * RULES.cancelRefund);
   const slots = home.structures.length;
+  const c2 = g.credits[0];
   assert.ok(demolish(g, home, home.structures[1]));
+  assert.ok(g.credits[0] > c2, 'scrapping refunds part of the cost');
   assert.equal(home.structures.length, slots, 'scrapping takes time');
   for (let t = 0; t < RULES.scrapTime + 1; t += 0.5) step(g, 0.5);
   assert.equal(home.structures.length, slots - 1);
