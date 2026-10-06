@@ -284,7 +284,16 @@ function economy(game, ai, mine, coming, will) {
     if (own && credits > 900 && !threatened(own)) return fundProject(game, own, 'cash');
     if (!own && credits > 2500 && mine.length >= 4) {
       for (const key of ['sundiver', 'ringyard', 'citadel', 'massdriver', 'array', 'telescope']) {
-        const site = mine.filter((b) => !threatened(b) && !cantProject(game, b, key)).sort((a, b) => (b.home ? 1 : 0) - (a.home ? 1 : 0))[0];
+        // Put each where it pays: a ring yard or mass driver where ships are
+        // built and gathered, a fortress at home, the rest at home or safe.
+        const yardsAt = (b) => b.structures.filter((x) => x.type === 'shipyard').length;
+        const score = (b) => key === 'ringyard' ? yardsAt(b) * 10 + (free(b, 'shipyard') ? 1 : 0)
+          : key === 'massdriver' ? yardsAt(b) * 4 + b.ships + (b.home ? 3 : 0)
+            : b.home ? 5 : b.kind === 'planet' ? 1 : 0;
+        const sites = mine.filter((b) => !threatened(b) && !cantProject(game, b, key)).sort((a, b) => score(b) - score(a));
+        const site = sites[0];
+        // A ring yard needs a yard to speed up, or room to build one.
+        if (key === 'ringyard' && site && !yardsAt(site) && !free(site, 'shipyard')) continue;
         if (site) return startProject(game, site, key);
       }
     }
@@ -298,6 +307,9 @@ function economy(game, ai, mine, coming, will) {
   const home0 = mine.find((b) => b.home);
   if (smart && home0 && mine.length >= 6 && credits > 1000 && free(home0, 'bureau') && !home0.structures.some((x) => x.type === 'bureau')) return buildStructure(game, home0, 'bureau');
   // 3. More shipyards as the empire grows (one per three worlds).
+  // A ring yard (built or building) without a shipyard is wasted: give it one first.
+  const ring = mine.find((b) => (b.wonder === 'ringyard' || b.project?.key === 'ringyard') && !b.structures.some((x) => x.type === 'shipyard') && free(b, 'shipyard'));
+  if (ring) return buildStructure(game, ring, 'shipyard');
   const yards = mine.filter((b) => b.structures.some((x) => x.type === 'shipyard'));
   if (yards.length < 1 + Math.floor(mine.length / 3) && will()) {
     const site = mine.filter((b) => b.kind === 'planet' && free(b, 'shipyard')).sort((a, b) => b.size - a.size)[0];

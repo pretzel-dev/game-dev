@@ -864,7 +864,7 @@ $('launch').addEventListener('click', () => {
   doLaunch();
 });
 $('dark').addEventListener('click', () => { ui.dark = !ui.dark; updateActions(); });
-$('cancel').addEventListener('click', () => { ui.mode = null; ui.target = null; updateActions(); });
+$('cancel').addEventListener('click', () => { ui.dark = false; ui.mode = null; ui.target = null; updateActions(); });
 $('focus').addEventListener('click', () => {
   const id = ui.target ?? ui.selected;
   if (id !== null) view.focus(game, id);
@@ -884,6 +884,7 @@ function doLaunch() {
   }
   if (ui.count < 1) return;
   act({ type: 'launch', b: ui.selected, to: ui.target, n: ui.count, dark: ui.dark });
+  ui.dark = false; // a one-off choice: the next launch starts lit
   ui.mode = null;
   ui.selected = ui.target = null;
   updateActions();
