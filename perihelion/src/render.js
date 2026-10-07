@@ -222,31 +222,43 @@ function surfaceTex(b) {
       }
       g.putImageData(img, 0, 0);
     } else {
+      // Rocky worlds and moons: drawn from 3D noise on the sphere (seamless):
+      // dark lava plains and bright highlands, then craters with dark floors,
+      // bright rims and ejecta, big ones rare, small ones many.
       const moon = b.kind !== 'planet';
-      const hue = moon ? 0.08 : [0.08, 0.55, 0.02, 0.33][Math.floor(b.hue * 4)];
-      col.setHSL(hue, moon ? 0.05 : 0.3, moon ? 0.45 : 0.35);
-      g.fillStyle = `#${col.getHexString()}`;
-      g.fillRect(0, 0, w, h);
-      for (let i = 0; i < 90; i++) {
-        col.setHSL(hue + (r() - 0.5) * 0.05, moon ? 0.05 : 0.35, 0.25 + r() * 0.3);
-        g.fillStyle = `#${col.getHexString()}`;
-        g.globalAlpha = 0.35;
-        g.beginPath();
-        g.arc(r() * w, r() * h, 2 + r() * (moon ? 8 : 22), 0, Math.PI * 2);
-        g.fill();
+      const hue = moon ? 0.08 + (b.hue - 0.5) * 0.06 : [0.08, 0.55, 0.02, 0.33][Math.floor(b.hue * 4)];
+      const sat = moon ? 0.06 + b.hue * 0.06 : 0.3;
+      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
+      const W = img.width, H = img.height, dd = img.data;
+      const seed = b.id * 29 + 11;
+      const cr = Array.from({ length: moon ? 46 : 28 }, () => {
+        const z = r() * 2 - 1, a = r() * Math.PI * 2, q = Math.sqrt(1 - z * z);
+        const size = 0.03 + r() ** 3 * (moon ? 0.32 : 0.22);
+        return { x: Math.cos(a) * q, y: z, z: Math.sin(a) * q, s: size, c: Math.cos(size * 1.6) };
+      });
+      for (let y = 0; y < H; y++) {
+        const lat = (y / H - 0.5) * Math.PI;
+        const cl = Math.cos(lat);
+        for (let x = 0; x < W; x++) {
+          const lon = (x / W) * Math.PI * 2;
+          const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
+          const mare = fbm(px * 1.8, py * 1.8, pz * 1.8, seed, 4);
+          const grit = fbm(px * 9, py * 9, pz * 9, seed + 3, 3);
+          let l = (moon ? 0.5 : 0.36) + (mare > 0.55 ? -0.14 : 0.04) + (grit - 0.5) * 0.12;
+          for (const c of cr) {
+            const dot = px * c.x + py * c.y + pz * c.z;
+            if (dot < c.c) continue;
+            const d = Math.acos(Math.min(1, dot)) / c.s; // 0 at the centre, 1 at the rim
+            if (d < 0.8) l -= 0.1 * (1 - d * d);
+            else if (d < 1.05) l += 0.12 * (1 - Math.abs(d - 0.92) / 0.13);
+            else if (d < 1.6) l += 0.03 * (1.6 - d);
+          }
+          col.setHSL(hue + (grit - 0.5) * 0.02, sat, Math.max(0.05, Math.min(0.9, l)));
+          const i = (y * W + x) * 4;
+          dd[i] = col.r * 255; dd[i + 1] = col.g * 255; dd[i + 2] = col.b * 255; dd[i + 3] = 255;
+        }
       }
-      // Craters.
-      g.globalAlpha = 0.5;
-      for (let i = 0; i < (moon ? 40 : 12); i++) {
-        const x = r() * w;
-        const y = r() * h;
-        const cr = 1 + r() * 4;
-        g.strokeStyle = 'rgba(0,0,0,0.5)';
-        g.beginPath();
-        g.arc(x, y, cr, 0, Math.PI * 2);
-        g.stroke();
-      }
-      g.globalAlpha = 1;
+      g.putImageData(img, 0, 0);
       if (!moon) {
         g.fillStyle = 'rgba(255,255,255,0.8)';
         g.fillRect(0, 0, w, 5);
@@ -418,6 +430,49 @@ function shipGeometries() {
   return ships;
 }
 
+/** Solar cells: a grid of dark cells with bright gaps (made once). */
+let cells = null;
+function cellsTex() {
+  if (cells) return cells;
+  cells = canvasTex(64, 64, (g) => {
+    g.fillStyle = '#d8c0a0'; g.fillRect(0, 0, 64, 64);
+    g.fillStyle = '#6a4424';
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 4; x++) g.fillRect(x * 16 + 1, y * 8 + 1, 14, 6);
+  });
+  cells.wrapS = cells.wrapT = THREE.RepeatWrapping;
+  cells.repeat.set(1, 3);
+  return cells;
+}
+/** Hull plating: panels of slightly different tone, seams, hatches, scuffs (made once). */
+let plating = null;
+function platingTex() {
+  if (plating) return plating;
+  const hullTex = canvasTex(128, 128, (g) => {
+    const r = rng(17);
+    g.fillStyle = '#e4e4e4';
+    g.fillRect(0, 0, 128, 128);
+    const plate = (x, y, w, h) => {
+      if (w < 10 || h < 10 || r() < 0.15) {
+        const v = 200 + r() * 55 | 0;
+        g.fillStyle = `rgb(${v},${v},${v})`;
+        g.fillRect(x + 1, y + 1, w - 2, h - 2);
+        g.strokeStyle = 'rgba(40,44,52,0.55)';
+        g.lineWidth = 1;
+        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        if (r() < 0.25) { g.fillStyle = 'rgba(60,64,72,0.35)'; g.fillRect(x + w * 0.3, y + h * 0.3, w * 0.25, h * 0.2); }
+        return;
+      }
+      if (w > h) { const c = w * (0.3 + r() * 0.4) | 0; plate(x, y, c, h); plate(x + c, y, w - c, h); }
+      else { const c = h * (0.3 + r() * 0.4) | 0; plate(x, y, w, c); plate(x, y + c, w, h - c); }
+    };
+    plate(0, 0, 128, 128);
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(30,30,36,${0.04 + r() * 0.06})`; g.fillRect(r() * 128, r() * 128, 1 + r() * 6, 1); }
+  });
+  hullTex.wrapS = hullTex.wrapT = THREE.RepeatWrapping;
+  plating = hullTex;
+  return hullTex;
+}
+
 /**
  * Stations, three designs (picked per station): a heavy wheel on a docking
  * spine; a long spine with twin rings and copper solar wings; a blocky hub
@@ -426,9 +481,11 @@ function shipGeometries() {
  */
 function stationMesh(size, variant = 0) {
   const r = rng(variant * 31 + 7);
-  const hull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.55, roughness: 0.5 });
-  const dark = new THREE.MeshStandardMaterial({ color: '#4a4f5a', metalness: 0.6, roughness: 0.55 });
-  const copper = new THREE.MeshStandardMaterial({ color: '#8a5a2e', metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide });
+  // Plated like the ships: panels, seams and scuffs as colour, relief and shine.
+  const pl = platingTex();
+  const hull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.55, roughness: 0.6, map: pl, bumpMap: pl, bumpScale: 0.8, roughnessMap: pl });
+  const dark = new THREE.MeshStandardMaterial({ color: '#4a4f5a', metalness: 0.6, roughness: 0.6, map: pl, bumpMap: pl, bumpScale: 0.6 });
+  const copper = new THREE.MeshStandardMaterial({ color: '#8a5a2e', metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide, map: cellsTex() });
   const g = new THREE.Group();
   const add = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
   const cyl = (rad, len, seg = 14) => new THREE.CylinderGeometry(rad, rad, len, seg).rotateX(Math.PI / 2); // along z
@@ -523,6 +580,7 @@ function asteroidMesh(b) {
   const p = geo.attributes.position;
   const v = new THREE.Vector3();
   const n = new THREE.Vector3();
+  const cols = [];
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
     n.copy(v).normalize();
@@ -533,11 +591,19 @@ function asteroidMesh(b) {
       if (d < c.size) k -= 0.12 * Math.cos((d / c.size) * Math.PI * 0.5) ** 2;
       else if (d < c.size * 1.25) k += 0.03; // raised rim
     }
+    // Grit: small lumps all over, so it isn't a smooth potato.
+    k += (fbm(n.x * 7, n.y * 7, n.z * 7, b.id + 5, 3) - 0.5) * 0.08;
     v.multiplyScalar(k).multiply(stretch);
     p.setXYZ(i, v.x, v.y, v.z);
+    // Colour: patchy regolith, darker in crater bowls, paler on high ground.
+    let t = 0.42 + (fbm(n.x * 2.5, n.y * 2.5, n.z * 2.5, b.id + 9, 4) - 0.5) * 0.7 + (k - 1) * 1.6;
+    t += (fbm(n.x * 12, n.y * 12, n.z * 12, b.id + 2, 2) - 0.5) * 0.3;
+    t = Math.max(0.12, Math.min(0.75, t));
+    cols.push(t * 1.05, t * 0.97, t * 0.88);
   }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#8a7f72', roughness: 0.95, metalness: 0.05 }));
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.05 }));
 }
 
 // Screen size in pixels, for anything drawn at a fixed on-screen width.
@@ -1023,28 +1089,7 @@ export function createView(canvas, labelRoot) {
 
   // Hull plating: panels of slightly different tone, seams, hatches and a few
   // scuffs. Multiplies the hull colour, and doubles as bump and roughness.
-  const hullTex = canvasTex(128, 128, (g) => {
-    const r = rng(17);
-    g.fillStyle = '#e4e4e4';
-    g.fillRect(0, 0, 128, 128);
-    const plate = (x, y, w, h) => {
-      if (w < 10 || h < 10 || r() < 0.15) {
-        const v = 200 + r() * 55 | 0;
-        g.fillStyle = `rgb(${v},${v},${v})`;
-        g.fillRect(x + 1, y + 1, w - 2, h - 2);
-        g.strokeStyle = 'rgba(40,44,52,0.55)';
-        g.lineWidth = 1;
-        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-        if (r() < 0.25) { g.fillStyle = 'rgba(60,64,72,0.35)'; g.fillRect(x + w * 0.3, y + h * 0.3, w * 0.25, h * 0.2); }
-        return;
-      }
-      if (w > h) { const c = w * (0.3 + r() * 0.4) | 0; plate(x, y, c, h); plate(x + c, y, w - c, h); }
-      else { const c = h * (0.3 + r() * 0.4) | 0; plate(x, y, w, c); plate(x, y + c, w, h - c); }
-    };
-    plate(0, 0, 128, 128);
-    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(30,30,36,${0.04 + r() * 0.06})`; g.fillRect(r() * 128, r() * 128, 1 + r() * 6, 1); }
-  });
-  hullTex.wrapS = hullTex.wrapT = THREE.RepeatWrapping;
+  const hullTex = platingTex();
 
   // Ships: meshes with a drive plume and a far-away glint, pooled.
   const ships = [];
