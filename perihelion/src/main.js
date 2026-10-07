@@ -119,8 +119,10 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   const sys = SYSTEMS[game.system];
   toast(`${daily ? 'Daily · ' : ''}${sys.name}`, '#aab1c8');
 }
-function start() { leaveNet(); startGame(); }
-function startDaily() { leaveNet(); const d = dailySeed(); startGame({ seed: d.seed, system: d.system, day: d.key }); }
+// A game in progress (paused behind the menu): check before throwing it away.
+const okToLeave = () => $('resume').hidden || confirm('Leave the game in progress? It will be lost.');
+function start() { if (!okToLeave()) return; leaveNet(); startGame(); }
+function startDaily() { if (!okToLeave()) return; leaveNet(); const d = dailySeed(); startGame({ seed: d.seed, system: d.system, day: d.key }); }
 $('daily').addEventListener('click', startDaily);
 // System picker: tap to cycle Random and each type.
 const SYSTEM_CHOICES = ['random', ...SYSTEM_KEYS];
@@ -219,6 +221,7 @@ $('seats').addEventListener('click', (e) => {
 $('lobby-leave').addEventListener('click', () => { leaveNet(); $('lobby').hidden = true; $('menu').hidden = false; });
 
 $('host').addEventListener('click', () => {
+  if (!okToLeave()) return;
   leaveNet();
   menuMsg('Opening a room…');
   me = 0;
@@ -270,6 +273,7 @@ $('lobby-code').addEventListener('click', async () => {
   setTimeout(() => { hint.textContent = was; }, 1800);
 });
 $('join-go').addEventListener('click', () => {
+  if (!okToLeave()) return;
   const code = $('code').value.trim().toUpperCase();
   if (code.length !== 5) { menuMsg('Enter the 5-letter code'); return; }
   leaveNet();
@@ -405,6 +409,7 @@ function updatePeek() {
   setHTML($('peek'), `<div class="head"><span class="tag">${kind}</span><b>${b.name}</b><span class="grow"></span><span class="tag" style="color:${b.owner === NEUTRAL ? 'var(--dim)' : ownerColor(b.owner)}">${who}</span></div>`
     + `<div class="row2">${garrison}</div>${chips(b, { income: false, seen })}${spyLine(b)}`);
 }
+const narrow = () => window.innerWidth < 760;
 /** Where your credits per second come from, one source per line. */
 function incomeBreakdown() {
   const sum = { worlds: 0, mines: 0, skimmers: 0, exchanges: 0, bonuses: 0 };
@@ -452,7 +457,7 @@ function updateActions() {
   if (!s.ships && ui.mode === 'launch') ui.mode = null;
   const ready = readyShips(game, s);
   if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
-  const probing = ui.mode === 'probe';
+  const probing = ui.mode === 'probe' || ui.mode === 'spy'; // one-off picks: no ship count, no dark
   ui.count = ready ? Math.max(1, Math.min(ui.count, ready)) : 0;
   $('count').innerHTML = `${ui.count}<small>/${ready}</small>`;
   const launching = ui.mode === 'launch' || probing;
@@ -475,7 +480,7 @@ function updateActions() {
     renderBuildRow(s);
   } else if (ui.target === null) {
     ui.preview = null;
-    setHTML($('info'), `<span class="tag">${probing ? 'Probe from' : 'Launch from'}</span><b>${s.name}</b><span class="grow"></span><span class="tag">tap a destination</span>`);
+    setHTML($('info'), `<span class="tag">${ui.mode === 'spy' ? 'Send an agent' : probing ? 'Probe from' : 'Launch from'}</span><b>${s.name}</b><span class="grow"></span><span class="tag">tap a destination</span>`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = true;
   } else {
@@ -486,6 +491,14 @@ function updateActions() {
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'unknown' : cover ? `${defence} ${tip(`+${cover.toFixed(1)}`, `Cover from ${coverFrom(game, t).map((c) => c.from.name).join(', ')}`)}` : defence;
     const assist = ui.preview.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[ui.preview.assist].name}: a faster route`, 'assist')}` : '';
+    if (ui.mode === 'spy') {
+      ui.preview = null;
+      const why = cantSpy(game, me, t);
+      setHTML($('info'), `<span>${icon('spy')} Agent → <b>${t.name}</b> · <b>${SPY.cost}</b> · ${fmt(SPY.travel)}${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
+      $('launch').textContent = 'Confirm';
+      $('launch').disabled = !!why;
+      return;
+    }
     if (probing) {
       const why = cantProbe(game, s, t);
       setHTML($('info'), `<span>Probe → <b>${t.name}</b> · <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
@@ -616,7 +629,7 @@ function renderBuildRow(s) {
         const steps = [];
         for (let k = 1; k <= def.maxLevel; k++) {
           const cost = k === 1 ? def.cost : upgradeCost({ type: x.type, level: k - 1 });
-          const cls = k <= x.level ? 'done' : k === x.next ? 'now' : '';
+          const cls = k <= x.level ? 'done' : k === x.next ? 'now' : k > x.level + 1 || x.next ? 'later' : '';
           // The next level is the upgrade button itself.
           const next = k === x.level + 1 && !x.next && (!why || why === 'not enough credits');
           const tag = next ? `button data-u="${ui.slot}" ${why ? 'disabled' : ''}` : 'span';
@@ -644,9 +657,14 @@ function renderBuildRow(s) {
     html += `<div class="ctx ships"><span class="what">${s.queue ? `Queue <b class="num">${s.queue}</b>` : `${yards} yard${yards === 1 ? '' : 's'} idle`}<span class="bars">${bars}</span><span class="dim">${next}</span></span></div>`
       + `<div class="ctx shipbtns"><button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost} · ${fmt(shipTime(game, s))}</small></button>`
       + `<button data-cancel="1" class="danger" title="Cancel the last queued ship" ${s.queue ? '' : 'disabled'}>${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>`
-      + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
-  }
+      + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button>${spyBtn()}</div>`;
+  } else html += `<div class="ctx shipbtns">${spyBtn()}</div>`;
   setHTML($('buildrow'), html);
+}
+/** Spy: pick an enemy world to slip an agent onto (needs Signals intercept). */
+function spyBtn() {
+  const locked = game.tech[me].intel < 1;
+  return `<button class="mini" data-spy-mode="1" ${locked || game.credits[me] < SPY.cost ? 'disabled' : ''} title="${locked ? 'Spies need Signals intercept (Intel I)' : 'Spy: plant an agent on an enemy world'}">${icon('spy')}<small>${SPY.cost}</small></button>`;
 }
 $('buildrow').addEventListener('click', (e) => {
   if (ui.selected === null) return;
@@ -659,6 +677,7 @@ $('buildrow').addEventListener('click', (e) => {
     updateActions();
     return;
   }
+  if (e.target.closest('button[data-spy-mode]')) { ui.mode = 'spy'; ui.target = null; ui.slot = null; updateActions(); return; }
   if (e.target.closest('button[data-probe]')) {
     ui.mode = 'probe'; ui.target = null; ui.slot = null;
     updateActions();
@@ -769,7 +788,8 @@ function megaDetail(joint) {
   const key = Object.keys(PROJECTS).find((k) => PROJECTS[k].needs === joint);
   if (!key) return '';
   const P = PROJECTS[key];
-  const head = `<div class="mega"><div class="th">${icon(key)} <b>${P.name}</b> ${tip('megaproject', `${P.where === 'giant' ? 'Gas giants only. ' : P.where === 'inner' ? 'Innermost planet only. ' : P.where === 'planet' ? 'Planets only. ' : 'Any world of yours. '}One per world, and only one empire can finish it`, 'dim')}</div><small>${P.text}</small>`;
+  const head = `<div class="mega"><div class="th">${icon(key)} <b>${P.name}</b> <span class="dim">megaproject</span></div><small>${P.text}</small>`
+    + `<small class="dim">${P.where === 'giant' ? 'Gas giants only' : P.where === 'inner' ? 'Innermost planet only' : P.where === 'planet' ? 'Planets only' : 'Any world of yours'} · one per world · only one empire can finish it</small>`;
   const owner = game.wonders && game.wonders[key] !== undefined ? game.bodies[game.wonders[key]] : null;
   if (owner) return `${head}<small>${owner.owner === me ? 'Yours' : `Built by ${nameOf(owner.owner)}`}, at ${owner.name}</small></div>`;
   const mine = game.bodies.find((b) => b.owner === me && b.project && b.project.key === key);
@@ -791,7 +811,9 @@ function renderResearch() {
   // The R&D button sits bottom left, out of the way of the world panels, and
   // shows what's being researched.
   $('rbar').hidden = true;
-  $('rnd').hidden = !running || knockedOut || !$('menu').hidden || !$('end').hidden || !$('actions').hidden || !$('peek').hidden || !$('fleet').hidden || !$('research').hidden;
+  $('rnd').hidden = !running || knockedOut || !$('menu').hidden || !$('end').hidden || !$('research').hidden
+    // On a phone the world panels need the bottom of the screen; on a wide screen there's room for both.
+    || (narrow() && (!$('actions').hidden || !$('peek').hidden || !$('fleet').hidden));
   $('rnd').classList.toggle('idle', !p);
   setHTML($('rndsub'), p ? `${TECH[p.key] ? TECH[p.key].name : JOINTS[p.key].name} · ${fmt(p.left / researchSpeed(game, me))}` : 'idle');
   $('rndbar').style.width = p ? pct(1 - p.left / p.total) : '0%';
@@ -873,6 +895,14 @@ $('focus').addEventListener('click', () => {
 
 function doLaunch() {
   if (ui.selected === null || ui.target === null) return;
+  if (ui.mode === 'spy') {
+    const t = game.bodies[ui.target];
+    if (act({ type: 'spy', b: ui.target })) toast(`Agent on the way to ${t.name}`, ownerColor(me), 'spy');
+    ui.mode = null;
+    ui.selected = ui.target = null;
+    updateActions();
+    return;
+  }
   if (ui.mode === 'probe') {
     // A probe: a fast, one-way flyby that shows the target for a while.
     const t = game.bodies[ui.target];
@@ -1058,7 +1088,7 @@ function tap(id, x, y, mouse = false) {
     updateActions();
     return;
   }
-  if (ui.mode === 'launch' || ui.mode === 'probe') {
+  if (ui.mode === 'launch' || ui.mode === 'probe' || ui.mode === 'spy') {
     // Picking a destination: any other world becomes the target; empty
     // space backs out of launching and deselects.
     if (id === null) { ui.selected = ui.target = null; ui.mode = null; } else ui.target = id !== ui.selected ? id : null;

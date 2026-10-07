@@ -454,7 +454,7 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.equal(S.cantProject(g, homes[1], 'citadel'), 'needs Point-defence net', 'megaprojects come from research');
   g.tech[0].pdnet = g.tech[1].pdnet = g.tech[0].targeting = 1;
   assert.ok(S.startProject(g, homes[0], 'citadel') && S.startProject(g, homes[1], 'citadel'));
-  assert.equal(S.cantProject(g, homes[0], 'telescope'), 'this world already has one');
+  assert.equal(S.cantProject(g, homes[0], 'lance'), 'this world already has one');
   const c1 = g.credits[1];
   homes[0].project.left = 5;
   S.fundProject(g, homes[0], 'cash');
