@@ -80,7 +80,7 @@ Armour, Industry) round a centre hex, and between each neighbouring pair a
 |---|---|---|
 | Entangled signals | Intel + Sensors | Read every fleet you can see (size, destination, arrival); get warnings |
 | Targeting data | Sensors + Weapons | +20% firepower when attacking |
-| Kinetic strike | Weapons + Drives | Arriving fleets open with a volley: a fifth of their number in defenders destroyed |
+| Kinetic strike | Weapons + Drives | Arriving fleets open with a volley: a tenth of their number in defenders destroyed |
 | Torch production | Drives + Industry | Ships build 25% faster and fly 10% faster |
 | Hardened colonies | Industry + Armour | +1 gun on every world; guns rebuild twice as fast |
 | Point-defence net | Armour + Intel | Your worlds shoot down 15% of every attacking fleet as it arrives |
@@ -159,7 +159,8 @@ preview server running).
   and guns, 4 ships and 400 credits. A captured world keeps its finished
   structures; anything unfinished and any queued ships are lost. Nothing is
   built while a world is under attack.
-- **Running dark:** while picking a destination, tap **Dark** (or D). The
+- **Running dark:** while picking a destination, tap the moon button (or D); a fleet
+  already flying can switch too (tap it, then **Go dark** / **Light up**; it re-plans). The
   fleet makes a short burn, coasts with its drive off, then makes a short
   braking burn: it takes about half as long again, but while coasting enemy
   sensors only spot it at a third of their usual range (a ☾ on its tag), and a launch from a world they can't see goes unannounced.
@@ -245,6 +246,13 @@ every other (and a quick "human" stand-in) to check the order holds.
 
 Later: move the game onto a server (Cloudflare) so it keeps running without
 the host and nobody can pause.
+
+## Dev view
+
+Tap **Dev view** on the menu to turn it on. In a solo game a bar under the
+clock lets you see the map as any empire (or everything), and run the clock
+at 16×; a selected fleet shows which empires can see it right now (handy for
+checking running dark).
 
 ## Controls
 

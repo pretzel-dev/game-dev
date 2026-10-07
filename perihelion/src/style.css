@@ -517,3 +517,30 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .ctx.shipbtns button small { margin-left: 4px; }
 .ctx.shipbtns button.mini { padding: 0 7px; }
 .ctx.shipbtns button[data-b='ship'] { min-width: 0; padding: 0 8px; }
+
+/* Ship share slider: a percentage that carries over between launches. */
+#pct { width: 120px; accent-color: var(--accent); touch-action: none; height: 32px; }
+#count small { margin-left: 2px; }
+/* Fleet panel: switch drive mode in flight. */
+#fleet .fdark { margin-left: 8px; padding: 3px 8px; border: 1px solid var(--line); color: var(--dim); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+#fleet .fdark.on { color: var(--accent); border-color: var(--accent); }
+/* Megaproject: standing hint while you pick a world. */
+#hint { position: fixed; left: 50%; bottom: calc(var(--safe-b) + 18px); transform: translateX(-50%); width: min(420px, calc(100% - 32px)); z-index: 6;
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid rgba(199, 166, 255, 0.6); color: var(--fg); font-size: 13px; }
+#hint[hidden] { display: none; }
+#hint #hintText { flex: 1; }
+#hint small { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; }
+#hint button { padding: 6px 12px; border: 1px solid var(--line); color: var(--dim); text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
+.lbl.can::before { content: ''; position: absolute; left: 50%; top: -34px; width: 40px; height: 40px; margin-left: -20px; border: 2px solid #c7a6ff; border-radius: 50%; animation: blink 0.9s ease-in-out infinite alternate; pointer-events: none; }
+/* Dev view bar. */
+#devbar { position: fixed; top: calc(var(--safe-t) + 34px); left: 16px; z-index: 7; display: flex; gap: 4px; align-items: center; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.1em; }
+#devbar[hidden] { display: none; }
+#devbar button { padding: 3px 8px; border: 1px solid var(--line); background: var(--panel); font-size: 11px; color: var(--fg); }
+#devbar button.on { border-color: #fff; }
+.link.dev { font-size: 11px; opacity: 0.6; }
+#pct { width: 76px; }
+#actions.launching #count { min-width: 0; font-size: 15px; }
+#actions.launching #count small { font-size: 10px; }
+#actions.launching #cancel { padding: 0 8px; }
+#pct { width: 70px; }
+#hint { background: rgba(6, 10, 18, 0.96); }

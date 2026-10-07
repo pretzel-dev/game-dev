@@ -495,5 +495,19 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.ok(S.catchRate(g, homes[1]) > r0 * 5, 'intel and a bureau raise the catch rate');
   for (let k = 0; k < 2000 && (g.spies || []).length; k++) step(g, 1);
   assert.equal(g.spies.length, 0, 'spies get caught eventually');
+  // Switching drive mode in flight re-plans and still arrives.
+  {
+    const g2 = createGame({ seed: 23 });
+    const h = g2.bodies.find((b) => b.owner === 0 && b.home);
+    const tgt = g2.bodies.find((b) => b.owner === NEUTRAL && !b.visitor && b.kind === 'planet');
+    h.ships = 4; h.restUntil = 0;
+    const fl = launch(g2, h, tgt, 2);
+    step(g2, fl.T * 0.2);
+    const T0 = fl.t0 + fl.T;
+    assert.ok(S.setDark(g2, fl, true) && fl.dark && fl.t0 + fl.T > T0, 'going dark mid-flight arrives later');
+    const end = fleetState(fl, fl.t0 + fl.T);
+    assert.ok(dist(end, posAt(g2, tgt, fl.t0 + fl.T)) < 6, 'and still meets its target');
+    assert.ok(S.setDark(g2, fl, false) && !fl.dark, 'and can light up again');
+  }
   console.log('running dark and spies: ok');
 }

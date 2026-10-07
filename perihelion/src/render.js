@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { icon } from './icons.js';
-import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present } from './sim.js';
+import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
@@ -1686,6 +1686,7 @@ export function createView(canvas, labelRoot) {
         + (b.wonder ? `<i class="perk">${icon(b.wonder)}</i> ` : b.project ? `<i class="perk proj">${icon(b.project.key)}</i> ` : '');
       const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}${evs}<small>${perk}${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
+      v.label.classList.toggle('can', ui.mode === 'project' && b.owner === (ui.me ?? 0) && !cantProject(game, b, ui.projKey));
       v.label.style.visibility = 'visible';
       const x = (tmp.x * 0.5 + 0.5) * w;
       const y = (-tmp.y * 0.5 + 0.5) * h;
@@ -1718,7 +1719,8 @@ export function createView(canvas, labelRoot) {
         const row = Math.floor(j / 3);
         const col = (j % 3) - 1;
         const since = now - f.t0;
-        const open = THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.92 + 0.08;
+        // Close up a little near the ends, but never into one point.
+        const open = THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.5 + 0.5;
         const h1 = hash(f.id, j), h2 = hash(j, f.id), h3 = hash(f.id + 7, j * 3);
         const drift = t * (0.3 + h1 * 0.4) + h2 * 6;
         tmp.set(s.x, s.y, s.z)
