@@ -117,7 +117,7 @@ export const PROJECTS = {
   ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 2000, time: 480 },
   citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 2000, time: 480 },
   array: { needs: 'ansible', name: 'Ansible array', where: 'any', text: 'See every world and fleet in the system, and where they are going', cost: 2000, time: 480 },
-  college: { needs: 'targeting', name: 'War college', where: 'any', text: 'Simulator-trained crews: every ship you build starts blooded (first veteran rank)', cost: 2000, time: 480 },
+  college: { needs: 'targeting', name: 'War college', where: 'any', text: 'Simulator-trained crews: every ship you build starts as a veteran (second rank)', cost: 2000, time: 480 },
 };
 export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
 const holdsWonder = (game, owner, key) => owner !== NEUTRAL && game.bodies.some((b) => b.wonder === key && b.owner === owner);
@@ -1374,7 +1374,7 @@ export function step(game, dt) {
     b.slips.length = Math.min(b.slips.length, yards, b.queue);
     const yardK = (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1);
     b.slips = b.slips.map((p) => p + (dt * speed * yardK) / RULES.ship.time);
-    for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, Math.max(b.perk === 'hulk' ? PERKS.hulk.vet : 0, holdsWonder(game, b.owner, 'college') ? 1 : 0), 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
+    for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, Math.max(b.perk === 'hulk' ? PERKS.hulk.vet : 0, holdsWonder(game, b.owner, 'college') ? 2.5 : 0), 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
     b.build = b.slips.length ? Math.max(...b.slips) : 0;
     const top = topGuns(game, b);
