@@ -429,21 +429,21 @@ function incomeBreakdown() {
 function spyLine(b) {
   if (b.owner === NEUTRAL || b.owner === me || b.visitor || knockedOut) return '';
   const mine = (game.spies || []).find((x) => x.owner === me && x.body === b.id);
-  if (mine && mine.since > game.time) return `<div class="spy">${icon('spy')} ${tip(`Agent on the way · ${fmt(mine.since - game.time)}`, 'Slipping in quietly: they start work when they arrive')}</div>`;
+  if (mine && mine.since > game.time) return `<div class="spy">${icon('spy')} ${tip(`Recruiting · ${fmt(mine.since - game.time)}`, 'Finding someone on the inside: they start work once recruited')}</div>`;
   if (mine) {
     const risk = catchRate(game, b) * 60;
     const odds = risk < 0.25 ? 'low' : risk < 0.5 ? 'rising' : 'high';
     return `<div class="spy">${icon('spy')} ${tip(`Agent in place · ${fmt(game.time - mine.since)}`, 'Shows you this world and its launches, skims its income and slows any megaproject here')}<span class="grow"></span>${tip(`risk ${odds}`, 'Each minute there\'s a chance the agent is caught. Their Intel and a security bureau nearby raise it', odds === 'high' ? 'warn' : 'dim')}</div>`;
   }
   const why = cantSpy(game, me, b);
-  if (why === 'needs Signals intercept') return `<div class="spy dim">${icon('spy')} Spies need Signals intercept</div>`;
-  return `<div class="spy">${icon('spy')} <span class="dim">No agent here</span><span class="grow"></span><button data-spy="${b.id}" ${why ? 'disabled' : ''} title="Plant a spy">Plant spy<small>${SPY.cost}</small></button></div>`;
+  if (why === 'needs Signals intercept') return `<div class="spy dim">${icon('spy')} Agents need Signals intercept (Intel I)</div>`;
+  return `<div class="spy">${icon('spy')} <span class="dim">No agent here</span><span class="grow"></span><button data-spy="${b.id}" ${why ? 'disabled' : ''} title="Recruit an agent there">Recruit agent<small>${SPY.cost}</small></button></div>`;
 }
 $('peek').addEventListener('click', (e) => {
   const sb = e.target.closest('button[data-spy]');
   if (!sb) return;
   const b = game.bodies[+sb.dataset.spy];
-  if (act({ type: 'spy', b: b.id })) toast(`Agent on the way to ${b.name}`, ownerColor(me), 'spy');
+  if (act({ type: 'spy', b: b.id })) toast(`Recruiting an agent on ${b.name}`, ownerColor(me), 'spy');
   updateActions();
 });
 
@@ -454,6 +454,17 @@ function updateActions() {
   const show = !!s && s.owner === me && running;
   $('actions').hidden = !show;
   if (!show) { ui.preview = null; if (ui.mode !== 'project') ui.mode = null; return; }
+  if (ui.mode === 'projconfirm') {
+    const P = PROJECTS[ui.projKey];
+    const why = cantProject(game, s, ui.projKey);
+    $('actions').classList.add('launching');
+    $('buildrow').hidden = $('stepper').hidden = $('dark').hidden = true;
+    $('cancel').hidden = false;
+    setHTML($('info'), `<span>${icon(ui.projKey)} Build the <b>${P.name}</b> at <b>${s.name}</b> · <b>${P.cost}</b> · ${fmt(P.time / researchSpeed(game, me))}${why ? ` · <span class="warn">${why}</span>` : ''}</span><small class="dim" style="flex-basis:100%">${P.text}. Only one empire can finish it; if a rival gets there first you get half back.</small>`);
+    $('launch').textContent = 'Confirm';
+    $('launch').disabled = !!why;
+    return;
+  }
   if (!s.ships && ui.mode === 'launch') ui.mode = null;
   const ready = readyShips(game, s);
   if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
@@ -664,7 +675,7 @@ function renderBuildRow(s) {
 /** Spy: pick an enemy world to slip an agent onto (needs Signals intercept). */
 function spyBtn() {
   const locked = game.tech[me].intel < 1;
-  return `<button class="mini" data-spy-mode="1" ${locked || game.credits[me] < SPY.cost ? 'disabled' : ''} title="${locked ? 'Spies need Signals intercept (Intel I)' : 'Spy: plant an agent on an enemy world'}">${icon('spy')}<small>${SPY.cost}</small></button>`;
+  return `<button class="mini" data-spy-mode="1" ${locked || game.credits[me] < SPY.cost ? 'disabled' : ''} title="${locked ? 'Agents need Signals intercept (Intel I)' : 'Agent: recruit one on an enemy world'}">${icon('spy')}<small>${SPY.cost}</small></button>`;
 }
 $('buildrow').addEventListener('click', (e) => {
   if (ui.selected === null) return;
@@ -796,9 +807,7 @@ function megaDetail(joint) {
   const rivals = game.bodies.filter((b) => b.owner !== me && b.project && b.project.key === key).length;
   const race = rivals ? `<small class="warn">${rivals} rival${rivals === 1 ? '' : 's'} building it</small>` : '';
   if (mine) {
-    return `${head}${race}<div class="nextrow"><span><small>At ${mine.name} · ${fmt(Math.max(0, mine.project.left / researchSpeed(game, me) - Math.min(mine.project.rush || 0, mine.project.left / researchSpeed(game, me) / 2)))} left${mine.project.rush > 0 ? ` · ${tip('rushing', `Twice as fast for ${fmt(mine.project.rush)}`, 'gold')}` : ''}</small><i class="meter"><i style="width:${pct(1 - mine.project.left / P.time)}"></i></i></span>`
-      + `<button data-fund="cash" data-fb="${mine.id}" ${game.credits[me] < PROJECT_FUND.credits ? 'disabled' : ''} title="Pay for overtime: work goes twice as fast for ${PROJECT_FUND.cut}s">Rush<small>${PROJECT_FUND.credits}</small></button>`
-      + `<button data-fund="ship" data-fb="${mine.id}" ${readyShips(game, mine) < 1 ? 'disabled' : ''} title="Break up a docked ship there for parts and crew: work goes twice as fast for ${PROJECT_FUND.crewCut}s">Rush<small>1 ship</small></button></div></div>`;
+    return `${head}${race}<div class="nextrow"><span><small>At ${mine.name} · ${fmt(mine.project.left / researchSpeed(game, me))} left · research stations speed it up</small><i class="meter"><i style="width:${pct(1 - mine.project.left / P.time)}"></i></i></span></div></div>`;
   }
   const ready = game.tech[me][joint];
   const sites = game.bodies.filter((b) => b.owner === me && !cantProject(game, b, key));
@@ -894,10 +903,17 @@ $('focus').addEventListener('click', () => {
 });
 
 function doLaunch() {
+  if (ui.mode === 'projconfirm' && ui.selected !== null) {
+    const b = game.bodies[ui.selected];
+    if (act({ type: 'project', b: b.id, k: ui.projKey })) toast(`${PROJECTS[ui.projKey].name} begun at ${b.name}`, ownerColor(me), ui.projKey);
+    ui.mode = null;
+    updateActions();
+    return;
+  }
   if (ui.selected === null || ui.target === null) return;
   if (ui.mode === 'spy') {
     const t = game.bodies[ui.target];
-    if (act({ type: 'spy', b: ui.target })) toast(`Agent on the way to ${t.name}`, ownerColor(me), 'spy');
+    if (act({ type: 'spy', b: ui.target })) toast(`Recruiting an agent on ${t.name}`, ownerColor(me), 'spy');
     ui.mode = null;
     ui.selected = ui.target = null;
     updateActions();
@@ -1082,8 +1098,9 @@ function tap(id, x, y, mouse = false) {
   if (ui.mode === 'project') {
     const b = id !== null ? game.bodies[id] : null;
     const why = b ? cantProject(game, b, ui.projKey) : 'cancelled';
-    if (b && !why) { if (act({ type: 'project', b: id, k: ui.projKey })) toast(`${PROJECTS[ui.projKey].name} begun at ${b.name}`, ownerColor(me), ui.projKey); }
-    else toast(why === 'cancelled' ? 'Megaproject cancelled' : `Can't build it there: ${why}`, '#858ca6');
+    // A suitable world: show what will happen and wait for Confirm, like a launch.
+    if (b && !why) { ui.selected = id; ui.peek = null; ui.mode = 'projconfirm'; updateActions(); return; }
+    toast(why === 'cancelled' ? 'Megaproject cancelled' : `Can't build it there: ${why}`, '#858ca6');
     ui.mode = null;
     updateActions();
     return;

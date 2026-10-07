@@ -146,11 +146,36 @@ function surfaceTex(b) {
           const pz = Math.sin(lon) * cl;
           // Domain warp, then fractal height.
           const wx = fbm(px * 1.5, py * 1.5, pz * 1.5, seed + 9, 3) * 0.6;
-          const h = fbm(px * 1.6 + wx, py * 1.6 - wx, pz * 1.6 + wx, seed, 6) - 0.04;
+          const bio = b.biome || 'temperate';
+          const sea = { desert: -0.22, ocean: 0.14, ice: 0.02, jungle: 0.02, volcanic: -0.05 }[bio] || 0.04;
+          const h = fbm(px * 1.6 + wx, py * 1.6 - wx, pz * 1.6 + wx, seed, 6) - sea;
           const ab = Math.abs(py);
-          const ice = ab > 0.86 - h * 0.25;
+          const ice = ab > (bio === 'ice' ? 0.45 : bio === 'desert' ? 0.94 : bio === 'jungle' ? 0.92 : 0.86) - h * 0.25;
           let R, G, B;
           if (ice) { R = 236; G = 242; B = 248; }
+          else if (bio !== 'temperate' && bio !== 'ocean') {
+            // Other worlds: the same heights, painted in their own palette.
+            const k = Math.max(0, 1 + Math.min(0, h) * 7);
+            const m = Math.min(1, Math.max(0, h) * 3.2);
+            const v = fbm(px * 3, py * 3, pz * 3, seed + 4, 3);
+            if (bio === 'desert') {
+              // Dunes and dry basins; dark rock ridges; a few salt pans.
+              if (h < 0) { R = 150 + 40 * k; G = 105 + 30 * k; B = 70 + 20 * k; }
+              else { R = 196 + v * 40 - m * 50; G = 140 + v * 30 - m * 45; B = 82 + v * 10 - m * 30; }
+            } else if (bio === 'ice') {
+              if (h < 0) { R = 30 + 40 * k; G = 52 + 50 * k; B = 78 + 40 * k; }
+              else { R = 196 + v * 40 - m * 30; G = 210 + v * 30 - m * 25; B = 224 + v * 20 - m * 10; }
+            } else if (bio === 'jungle') {
+              if (h < 0) { R = 14 + 20 * k; G = 70 + 60 * k; B = 72 + 40 * k; }
+              else { R = 30 + v * 40 + m * 40; G = 92 + v * 50 + m * 10; B = 30 + v * 20 + m * 20; }
+            } else {
+              // Volcanic, industrial: black basalt, rust plains, glowing seams.
+              if (h < 0) { R = 70 + 50 * k; G = 30 + 16 * k; B = 22 + 10 * k; }
+              else { R = 44 + v * 40 + m * 20; G = 38 + v * 22 + m * 12; B = 36 + v * 16 + m * 10; }
+              const seam = Math.exp(-(((fbm(px * 6, py * 6, pz * 6, seed + 11, 3) - 0.5) / 0.025) ** 2));
+              if (h > 0) { R += seam * 170; G += seam * 60; }
+            }
+          }
           else if (h < 0) {
             // Ocean: shallow shelves turquoise, deep water dark.
             const k = Math.max(0, 1 + h * 7);
@@ -519,9 +544,12 @@ function orbitLine(b) {
   return mesh;
 }
 
+/** Homeworld characters: the sky colour of each. */
+const BIOMES = ['temperate', 'desert', 'ice', 'jungle', 'volcanic', 'ocean'];
+const BIOME_SKY = { temperate: '#6fb6ff', desert: '#f0b878', ice: '#c4e4ff', jungle: '#86e6a8', volcanic: '#ff8a5a', ocean: '#5aa0ff' };
 /** A thin atmosphere: a shell that glows toward the limb (fresnel). */
 function atmosphere(b) {
-  const color = b.giant ? new THREE.Color().setHSL(giantPalette(b)[0], 0.5, 0.75) : new THREE.Color(b.home ? '#6fb6ff' : '#b9c8dc');
+  const color = b.giant ? new THREE.Color().setHSL(giantPalette(b)[0], 0.5, 0.75) : new THREE.Color(b.home ? BIOME_SKY[b.biome] || BIOME_SKY.temperate : '#b9c8dc');
   const strength = b.home ? 1.1 : b.giant ? 0.45 : 0.6;
   return new THREE.Mesh(
     new THREE.SphereGeometry(b.size * 1.05, 48, 32),
@@ -838,6 +866,12 @@ export function createView(canvas, labelRoot) {
 
   let companionPath = null;
   function build(game) {
+    // Each homeworld gets its own character (no two alike in a game).
+    {
+      const r = rng((game.nameSeed || 1) + 77);
+      const pool = [...BIOMES];
+      for (const h of game.bodies.filter((b) => b.home)) h.biome = pool.splice(Math.floor(r() * pool.length), 1)[0] || 'temperate';
+    }
     world.clear();
     labelRoot.innerHTML = '';
     fleetLabels.length = 0;
@@ -1601,7 +1635,7 @@ export function createView(canvas, labelRoot) {
           .addScaledVector(dir, (-row * (1.1 + h3 * 0.5) - (h2 - 0.5) * 0.8) * open);
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
-        const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 7);
+        const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);
         placeShip(sh, tmp, tmp3.set(sj.nx, sj.ny, sj.nz), color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {

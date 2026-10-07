@@ -95,19 +95,18 @@ tap it to see what it needs, Build, then tap one of your worlds. One per world, 
 8 minutes, and your research
 stations speed it up. Each kind can be finished only once per game; several
 empires can race for the same one, and the first to finish wins it; the rest
-get half their money back. **Rush** one by paying 200 (work goes twice as
-fast for 30 s) or breaking up a docked ship there (20 s); it never jumps
-ahead. A gold ring round the world shows how far along it is, to everyone. Everyone is told when a project
+get half their money back. Only research stations speed one up. Building asks you to confirm, like a
+launch. A violet ring round the world shows how far along it is, to everyone. Everyone is told when a project
 starts, and a captured world's project or wonder goes to the captor.
 
 | Megaproject | Unlocked by | Where | Effect |
 |---|---|---|---|
-| Sun-diver collectors | Torch production | Innermost planet | +8 credits/s |
+| Sun-diver collectors | Torch production | Innermost planet | Every world you hold earns 50% more |
 | Mass driver | Kinetic strike | Any planet | Fleets launched here fly 50% faster |
 | Ring yard | Hardened colonies | Gas giant | Ships build three times as fast here |
 | Fortress world | Point-defence net | Any world | Three times the guns; its cover reaches its family at full strength |
 | Ansible array | Entangled signals | Any world | See every world and fleet in the system, and where they are going |
-| Orbital lance | Targeting data | Any world | Guns on every world you hold fire 50% harder |
+| War college | Targeting data | Any world | Every ship you build starts blooded (first veteran rank) |
 
 ## How to play
 
@@ -164,9 +163,9 @@ preview server running).
   fleet makes a short burn, coasts with its drive off, then makes a short
   braking burn: it takes about half as long again, but while coasting enemy
   sensors only spot it at a third of their usual range (a ☾ on its tag), and a launch from a world they can't see goes unannounced.
-- **Spies:** with Signals intercept (Intel I), select one of your worlds,
-  tap the spy button (250 credits), then an enemy world and Confirm (or tap
-  the enemy world and **Plant spy**). The agent takes 40 seconds to slip in, then shows you that world, its launches
+- **Agents:** Signals intercept (Intel I) unlocks them. Select one of your worlds,
+  tap the agent button (250 credits), then an enemy world and Confirm (or tap
+  the enemy world and **Recruit agent**). Recruiting takes 40 seconds, then the agent shows you that world, its launches
   (even dark ones) and its surroundings, skims part of its income, and slows
   any megaproject there by a quarter. Every second there's a small chance the
   agent is caught (about five minutes on average); the owner's Intel level
