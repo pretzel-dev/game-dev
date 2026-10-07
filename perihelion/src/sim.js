@@ -98,7 +98,7 @@ export const BRANCH_RING = ['intel', 'sensors', 'weapons', 'drives', 'industry',
 export const JOINTS = {
   ansible: { name: 'Entangled signals', needs: ['intel', 'sensors'], cost: 1100, time: 220, text: 'Read every fleet you can see: its size, destination and arrival time; get warnings' },
   targeting: { name: 'Targeting data', needs: ['sensors', 'weapons'], cost: 1100, time: 220, text: '+20% firepower when attacking' },
-  kinetic: { name: 'Kinetic strike', needs: ['weapons', 'drives'], cost: 1100, time: 220, text: 'Fleets arrive firing: an opening volley destroys a fifth of their number in defenders' },
+  kinetic: { name: 'Kinetic strike', needs: ['weapons', 'drives'], cost: 1100, time: 220, text: 'Fleets arrive firing: an opening volley destroys a tenth of their number in defenders' },
   torch: { name: 'Torch production', needs: ['drives', 'industry'], cost: 1100, time: 220, text: 'Ships build 25% faster and fly 10% faster' },
   hardened: { name: 'Hardened colonies', needs: ['industry', 'armour'], cost: 1100, time: 220, text: '+1 gun on every world; guns rebuild twice as fast' },
   pdnet: { name: 'Point-defence net', needs: ['armour', 'intel'], cost: 1100, time: 220, text: 'Your worlds shoot down 15% of every attacking fleet as it arrives' },
@@ -1185,8 +1185,26 @@ function refit(game, owner) {
     const p = planWith(game, null, game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, f.bf || 0.5);
     if (p.T >= left) continue;
     delete f.assist;
+    delete f.gs; // the new plan brings its own gravity drift, if any
     Object.assign(f, p, { t0: game.time });
   }
+}
+
+/**
+ * Switch a fleet's drive mode in flight: go dark (cut to a short burn and a
+ * long coast) or light up (burn the rest of the way). It re-plans from where
+ * it is now, so arrival time changes.
+ */
+export function setDark(game, f, on) {
+  if (!f || f.probe || !!f.dark === on || game.winner !== null) return false;
+  const left = f.T - (game.time - f.t0);
+  if (left < 10) return false;
+  const s = fleetState(f, game.time);
+  const p = planWith(game, null, game.bodies[f.to], game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, on ? DARK.burn : 0.5);
+  delete f.assist; delete f.bf; delete f.gs;
+  Object.assign(f, p, { t0: game.time });
+  if (on) f.dark = true; else delete f.dark;
+  return true;
 }
 
 /** Why a probe can't go from b to t, or null. Probes are built at a shipyard. */
@@ -1413,7 +1431,7 @@ export function step(game, dt) {
       if (hasJoint(game, b.owner, 'pdnet')) f.n -= Math.round(f.n * 0.15);
       if (f.n <= 0) { note(game, { type: 'wiped', owner: f.owner, name: f.name, at: b.id, vs: b.owner }); return false; }
       if (hasJoint(game, f.owner, 'kinetic')) {
-        let k = Math.round(f.n * 0.2);
+        let k = Math.round(f.n * 0.1);
         while (k-- > 0 && b.ships + b.guns > 0) { if (b.ships > 0) b.ships -= 1; else b.guns = Math.max(0, b.guns - 1); }
       }
       // Odds as the fight is joined, so wins can be judged by them later.

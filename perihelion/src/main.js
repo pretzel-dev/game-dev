@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -9,7 +9,7 @@ const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.inn
 const view = createView($('scene'), $('labels'));
 
 const prefs = (() => {
-  const d = { rivals: 1, difficulty: 'normal', system: 'random' };
+  const d = { rivals: 1, difficulty: 'normal', system: 'random', pct: 100, dev: false };
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion') || '{}') }; } catch { return d; }
 })();
 const savePrefs = () => { try { localStorage.setItem('perihelion', JSON.stringify(prefs)); } catch { /* ignore */ } };
@@ -35,10 +35,11 @@ const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(
 
 function applyCmd(owner, c) {
   const b = game.bodies[c.b];
-  if (c.type !== 'research' && c.type !== 'spy' && (!b || b.owner !== owner)) return false;
+  if (c.type !== 'research' && c.type !== 'spy' && c.type !== 'dark' && (!b || b.owner !== owner)) return false;
   switch (c.type) {
     case 'launch': return !!launch(game, b, game.bodies[c.to], c.n, !!c.dark);
     case 'spy': return !!plantSpy(game, owner, b);
+    case 'dark': { const f = game.fleets.find((x) => x.id === c.f && x.owner === owner); return setDark(game, f, !!c.on); }
     case 'ship': return orderShip(game, b);
     case 'cancel': return cancelShip(game, b);
     case 'build': return buildStructure(game, b, c.k);
@@ -261,6 +262,24 @@ function showJoin(on) {
 $('join').addEventListener('click', () => { menuMsg(''); showJoin(true); });
 $('join-back').addEventListener('click', () => { menuMsg(''); showJoin(false); });
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('join-go').click(); });
+$('devtoggle').addEventListener('click', () => { prefs.dev = !prefs.dev; savePrefs(); syncDev(); });
+function syncDev() { $('devtoggle').textContent = `Dev view ${prefs.dev ? 'on' : 'off'}`; $('devbar').hidden = !prefs.dev || net !== null || !game; }
+syncDev();
+/** Dev bar: whose eyes the map uses, and a faster clock for testing. */
+function renderDev() {
+  $('devbar').hidden = false;
+  const as = ui.devAs === undefined ? me : ui.devAs;
+  const opts = [...Array.from({ length: game.players }, (_, o) => [o, nameOf(o)]), ['all', 'All']];
+  setHTML($('devbar'), `<span>View as</span>${opts.map(([o, n]) => `<button data-as="${o}" class="${String(as) === String(o) ? 'on' : ''}" style="${o === 'all' ? '' : `color:${ownerColor(o)}`}">${n}</button>`).join('')}<button data-w16="1">16×</button>`);
+}
+$('devbar').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.w16) { setWarp(16); return; }
+  ui.devAs = b.dataset.as === 'all' ? 'all' : Number(b.dataset.as);
+  ui.vis = ui.devAs === 'all' ? null : visibility(game, ui.devAs);
+  renderDev();
+});
 $('howto').addEventListener('click', () => { $('menu').hidden = true; $('tutorial').hidden = false; });
 $('tut-close').addEventListener('click', () => { $('tutorial').hidden = true; $('menu').hidden = false; });
 // Tap the room code to copy it.
@@ -389,13 +408,31 @@ function updateFleetInfo() {
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
   if (f.probe) {
-    setHTML($('fleet'), `${icon('probe')} <b>Probe</b> → <b>${to.name}</b> · <b>${fmt(left)}</b>`);
+    $('fdark').hidden = true;
+    setHTML($('fleetText'), `${icon('probe')} <b>Probe</b> → <b>${to.name}</b> · <b>${fmt(left)}</b>`);
     return;
   }
-  setHTML($('fleet'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> → <b>${to.name}</b><br><span class="dim">${phase}</span> · `
-    + `arrive in <b>${fmt(left)}</b>${f.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[f.assist].name}`, 'assist')}` : ''} ${tip(`${Math.round(s.progress * 100)}%`, `${speed.toFixed(2)} units/s`, 'dim')}`);
+  // Your fleets can switch drive mode in flight (re-plans the rest of the trip).
+  // The button is a fixed element (the text around it redraws every frame).
+  const canToggle = f.owner === me && !f.probe && left > 10;
+  $('fdark').hidden = !canToggle;
+  if (canToggle) {
+    $('fdark').classList.toggle('on', !!f.dark);
+    setHTML($('fdark'), `${icon('dark')} ${f.dark ? 'Light up' : 'Go dark'}`);
+    $('fdark').title = f.dark ? 'Light the drive: burn the rest of the way (sooner, easy to spot)' : 'Go dark: cut the drive and coast (later, hard to spot)';
+  }
+  const toggle = '';
+  // Dev view: who can see this fleet right now.
+  const seenBy = prefs.dev && !net ? `<br><span class="dim">seen by ${game.names ? '' : ''}${Array.from({ length: game.players }, (_, o) => o).filter((o) => o !== f.owner).map((o) => `<span style="color:${ownerColor(o)}">${nameOf(o)} ${visibility(game, o).seesFleet(f) ? '✓' : '✗'}</span>`).join(' · ')}</span>` : '';
+  setHTML($('fleetText'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> → <b>${to.name}</b><br><span class="dim">${phase}</span> · `
+    + `arrive in <b>${fmt(left)}</b>${f.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[f.assist].name}`, 'assist')}` : ''} ${tip(`${Math.round(s.progress * 100)}%`, `${speed.toFixed(2)} units/s`, 'dim')}${toggle}${seenBy}`);
 }
 
+$('fdark').addEventListener('click', () => {
+  const f = game.fleets.find((x) => x.id === ui.fleet);
+  if (f && act({ type: 'dark', f: f.id, on: !f.dark })) toast(`${tf(f.name)} ${f.dark ? 'running dark' : 'drive lit'}`, ownerColor(me), 'dark');
+  updateFleetInfo();
+});
 /** Read-only panel for a world that isn't yours: owner, what you can see, perk, events. */
 function updatePeek() {
   const b = ui.peek !== null && game && running && ui.selected === null && ui.fleet === null ? game.bodies[ui.peek] : null;
@@ -448,6 +485,13 @@ $('peek').addEventListener('click', (e) => {
 });
 
 function updateActions() {
+  // Picking a world for a megaproject: a standing hint with Cancel; the
+  // worlds that can take it are ringed on the map.
+  $('hint').hidden = ui.mode !== 'project';
+  if (ui.mode === 'project') {
+    const P = PROJECTS[ui.projKey];
+    setHTML($('hintText'), `${icon(ui.projKey)} Tap a world for the <b>${P.name}</b><small>${P.where === 'giant' ? 'Gas giants only' : P.where === 'inner' ? 'Innermost planet only' : P.where === 'planet' ? 'Planets only' : 'Any world of yours'} · they're ringed in violet</small>`);
+  }
   updateFleetInfo();
   updatePeek();
   const s = ui.selected !== null && game ? game.bodies[ui.selected] : null;
@@ -469,8 +513,11 @@ function updateActions() {
   const ready = readyShips(game, s);
   if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
   const probing = ui.mode === 'probe' || ui.mode === 'spy'; // one-off picks: no ship count, no dark
-  ui.count = ready ? Math.max(1, Math.min(ui.count, ready)) : 0;
-  $('count').innerHTML = `${ui.count}<small>/${ready}</small>`;
+  // The share of ready ships to send (kept between launches); the count follows it.
+  ui.count = ready ? Math.max(1, Math.min(ready, Math.round((ready * prefs.pct) / 100))) : 0;
+  setHTML($('count'), `${ui.count}<small>${prefs.pct}%</small>`);
+  $('count').title = `${ui.count} of ${ready} ready ships (${prefs.pct}%). Tap: all, half, a quarter`;
+  if (Number($('pct').value) !== prefs.pct) $('pct').value = prefs.pct;
   const launching = ui.mode === 'launch' || probing;
   $('actions').classList.toggle('launching', launching);
   $('buildrow').hidden = launching;
@@ -557,6 +604,13 @@ function chips(b, { income = true, seen = true } = {}) {
     if (gives.length) detail.push(`these guns also help defend ${gives.map((x) => x.name).join(', ')} (${b.parent === null ? 'half' : 'quarter'} strength)`);
     if (b.owner !== NEUTRAL || own) out.push(tip(`${icon('guns')} ${own}${cover ? ` <span class="pos">+${cover.toFixed(1)}</span>` : ''}`, detail.join(' · ')));
   }
+  // Help from a special world nearby: say so on the world that gets it.
+  if (b.owner !== NEUTRAL && b.perk !== 'fortress' && fortressGuns(game, b)) {
+    const f = game.bodies.find((x) => x.perk === 'fortress' && x.owner === b.owner && dist(posAt(game, x, game.time), posAt(game, b, game.time)) <= PERKS.fortress.range);
+    out.push(tip(`${icon('fortress')} +1 gun`, `Covered by the ${PERKS.fortress.name}${f ? ` at ${f.name}` : ''}: +1 gun here while it's inside the ring`, 'gold'));
+  }
+  if (b.owner !== NEUTRAL && b.perk !== 'depot' && depotBoost(game, b) > 1) out.push(tip(`${icon('depot')} +20% speed`, `A ${PERKS.depot.name} nearby: fleets launched from here fly ${Math.round((PERKS.depot.boost - 1) * 100)}% faster`, 'gold'));
+  if (b.owner !== NEUTRAL && b.perk !== 'relay' && game.bodies.some((x) => x.perk === 'relay' && x.owner === b.owner && dist(posAt(game, x, game.time), posAt(game, b, game.time)) <= PERKS.relay.range)) out.push(tip(`${icon('relay')} watched`, `Inside your ${PERKS.relay.name}'s ring: everything around here is in view`, 'gold'));
   if (b.perk) {
     const P = PERKS[b.perk];
     let inside = '';
@@ -820,7 +874,7 @@ function renderResearch() {
   // The R&D button sits bottom left, out of the way of the world panels, and
   // shows what's being researched.
   $('rbar').hidden = true;
-  $('rnd').hidden = !running || knockedOut || !$('menu').hidden || !$('end').hidden || !$('research').hidden
+  $('rnd').hidden = !running || knockedOut || ui.mode === 'project' || !$('menu').hidden || !$('end').hidden || !$('research').hidden
     // On a phone the world panels need the bottom of the screen; on a wide screen there's room for both.
     || (narrow() && (!$('actions').hidden || !$('peek').hidden || !$('fleet').hidden));
   $('rnd').classList.toggle('idle', !p);
@@ -843,7 +897,7 @@ $('rlist').addEventListener('click', (e) => {
     ui.mode = 'project'; ui.projKey = mg.dataset.mega;
     ui.selected = ui.target = null;
     $('research').hidden = true;
-    toast(`Tap one of your worlds to build the ${PROJECTS[ui.projKey].name}`, '#c7a6ff', ui.projKey);
+    // The hint stays up (with Cancel) until a world is picked.
     updateActions();
   }
 });
@@ -872,24 +926,13 @@ $('rlist').addEventListener('click', (e) => {
   renderResearch();
 });
 
-$('less').addEventListener('click', () => { ui.count = Math.max(1, ui.count - 1); updateActions(); });
-
-$('more').addEventListener('click', () => { ui.count += 1; updateActions(); });
-// Tap the number to send everything ready (again for half, again for one).
+$('pct').addEventListener('input', () => { prefs.pct = Number($('pct').value); savePrefs(); updateActions(); });
+// Tap the number to jump: all, half, a quarter.
 $('count').addEventListener('click', () => {
-  const s = ui.selected !== null ? game.bodies[ui.selected] : null;
-  if (!s) return;
-  const all = readyShips(game, s);
-  ui.count = ui.count === all ? Math.max(1, Math.ceil(all / 2)) : ui.count === Math.max(1, Math.ceil(all / 2)) && all > 2 ? 1 : all;
+  prefs.pct = prefs.pct === 100 ? 50 : prefs.pct === 50 ? 25 : 100;
+  savePrefs();
   updateActions();
 });
-// Hold − or + to keep counting.
-for (const [id, d] of [['less', -1], ['more', 1]]) {
-  let timer = null;
-  const stop = () => { clearInterval(timer); timer = null; };
-  $(id).addEventListener('pointerdown', () => { stop(); timer = setTimeout(() => { timer = setInterval(() => { ui.count = Math.max(1, ui.count + d); updateActions(); }, 70); }, 350); });
-  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $(id).addEventListener(ev, stop);
-}
 $('launch').addEventListener('click', () => {
   if (!ui.mode) { ui.mode = 'launch'; ui.target = null; updateActions(); return; }
   doLaunch();
@@ -1558,7 +1601,9 @@ function frame(now) {
       uiClock -= dt;
       if (uiClock <= 0) {
         uiClock = 0.25;
-        ui.vis = knockedOut ? null : visibility(game, me);
+        // Dev view: see as another empire, or everything.
+        ui.vis = knockedOut || (prefs.dev && !net && ui.devAs === 'all') ? null : visibility(game, prefs.dev && !net && ui.devAs !== undefined ? ui.devAs : me);
+        if (prefs.dev && !net) renderDev();
         updateActions();
         renderResearch();
         setHTML($('clock'), `<b>₵ ${Math.floor(game.credits[me])}</b> ${tip(`+${income(game, me).toFixed(1)}/s`, incomeBreakdown(), 'inc')} · T+${fmt(game.time)}`);
