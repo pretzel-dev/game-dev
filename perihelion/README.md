@@ -107,7 +107,7 @@ starts, and a captured world's project or wonder goes to the captor.
 | Ring yard | Hardened colonies | Gas giant | Ships build three times as fast here |
 | Fortress world | Point-defence net | Any world | Three times the guns; its cover reaches its family at full strength |
 | Ansible array | Entangled signals | Any world | See every world and fleet in the system, and where they are going |
-| Deep-space telescope | Targeting data | Any world | See every enemy fleet's size, destination and arrival time |
+| Orbital lance | Targeting data | Any world | Guns on every world you hold fire 50% harder |
 
 ## How to play
 
@@ -164,8 +164,9 @@ preview server running).
   fleet makes a short burn, coasts with its drive off, then makes a short
   braking burn: it takes about half as long again, but while coasting enemy
   sensors only spot it at a third of their usual range (a ☾ on its tag), and a launch from a world they can't see goes unannounced.
-- **Spies:** with Signals intercept (Intel I), tap an enemy world and
-  **Plant spy** (250 credits). The agent takes 40 seconds to slip in, then shows you that world, its launches
+- **Spies:** with Signals intercept (Intel I), select one of your worlds,
+  tap the spy button (250 credits), then an enemy world and Confirm (or tap
+  the enemy world and **Plant spy**). The agent takes 40 seconds to slip in, then shows you that world, its launches
   (even dark ones) and its surroundings, skims part of its income, and slows
   any megaproject there by a quarter. Every second there's a small chance the
   agent is caught (about five minutes on average); the owner's Intel level

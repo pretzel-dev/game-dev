@@ -117,8 +117,10 @@ export const PROJECTS = {
   ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 2000, time: 480 },
   citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 2000, time: 480 },
   array: { needs: 'ansible', name: 'Ansible array', where: 'any', text: 'See every world and fleet in the system, and where they are going', cost: 2000, time: 480 },
-  telescope: { needs: 'targeting', name: 'Deep-space telescope', where: 'any', text: 'See every enemy fleet: its size, destination and arrival time', cost: 2000, time: 480 },
+  lance: { needs: 'targeting', name: 'Orbital lance', where: 'any', text: 'A targeting network: the guns on every world you hold fire half again as hard', cost: 2000, time: 480 },
 };
+/** Guns fire harder for the empire holding the orbital lance. */
+export const gunPower = (game, owner) => (holdsWonder(game, owner, 'lance') ? 1.5 : 1);
 export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
 const holdsWonder = (game, owner, key) => owner !== NEUTRAL && game.bodies.some((b) => b.wonder === key && b.owner === owner);
 export function cantProject(game, b, key) {
@@ -308,12 +310,11 @@ export function visibility(game, owner) {
   // An old relay you hold is a huge sensor dish: it sees everything in its ring.
   for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), PERKS.relay.range]);
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
-  // Entangled signals and a deep-space telescope read every fleet you see; an ansible array sees everything.
-  const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') || holdsWonder(game, owner, 'telescope') || holdsWonder(game, owner, 'array') ? 3 : 0);
+  // Entangled signals read every fleet you see; an ansible array sees everything.
+  const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') || holdsWonder(game, owner, 'array') ? 3 : 0);
   // A dark fleet shows only close in, unless a spy sits on the world it left.
-  const tele = holdsWonder(game, owner, 'telescope');
   const spied = new Set((game.spies || []).filter((x) => x.owner === owner && x.since <= game.time).map((x) => x.body));
-  const seesFleet = (f, p = fleetState(f, game.time)) => f.owner === owner || tele || spied.has(f.from)
+  const seesFleet = (f, p = fleetState(f, game.time)) => f.owner === owner || spied.has(f.from)
     || (f.dark && !p.burning ? eyes.some(([e, r]) => dist(e, p) <= r * DARK.seen) : sees(p));
   if (holdsWonder(game, owner, 'array')) return { owner, sees: () => true, seesFleet: () => true, bodies: new Set(game.bodies.map((b) => b.id)), intel, warn: true };
   return { owner, sees, seesFleet, bodies, intel, warn: holds(game, owner, 'post') || hasJoint(game, owner, 'ansible') };
@@ -1270,7 +1271,7 @@ function fight(game, b, dt) {
   const attackers = b.sieges.reduce((n, g) => n + g.n, 0);
   // Cover adds firepower but can't be destroyed here: only the planet's own
   // fight can knock out its guns.
-  const defenders = (b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b)) * firepowerOf(game, b.owner);
+  const defenders = (b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + (b.guns + coverOf(game, b)) * gunPower(game, b.owner)) * firepowerOf(game, b.owner);
   let attackFire = 0;
   for (const g of b.sieges) {
     const share = attackers > 0 ? g.n / attackers : 0;
@@ -1412,7 +1413,7 @@ export function step(game, dt) {
         while (k-- > 0 && b.ships + b.guns > 0) { if (b.ships > 0) b.ships -= 1; else b.guns = Math.max(0, b.guns - 1); }
       }
       // Odds as the fight is joined, so wins can be judged by them later.
-      const defence = b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b);
+      const defence = b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + (b.guns + coverOf(game, b)) * gunPower(game, b.owner);
       b.own0 = Math.max(b.own0 || 0, defence);
       b.foe0 = (b.foe0 || 0) + f.n;
       const g = b.sieges.find((x) => x.owner === f.owner);

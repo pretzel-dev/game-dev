@@ -507,3 +507,13 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 /* Notes about a place: tap to fly there. */
 .note.go { pointer-events: auto; cursor: pointer; }
 .note.go:hover { background: rgba(14, 22, 38, 0.92); }
+
+/* Levels beyond the next one: greyed like an upgrade you can't take yet. */
+.ladder .lv.later { opacity: 0.45; }
+.tdetail .mega small { display: block; }
+.ctx.shipbtns button small { white-space: nowrap; }
+.ctx.shipbtns button.mini { flex: 0 0 auto; padding: 0 10px; }
+.ctx.shipbtns button { white-space: nowrap; letter-spacing: 0.06em; }
+.ctx.shipbtns button small { margin-left: 4px; }
+.ctx.shipbtns button.mini { padding: 0 7px; }
+.ctx.shipbtns button[data-b='ship'] { min-width: 0; padding: 0 8px; }
