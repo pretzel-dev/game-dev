@@ -64,7 +64,7 @@ export const TECH = {
   intel: {
     name: 'Intel', cost: [300, 550, 850], time: [90, 150, 210],
     levels: ['Signals intercept', 'Agents in the yards', 'Broken fleet cipher'],
-    text: ['Read enemy fleet sizes', 'Learn enemy routes and landing points', 'Know arrival times; get warnings'],
+    text: ['Read enemy fleet sizes; recruit agents; catch enemy agents more often', 'Learn enemy routes and landing points', 'Know arrival times; get warnings'],
   },
   weapons: {
     name: 'Weapons', cost: [400, 800], time: [120, 200],
@@ -112,15 +112,13 @@ export const techTitle = (key, level) => (JOINTS[key] ? JOINTS[key].name : TECH[
 // and the first to finish wins it; the others lose the race (half their money
 // back). A captured world's project or wonder goes to the captor.
 export const PROJECTS = {
-  sundiver: { needs: 'torch', name: 'Sun-diver collectors', where: 'inner', text: '+8 credits/s', cost: 2000, time: 480 },
+  sundiver: { needs: 'torch', name: 'Sun-diver collectors', where: 'inner', text: 'Every world you hold earns 50% more', cost: 2000, time: 480 },
   massdriver: { needs: 'kinetic', name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 2000, time: 480 },
   ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 2000, time: 480 },
   citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 2000, time: 480 },
   array: { needs: 'ansible', name: 'Ansible array', where: 'any', text: 'See every world and fleet in the system, and where they are going', cost: 2000, time: 480 },
-  lance: { needs: 'targeting', name: 'Orbital lance', where: 'any', text: 'A targeting network: the guns on every world you hold fire half again as hard', cost: 2000, time: 480 },
+  college: { needs: 'targeting', name: 'War college', where: 'any', text: 'Simulator-trained crews: every ship you build starts blooded (first veteran rank)', cost: 2000, time: 480 },
 };
-/** Guns fire harder for the empire holding the orbital lance. */
-export const gunPower = (game, owner) => (holdsWonder(game, owner, 'lance') ? 1.5 : 1);
 export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
 const holdsWonder = (game, owner, key) => owner !== NEUTRAL && game.bodies.some((b) => b.wonder === key && b.owner === owner);
 export function cantProject(game, b, key) {
@@ -149,6 +147,7 @@ export function startProject(game, b, key) {
 }
 /** Speed a project up: pay credits, or break a docked ship up for parts and crew. */
 export function fundProject(game, b, how) {
+  return false; // retired: only research stations speed megaprojects now
   if (!b.project || b.owner === NEUTRAL) return false;
   if (how === 'ship') {
     if (readyShips(game, b) < 1) return false;
@@ -799,13 +798,16 @@ export const incomeParts = (b, game) => {
   if (b.owner === NEUTRAL) return { worlds: 0, mines: 0, skimmers: 0, exchanges: 0, bonuses: 0 };
   const mining = 1 + 0.15 * (game ? techLevel(game, b.owner, 'industry') : 0);
   const S = RULES.structures;
-  return {
+  const p = {
     worlds: RULES.income[b.kind] * (b.star ? 1.5 : 1) + (b.home ? RULES.homeIncome : 0),
     mines: RULES.mineIncome * count(b, 'mine') * mining * (b.perk === 'seam' ? 2 : 1),
     skimmers: S.skimmer.income * count(b, 'skimmer'),
     exchanges: S.exchange.income * count(b, 'exchange'),
-    bonuses: (b.wonder === 'sundiver' ? 8 : 0) + (b.bonus || 0),
+    bonuses: b.bonus || 0,
   };
+  // Sun-diver collectors: half as much again on every world (it grows with you).
+  if (game && holdsWonder(game, b.owner, 'sundiver')) p.bonuses += 0.5 * (p.worlds + p.mines + p.skimmers + p.exchanges + p.bonuses);
+  return p;
 };
 export const incomeOf = (b, game) => { const p = incomeParts(b, game); return p.worlds + p.mines + p.skimmers + p.exchanges + p.bonuses; };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
@@ -1221,16 +1223,18 @@ export function fleetState(f, t) {
   if (flipping) {
     // Turn smoothly from the first burn direction to the second.
     const k = (1 - Math.cos(((tau - flipStart) / RULES.flipTime) * Math.PI)) / 2;
-    n = { x: u1.x + (u2.x - u1.x) * k, y: u1.y + (u2.y - u1.y) * k, z: u1.z + (u2.z - u1.z) * k };
-    const l = len(n);
-    // Nearly opposite burns pass through zero: turn over via a sideways axis.
-    if (l < 0.3) {
-      const side = { x: -u1.z, y: 0, z: u1.x };
-      const w = Math.sin(k * Math.PI) * 0.8;
-      n = { x: n.x + side.x * w, y: n.y + side.y * w, z: n.z + side.z * w };
-    }
-    const l2 = len(n) || 1;
-    n = { x: n.x / l2, y: n.y / l2, z: n.z / l2 };
+    // Rotate along the great circle from u1 to u2 (one steady turn, never
+    // through zero); nearly opposite burns turn over about a sideways axis.
+    const dot = Math.max(-1, Math.min(1, u1.x * u2.x + u1.y * u2.y + u1.z * u2.z));
+    const ang = Math.acos(dot) * k;
+    let ax = { x: u1.y * u2.z - u1.z * u2.y, y: u1.z * u2.x - u1.x * u2.z, z: u1.x * u2.y - u1.y * u2.x };
+    if (len(ax) < 1e-4) ax = Math.abs(u1.y) < 0.9 ? { x: -u1.z, y: 0, z: u1.x } : { x: 1, y: 0, z: 0 };
+    const la = len(ax) || 1;
+    ax = { x: ax.x / la, y: ax.y / la, z: ax.z / la };
+    const c = Math.cos(ang), sn = Math.sin(ang);
+    const cr = { x: ax.y * u1.z - ax.z * u1.y, y: ax.z * u1.x - ax.x * u1.z, z: ax.x * u1.y - ax.y * u1.x };
+    const ad = ax.x * u1.x + ax.y * u1.y + ax.z * u1.z;
+    n = { x: u1.x * c + cr.x * sn + ax.x * ad * (1 - c), y: u1.y * c + cr.y * sn + ax.y * ad * (1 - c), z: u1.z * c + cr.z * sn + ax.z * ad * (1 - c) };
   }
   return {
     x: s.x, y: s.y, z: s.z,
@@ -1271,7 +1275,7 @@ function fight(game, b, dt) {
   const attackers = b.sieges.reduce((n, g) => n + g.n, 0);
   // Cover adds firepower but can't be destroyed here: only the planet's own
   // fight can knock out its guns.
-  const defenders = (b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + (b.guns + coverOf(game, b)) * gunPower(game, b.owner)) * firepowerOf(game, b.owner);
+  const defenders = (b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b)) * firepowerOf(game, b.owner);
   let attackFire = 0;
   for (const g of b.sieges) {
     const share = attackers > 0 ? g.n / attackers : 0;
@@ -1370,7 +1374,7 @@ export function step(game, dt) {
     b.slips.length = Math.min(b.slips.length, yards, b.queue);
     const yardK = (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1);
     b.slips = b.slips.map((p) => p + (dt * speed * yardK) / RULES.ship.time);
-    for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, b.perk === 'hulk' ? PERKS.hulk.vet : 0, 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
+    for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, Math.max(b.perk === 'hulk' ? PERKS.hulk.vet : 0, holdsWonder(game, b.owner, 'college') ? 1 : 0), 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
     b.build = b.slips.length ? Math.max(...b.slips) : 0;
     const top = topGuns(game, b);
@@ -1413,7 +1417,7 @@ export function step(game, dt) {
         while (k-- > 0 && b.ships + b.guns > 0) { if (b.ships > 0) b.ships -= 1; else b.guns = Math.max(0, b.guns - 1); }
       }
       // Odds as the fight is joined, so wins can be judged by them later.
-      const defence = b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + (b.guns + coverOf(game, b)) * gunPower(game, b.owner);
+      const defence = b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b);
       b.own0 = Math.max(b.own0 || 0, defence);
       b.foe0 = (b.foe0 || 0) + f.n;
       const g = b.sieges.find((x) => x.owner === f.owner);

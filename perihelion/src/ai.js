@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf, cantSpy, plantSpy, gunPower } from './sim.js';
+import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf, cantSpy, plantSpy } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -41,11 +41,10 @@ export function shipsToTake(game, owner, t, vet = 0, _known = true, def = null) 
   const dFp = defOwner === NEUTRAL ? 1 : firepowerOf(game, defOwner);
   const dDmg = defOwner === NEUTRAL ? 1 : damageTaken(game, defOwner);
   const dVet = 1 + VET_BONUS * vetLevel(d.vet);
-  const gP = defOwner === NEUTRAL ? 1 : gunPower(game, defOwner);
   const wins = (n) => {
     let a = n, aD = 0, s = d.ships, g = d.guns, bD = 0;
     for (let k = 0; k < 1200; k++) {
-      aD += RULES.fire * (s * dVet + (g + d.cover) * gP) * dFp * aDmg * 0.5;
+      aD += RULES.fire * (s * dVet + g + d.cover) * dFp * aDmg * 0.5;
       bD += RULES.fire * a * aFp * dDmg * 0.5;
       while (bD >= 1 && s + g > 0) { bD -= 1; if (s > 0) s -= 1; else g = Math.max(0, g - 1); }
       while (aD >= 1 && a > 0) { aD -= 1; a -= 1; }
@@ -282,9 +281,8 @@ function economy(game, ai, mine, coming, will) {
   // speeded up with spare cash.
   if (smart) {
     const own = mine.find((b) => b.project);
-    if (own && credits > 900 && !threatened(own)) return fundProject(game, own, 'cash');
     if (!own && credits > 2500 && mine.length >= 4) {
-      for (const key of ['sundiver', 'ringyard', 'citadel', 'massdriver', 'array', 'lance']) {
+      for (const key of ['sundiver', 'ringyard', 'citadel', 'massdriver', 'array', 'college']) {
         // Put each where it pays: a ring yard or mass driver where ships are
         // built and gathered, a fortress at home, the rest at home or safe.
         const yardsAt = (b) => b.structures.filter((x) => x.type === 'shipyard').length;
