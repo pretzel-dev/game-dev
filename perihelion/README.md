@@ -106,7 +106,7 @@ starts, and a captured world's project or wonder goes to the captor.
 | Ring yard | Hardened colonies | Gas giant | Ships build three times as fast here |
 | Fortress world | Point-defence net | Any world | Three times the guns; its cover reaches its family at full strength |
 | Ansible array | Entangled signals | Any world | See every world and fleet in the system, and where they are going |
-| War college | Targeting data | Any world | Every ship you build starts blooded (first veteran rank) |
+| War college | Targeting data | Any world | Every ship you build starts as a veteran (second rank) |
 
 ## How to play
 

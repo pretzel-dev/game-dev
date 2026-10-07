@@ -418,37 +418,84 @@ function shipGeometries() {
   return ships;
 }
 
-function stationMesh(size) {
-  const m = new THREE.MeshStandardMaterial({ color: '#c9ced8', metalness: 0.6, roughness: 0.4 });
+/**
+ * Stations, three designs (picked per station): a heavy wheel on a docking
+ * spine; a long spine with twin rings and copper solar wings; a blocky hub
+ * with booms, pods and an antenna spike. Built along z (the spin axis).
+ * Windows are small, uneven clusters of light, shown once someone holds it.
+ */
+function stationMesh(size, variant = 0) {
+  const r = rng(variant * 31 + 7);
+  const hull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.55, roughness: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#4a4f5a', metalness: 0.6, roughness: 0.55 });
+  const copper = new THREE.MeshStandardMaterial({ color: '#8a5a2e', metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide });
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.TorusGeometry(size, size * 0.12, 8, 32), m));
-  // Lit windows around the ring, shown once someone runs the station.
-  const pts = [];
-  for (let i = 0; i < 40; i++) {
-    const a = (i / 40) * Math.PI * 2;
-    pts.push(new THREE.Vector3(Math.cos(a) * size * 1.13, Math.sin(a) * size * 1.13, (i % 3 - 1) * size * 0.05));
+  const add = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
+  const cyl = (rad, len, seg = 14) => new THREE.CylinderGeometry(rad, rad, len, seg).rotateX(Math.PI / 2); // along z
+  // A flat-sided wheel: a rectangle swept round the axis.
+  const wheel = (R, w, d, seg = 64) => new THREE.LatheGeometry([
+    new THREE.Vector2(R - w, -d), new THREE.Vector2(R, -d), new THREE.Vector2(R, d), new THREE.Vector2(R - w, d), new THREE.Vector2(R - w, -d),
+  ], seg).rotateX(Math.PI / 2);
+  const truss = (len, t, rot) => { const m = add(new THREE.BoxGeometry(t, len, t), dark); m.rotation.z = rot; return m; };
+  const win = [];
+  const windowsOn = (n, fn) => { for (let k = 0; k < n; k++) win.push(fn(r())); };
+  if (variant === 0) {
+    // Heavy wheel: thick flat ring, two crossing trusses, a long docking spine.
+    add(wheel(size, size * 0.22, size * 0.16), hull);
+    add(wheel(size * 0.79, size * 0.02, size * 0.17), dark); // inner gantry
+    truss(size * 1.6, size * 0.06, 0.3);
+    truss(size * 1.6, size * 0.06, 0.3 + Math.PI / 2);
+    add(cyl(size * 0.14, size * 2.4), hull);
+    add(cyl(size * 0.22, size * 0.5), hull, 0, 0, size * 0.25);
+    add(cyl(size * 0.18, size * 0.3), dark, 0, 0, -size * 0.5);
+    for (const zz of [0.9, 1.15]) add(cyl(size * 0.2, size * 0.08), dark, 0, 0, size * zz);
+    for (let k = 0; k < 3; k++) {
+      const a = r() * Math.PI * 2;
+      add(new THREE.BoxGeometry(size * 0.12, size * 0.12, size * 0.22), hull, Math.cos(a) * size * 1.02, Math.sin(a) * size * 1.02, 0);
+    }
+    windowsOn(26, (t) => { const a = Math.floor(t * 9) / 9 * Math.PI * 2 + r() * 0.35; return new THREE.Vector3(Math.cos(a) * size * 1.005, Math.sin(a) * size * 1.005, (r() - 0.5) * size * 0.2); });
+  } else if (variant === 1) {
+    // Long spine, twin narrow rings mid-way, copper solar wings at both ends.
+    add(cyl(size * 0.08, size * 3.2), dark);
+    for (let k = 0; k < 7; k++) add(cyl(size * (0.12 + r() * 0.05), size * 0.28), hull, (r() - 0.5) * size * 0.12, (r() - 0.5) * size * 0.12, (k - 3) * size * 0.4 + (k > 2 ? size * 0.3 : -size * 0.3));
+    for (const zz of [-0.12, 0.12]) {
+      add(new THREE.TorusGeometry(size * 0.8, size * 0.07, 8, 40), hull, 0, 0, zz * size);
+      for (let k = 0; k < 4; k++) { const m = truss(size * 1.6, size * 0.025, k * Math.PI / 4); m.position.z = zz * size; }
+    }
+    for (const zz of [-1.35, 1.35]) {
+      for (const sx of [-1, 1]) {
+        const w = add(new THREE.PlaneGeometry(size * 0.28, size * 1.5), copper, sx * size * 0.95, 0, zz * size);
+        w.rotation.y = Math.PI / 2;
+        add(new THREE.BoxGeometry(size * 0.7, size * 0.03, size * 0.03), dark, sx * size * 0.45, 0, zz * size);
+      }
+    }
+    windowsOn(18, () => { const a = r() * Math.PI * 2; return new THREE.Vector3(Math.cos(a) * size * 0.8, Math.sin(a) * size * 0.8, (r() < 0.5 ? -0.12 : 0.12) * size); });
+    windowsOn(10, () => new THREE.Vector3((r() - 0.5) * size * 0.3, size * 0.15, (r() - 0.5) * size * 2.4));
+  } else {
+    // Blocky hub: a squat core with stacked decks, two booms with pods,
+    // radiator fins and an antenna spike.
+    add(new THREE.BoxGeometry(size * 0.9, size * 0.7, size * 0.8), hull);
+    add(new THREE.BoxGeometry(size * 1.1, size * 0.18, size * 0.95), dark, 0, size * 0.3, 0);
+    add(cyl(size * 0.32, size * 0.5), hull, 0, 0, size * 0.55);
+    for (const sx of [-1, 1]) {
+      add(new THREE.BoxGeometry(size * 1.1, size * 0.1, size * 0.1), dark, sx * size * 0.95, -size * 0.05, 0);
+      add(cyl(size * 0.17, size * 0.45), hull, sx * size * 1.5, -size * 0.05, 0);
+      const fin = add(new THREE.PlaneGeometry(size * 0.6, size * 0.3), copper, sx * size * 0.9, size * 0.25, -size * 0.2);
+      fin.rotation.x = -Math.PI / 2;
+    }
+    add(new THREE.CylinderGeometry(size * 0.015, size * 0.04, size * 1.6, 6), dark, 0, -size * 1.1, 0);
+    for (let k = 0; k < 4; k++) add(new THREE.BoxGeometry(size * 0.16, size * 0.16, size * 0.16), dark, (k - 1.5) * size * 0.22, size * 0.45, -size * 0.25);
+    windowsOn(24, () => new THREE.Vector3((r() - 0.5) * size * 0.85, (Math.floor(r() * 3) - 1) * size * 0.18, size * 0.405));
   }
   const windows = new THREE.Points(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.PointsMaterial({ color: '#ffd08a', size: 2, sizeAttenuation: false, transparent: true, opacity: 0.9 }),
+    new THREE.BufferGeometry().setFromPoints(win),
+    new THREE.PointsMaterial({ color: '#ffd9a0', size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0.8 }),
   );
   windows.name = 'windows';
   windows.visible = false;
   g.add(windows);
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(size * 0.15, size * 0.15, size * 1.4, 12).rotateX(Math.PI / 2), m));
-  for (let i = 0; i < 4; i++) {
-    const spoke = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.04, size * 0.04, size * 2, 6), m);
-    spoke.rotation.z = (i * Math.PI) / 4;
-    g.add(spoke);
-  }
-  // Solar panels.
-  const panel = new THREE.MeshStandardMaterial({ color: '#2a3f7a', metalness: 0.3, roughness: 0.6, side: THREE.DoubleSide });
-  for (const s of [-1, 1]) {
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(size * 0.5, size * 1.4), panel);
-    p.position.z = s * size * 1.1;
-    p.rotation.y = Math.PI / 2;
-    g.add(p);
-  }
+  // Only the wheel spins quickly; the long and blocky designs turn slowly.
+  g.userData.spin = variant === 0 ? 0.4 : 0.08;
   return g;
 }
 
@@ -880,7 +927,7 @@ export function createView(canvas, labelRoot) {
       let body;
       let hulk = null;
       let tail = null;
-      if (b.kind === 'station') body = stationMesh(b.size);
+      if (b.kind === 'station') body = stationMesh(b.size, b.id % 3);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else if (b.visitor) {
         // Comet: an icy nucleus with a tail streaming away from the sun.
@@ -1434,7 +1481,7 @@ export function createView(canvas, labelRoot) {
         } else v.hulk.rotation.y += dt * 0.08;
       }
       // Slow spin; stations turn faster, asteroids tumble.
-      if (b.kind === 'station') v.body.rotation.z += dt * 0.5;
+      if (b.kind === 'station') v.body.rotation.z += dt * (v.body.userData.spin ?? 0.5);
       else if (b.kind === 'asteroid') { v.body.rotation.x += dt * 0.3; v.body.rotation.y += dt * 0.2; }
       else {
         v.body.rotation.y += dt * 0.05;
