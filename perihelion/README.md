@@ -247,6 +247,11 @@ every other (and a quick "human" stand-in) to check the order holds.
 Later: move the game onto a server (Cloudflare) so it keeps running without
 the host and nobody can pause.
 
+## Breaking out
+
+Ships can leave a world that's under attack, but the attackers get a free
+shot as they climb out: half of them are lost. The AI won't try it.
+
 ## Dev view
 
 Tap **Dev view** on the menu to turn it on. In a solo game a bar under the

@@ -732,6 +732,8 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     h.owner = owner;
     h.ships = RULES.startShips;
     h.home = true;
+    // A home's moon always has room for two structures.
+    for (const b of bodies) if (b.parent === h.id && b.kind === 'moon') b.homeMoon = true;
     h.structures.push({ type: 'shipyard', level: 1, left: 0 }, { type: 'defence', level: 1, left: 0 });
     h.guns = maxGuns(h);
   });
@@ -775,7 +777,7 @@ export function slotsOf(b) {
   if (b.visitor) return 0;
   if (b.kind === 'station') return 2;
   if (b.kind === 'asteroid') return 1;
-  if (b.kind === 'moon') return b.size > 0.8 ? 2 : 1;
+  if (b.kind === 'moon') return b.homeMoon || b.size > 0.8 ? 2 : 1;
   if (b.home) return 5; // homeworlds: room to build a capital
   return b.giant ? 4 : b.size > 2.2 ? 3 : 2;
 }
@@ -1160,6 +1162,16 @@ export function launch(game, from, to, n, dark = false) {
   const p = plan(game, from, to, game.time, 1, false, dark ? DARK.burn : 0.5);
   if (p.T > staysFor(game, to) - 5 || !present(game, to)) return null;
   from.ships -= n;
+  // Breaking out of a world under attack: the attackers get a free shot at
+  // ships leaving orbit, and half of them never make it out.
+  if (from.sieges.length) {
+    const lost = Math.ceil(n / 2);
+    n -= lost;
+    tally(game, from.owner, 'lost', lost);
+    for (const g of from.sieges) tally(game, g.owner, 'killed', lost / from.sieges.length);
+    note(game, { type: 'breakout', owner: from.owner, at: from.id, lost, n });
+    if (n < 1) return null;
+  }
   const f = { id: game.nextId++, owner: from.owner, n, from: from.id, to: to.id, ...p, t0: game.time, vet: from.vet || 0 };
   if (dark) f.dark = true;
   // The bulk of a garrison keeps its task force name; a small detachment gets a new one.

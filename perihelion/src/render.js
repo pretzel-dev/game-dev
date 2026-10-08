@@ -1702,31 +1702,34 @@ export function createView(canvas, labelRoot) {
       if (!seesFleet(f)) continue;
       const s = fleetState(f, now);
       const color = ownerColor(f.owner);
-      // Nose along the thrust; the formation spreads across the direction of travel.
-      const nose = new THREE.Vector3(s.nx, s.ny, s.nz);
-      dir.set(s.vx, s.vy, s.vz);
-      if (dir.lengthSq() < 1e-9) dir.copy(nose);
+      // The formation faces along the whole route (start to landing point), not
+      // the momentary velocity, so it never swings round; and it's a compact
+      // block (columns grow with the square root of the size), never a long line.
+      dir.set(f.p1.x - f.p0.x, f.p1.y - f.p0.y, f.p1.z - f.p0.z);
+      if (dir.lengthSq() < 1e-9) dir.set(s.nx, s.ny, s.nz);
       dir.normalize();
       perp.crossVectors(dir, UP);
       if (perp.lengthSq() < 1e-6) perp.set(1, 0, 0);
       perp.normalize();
-      for (let j = 0; j < (f.probe ? 1 : f.n); j++) {
+      // Without Intel I you can't count an enemy fleet: draw it as a token few.
+      const drawn = f.probe ? 1 : knowsSize(f) ? f.n : Math.min(f.n, 3);
+      const cols = Math.max(3, Math.ceil(Math.sqrt(drawn)));
+      for (let j = 0; j < drawn; j++) {
         const sh = ship(used++);
         if (!sh) break;
-        // Formation: a loose, uneven column of threes. Each ship keeps its own
-        // offset and drifts a little, so it reads as crewed ships, not a grid.
-        // It opens out after launch and closes up before arrival.
-        const row = Math.floor(j / 3);
-        const col = (j % 3) - 1;
+        // Formation: a loose, uneven block. Each ship keeps its own offset
+        // and drifts a little, so it reads as crewed ships, not a grid. It
+        // opens out after launch and closes up (only partly) before arrival.
+        const row = Math.floor(j / cols);
+        const col = (j % cols) - (cols - 1) / 2;
         const since = now - f.t0;
-        // Close up a little near the ends, but never into one point.
         const open = THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.5 + 0.5;
         const h1 = hash(f.id, j), h2 = hash(j, f.id), h3 = hash(f.id + 7, j * 3);
         const drift = t * (0.3 + h1 * 0.4) + h2 * 6;
         tmp.set(s.x, s.y, s.z)
-          .addScaledVector(perp, (col * (0.9 + h3 * 0.5) + (row % 2) * 0.45 + (h1 - 0.5) * 0.7 + Math.sin(drift) * 0.08) * open)
+          .addScaledVector(perp, (col * (0.8 + h3 * 0.4) + (row % 2) * 0.4 + (h1 - 0.5) * 0.6 + Math.sin(drift) * 0.08) * open)
           .addScaledVector(UP, ((h2 - 0.5) * 0.9 + Math.cos(drift * 0.8) * 0.06) * open)
-          .addScaledVector(dir, (-row * (1.1 + h3 * 0.5) - (h2 - 0.5) * 0.8) * open);
+          .addScaledVector(dir, (-row * (0.9 + h3 * 0.4) - (h2 - 0.5) * 0.7) * open);
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
         const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);

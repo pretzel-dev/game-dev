@@ -565,3 +565,4 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #actions.launching .stepper { order: -1; flex: 1 1 100%; border: none; background: none; padding: 0 2px; height: 34px; }
 #pct { border: none; padding: 0; box-shadow: none; outline: none; }
 #actions.launching #launch { flex: 1 1 auto; }
+#actions.launching .stepper[hidden] { display: none; }

@@ -571,7 +571,8 @@ function updateActions() {
     const stay = staysFor(game, t);
     const late = ui.preview.T > stay - 5;
     const leaves = Number.isFinite(stay) ? ` · <span class="${late ? 'warn' : 'dim'}">${late ? 'too late' : `leaves ${fmt(stay)}`}</span>` : '';
-    setHTML($('info'), `<span><b>${ui.count}</b> → <b>${t.name}</b> <span class="dim">${defenceText}</span> · <b>${fmt(ui.preview.T)}</b>${ui.dark ? ` ${tip('dark', 'Running dark: enemies only spot this fleet close in', 'dim')}` : ''}${assist}${restNote}${leaves}</span>${chips(t, { income: false, seen })}`);
+    const breakout = s.sieges.length ? ` · <span class="warn">${tip('breaking out', 'This world is under attack: half the ships launched will be shot down leaving orbit', 'warn')}</span>` : '';
+    setHTML($('info'), `<span><b>${ui.count}</b>${breakout} → <b>${t.name}</b> <span class="dim">${defenceText}</span> · <b>${fmt(ui.preview.T)}</b>${ui.dark ? ` ${tip('dark', 'Running dark: enemies only spot this fleet close in', 'dim')}` : ''}${assist}${restNote}${leaves}</span>${chips(t, { income: false, seen })}`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = ready < 1 || late;
   }
@@ -1107,6 +1108,9 @@ function drainEvents(evs = game.events.splice(0)) {
       case 'spycaught':
         if (e.owner === me) toast(`Agent caught on ${nm(e.at)} after ${fmt(e.after)}`, '#ff7a4d', 'spy');
         else if (e.by === me) toast(`Security caught a ${nameOf(e.owner)} spy on ${nm(e.at)}`, mine, 'spy');
+        break;
+      case 'breakout':
+        if (e.owner === me) toast(`Broke out of ${nm(e.at)}: ${e.lost} ship${e.lost === 1 ? '' : 's'} lost${e.n ? `, ${e.n} got away` : ''}`, '#ff7a4d');
         break;
       case 'probed':
         if (e.owner === me) toast(`Probe flyby of ${nm(e.at)} · in view for ${Math.round(RULES.probe.scan / 60 * 2) / 2} min`, mine);
