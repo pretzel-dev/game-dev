@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf, cantSpy, plantSpy } from './sim.js';
+import { NEUTRAL, RULES, income, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf, cantSpy, plantSpy } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -33,6 +33,9 @@ export function createAI(owner, difficulty, rand) {
  * fire each half second until one is gone). `def` overrides what's there
  * ({ ships, vet, guns, cover }); by default the world as it is.
  */
+// The AI never tries to break out of a world under attack (it would lose half).
+const launch = (game, s, t, n) => (s.sieges.length ? null : launchAny(game, s, t, n));
+
 export function shipsToTake(game, owner, t, vet = 0, _known = true, def = null) {
   const d = def || { ships: t.ships, vet: t.vet, guns: t.guns, cover: coverOf(game, t) };
   const aFp = attackPowerOf(game, owner) * (1 + VET_BONUS * vetLevel(vet));
