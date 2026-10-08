@@ -544,3 +544,24 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #actions.launching #cancel { padding: 0 8px; }
 #pct { width: 70px; }
 #hint { background: rgba(6, 10, 18, 0.96); }
+
+/* Launch bar, tidied: a small square cancel, a share slider that takes the
+   spare room (hairline track, filled to the value, a square thumb), a count
+   of fixed width so nothing shifts as it changes, and a slightly smaller Confirm. */
+#actions.launching #cancel { width: 42px; padding: 0; flex: 0 0 42px; display: grid; place-items: center; }
+#actions.launching #cancel .ic { width: 14px; height: 14px; }
+#actions.launching .stepper { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 42px; }
+#pct { -webkit-appearance: none; appearance: none; flex: 1 1 auto; min-width: 60px; width: auto; height: 24px; background: transparent; margin: 0; }
+#pct::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(90deg, var(--accent) var(--fill, 100%), var(--line) var(--fill, 100%)); }
+#pct::-moz-range-track { height: 2px; background: var(--line); }
+#pct::-moz-range-progress { height: 2px; background: var(--accent); }
+#pct::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 18px; margin-top: -8px; background: var(--fg); border: 1px solid var(--accent); border-radius: 0; }
+#pct::-moz-range-thumb { width: 12px; height: 18px; background: var(--fg); border: 1px solid var(--accent); border-radius: 0; }
+#actions.launching #count { flex: 0 0 52px; min-width: 52px; text-align: right; font-size: 15px; line-height: 1; }
+#actions.launching #count small { display: block; font-size: 10px; letter-spacing: 0.08em; margin: 2px 0 0; }
+#actions.launching #launch { flex: 0 0 auto; padding: 0 16px; font-size: 13px; letter-spacing: 0.12em; }
+/* The slider gets its own full-width row above the buttons. */
+#actions.launching .bar:last-child { flex-wrap: wrap; }
+#actions.launching .stepper { order: -1; flex: 1 1 100%; border: none; background: none; padding: 0 2px; height: 34px; }
+#pct { border: none; padding: 0; box-shadow: none; outline: none; }
+#actions.launching #launch { flex: 1 1 auto; }

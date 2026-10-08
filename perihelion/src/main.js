@@ -518,6 +518,7 @@ function updateActions() {
   setHTML($('count'), `${ui.count}<small>${prefs.pct}%</small>`);
   $('count').title = `${ui.count} of ${ready} ready ships (${prefs.pct}%). Tap: all, half, a quarter`;
   if (Number($('pct').value) !== prefs.pct) $('pct').value = prefs.pct;
+  $('pct').style.setProperty('--fill', `${prefs.pct}%`);
   const launching = ui.mode === 'launch' || probing;
   $('actions').classList.toggle('launching', launching);
   $('buildrow').hidden = launching;
