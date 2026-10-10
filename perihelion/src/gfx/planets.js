@@ -718,13 +718,16 @@ export function atmosphereMesh(b, look, quality = 'high') {
               vec3 att = exp(-ext * (odS + odV) * 1.2);
               float cth = dot(rd, L);
               float pr = 0.75 * (1.0 + cth * cth);
-              float g = 0.76;
-              float pm = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cth, 1.5) * 0.08;
+              // A soft forward glow when backlit (kept gentle: a strong one
+              // flares like a camera flash as the view turns past the sun).
+              float g = 0.5;
+              float pm = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cth, 1.5) * 0.03;
               sum += dens * lit * att * sc * pr * dt;
               mie += dens * lit * att * sc * pm * dt;
             }
           }
           vec3 col = (sum * uBeta * 0.55 + mie * 0.9) * uK;
+          col = min(col, vec3(0.9)); // never a highlight
           // Over the ground, the air is a thin haze: fade it so the surface reads.
           if (ground) col *= 0.75;
           gl_FragColor = vec4(col, 1.0);

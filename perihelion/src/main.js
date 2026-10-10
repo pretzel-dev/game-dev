@@ -1155,6 +1155,7 @@ function tap(id, x, y, mouse = false) {
     if (f !== null && (id === null || again) && ui.fleet !== f) {
       ui.selected = ui.target = ui.peek = null;
       ui.fleet = f;
+      view.followFleet(game, f);
       updateActions();
       return;
     }

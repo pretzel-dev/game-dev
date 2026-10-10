@@ -18,6 +18,9 @@ export const NEUTRAL_COLOR = '#8a90a6';
 export const ownerColor = (o) => (o === NEUTRAL ? NEUTRAL_COLOR : OWNER_COLORS[o]);
 
 const SUN_RADIUS = 6;
+// Ships are small against worlds, for a sense of scale; formations close up to match.
+const SHIP_SCALE = 0.45;
+const FORMATION = 0.55;
 const MAX_SHIPS = 400;
 
 // ---- Procedural textures ----------------------------------------------------
@@ -194,6 +197,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   const sky = createSky(renderer, quality);
   scene.add(sky.stars);
   scene.environmentIntensity = 0.9;
+  scene.backgroundIntensity = 0.7; // space reads as black; the backdrop is a whisper
 
   // The sun: the only real light (a second, smaller and oranger one in
   // binary systems), with a little cold fill so night sides aren't pure black.
@@ -542,7 +546,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     used++;
     const type = probe ? 3 : Math.floor(hash(id, 3) * 3);
     const k = 0.9 + hash(id, 5) * 0.25;
-    const s = probe ? [0.45, 0.45, 0.45] : [0.8, 0.8, 0.8 * k];
+    const s = probe ? [0.3, 0.3, 0.3] : [SHIP_SCALE, SHIP_SCALE, SHIP_SCALE * k];
     unclip(p);
     const ppu = ppuAt(p);
     // Visible from afar as a point of light; brighter while the drive burns.
@@ -673,7 +677,13 @@ export function createView(canvas, labelRoot, opts = {}) {
     const flat = Math.hypot(orbit.target.x, orbit.target.z);
     if (flat > extent) { orbit.target.x *= extent / flat; orbit.target.z *= extent / flat; }
     orbit.target.y = THREE.MathUtils.clamp(orbit.target.y, -extent * 0.3, extent * 0.3);
-    if (orbit.follow === null) orbit.target.y *= 1 - Math.min(1, dt * 2); // drift back to the plane of the orbits
+    if (orbit.fleet != null) {
+      // Riding along with a selected fleet.
+      const f = game.fleets.find((x) => x.id === orbit.fleet);
+      if (!f) orbit.fleet = null;
+      else { const s = fleetState(f, now); orbit.target.lerp(tmp.set(s.x, s.y, s.z), Math.min(1, dt * 6)); }
+    }
+    if (orbit.follow === null && orbit.fleet == null) orbit.target.y *= 1 - Math.min(1, dt * 2); // drift back to the plane of the orbits
     if (orbit.follow !== null) {
       const p = bodyPos[orbit.follow];
       orbit.target.lerp(tmp.set(p.x, p.y, p.z), Math.min(1, dt * 6));
@@ -864,11 +874,15 @@ export function createView(canvas, labelRoot, opts = {}) {
       const targeted = ui.target === b.id;
       const ppu = ppuAt(v.g.position);
       // Markers stay a readable size on screen however far out we are.
-      const markPx = Math.max(b.size * 2.4 * ppu, 18);
+      // Moons and stations get smaller rings than planets.
+      const sat = b.parent !== null;
+      const markPx = Math.max(b.size * (sat ? 2.0 : 2.4) * ppu, sat ? 10 : 16);
       v.mark.scale.setScalar((markPx / ppu) * (1 + v.pulse * 0.6 + (selected ? Math.sin(t * 5) * 0.06 : 0)));
       v.mark.material.uniforms.uOpacity.value = selected ? 1 : targeted ? 0.9 : b.owner === NEUTRAL ? 0.25 : 0.7;
       // Up close the world itself is the marker: fade the ring out of the way.
       if (b.size * ppu > 70) v.mark.material.uniforms.uOpacity.value *= 0.25;
+      // Crowded against its planet when zoomed out: no ring (its ships show on the planet's label).
+      if (crowded.has(b.id) && !selected && !targeted) v.mark.material.uniforms.uOpacity.value = 0;
       // Garrison veterancy shows as gaps in the ring (only if we can see it).
       const lvl = knowsWorld(b) && b.ships > 0 ? vetLevel(b.vet) : 0;
       v.mark.material.uniforms.uLvl.value = lvl;
@@ -1011,7 +1025,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         const row = Math.floor(j / cols);
         const col = (j % cols) - (cols - 1) / 2;
         const since = now - f.t0;
-        const open = THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.5 + 0.5;
+        const open = (THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.5 + 0.5) * FORMATION;
         const h1 = hash(f.id, j), h2 = hash(j, f.id), h3 = hash(f.id + 7, j * 3);
         const drift = t * (0.3 + h1 * 0.4) + h2 * 6;
         tmp.set(s.x, s.y, s.z)
@@ -1131,16 +1145,24 @@ export function createView(canvas, labelRoot, opts = {}) {
     return best;
   }
 
+  /** Lock the camera onto a fleet and glide in a little. */
+  function followFleet(game, id) {
+    orbit.follow = null;
+    orbit.fleet = id;
+    orbit.goalDist = Math.min(orbit.dist, 10);
+  }
   /** Nearest fleet (of `owner`) to a screen point, within a finger's reach. */
   function pickFleet(game, x, y, owner) {
     let best = null;
-    let bestD = 24;
+    let bestD = 30;
     for (const f of game.fleets) {
       if (f.owner !== owner) continue;
       const s = fleetState(f, game.time);
       tmp.set(s.x, s.y, s.z).project(camera);
       if (tmp.z > 1) continue;
-      const d = Math.hypot((tmp.x * 0.5 + 0.5) * window.innerWidth - x, (-tmp.y * 0.5 + 0.5) * window.innerHeight - y);
+      const sx = (tmp.x * 0.5 + 0.5) * window.innerWidth, sy = (-tmp.y * 0.5 + 0.5) * window.innerHeight;
+      // The ships themselves, or their tag (drawn just right of them).
+      const d = Math.min(Math.hypot(sx - x, sy - y), Math.hypot(sx + 32 - x, sy - y) - 6);
       if (d < bestD) { bestD = d; best = f.id; }
     }
     return best;
@@ -1158,6 +1180,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     return ray.intersectPlane(plane, new THREE.Vector3());
   }
   function zoomAt(x, y, factor) {
+    orbit.fleet = null;
     // Zoom toward the fingers, wherever they are.
     orbit.follow = null;
     orbit.goalDist = null;
@@ -1168,6 +1191,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     if (before) orbit.target.lerp(before, 1 - k);
   }
   function pan(dx, dy) {
+    orbit.fleet = null;
     orbit.follow = null;
     const perPx = (2 * orbit.dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / window.innerHeight;
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
@@ -1175,6 +1199,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     orbit.target.addScaledVector(right, -dx * perPx).addScaledVector(fwd, dy * perPx);
   }
   function focus(game, id, zoom = true) {
+    orbit.fleet = null;
     orbit.follow = id;
     if (id === null || !zoom) return;
     const b = game.bodies[id];
@@ -1190,6 +1215,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   }
   /** Turn the view around a pivot (camera and look-at point both swing). */
   function rotateAround(pivot, daz, dpol) {
+    orbit.fleet = null;
     orbit.follow = null;
     orbit.goalDist = null;
     const off = new THREE.Vector3().subVectors(camera.position, orbit.target);
@@ -1267,5 +1293,5 @@ export function createView(canvas, labelRoot, opts = {}) {
     }
   }
 
-  return { _debug: { scene, renderer, post, camera, fx, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
+  return { _debug: { scene, renderer, post, camera, fx, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, followFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
 }

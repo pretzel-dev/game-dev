@@ -53,7 +53,7 @@ void main() {
   float dust = smoothstep(0.35, 0.8, lanes) * exp(-pow((lat - 0.02 * sin(lon * 3.0)) / 0.07, 2.0));
   float mw = band * (0.25 + clouds * 0.9) + core * 1.4;
   mw *= 1.0 - min(0.92, dust * 1.3);
-  col += mix(vec3(0.55, 0.62, 0.85), vec3(1.0, 0.82, 0.6), clamp(core * 1.4, 0.0, 1.0)) * mw * 0.020;
+  col += mix(vec3(0.55, 0.62, 0.85), vec3(1.0, 0.82, 0.6), clamp(core * 1.4, 0.0, 1.0)) * mw * 0.016;
 
   // --- Nebulae: big soft clouds of glowing gas with dark dust through them. ---
   for (int i = 0; i < 3; i++) {
@@ -72,7 +72,7 @@ void main() {
     float glow = dens * dens * 0.9 + wisps * wisps * dens * 0.8;
     float dk = smoothstep(0.55, 0.85, ridged(q * 1.3 + 31.0, 4)) * fall;
     col *= 1.0 - dk * 0.7;
-    col += c * glow * 0.075 * (1.0 - dk * 0.85);
+    col += c * glow * 0.028 * (1.0 - dk * 0.85);
   }
 
   // --- Faint galaxies far beyond: small tilted ellipses with a bright core. ---
@@ -180,14 +180,14 @@ export function createSky(renderer, quality) {
     uniforms.uPole.value.set(0.3 + r() * 0.4, 0.75 + r() * 0.2, 0.3 - r() * 0.6).normalize();
     const pal = PALETTES[Math.floor(r() * PALETTES.length)];
     const pal2 = PALETTES[Math.floor(r() * PALETTES.length)];
-    const count = 2 + (r() < 0.5 ? 1 : 0);
+    const count = 1; // one distant nebula: space should read as black
     for (let i = 0; i < 3; i++) {
       const p = i === 1 ? pal2 : pal;
       const flip = r() < 0.4;
       uniforms.uNebDir.value[i].copy(dir());
       uniforms.uNebA.value[i].fromArray(flip ? p[1] : p[0]);
       uniforms.uNebB.value[i].fromArray(flip ? p[0] : p[1]);
-      uniforms.uNebSize.value[i] = i < count ? 0.35 + r() * 0.45 : 0;
+      uniforms.uNebSize.value[i] = i < count ? 0.3 + r() * 0.2 : 0;
       uniforms.uGal.value[i].copy(dir()).multiplyScalar(0.6 + r() * 1.2);
     }
     uniforms.uSeed.value = Math.floor(r() * 1000);
