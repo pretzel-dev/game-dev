@@ -36,28 +36,6 @@ uniform float uSeed;
 uniform float uRes;
 varying vec3 vDir;
 
-// One layer of point stars on a 3D grid of cells: at most one star per cell.
-vec3 starLayer(vec3 d, float freq, float dens, float bright) {
-  vec3 p = d * freq;
-  vec3 base = floor(p) + step(0.5, fract(p)) - 1.0; // the 2x2x2 cells nearest p
-  vec3 acc = vec3(0.0);
-  for (int z = 0; z <= 1; z++) for (int y = 0; y <= 1; y++) for (int x = 0; x <= 1; x++) {
-    vec3 cell = base + vec3(float(x), float(y), float(z));
-    vec3 h = hash33(cell + uSeed);
-    if (h.x > dens) continue;
-    vec3 sp = normalize(cell + hash33(cell * 1.7 + 3.1));
-    float ang = length(cross(sp, d));
-    if (dot(sp, d) < 0.0) continue;
-    float px = 2.0 / uRes; // about a texel, in radians
-    float k = exp(-pow(ang / (px * 0.55), 2.0));
-    // Star colour from a temperature: mostly white, some blue, some orange.
-    float tcol = h.y;
-    vec3 col = tcol < 0.15 ? vec3(0.65, 0.78, 1.0) : tcol < 0.75 ? vec3(1.0, 0.97, 0.92) : tcol < 0.93 ? vec3(1.0, 0.82, 0.6) : vec3(1.0, 0.6, 0.45);
-    acc += col * k * bright * pow(h.z, 3.0);
-  }
-  return acc;
-}
-
 void main() {
   vec3 d = normalize(vDir);
   vec3 col = vec3(0.0);
@@ -76,8 +54,6 @@ void main() {
   float mw = band * (0.25 + clouds * 0.9) + core * 1.4;
   mw *= 1.0 - min(0.92, dust * 1.3);
   col += mix(vec3(0.55, 0.62, 0.85), vec3(1.0, 0.82, 0.6), clamp(core * 1.4, 0.0, 1.0)) * mw * 0.020;
-  // Unresolved star haze in the band.
-  col += starLayer(d, 700.0, 0.03 * clamp(band, 0.0, 1.0), 0.05) * (1.0 - dust);
 
   // --- Nebulae: big soft clouds of glowing gas with dark dust through them. ---
   for (int i = 0; i < 3; i++) {
@@ -97,8 +73,6 @@ void main() {
     float dk = smoothstep(0.55, 0.85, ridged(q * 1.3 + 31.0, 4)) * fall;
     col *= 1.0 - dk * 0.7;
     col += c * glow * 0.075 * (1.0 - dk * 0.85);
-    // Young hot stars embedded in the brightest gas.
-    col += starLayer(d, 520.0, 0.01 * dens, 0.4) * c * 2.5;
   }
 
   // --- Faint galaxies far beyond: small tilted ellipses with a bright core. ---
@@ -119,9 +93,7 @@ void main() {
     col += vec3(0.85, 0.85, 1.0) * gal * 0.035;
   }
 
-  // --- Background stars everywhere (the bright ones are drawn live). ---
-  col += starLayer(d, 420.0, 0.004, 0.12);
-  col += starLayer(d, 180.0, 0.006, 0.25);
+  // (Stars are all drawn live, as points, so they stay pin-sharp.)
 
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -156,7 +128,7 @@ export function createSky(renderer, quality) {
 
   // Bright stars: crisp points drawn every frame (twinkling a little), so
   // they stay sharp at any screen resolution. The brightest bloom.
-  const N = quality === 'high' ? 2600 : 1400;
+  const N = quality === 'high' ? 9000 : 5000;
   const starGeo = new THREE.BufferGeometry();
   const sPos = new Float32Array(N * 3), sCol = new Float32Array(N * 3), sSize = new Float32Array(N);
   starGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
@@ -176,7 +148,7 @@ export function createSky(renderer, quality) {
         float tw = 0.85 + 0.15 * sin(uT * (1.5 + fract(position.x * 7.1) * 3.0) + position.y * 13.0);
         vB = size;
         vCol = color * tw;
-        gl_PointSize = (1.2 + size * 2.2) * uPR;
+        gl_PointSize = (1.0 + size * 2.2) * max(uPR, 1.0);
       }`,
     fragmentShader: /* glsl */ `
       varying vec3 vCol; varying float vB;
@@ -227,12 +199,13 @@ export function createSky(renderer, quality) {
     const v = new THREE.Vector3();
     for (let i = 0; i < N; i++) {
       v.copy(dir());
-      if (r() < 0.45) { v.addScaledVector(pole, -v.dot(pole) * (0.7 + r() * 0.3)).normalize(); }
+      // Half of them crowd into the Milky Way's band.
+      if (r() < 0.5) { v.addScaledVector(pole, -v.dot(pole) * (0.75 + r() * 0.25)).normalize(); }
       sPos.set([v.x, v.y, v.z], i * 3);
-      const m = r() ** 6; // most are faint
+      const m = r() ** 7; // most are faint
       const tc = r();
       const c = tc < 0.18 ? [0.7, 0.82, 1.0] : tc < 0.75 ? [1.0, 0.97, 0.93] : tc < 0.94 ? [1.0, 0.84, 0.62] : [1.0, 0.62, 0.48];
-      const b = 0.25 + m * 3.5;
+      const b = 0.12 + r() * 0.12 + m * 3.5;
       sCol.set([c[0] * b, c[1] * b, c[2] * b], i * 3);
       sSize[i] = m * 2.2;
     }

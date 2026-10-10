@@ -264,10 +264,10 @@ export function hullMaterial(uT) {
         {
           float blink = step(fract(uT * 0.7 + vSeed), 0.06);
           float flash = step(fract(uT * 0.45 + vSeed * 1.7), 0.03);
-          totalEmissiveRadiance += isK(3.0) * vec3(2.4, 1.6, 0.8) * vLit;
-          totalEmissiveRadiance += isK(4.0) * vec3(6.0, 0.25, 0.15) * (0.25 + blink) * vLit;
-          totalEmissiveRadiance += isK(5.0) * vec3(0.2, 6.0, 1.2) * (0.25 + blink) * vLit;
-          totalEmissiveRadiance += isK(6.0) * vec3(9.0) * flash * vLit;
+          totalEmissiveRadiance += isK(3.0) * vec3(1.6, 1.1, 0.55) * vLit;
+          totalEmissiveRadiance += isK(4.0) * vec3(2.2, 0.1, 0.06) * (0.35 + blink * 0.6) * vLit;
+          totalEmissiveRadiance += isK(5.0) * vec3(0.08, 2.2, 0.45) * (0.35 + blink * 0.6) * vLit;
+          totalEmissiveRadiance += isK(6.0) * vec3(2.2) * flash * vLit;
           totalEmissiveRadiance += isK(7.0) * vec3(0.6, 0.9, 1.6) * vLit;
           totalEmissiveRadiance += paint * vPaint * 0.05;
         }`)
