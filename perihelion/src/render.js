@@ -199,6 +199,43 @@ export function createView(canvas, labelRoot, opts = {}) {
   scene.environmentIntensity = 0.9;
   scene.backgroundIntensity = 0.7; // space reads as black; the backdrop is a whisper
 
+  // Dust: faint motes drifting in a box that travels with the camera, so
+  // moving the view shows parallax against them, a sense of passing
+  // through a vast space. The box scales with the zoom.
+  const DUST = quality === 'high' ? 700 : 350;
+  const dustGeo = new THREE.BufferGeometry();
+  {
+    const a = new Float32Array(DUST * 3);
+    for (let i = 0; i < a.length; i++) a[i] = Math.random();
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(a, 3));
+  }
+  const dustMat = new THREE.ShaderMaterial({
+    uniforms: { uBox: { value: 50 }, uPR: { value: 1 } },
+    vertexShader: `uniform float uBox, uPR; varying float vA;
+      void main() {
+        vec3 rel = (fract(position - cameraPosition / uBox) - 0.5) * uBox;
+        vec4 mv = viewMatrix * vec4(cameraPosition + rel, 1.0);
+        float d = -mv.z;
+        // Fade at the edges of the box and right in front of the lens.
+        vA = smoothstep(uBox * 0.5, uBox * 0.3, length(rel)) * smoothstep(uBox * 0.02, uBox * 0.08, d);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = clamp(uBox * 0.06 / max(d, 0.001), 1.0, 3.0) * uPR;
+      }`,
+    fragmentShader: `varying float vA;
+      void main() {
+        float r = length(gl_PointCoord - 0.5) * 2.0;
+        float a = (1.0 - r * r) * vA * 0.22;
+        if (a <= 0.002) discard;
+        gl_FragColor = vec4(vec3(0.75, 0.72, 0.66) * a, 1.0);
+      }`,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+  });
+  const dust = new THREE.Points(dustGeo, dustMat);
+  dust.frustumCulled = false;
+  scene.add(dust);
+
   // The sun: the only real light (a second, smaller and oranger one in
   // binary systems), with a little cold fill so night sides aren't pure black.
   const sun = createSun(SUN_RADIUS, quality);
@@ -217,7 +254,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   scene.add(world);
   let views = [];
 
-  const orbit = { az: 0.4, pol: 0.9, dist: 380, minDist: 1.2, maxDist: 900, target: new THREE.Vector3(), vaz: 0, vpol: 0, follow: null };
+  const orbit = { az: 0.4, pol: 0.9, dist: 380, minDist: 1.2, maxDist: 2200, target: new THREE.Vector3(), vaz: 0, vpol: 0, follow: null };
 
   let companionPath = null;
   let belt = null;
@@ -517,6 +554,43 @@ export function createView(canvas, labelRoot, opts = {}) {
       p.set(q.x + dx * k, q.y + dy * k, q.z + dz * k);
     }
   }
+  /** Where docked ship j sits in a world's parking orbit (matches park()). */
+  function parkPos(b, j, radius, speed, seed, t, out) {
+    const p = bodyPos[b.id];
+    const r1 = hash(seed, j);
+    const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
+    const rr = radius * (1 + hash(j, seed) * 0.15);
+    return out.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
+  }
+  const BLEND = 8; // seconds of game time to leave or join a parking orbit
+  const bA = new THREE.Vector3(), bB = new THREE.Vector3(), bAx = new THREE.Vector3();
+  /** Moves tmp (a ship's formation position) toward its parking slot near launch and arrival. */
+  function blendPark(f, j, since, t) {
+    const leaving = since < BLEND, arriving = f.T - since < BLEND;
+    if ((!leaving && !arriving) || f.probe) return;
+    const b = game_.bodies[leaving ? f.from : f.to];
+    if (!b || !bodyPos[b.id]) return;
+    const k = leaving ? THREE.MathUtils.smootherstep(since, 0, BLEND) : THREE.MathUtils.smootherstep(f.T - since, 0, BLEND);
+    if (k >= 1) return;
+    // Slot: its old place among the docked ships, or (arriving) the next free one / the siege ring.
+    const friendly = b.owner === f.owner;
+    if (leaving || friendly) parkPos(b, (leaving ? j : b.ships + j) % 20, b.size * 1.8 + 0.4, 0.25, b.id * 13, t, bA);
+    else parkPos(b, j % 20, b.size * 2.4 + 0.8, -0.18, b.id * 29 + f.owner, t, bA);
+    // Arc from slot to formation round the world's centre.
+    const c = bodyPos[b.id];
+    bA.sub(c);
+    bB.set(tmp.x - c.x, tmp.y - c.y, tmp.z - c.z);
+    const rA = bA.length(), rB = bB.length();
+    if (rA < 1e-6 || rB < 1e-6) return;
+    bA.divideScalar(rA); bB.divideScalar(rB);
+    const ang = Math.acos(THREE.MathUtils.clamp(bA.dot(bB), -1, 1));
+    bAx.crossVectors(bA, bB);
+    if (bAx.lengthSq() < 1e-10) bAx.set(0, 1, 0);
+    bAx.normalize();
+    bA.applyAxisAngle(bAx, ang * k).multiplyScalar(rA + (rB - rA) * k);
+    tmp.set(c.x + bA.x, c.y + bA.y, c.z + bA.z);
+  }
+  let game_ = null;
   /** Is a point in sunlight (1), or in the shadow of a world (0)? Soft-edged. */
   function sunlit(p) {
     let vis = 1;
@@ -550,7 +624,12 @@ export function createView(canvas, labelRoot, opts = {}) {
     unclip(p);
     const ppu = ppuAt(p);
     // Visible from afar as a point of light; brighter while the drive burns.
-    const glint = ppu > 60 ? null : [(burning ? 9 : 5) * (probe ? 0.8 : 1), (burning ? 1 : 0.7) * glintMul];
+    // Visible from afar as a point of light that fades out smoothly as the
+    // hull itself grows on screen (a hard cut-off made every docked fleet
+    // blink at once as the view crossed it).
+    const hullPx = 0.6 * SHIP_SCALE / 0.8 * ppu;
+    const fade = 1 - THREE.MathUtils.smoothstep(hullPx, 3, 14);
+    const glint = fade <= 0 ? null : [(burning ? 9 : 5) * (probe ? 0.8 : 1), (burning ? 1 : 0.7) * glintMul * fade];
     shipR.add(type, p, n, s, color, 0.82 + hash(id, 11) * 0.28, id, burning, plume * (0.8 + Math.sin(t * 40 + seed) * 0.05) * (probe ? 0.35 : 1), glint, 0.6 * ppu, sunlit(p));
   }
 
@@ -644,6 +723,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   }
 
   function render(game, ui, dt, t) {
+    game_ = game;
     const now = game.time;
     const stars = game.stars || [{ r: 0, period: 1, phase: 0, size: 1 }];
     stars.slice(0, 2).forEach((st, i) => {
@@ -1032,6 +1112,10 @@ export function createView(canvas, labelRoot, opts = {}) {
           .addScaledVector(perp, (col * (0.8 + h3 * 0.4) + (row % 2) * 0.4 + (h1 - 0.5) * 0.6 + Math.sin(drift) * 0.08) * open)
           .addScaledVector(UP, ((h2 - 0.5) * 0.9 + Math.cos(drift * 0.8) * 0.06) * open)
           .addScaledVector(dir, (-row * (0.9 + h3 * 0.4) - (h2 - 0.5) * 0.7) * open);
+        // Leaving and arriving: ease between the parking orbit and the
+        // formation along an arc round the world (never a dash through or
+        // round it at the last moment).
+        blendPark(f, j, since, t);
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
         const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);
@@ -1124,6 +1208,11 @@ export function createView(canvas, labelRoot, opts = {}) {
     }
 
     updateFlare(dt);
+    dustMat.uniforms.uBox.value = orbit.dist * 0.9;
+    dustMat.uniforms.uPR.value = pixelRatio;
+    // Depth of field only when zoomed in close (and on High).
+    post.uniforms.uFocus.value = orbit.dist;
+    post.uniforms.uDof.value = quality === 'high' ? 1 - THREE.MathUtils.smoothstep(orbit.dist, 10, 40) : 0;
     adapt(t);
     post.render(scene, camera, t);
   }
