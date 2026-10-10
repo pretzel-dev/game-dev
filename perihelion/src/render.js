@@ -8,6 +8,7 @@ import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
 import { createShipRenderer, platingTex } from './gfx/ships.js';
 import { stationMesh } from './gfx/stations.js';
+import { structureMesh } from './gfx/structures.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
 import { BIOMES, createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
@@ -142,7 +143,6 @@ function orbitLine(b) {
 
 // ---- Structures -------------------------------------------------------------
 
-const structMat = new THREE.MeshStandardMaterial({ color: '#c9ced6', map: platingTex(), roughnessMap: platingTex(), bumpMap: platingTex(), bumpScale: 0.5, metalness: 0.4, roughness: 0.5, emissive: '#06070a' });
 // Under construction: a flickering blueprint hologram with scan lines.
 const holoT = { value: 0 };
 const ghostMat = new THREE.ShaderMaterial({
@@ -170,118 +170,6 @@ const ghostMat = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
 });
-
-/** A structure's mesh, sized to the world: yards orbit, guns and mines sit on the surface. */
-function structureMesh(type, b, k, done, level = 1) {
-  const mat = done ? structMat : ghostMat;
-  const s = Math.max(0.25, b.size * 0.14);
-  const g = new THREE.Group();
-  if (type === 'shipyard') {
-    // An open gantry ring in low orbit with a docking spine.
-    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.05, 6, 64), mat));
-    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.03, 4, 64).translate(0, 0, s * 0.18), mat));
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      const truss = new THREE.Mesh(new THREE.BoxGeometry(s * 0.12, s * 0.3, s * 0.9), mat);
-      truss.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
-      truss.lookAt(0, 0, 0);
-      g.add(truss);
-    }
-    g.rotation.x = Math.PI / 2 + 0.35;
-    return g;
-  }
-  if (type === 'skimmer') {
-    // Gas skimmers: scoop craft dipping through the upper cloud deck, one per level.
-    const rad = b.size * 1.08;
-    for (let i = 0; i < level; i++) {
-      const a = (i / level) * Math.PI * 2 + k;
-      const craft = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.ConeGeometry(s * 0.35, s * 1.4, 6), mat);
-      body.rotation.z = Math.PI / 2;
-      const tank = new THREE.Mesh(new THREE.SphereGeometry(s * 0.3, 8, 6), mat);
-      tank.position.x = -s * 0.6;
-      craft.add(body, tank);
-      craft.position.set(Math.cos(a) * rad, 0, Math.sin(a) * rad);
-      craft.rotation.y = -a;
-      g.add(craft);
-    }
-    g.rotation.x = 0.25 + k * 0.3;
-    return g;
-  }
-  // Surface structures at a fixed spot, standing out from the ground.
-  const r = rng(b.id * 17 + k * 101 + (type === 'mine' ? 5 : 0));
-  const dir = new THREE.Vector3(r() - 0.5, (r() - 0.5) * 0.9, r() - 0.5).normalize();
-  if (type === 'defence') {
-    // One barrel per level on a wider, heavier mount.
-    const w = 1 + (level - 1) * 0.3;
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.5 * w, s * 0.6 * w, s * 0.35, 8), mat);
-    g.add(base);
-    for (let i = 0; i < level; i++) {
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.08, s * (0.9 + level * 0.15), 6), mat);
-      barrel.position.set((i - (level - 1) / 2) * s * 0.25, s * 0.45, s * 0.25);
-      barrel.rotation.x = 0.7;
-      g.add(barrel);
-    }
-    if (level > 1) {
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(s * 0.3 * w, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat);
-      dome.position.y = s * 0.17;
-      g.add(dome);
-    }
-  } else if (type === 'exchange') {
-    // Orbital exchange: a slim spire with a tether up to a counting-house in orbit.
-    const spire = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.12, s * 0.35, s * 1.8, 6), mat);
-    spire.position.y = s * 0.9;
-    g.add(spire);
-    const tether = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.02, s * 0.02, s * 3, 3), mat);
-    tether.position.y = s * 3.2;
-    g.add(tether);
-    const hub = new THREE.Mesh(new THREE.TorusGeometry(s * (0.4 + level * 0.12), s * 0.08, 6, 20), mat);
-    hub.position.y = s * 4.7;
-    hub.rotation.x = Math.PI / 2;
-    g.add(hub);
-    if (done) {
-      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#ffe39a').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      light.position.y = s * 4.7;
-      light.scale.setScalar(s * (1.2 + level * 0.4));
-      g.add(light);
-    }
-  } else if (type === 'lab') {
-    // Research station: a dish per level on a mast, with a lit window band.
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.1, s * 0.16, s * 1.1, 6), mat);
-    mast.position.y = s * 0.55;
-    g.add(mast, new THREE.Mesh(new THREE.BoxGeometry(s * 0.8, s * 0.3, s * 0.8), mat));
-    for (let i = 0; i < level; i++) {
-      const dish = new THREE.Mesh(new THREE.SphereGeometry(s * (0.45 - i * 0.08), 12, 6, 0, Math.PI * 2, 0, Math.PI / 3), mat);
-      dish.position.y = s * (0.7 + i * 0.35);
-      dish.rotation.set(Math.PI + 0.5, i * 2.1, 0);
-      g.add(dish);
-    }
-    if (done) {
-      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#9fd4ff').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      light.position.y = s * (1.1 + level * 0.3);
-      light.scale.setScalar(s * (1 + level * 0.4));
-      g.add(light);
-    }
-  } else {
-    // Mine: a rig with one derrick and work light per level, on a growing pad.
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(s * (0.9 + (level - 1) * 0.4), s * 0.4, s * 0.7), mat));
-    for (let i = 0; i < level; i++) {
-      const x0 = (i - (level - 1) / 2) * s * 0.45;
-      const tower = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.08, s * 0.14, s * (1.4 - i * 0.2), 5), mat);
-      tower.position.set(x0, s * 0.7, 0);
-      g.add(tower);
-      if (done) {
-        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#ffc070').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-        light.position.set(x0, s * (1.5 - i * 0.2), 0);
-        light.scale.setScalar(s * 1.6);
-        g.add(light);
-      }
-    }
-  }
-  g.position.copy(dir).multiplyScalar(b.size * (b.kind === 'asteroid' ? 1.1 : 1));
-  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-  return g;
-}
 
 // ---- View ---------------------------------------------------------------------
 
@@ -958,7 +846,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       v.pulse = Math.max(0, v.pulse - dt);
 
       // Structures: rebuilt when anything is added, finished or lost.
-      const sig = b.structures.map((x) => x.type + x.level + ((x.left > 0 && !x.next) || x.scrap ? '~' : '')).join();
+      const sig = b.owner + ':' + b.structures.map((x) => x.type + x.level + ((x.left > 0 && !x.next) || x.scrap ? '~' : '')).join();
       if (sig !== v.sig) {
         v.sig = sig;
         if (v.structs) v.structs.removeFromParent();
@@ -966,7 +854,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         v.structs = new THREE.Group();
         b.structures.forEach((x, k) => {
           if (b.kind === 'station' && x.type === 'shipyard') return; // the station is the yard
-          const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level);
+          const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner));
           // Surface structures turn with the world; yards and skimmers orbit on their own.
           (x.type === 'shipyard' || x.type === 'skimmer' ? v.structs : v.surface).add(m);
         });
@@ -976,7 +864,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       const targeted = ui.target === b.id;
       const ppu = ppuAt(v.g.position);
       // Markers stay a readable size on screen however far out we are.
-      const markPx = Math.max(b.size * 3.2 * ppu, 22);
+      const markPx = Math.max(b.size * 2.4 * ppu, 18);
       v.mark.scale.setScalar((markPx / ppu) * (1 + v.pulse * 0.6 + (selected ? Math.sin(t * 5) * 0.06 : 0)));
       v.mark.material.uniforms.uOpacity.value = selected ? 1 : targeted ? 0.9 : b.owner === NEUTRAL ? 0.25 : 0.7;
       // Up close the world itself is the marker: fade the ring out of the way.

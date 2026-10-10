@@ -239,7 +239,7 @@ export function shipGeometries() {
 /** Hull material: PBR plating lit by the sun and the sky, with tags for paint and lights. */
 export function hullMaterial(uT) {
   const pl = platingTex();
-  const mat = new THREE.MeshStandardMaterial({ color: '#d4d8de', map: pl, roughnessMap: pl, bumpMap: pl, bumpScale: 0.6, metalness: 0.35, roughness: 0.5, emissive: '#06070a' });
+  const mat = new THREE.MeshStandardMaterial({ color: '#d4d8de', map: pl, roughnessMap: pl, metalness: 0.35, roughness: 0.62, emissive: '#06070a' });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uT = uT;
     sh.vertexShader = sh.vertexShader
