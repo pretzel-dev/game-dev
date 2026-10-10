@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { icon } from './icons.js';
 import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
+import { createPost } from './gfx/post.js';
+import { createSky } from './gfx/sky.js';
+import { createSun } from './gfx/sun.js';
+import { BIOMES, createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
@@ -58,14 +62,6 @@ const ringTexs = [0, 1, 2, 3].map((lvl) => canvasTex(128, 128, (g) => {
 }));
 const ringTex = ringTexs[0];
 
-/** Fine speckle over a whole texture, so surfaces have grain when close. */
-function grain(g, w, h, r, amount) {
-  for (let i = 0; i < 6000; i++) {
-    g.fillStyle = r() < 0.5 ? `rgba(0,0,0,${amount})` : `rgba(255,255,255,${amount * 0.6})`;
-    g.fillRect(r() * w, r() * h, 0.35, 0.35);
-  }
-}
-
 // Small 3D value noise, enough for coastlines and cloud decks.
 function vhash(x, y, z, s) {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ Math.imul(s, 1274126177);
@@ -85,230 +81,6 @@ function fbm(x, y, z, s, oct) {
   let sum = 0, amp = 0.5, f = 1;
   for (let o = 0; o < oct; o++) { sum += vnoise(x * f, y * f, z * f, s + o) * amp; f *= 2.03; amp *= 0.5; }
   return sum;
-}
-
-/** Cloud deck for a living world: swirling, banded by latitude, mostly clear. */
-function cloudTex(b) {
-  return canvasTex(512, 256, (g) => {
-    const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-    const { width: W, height: H, data: d } = img;
-    const seed = b.id * 31 + 11;
-    for (let y = 0; y < H; y++) {
-      const lat = (y / H - 0.5) * Math.PI;
-      const cl = Math.cos(lat);
-      // Storm belts at mid latitudes, clear subtropics.
-      const belt = 0.1 + 0.25 * Math.abs(Math.sin(lat * 3));
-      for (let x = 0; x < W; x++) {
-        const lon = (x / W) * Math.PI * 2;
-        const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
-        const sw = fbm(px * 2, py * 2, pz * 2, seed + 5, 3);
-        const n = fbm(px * 3 + sw, py * 6 + sw * 0.5, pz * 3 - sw, seed, 5) + belt - 0.3;
-        const a = Math.max(0, Math.min(1, n * 2.6));
-        const i = (y * W + x) * 4;
-        d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = a * 210;
-      }
-    }
-    g.putImageData(img, 0, 0);
-  }, 1);
-}
-
-/** A gas giant's colouring [hue, saturation, lightness]: ochre, ice blue, teal, rust, violet or cream. */
-function giantPalette(b) {
-  const P = [[0.08, 0.42, 0.32], [0.57, 0.38, 0.34], [0.47, 0.3, 0.3], [0.02, 0.45, 0.3], [0.74, 0.22, 0.32], [0.11, 0.2, 0.42]];
-  return P[Math.floor(b.hue * P.length) % P.length];
-}
-/** Gas giant: soft horizontal bands. Rocky world: mottled continents and craters. */
-function surfaceTex(b) {
-  const r = rng(Math.floor(b.hue * 1e6) + b.id);
-  const col = new THREE.Color();
-  return canvasTex(256, 128, (g, w, h) => {
-    drawSurface(g, w, h);
-    grain(g, w, h, r, b.giant ? 0.05 : 0.12);
-  }, b.giant ? 2 : b.home ? 2 : b.kind === 'planet' ? 4 : 2);
-
-  function drawSurface(g, w, h) {
-    if (b.home) {
-      // A living world, drawn from 3D noise on the sphere so coastlines are
-      // fractal and seamless: oceans with shelves, continents coloured by
-      // latitude and height, ice caps. Clouds are a separate layer.
-      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-      const W = img.width;
-      const H = img.height;
-      const seed = b.id * 17 + 3;
-      const d = img.data;
-      for (let y = 0; y < H; y++) {
-        const lat = (y / H - 0.5) * Math.PI;
-        const cl = Math.cos(lat);
-        for (let x = 0; x < W; x++) {
-          const lon = (x / W) * Math.PI * 2;
-          const px = Math.cos(lon) * cl;
-          const py = Math.sin(lat);
-          const pz = Math.sin(lon) * cl;
-          // Domain warp, then fractal height.
-          const wx = fbm(px * 1.5, py * 1.5, pz * 1.5, seed + 9, 3) * 0.6;
-          const bio = b.biome || 'temperate';
-          const sea = { desert: -0.22, ocean: 0.14, ice: 0.02, jungle: 0.02, volcanic: -0.05 }[bio] || 0.04;
-          const h = fbm(px * 1.6 + wx, py * 1.6 - wx, pz * 1.6 + wx, seed, 6) - sea;
-          const ab = Math.abs(py);
-          const ice = ab > (bio === 'ice' ? 0.45 : bio === 'desert' ? 0.94 : bio === 'jungle' ? 0.92 : 0.86) - h * 0.25;
-          let R, G, B;
-          if (ice) { R = 236; G = 242; B = 248; }
-          else if (bio !== 'temperate' && bio !== 'ocean') {
-            // Other worlds: the same heights, painted in their own palette.
-            const k = Math.max(0, 1 + Math.min(0, h) * 7);
-            const m = Math.min(1, Math.max(0, h) * 3.2);
-            const v = fbm(px * 3, py * 3, pz * 3, seed + 4, 3);
-            if (bio === 'desert') {
-              // Dunes and dry basins; dark rock ridges; a few salt pans.
-              if (h < 0) { R = 150 + 40 * k; G = 105 + 30 * k; B = 70 + 20 * k; }
-              else { R = 196 + v * 40 - m * 50; G = 140 + v * 30 - m * 45; B = 82 + v * 10 - m * 30; }
-            } else if (bio === 'ice') {
-              if (h < 0) { R = 30 + 40 * k; G = 52 + 50 * k; B = 78 + 40 * k; }
-              else { R = 196 + v * 40 - m * 30; G = 210 + v * 30 - m * 25; B = 224 + v * 20 - m * 10; }
-            } else if (bio === 'jungle') {
-              if (h < 0) { R = 14 + 20 * k; G = 70 + 60 * k; B = 72 + 40 * k; }
-              else { R = 30 + v * 40 + m * 40; G = 92 + v * 50 + m * 10; B = 30 + v * 20 + m * 20; }
-            } else {
-              // Volcanic, industrial: black basalt, rust plains, glowing seams.
-              if (h < 0) { R = 70 + 50 * k; G = 30 + 16 * k; B = 22 + 10 * k; }
-              else { R = 44 + v * 40 + m * 20; G = 38 + v * 22 + m * 12; B = 36 + v * 16 + m * 10; }
-              const seam = Math.exp(-(((fbm(px * 6, py * 6, pz * 6, seed + 11, 3) - 0.5) / 0.025) ** 2));
-              if (h > 0) { R += seam * 170; G += seam * 60; }
-            }
-          }
-          else if (h < 0) {
-            // Ocean: shallow shelves turquoise, deep water dark.
-            const k = Math.max(0, 1 + h * 7);
-            R = 12 + 30 * k * k; G = 44 + 70 * k * k; B = 92 + 60 * k;
-          } else {
-            const hot = 1 - ab; // deserts near the tropics, forests elsewhere
-            const dry = Math.max(0, fbm(px * 3, py * 3, pz * 3, seed + 4, 3) + (hot > 0.55 && hot < 0.85 ? 0.25 : -0.1));
-            const m = Math.min(1, h * 3.2);
-            R = 58 + dry * 120 + m * 50; G = 86 + dry * 60 + m * 20; B = 40 + dry * 30 + m * 30;
-            if (ab > 0.7) { const t = (ab - 0.7) / 0.16; R += t * 40; G += t * 30; B += t * 40; } // tundra
-          }
-          const i = (y * W + x) * 4;
-          d[i] = R; d[i + 1] = G; d[i + 2] = B; d[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-      return;
-    }
-    if (b.kind === 'planet' && b.giant) {
-      // Cloud bands that shear and swirl: latitude bands, pushed sideways by
-      // turbulence that's strongest where neighbouring bands meet, and a
-      // great oval storm.
-      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-      const W = img.width, H = img.height, dd = img.data;
-      const seed = b.id * 13 + 5;
-      const [base, sat, lit] = giantPalette(b);
-      const sx = r(), sy = 0.3 + r() * 0.4;
-      for (let y = 0; y < H; y++) {
-        const lat = (y / H - 0.5) * Math.PI;
-        const cl = Math.cos(lat);
-        for (let x = 0; x < W; x++) {
-          const lon = (x / W) * Math.PI * 2;
-          const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
-          const turb = fbm(px * 4, py * 10, pz * 4, seed, 5) - 0.5;
-          const shear = Math.sin(py * 14 + turb * 3.2);
-          // The storm: a swirl in a small oval.
-          const ox = ((x / W - sx + 1.5) % 1) - 0.5, oy = y / H - sy;
-          const st = Math.exp(-((ox / 0.06) ** 2 + (oy / 0.035) ** 2));
-          const band = shear * 0.5 + 0.5 + st * 0.6;
-          col.setHSL(base + band * 0.05 - st * 0.03, sat * (0.75 + band * 0.6), lit + band * 0.26 + turb * 0.08);
-          const i = (y * W + x) * 4;
-          dd[i] = col.r * 255; dd[i + 1] = col.g * 255; dd[i + 2] = col.b * 255; dd[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-    } else {
-      // Rocky worlds and moons: drawn from 3D noise on the sphere (seamless):
-      // dark lava plains and bright highlands, then craters with dark floors,
-      // bright rims and ejecta, big ones rare, small ones many.
-      const moon = b.kind !== 'planet';
-      const hue = moon ? 0.08 + (b.hue - 0.5) * 0.06 : [0.08, 0.55, 0.02, 0.33][Math.floor(b.hue * 4)];
-      const sat = moon ? 0.06 + b.hue * 0.06 : 0.3;
-      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-      const W = img.width, H = img.height, dd = img.data;
-      const seed = b.id * 29 + 11;
-      const cr = Array.from({ length: moon ? 46 : 28 }, () => {
-        const z = r() * 2 - 1, a = r() * Math.PI * 2, q = Math.sqrt(1 - z * z);
-        const size = 0.03 + r() ** 3 * (moon ? 0.32 : 0.22);
-        return { x: Math.cos(a) * q, y: z, z: Math.sin(a) * q, s: size, c: Math.cos(size * 1.6) };
-      });
-      for (let y = 0; y < H; y++) {
-        const lat = (y / H - 0.5) * Math.PI;
-        const cl = Math.cos(lat);
-        for (let x = 0; x < W; x++) {
-          const lon = (x / W) * Math.PI * 2;
-          const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
-          const mare = fbm(px * 1.8, py * 1.8, pz * 1.8, seed, 4);
-          const grit = fbm(px * 9, py * 9, pz * 9, seed + 3, 3);
-          let l = (moon ? 0.5 : 0.36) + (mare > 0.55 ? -0.14 : 0.04) + (grit - 0.5) * 0.12;
-          for (const c of cr) {
-            const dot = px * c.x + py * c.y + pz * c.z;
-            if (dot < c.c) continue;
-            const d = Math.acos(Math.min(1, dot)) / c.s; // 0 at the centre, 1 at the rim
-            if (d < 0.8) l -= 0.1 * (1 - d * d);
-            else if (d < 1.05) l += 0.12 * (1 - Math.abs(d - 0.92) / 0.13);
-            else if (d < 1.6) l += 0.03 * (1.6 - d);
-          }
-          col.setHSL(hue + (grit - 0.5) * 0.02, sat, Math.max(0.05, Math.min(0.9, l)));
-          const i = (y * W + x) * 4;
-          dd[i] = col.r * 255; dd[i + 1] = col.g * 255; dd[i + 2] = col.b * 255; dd[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-      if (!moon) {
-        g.fillStyle = 'rgba(255,255,255,0.8)';
-        g.fillRect(0, 0, w, 5);
-        g.fillRect(0, h - 5, w, 5);
-      }
-    }
-  }
-}
-
-/** City lights: warm specks clustered into towns and cities (black elsewhere). */
-function lightsTex(b) {
-  const r = rng(b.id * 131 + 7);
-  const t = canvasTex(256, 128, (g, w, h) => {
-    g.fillStyle = '#000';
-    g.fillRect(0, 0, w, h);
-    const cities = b.giant ? 6 : b.kind === 'moon' ? 5 : 18;
-    for (let c = 0; c < cities; c++) {
-      const cx = r() * w;
-      const cy = h * (0.15 + r() * 0.7);
-      const n = 20 + Math.floor(r() * 60);
-      for (let i = 0; i < n; i++) {
-        // Dense cores thinning out to suburbs.
-        const k = r() ** 2;
-        g.fillStyle = r() < 0.2 ? '#fff4d0' : '#ffb95a';
-        g.globalAlpha = 0.4 + r() * 0.6;
-        g.fillRect((cx + (r() - 0.5) * 30 * k + w) % w, cy + (r() - 0.5) * 14 * k, 0.45, 0.45);
-      }
-    }
-    g.globalAlpha = 1;
-  }, 4);
-  return t;
-}
-
-// Sun position in view space, shared by every material that glows at night.
-const sunView = { value: new THREE.Vector3() };
-
-/** Makes a material's emissive map (city lights) show only on the night side. */
-function nightOnly(mat) {
-  mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uSunView = sunView;
-    sh.fragmentShader = `uniform vec3 uSunView;\n${sh.fragmentShader}`.replace(
-      '#include <emissivemap_fragment>',
-      `#include <emissivemap_fragment>
-      {
-        float day = dot(normal, normalize(uSunView + vViewPosition));
-        totalEmissiveRadiance *= smoothstep(0.12, -0.25, day);
-      }`,
-    );
-  };
-  return mat;
 }
 
 // ---- Meshes -------------------------------------------------------------------
@@ -657,36 +429,6 @@ function orbitLine(b) {
   return mesh;
 }
 
-/** Homeworld characters: the sky colour of each. */
-const BIOMES = ['temperate', 'desert', 'ice', 'jungle', 'volcanic', 'ocean'];
-const BIOME_SKY = { temperate: '#6fb6ff', desert: '#f0b878', ice: '#c4e4ff', jungle: '#86e6a8', volcanic: '#ff8a5a', ocean: '#5aa0ff' };
-/** A thin atmosphere: a shell that glows toward the limb (fresnel). */
-function atmosphere(b) {
-  const color = b.giant ? new THREE.Color().setHSL(giantPalette(b)[0], 0.5, 0.75) : new THREE.Color(b.home ? BIOME_SKY[b.biome] || BIOME_SKY.temperate : '#b9c8dc');
-  const strength = b.home ? 1.1 : b.giant ? 0.45 : 0.6;
-  return new THREE.Mesh(
-    new THREE.SphereGeometry(b.size * 1.05, 48, 32),
-    new THREE.ShaderMaterial({
-      uniforms: { color: { value: color }, strength: { value: strength } },
-      vertexShader: `varying vec3 vN; varying vec3 vV;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vN = normalize(normalMatrix * normal);
-          vV = normalize(-mv.xyz);
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: `uniform vec3 color; uniform float strength; varying vec3 vN; varying vec3 vV;
-        void main() {
-          float rim = pow(1.0 - max(dot(vN, vV), 0.0), 3.0);
-          gl_FragColor = vec4(color, rim * strength);
-        }`,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-}
-
 // ---- Structures -------------------------------------------------------------
 
 const structMat = new THREE.MeshStandardMaterial({ color: '#b9c0cc', metalness: 0.6, roughness: 0.45 });
@@ -805,170 +547,37 @@ function structureMesh(type, b, k, done, level = 1) {
 
 // ---- View ---------------------------------------------------------------------
 
-export function createView(canvas, labelRoot) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+export function createView(canvas, labelRoot, opts = {}) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+  let quality = opts.quality || 'high';
+  const maxPR = () => Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2 : 1.25);
+  let pixelRatio = maxPR();
+  renderer.setPixelRatio(1);
+  renderer.autoClear = true;
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#03040a');
   const camera = new THREE.PerspectiveCamera(45, 1, 0.02, 20000);
+  const post = createPost(renderer);
+  post.setSamples(quality === 'high' ? 4 : 2);
 
-  // Distant stars.
-  {
-    const n = 2500;
-    const pos = new Float32Array(n * 3);
-    const v = new THREE.Vector3();
-    for (let i = 0; i < n; i++) {
-      v.randomDirection().multiplyScalar(4000 + Math.random() * 2000);
-      pos.set([v.x, v.y, v.z], i * 3);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.3, sizeAttenuation: false, color: '#9aa6c8', transparent: true, opacity: 0.7 })));
-  }
+  // The sky: a painted nebula backdrop (baked per system) and live bright
+  // stars. Its blurred copy lights the metal of ships and stations.
+  const sky = createSky(renderer, quality);
+  scene.add(sky.stars);
+  scene.environmentIntensity = 0.9;
 
-  // The Milky Way: the galaxy's disc seen edge-on from inside it, a band of
-  // star clouds round the sky with a brighter core and dark dust lanes; and
-  // a small spiral galaxy far beyond it.
-  {
-    const W = 768, H = 384;
-    const tex = canvasTex(W, H, (g) => {
-      const img = g.getImageData(0, 0, W, H);
-      const d = img.data;
-      const N = new THREE.Vector3(0.32, 0.86, 0.4).normalize(); // galactic pole
-      const X = new THREE.Vector3(1, 0, 0).sub(N.clone().multiplyScalar(N.x)).normalize(); // towards the core
-      const Y = new THREE.Vector3().crossVectors(N, X);
-      const v = new THREE.Vector3();
-      for (let y = 0; y < H; y++) {
-        const th = (y / H) * Math.PI;
-        for (let x = 0; x < W; x++) {
-          const ph = (x / W) * Math.PI * 2;
-          v.set(-Math.cos(ph) * Math.sin(th), Math.cos(th), Math.sin(ph) * Math.sin(th));
-          const lat = Math.asin(Math.max(-1, Math.min(1, v.dot(N))));
-          const lon = Math.atan2(v.dot(Y), v.dot(X));
-          // A ragged, wide falloff (no hard edge): the band's width wanders with
-          // the clouds, and a faint halo fades it into the dark.
-          const clouds = fbm(v.x * 5, v.y * 5, v.z * 5, 41, 5);
-          const wob = 0.17 * (0.75 + 0.6 * fbm(v.x * 2.5, v.y * 2.5, v.z * 2.5, 13, 3));
-          const band = Math.exp(-((lat / wob) ** 2)) + 0.22 * Math.exp(-((lat / 0.5) ** 2));
-          if (band < 0.003) continue;
-          const core = Math.exp(-((lon / 0.7) ** 2)) * Math.exp(-((lat / 0.32) ** 2));
-          const dust = Math.exp(-(((lat - 0.01 * Math.sin(lon * 3)) / 0.035) ** 2)) * Math.max(0, fbm(v.x * 9, v.y * 9, v.z * 9, 77, 4) + 0.15);
-          let k = band * (0.35 + clouds * 1.1) + core * 0.9;
-          k *= 1 - Math.min(0.85, dust * 1.4);
-          k = Math.max(0, k) * 0.38;
-          const i = (y * W + x) * 4;
-          d[i] = Math.min(255, (150 + core * 105) * k);
-          d[i + 1] = Math.min(255, (160 + core * 60) * k);
-          d[i + 2] = Math.min(255, (205 - core * 40) * k);
-          d[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-    });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true }));
-    sky.renderOrder = -2;
-    scene.add(sky);
-    // A distant spiral galaxy: two arms of soft light round a bright bulge.
-    const spiral = canvasTex(256, 256, (g) => {
-      g.translate(128, 128);
-      const r = rng(5);
-      for (let i = 0; i < 2600; i++) {
-        const arm = i % 2;
-        const t = r() ** 0.7 * 4.2;
-        const a = t * 1.25 + arm * Math.PI + (r() - 0.5) * 0.55;
-        const rad = 8 + t * 26 + (r() - 0.5) * 8;
-        g.fillStyle = `rgba(${200 + r() * 55 | 0},${200 + r() * 40 | 0},255,${0.05 + r() * 0.12 * (1 - t / 4.5)})`;
-        g.beginPath();
-        g.arc(Math.cos(a) * rad, Math.sin(a) * rad * 0.55, 1 + r() * 2.5, 0, Math.PI * 2);
-        g.fill();
-      }
-      const core = g.createRadialGradient(0, 0, 0, 0, 0, 30);
-      core.addColorStop(0, 'rgba(255,240,215,0.9)');
-      core.addColorStop(1, 'rgba(255,240,215,0)');
-      g.fillStyle = core;
-      g.fillRect(-30, -30, 60, 60);
-    });
-    const gal = new THREE.Sprite(new THREE.SpriteMaterial({ map: spiral, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55, rotation: 0.6 }));
-    gal.position.set(-5200, 2600, -4600);
-    gal.scale.setScalar(700);
-    scene.add(gal);
-  }
-
-  // The sun: bright core, layered glow, and the only real light.
-  // Churning granulation with dark-edged cells, limb darkening, and slow
-  // brighter faculae, dark sunspots, and a soft glow around it.
-  const sunTime = { value: 0 };
-  const sunGroup = new THREE.Group();
+  // The sun: the only real light (a second, smaller and oranger one in
+  // binary systems), with a little cold fill so night sides aren't pure black.
+  const sun = createSun(SUN_RADIUS, quality);
+  const sunGroup = sun.group;
   scene.add(sunGroup);
-  sunGroup.add(new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 48), new THREE.ShaderMaterial({
-    uniforms: { uT: sunTime },
-    vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vV;
-      void main() {
-        vP = position; vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: `uniform float uT; varying vec3 vP; varying vec3 vN; varying vec3 vV;
-      float h(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-      float n3(vec3 p) {
-        vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
-                   mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z);
-      }
-      float fbm(vec3 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += n3(p) * a; p *= 2.1; a *= 0.5; } return s; }
-      void main() {
-        vec3 p = normalize(vP);
-        float t = uT * 0.02;
-        float warp = fbm(p * 3.0 + t);
-        float cells = fbm(p * 9.0 + warp * 2.0 - t * 2.0);
-        float spots = smoothstep(0.66, 0.74, fbm(p * 2.6 + vec3(0.0, t * 0.3, 0.0)));
-        float pen = smoothstep(0.6, 0.66, fbm(p * 2.6 + vec3(0.0, t * 0.3, 0.0)));
-        float fac = smoothstep(0.55, 0.62, fbm(p * 5.0 - t * 0.5)) * (1.0 - pen);
-        float mu = max(dot(vN, vV), 0.0);
-        float limb = 0.45 + 0.55 * pow(mu, 0.5);
-        vec3 hot = vec3(1.0, 0.96, 0.82), mid = vec3(1.0, 0.72, 0.32), cool = vec3(0.85, 0.35, 0.1);
-        vec3 c = mix(mid * 0.85, hot, smoothstep(0.4, 0.75, cells));
-        c = mix(c, cool, (1.0 - limb) * 0.8);
-        c += fac * 0.18 * hot;
-        c *= 1.0 - pen * 0.35 - spots * 0.5;
-        gl_FragColor = vec4(c * (0.55 + 0.4 * limb), 1.0);
-      }`,
-  })));
-  // Prominences: glowing loops of plasma rising off the surface, each
-  // swelling and fading on its own clock, then reappearing somewhere else.
-  const proms = [];
-  {
-    const r = rng(7);
-    const up = new THREE.Vector3(0, 1, 0);
-    for (let i = 0; i < 9; i++) {
-      const size = 0.7 + r() * 1.3;
-      const m = new THREE.Mesh(
-        new THREE.TorusGeometry(size, 0.07 + r() * 0.08, 6, 28, Math.PI),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.04 + r() * 0.05, 1, 0.55), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
-      );
-      const place = () => {
-        const n = new THREE.Vector3().randomDirection();
-        m.position.copy(n).multiplyScalar(SUN_RADIUS * 0.97);
-        m.quaternion.setFromUnitVectors(up, n);
-        m.rotateY(Math.random() * Math.PI);
-      };
-      place();
-      proms.push({ m, place, phase: r() * 40, period: 25 + r() * 30, peak: 0.5 + r() * 0.4, grow: size });
-      sunGroup.add(m);
-    }
-  }
-  for (const [s, c, o] of [[18, '#fff0c0', 0.5], [40, '#ffd27a', 0.35], [110, '#ff9a4a', 0.2]]) {
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-    glow.scale.setScalar(s);
-    sunGroup.add(glow);
-  }
-  // Binary systems: a second, smaller star (same look) circling with the first.
-  const sun2 = sunGroup.clone();
+  const sunB = createSun(SUN_RADIUS, quality);
+  sunB.tint.set(1.0, 0.78, 0.6);
+  const sun2 = sunB.group;
   sun2.visible = false;
   sun2.add(new THREE.PointLight('#ffd9b0', 1.4, 0, 0)); // lights its own worlds
   scene.add(sun2);
   scene.add(new THREE.PointLight('#fff1dd', 3, 0, 0));
-  scene.add(new THREE.AmbientLight('#26304a', 0.35));
+  scene.add(new THREE.AmbientLight('#26304a', 0.25));
 
   const shipGeos = shipGeometries();
   const world = new THREE.Group();
@@ -978,6 +587,15 @@ export function createView(canvas, labelRoot) {
   const orbit = { az: 0.4, pol: 0.9, dist: 380, minDist: 1.2, maxDist: 900, target: new THREE.Vector3(), vaz: 0, vpol: 0, follow: null };
 
   let companionPath = null;
+  const bake = createBaker(renderer, () => quality);
+  const baked = [];
+  const sphereGeos = new Map();
+  /** Shared sphere geometry per size (fine for big worlds, lighter for moons). */
+  function sphereGeo(r, fine) {
+    const k = `${r}:${fine}`;
+    if (!sphereGeos.has(k)) sphereGeos.set(k, new THREE.SphereGeometry(r, fine ? 128 : 96, fine ? 80 : 56));
+    return sphereGeos.get(k);
+  }
   function build(game) {
     // Each homeworld gets its own character (no two alike in a game).
     {
@@ -985,6 +603,12 @@ export function createView(canvas, labelRoot) {
       const pool = [...BIOMES];
       for (const h of game.bodies.filter((b) => b.home)) h.biome = pool.splice(Math.floor(r() * pool.length), 1)[0] || 'temperate';
     }
+    // A sky of its own for each system.
+    sky.bake((game.nameSeed || 1) + 1);
+    scene.background = sky.background;
+    scene.environment = sky.env;
+    for (const rt of baked) rt.dispose();
+    baked.length = 0;
     world.clear();
     labelRoot.innerHTML = '';
     fleetLabels.length = 0;
@@ -993,6 +617,8 @@ export function createView(canvas, labelRoot) {
       let body;
       let hulk = null;
       let tail = null;
+      let ring = null;
+      let atmo = null;
       if (b.kind === 'station') body = stationMesh(b.size, b.id % 3);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else if (b.visitor) {
@@ -1013,34 +639,29 @@ export function createView(canvas, labelRoot) {
         g.add(hulk);
       }
       else {
-        // Rocky worlds get relief from their own surface (craters and
-        // highlands catch the light); gas giants stay smooth.
-        const surf = surfaceTex(b);
-        body = new THREE.Mesh(
-          new THREE.SphereGeometry(b.size, 64, 40),
-          nightOnly(new THREE.MeshStandardMaterial({
-            map: surf, roughness: b.home ? 0.8 : 1, metalness: 0,
-            bumpMap: b.giant ? null : surf, bumpScale: b.home ? 0.6 : b.kind === 'moon' ? 2 : 1.2,
-            emissiveMap: lightsTex(b), emissive: '#ffd08a', emissiveIntensity: 0,
-          })),
-        );
-        body.rotation.z = 0.2 + b.hue * 0.3;
-        if (b.kind === 'planet') g.add(atmosphere(b));
-        if (b.home) {
-          const clouds = new THREE.Mesh(
-            new THREE.SphereGeometry(b.size * 1.012, 48, 32),
-            new THREE.MeshStandardMaterial({ map: cloudTex(b), transparent: true, depthWrite: false, roughness: 1 }),
-          );
+        // A world painted on the GPU (see gfx/planets.js) and lit by its own shader.
+        const look = lookOf(b);
+        const maps = bake(b, look);
+        baked.push(...maps.rts);
+        const tilt = 0.2 + b.hue * 0.3;
+        if (b.giant && b.hue > 0.4) {
+          // Rings in the equatorial plane, tilted with the planet.
+          ring = ringMesh(b);
+          ring.rotation.x = Math.PI / 2;
+          const holder = new THREE.Group();
+          holder.rotation.z = tilt;
+          holder.add(ring);
+          g.add(holder);
+        }
+        body = new THREE.Mesh(sphereGeo(b.size, look.kind === 0 || look.kind === 3 ? 1 : 0), surfaceMaterial(b, look, maps, ring && ring.userData.ring));
+        // Spin about the tilted axis.
+        body.rotation.order = 'ZYX';
+        body.rotation.z = tilt;
+        if (look.atmo) { atmo = atmosphereMesh(b, look); g.add(atmo); }
+        if (look.clouds) {
+          const clouds = new THREE.Mesh(sphereGeo(b.size * 1.008, 1), cloudMaterial(maps));
           clouds.name = 'clouds';
           body.add(clouds);
-        }
-        if (b.giant && b.hue > 0.4) {
-          const ring = new THREE.Mesh(
-            new THREE.RingGeometry(b.size * 1.4, b.size * 2.2, 64),
-            new THREE.MeshStandardMaterial({ color: '#c8b89a', transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
-          );
-          ring.rotation.x = Math.PI / 2 - 0.25;
-          g.add(ring);
         }
       }
       g.add(body);
@@ -1073,8 +694,16 @@ export function createView(canvas, labelRoot) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [] };
     });
+    // Who can eclipse whom: a planet and its moons shadow each other.
+    for (const v of views) {
+      const b = v.b;
+      if (b.kind !== 'planet' && b.kind !== 'moon') continue;
+      const fam = b.kind === 'planet' ? game.bodies.filter((x) => x.parent === b.id && x.kind === 'moon')
+        : game.bodies.filter((x) => x.id === b.parent || (x.parent === b.parent && x.kind === 'moon' && x.id !== b.id));
+      v.occ = fam.slice(0, 4).map((x) => x.id);
+    }
     // Binary: the companion sun's (eccentric) path, so you can see where it's headed.
     if (companionPath) { companionPath.removeFromParent(); companionPath = null; }
     if (game.stars && game.stars[1]) {
@@ -1207,10 +836,41 @@ export function createView(canvas, labelRoot) {
   };
 
   function resize() {
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-    screenRes.value.set(window.innerWidth, window.innerHeight);
-    camera.aspect = window.innerWidth / window.innerHeight;
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(Math.round(w * pixelRatio), Math.round(h * pixelRatio), false);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    post.setSize(w, h, pixelRatio);
+    screenRes.value.set(w, h);
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
+  }
+
+  // Lens flare: follows the sun while it's on screen and not behind a world.
+  const sunNdc = new THREE.Vector3();
+  function updateFlare(dt) {
+    sunNdc.copy(sunGroup.position).project(camera);
+    let vis = sunNdc.z < 1 && Math.abs(sunNdc.x) < 1.1 && Math.abs(sunNdc.y) < 1.1 ? 1 : 0;
+    if (vis) {
+      // Hidden behind a world? (A ray from the camera to the sun's centre.)
+      const o = camera.position;
+      tmp3.copy(sunGroup.position).sub(o);
+      const len = tmp3.length();
+      tmp3.divideScalar(len);
+      for (const v of views) {
+        if (!v.g.visible) continue;
+        tmp2.copy(v.g.position).sub(o);
+        const along = tmp2.dot(tmp3);
+        if (along < 0 || along > len) continue;
+        const miss = Math.sqrt(Math.max(0, tmp2.lengthSq() - along * along));
+        if (miss < v.b.size) { vis = 0; break; }
+      }
+      // Fade at the screen edges, and when the sun is tiny far away.
+      vis *= THREE.MathUtils.clamp((1.1 - Math.max(Math.abs(sunNdc.x), Math.abs(sunNdc.y))) * 4, 0, 1);
+    }
+    const f = post.flare;
+    f.vis += (vis * 0.9 - f.vis) * Math.min(1, dt * 8 + 0.05);
+    f.pos.set(sunNdc.x * 0.5 + 0.5, sunNdc.y * 0.5 + 0.5);
   }
 
   const bodyPos = [];
@@ -1372,7 +1032,6 @@ export function createView(canvas, labelRoot) {
 
   function render(game, ui, dt, t) {
     const now = game.time;
-    sunTime.value = t;
     const stars = game.stars || [{ r: 0, period: 1, phase: 0, size: 1 }];
     stars.slice(0, 2).forEach((st, i) => {
       const g = i ? sun2 : sunGroup;
@@ -1382,13 +1041,13 @@ export function createView(canvas, labelRoot) {
       g.scale.setScalar(st.size);
     });
     if (stars.length < 2) sun2.visible = false;
-    for (const pr of proms) {
-      const u = ((t + pr.phase) % pr.period) / pr.period;
-      if (u < pr.lastU) pr.place();
-      pr.lastU = u;
-      pr.m.material.opacity = Math.sin(u * Math.PI) ** 2 * pr.peak;
-      pr.m.scale.setScalar(0.6 + u * 0.6);
-    }
+    starLights.pos.value[0].copy(sunGroup.position);
+    starLights.pos.value[1].copy(sun2.position);
+    if (sun2.visible) starLights.col.value[1].set(1.25, 0.95, 0.72);
+    else starLights.col.value[1].set(0, 0, 0);
+    sun.update(t);
+    if (sun2.visible) sunB.update(t + 50);
+    sky.update(t, pixelRatio);
     const techOf = (o, k) => (o >= 0 && game.tech ? game.tech[o][k] : 0);
     // Camera: follow the focused body, with inertia on rotation.
     for (const v of views) {
@@ -1426,7 +1085,6 @@ export function createView(canvas, labelRoot) {
     const w = window.innerWidth;
     const h = window.innerHeight;
     let used = 0;
-    sunView.value.set(0, 0, 0).applyMatrix4(camera.matrixWorldInverse);
 
     // Moons and stations crowded against their planet on screen hide their
     // label; their ship counts ride on the planet's label instead.
@@ -1532,6 +1190,25 @@ export function createView(canvas, labelRoot) {
         v.body.rotation.y += dt * 0.05;
         const cl = v.body.getObjectByName('clouds');
         if (cl) cl.rotation.y += dt * 0.012;
+        const u = v.body.material.uniforms;
+        if (u) {
+          u.uT.value = t;
+          if (cl) u.uCloudShift.value = -cl.rotation.y / (Math.PI * 2);
+          u.uCenter.value.set(p.x, p.y, p.z);
+          v.occ.forEach((id, k) => { const q = bodyPos[id]; u.uOcc.value[k].set(q.x, q.y, q.z, game.bodies[id].size); });
+          if (cl) cl.material.uniforms.uOcc.value = u.uOcc.value;
+          if (v.atmo) {
+            v.atmo.material.uniforms.uCenter.value.set(p.x, p.y, p.z);
+            v.atmo.material.uniforms.uOcc.value = u.uOcc.value;
+          }
+          if (v.ring) {
+            v.ring.updateMatrixWorld(true);
+            u.uRingN.value.set(0, 0, 1).transformDirection(v.ring.matrixWorld);
+            u.uRingIn.value = v.ring.userData.ring.inner;
+            u.uRingOut.value = v.ring.userData.ring.outer;
+            v.ring.material.uniforms.uCenter.value.set(p.x, p.y, p.z);
+          }
+        }
       }
 
       const col = ownerColor(b.owner);
@@ -1539,8 +1216,8 @@ export function createView(canvas, labelRoot) {
         if (v.owner !== null) v.pulse = 1;
         v.owner = b.owner;
         // Signs of life: city lights on the night side of worlds someone holds.
-        if (v.body.material && v.body.material.emissiveMap) {
-          v.body.material.emissiveIntensity = b.owner === NEUTRAL ? 0 : 1.6;
+        if (v.body.material && v.body.material.uniforms && v.body.material.uniforms.uCity) {
+          v.body.material.uniforms.uCity.value = b.owner === NEUTRAL ? 0 : 1;
         }
         const windows = v.body.getObjectByName && v.body.getObjectByName('windows');
         if (windows) windows.visible = b.owner !== NEUTRAL;
@@ -1846,7 +1523,9 @@ export function createView(canvas, labelRoot) {
       preview.visible = false;
     }
 
-    renderer.render(scene, camera);
+    updateFlare(dt);
+    adapt(t);
+    post.render(scene, camera, t);
   }
 
   /** Nearest body to a screen point, within a finger's reach. */
@@ -1958,5 +1637,39 @@ export function createView(canvas, labelRoot) {
     return { x: (tmp.x * 0.5 + 0.5) * window.innerWidth, y: (-tmp.y * 0.5 + 0.5) * window.innerHeight };
   }
 
-  return { build, render, resize, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
+  /** Switch graphics level: resolution, anti-aliasing and bloom now; world detail from the next game. */
+  function setQuality(q) {
+    quality = q;
+    pixelRatio = maxPR();
+    post.setSamples(q === 'high' ? 4 : 2);
+    post.setLevel(q);
+    resize();
+  }
+  post.setLevel(quality);
+
+  // Dynamic resolution: if frames run slow, render fewer pixels (and creep
+  // back up when there's headroom), so phones stay smooth.
+  let perfN = 0, perfAcc = 0, lastT = null, holdUntil = 0;
+  function adapt(t) {
+    if (lastT !== null) {
+      const ft = t - lastT;
+      if (ft > 0 && ft < 0.5) { perfAcc += ft; perfN++; }
+    }
+    lastT = t;
+    if (perfN < 90) return;
+    const avg = perfAcc / perfN;
+    perfAcc = 0;
+    perfN = 0;
+    const max = maxPR(), min = Math.min(1, max) * 0.75;
+    if (avg > 1 / 45 && pixelRatio > min) {
+      pixelRatio = Math.max(min, pixelRatio - 0.25);
+      holdUntil = t + 20;
+      resize();
+    } else if (avg < 1 / 57 && pixelRatio < max && t > holdUntil) {
+      pixelRatio = Math.min(max, pixelRatio + 0.25);
+      resize();
+    }
+  }
+
+  return { _debug: { scene, renderer, post, camera, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
 }
