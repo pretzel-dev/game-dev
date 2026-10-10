@@ -571,7 +571,8 @@ export function surfaceMaterial(b, look, maps, ring) {
             vec3 Hh = normalize(L + V);
             float nh = max(dot(Ng, Hh), 0.0);
             float fres = 0.02 + 0.98 * pow(1.0 - max(dot(Ng, V), 0.0), 5.0);
-            float spec = (pow(nh, 220.0) * 6.0 + pow(nh, 30.0) * 0.12) * (0.4 + fres);
+            float spec = (pow(nh, 160.0) * 2.0 + pow(nh, 30.0) * 0.12) * (0.4 + fres);
+            spec *= clamp(1.0 - length(fwidth(Ng)) * 25.0, 0.0, 1.0); // fade on small, distant worlds
             col += sc * spec * water * sh * smoothstep(0.0, 0.1, ngl);
           }
           dayAll = max(dayAll, smoothstep(-0.15, 0.25, ngl));

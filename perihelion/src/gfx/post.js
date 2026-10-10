@@ -47,9 +47,17 @@ export function createPost(renderer) {
         vec3 j = s(vec2(-1, 1)), k = s(vec2(1, 1)), l = s(vec2(-1, -1)), m = s(vec2(1, -1));
         vec3 col = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
         if (uPrefilter > 0.5) {
+          // Karis average: weight each box by 1/(1+brightness), so a single
+          // bright pixel (a glint on metal, a sub-pixel light) can't bloom
+          // into a flash that flickers as it moves.
+          vec3 b0 = (a + b + d + e) * 0.25, b1 = (b + c + e + f) * 0.25, b2 = (d + e + g + h) * 0.25, b3 = (e + f + h + i) * 0.25, b4 = (j + k + l + m) * 0.25;
+          float w0 = 1.0 / (1.0 + max(b0.r, max(b0.g, b0.b))), w1 = 1.0 / (1.0 + max(b1.r, max(b1.g, b1.b)));
+          float w2 = 1.0 / (1.0 + max(b2.r, max(b2.g, b2.b))), w3 = 1.0 / (1.0 + max(b3.r, max(b3.g, b3.b)));
+          float w4 = 1.0 / (1.0 + max(b4.r, max(b4.g, b4.b)));
+          col = (b0 * w0 * 0.125 + b1 * w1 * 0.125 + b2 * w2 * 0.125 + b3 * w3 * 0.125 + b4 * w4 * 0.5) / (w0 * 0.125 + w1 * 0.125 + w2 * 0.125 + w3 * 0.125 + w4 * 0.5);
           // Soft threshold: only light brighter than about white blooms, so
           // orbit lines and labels-in-the-scene stay crisp.
-          col = min(col, vec3(60.0));
+          col = min(col, vec3(16.0));
           float br = max(col.r, max(col.g, col.b));
           float rq = clamp(br - uThreshold + uKnee, 0.0, 2.0 * uKnee);
           rq = rq * rq / (4.0 * uKnee + 1e-4);
