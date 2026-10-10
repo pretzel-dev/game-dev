@@ -242,6 +242,23 @@ void main() {
 const AUX_FRAG = /* glsl */ `
 ${NOISE}
 ${DIR_FROM_UV}
+// Wind the sphere round the nearest cyclone centre (mid-latitudes only).
+vec3 cyclones(vec3 d, float seed) {
+  vec3 p = d * 2.6;
+  vec3 c0 = floor(p);
+  vec3 best = d; float bd = 9.0;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec3 cell = c0 + vec3(float(x), float(y), float(z));
+    vec3 c = normalize(cell + hash33(cell + seed));
+    float dd = length(d - c);
+    if (dd < bd) { bd = dd; best = c; }
+  }
+  float la = asin(best.y);
+  float str = smoothstep(0.35, 0.7, abs(la)) * smoothstep(1.35, 1.05, abs(la)) * sign(la);
+  float ang = str * 7.0 * exp(-bd * bd / 0.06);
+  float c = cos(ang), s = sin(ang);
+  return d * c + cross(best, d) * s + best * dot(best, d) * (1.0 - c);
+}
 uniform sampler2D tAlb;
 uniform vec2 uTexel;
 uniform float uRelief;
@@ -288,18 +305,25 @@ void main() {
     float seam = exp(-pow(snoise(q * 4.0 + fbm(q * 3.0, 3)) / 0.04, 2.0)) + exp(-pow(snoise(q * 9.0 + 2.0) / 0.03, 2.0)) * 0.5;
     a = clamp(seam * step(0.5, h0) * (0.4 + 0.6 * smoothstep(0.5, 0.75, h0)), 0.0, 1.0);
   } else if (uClouds > 0.0) {
+    // Weather: an equatorial band of storms, clear subtropics with scattered
+    // fair-weather cumulus, and mid-latitude storm tracks wound into spiral
+    // cyclones (turning opposite ways in each hemisphere).
+    vec3 dc = cyclones(d, uSeed);
     float lat = asin(d.y);
-    vec3 sw = vec3(fbm(q * 2.0 + 5.0, 4), fbm(q * 2.0 + 8.0, 4), fbm(q * 2.0 + 11.0, 4));
-    // Cyclones: coriolis twist, one way in each hemisphere.
-    vec3 p = d;
-    float tw = sin(lat) * 2.5 * fbm(q * 1.5 + 21.0, 3);
-    p = vec3(p.x * cos(tw) - p.z * sin(tw), p.y, p.x * sin(tw) + p.z * cos(tw));
-    float belt = 0.12 + 0.28 * abs(sin(lat * 3.0)) + 0.15 * exp(-pow(lat / 0.12, 2.0));
-    float n = fbm(vec3(p.x * 3.0, p.y * 6.0, p.z * 3.0) + sw * 1.4 + uSeed + 50.0, 7) + belt - 0.32;
-    float wisp = fbm(vec3(p.x * 12.0, p.y * 30.0, p.z * 12.0) + sw * 3.0, 4) * 0.15;
-    a = clamp((n + wisp) * 2.4, 0.0, 1.0) * uClouds;
+    vec3 w = vec3(fbm(dc * 2.0 + 5.0, 4), fbm(dc * 2.0 + 8.0, 4), fbm(dc * 2.0 + 11.0, 4));
+    float big = fbm(vec3(dc.x * 2.4, dc.y * 4.5, dc.z * 2.4) + w * 0.7 + uSeed + 50.0, 7);
+    float alat = abs(lat);
+    float bias = -0.1 + 0.25 * exp(-pow(lat / 0.12, 2.0))
+      + 0.2 * smoothstep(0.6, 0.9, alat) * smoothstep(1.45, 1.1, alat)
+      - 0.18 * exp(-pow((alat - 0.4) / 0.14, 2.0));
+    float cov = smoothstep(0.0, 0.22, big + bias);
+    float streak = fbm(vec3(dc.x * 10.0, dc.y * 40.0, dc.z * 10.0) + w * 2.0, 4);
+    cov *= 0.75 + 0.35 * streak;
+    float cu = smoothstep(0.62, 0.8, fbm(d * 30.0 + 3.0, 3) * 0.5 + 0.5) * 0.55 * (1.0 - cov);
+    a = clamp(cov + cu, 0.0, 1.0) * uClouds;
     if (uType == 1) a *= 0.35; // desert: thin
-    if (uType == 3 || uType == 5) a = min(1.0, a * 1.25); // wet worlds
+    if (uType == 2) a *= 0.7;
+    if (uType == 3 || uType == 5) a = min(1.0, a * 1.2); // wet worlds
   }
   gl_FragColor = vec4(n.xy * 0.5 + 0.5, clamp(lights, 0.0, 1.0), a);
 }`;
@@ -716,18 +740,24 @@ export function ringMesh(b) {
   const data = new Uint8Array(N * 4);
   let s = Math.floor(b.hue * 1e6) + b.id * 97;
   const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const gaps = Array.from({ length: 4 }, () => ({ at: 0.15 + r() * 0.75, w: 0.004 + r() * 0.02 }));
-  const ph = Array.from({ length: 6 }, () => r() * 10);
+  const gaps = Array.from({ length: 3 }, () => ({ at: 0.2 + r() * 0.7, w: 0.006 + r() * 0.025 }));
+  // Ringlets: a random walk of density, smoothed a little, so there are
+  // hundreds of fine bands rather than a few hoops.
+  const walk = new Float32Array(N);
+  let w = 0.5;
+  for (let i = 0; i < N; i++) { w += (r() - 0.5) * 0.18; w += (0.55 - w) * 0.04; walk[i] = w; }
   for (let i = 0; i < N; i++) {
     const x = i / (N - 1);
-    let a = 0.35 + 0.25 * Math.sin(x * 37 + ph[0]) + 0.15 * Math.sin(x * 91 + ph[1]) + 0.1 * Math.sin(x * 211 + ph[2]) + 0.08 * Math.sin(x * 503 + ph[3]);
-    a *= Math.min(1, x / 0.08) * Math.min(1, (1 - x) / 0.05);
-    if (x > 0.45 && x < 0.75) a *= 1.35; // a dense main ring
-    for (const g of gaps) if (Math.abs(x - g.at) < g.w) a *= 0.08;
+    let a = (walk[Math.max(0, i - 1)] + walk[i] + walk[Math.min(N - 1, i + 1)]) / 3;
+    a *= 0.65 + 0.35 * Math.sin(x * 9 + r() * 0.2);
+    a *= Math.min(1, x / 0.1) * Math.min(1, (1 - x) / 0.06);
+    if (x > 0.42 && x < 0.72) a *= 1.4; // a dense main ring
+    if (x < 0.18) a *= 0.45; // a faint inner ring
+    for (const g of gaps) if (Math.abs(x - g.at) < g.w) a *= 0.06;
     a = Math.max(0, Math.min(1, a));
-    const tone = 0.7 + 0.3 * Math.sin(x * 23 + ph[4]);
-    const dusty = 0.5 + 0.5 * Math.sin(x * 7 + ph[5]);
-    data.set([175 * tone + 40 + dusty * 10, 168 * tone + 38, 155 * tone + 36 - dusty * 18, a * 255], i * 4);
+    const tone = 0.8 + 0.2 * walk[(i * 7) % N];
+    const dusty = x < 0.3 ? 0.6 : 0.2;
+    data.set([(170 + dusty * 20) * tone, (163 + dusty * 5) * tone, (150 - dusty * 25) * tone, a * 255], i * 4);
   }
   const tex = new THREE.DataTexture(data, N, 1, THREE.RGBAFormat);
   tex.colorSpace = THREE.SRGBColorSpace;

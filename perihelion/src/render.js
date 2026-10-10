@@ -3,8 +3,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { icon } from './icons.js';
 import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
 import { createPost } from './gfx/post.js';
+import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
+import { createShipRenderer, platingTex } from './gfx/ships.js';
+import { stationMesh } from './gfx/stations.js';
+import { asteroidMesh, createBelt } from './gfx/rocks.js';
+import { createFx } from './gfx/fx.js';
 import { BIOMES, createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
@@ -13,7 +18,6 @@ export const ownerColor = (o) => (o === NEUTRAL ? NEUTRAL_COLOR : OWNER_COLORS[o
 
 const SUN_RADIUS = 6;
 const MAX_SHIPS = 400;
-const MAX_BOOMS = 120;
 
 // ---- Procedural textures ----------------------------------------------------
 
@@ -62,321 +66,7 @@ const ringTexs = [0, 1, 2, 3].map((lvl) => canvasTex(128, 128, (g) => {
 }));
 const ringTex = ringTexs[0];
 
-// Small 3D value noise, enough for coastlines and cloud decks.
-function vhash(x, y, z, s) {
-  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ Math.imul(s, 1274126177);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-function vnoise(x, y, z, s) {
-  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
-  const fx = x - xi, fy = y - yi, fz = z - zi;
-  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
-  const L = (a, b, t) => a + (b - a) * t;
-  const c = (i, j, k) => vhash(xi + i, yi + j, zi + k, s);
-  return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v),
-    L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v), w) * 2 - 1;
-}
-function fbm(x, y, z, s, oct) {
-  let sum = 0, amp = 0.5, f = 1;
-  for (let o = 0; o < oct; o++) { sum += vnoise(x * f, y * f, z * f, s + o) * amp; f *= 2.03; amp *= 0.5; }
-  return sum;
-}
-
 // ---- Meshes -------------------------------------------------------------------
-
-/**
- * Three hull types in a hard-sci-fi style: no aerodynamics, flat fronts,
- * stacked pressure hulls, trusses, radiators, and a big drive section. All are
- * built along +Z (front forward, drive at the back) and merged.
- */
-function shipGeometries() {
-  const X = Math.PI / 2;
-  // Each part is tagged: hull (light), dark (engines, radiators, trusses) or
-  // accent (painted in the owner's colour, as a separate mesh).
-  const tag = (g, t) => ((g.userData.tag = t), g);
-  const box = (w, h, d, x = 0, y = 0, z = 0, t = 'hull') => tag(new THREE.BoxGeometry(w, h, d).translate(x, y, z), t);
-  const cyl = (r1, r2, l, z, t = 'hull', seg = 10) => tag(new THREE.CylinderGeometry(r1, r2, l, seg).rotateX(X).translate(0, 0, z), t);
-  const drive = (r, z) => [
-    cyl(r * 0.9, r * 1.05, 0.1, z, 'dark'), // engine block
-    tag(new THREE.CylinderGeometry(r * 0.45, r * 0.9, 0.14, 12, 1, true).rotateX(-X).translate(0, 0, z - 0.11), 'dark'), // bell
-  ];
-  const HULL = new THREE.Color('#d5dae2');
-  const DARK = new THREE.Color('#6b7280'); // dark grey, not black: reads against space
-  const build = (parts, port = null) => {
-    const base = [];
-    const accent = [];
-    for (const g of parts) {
-      const n = g.toNonIndexed();
-      if (g.userData.tag === 'accent') { accent.push(n); continue; }
-      // Each plate a slightly different shade (some warmer, some cooler), so
-      // the hull reads as assembled panels rather than one flat grey.
-      const k = 0.86 + ((base.length * 0.618) % 1) * 0.22;
-      const warm = (((base.length * 0.377) % 1) - 0.5) * 0.06;
-      const c0 = g.userData.tag === 'dark' ? DARK : HULL;
-      const c = { r: c0.r * k * (1 + warm), g: c0.g * k, b: c0.b * k * (1 - warm) };
-      const col = new Float32Array(n.attributes.position.count * 3);
-      for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
-      n.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      base.push(n);
-    }
-    const merged = { base: mergeGeometries(base), accent: mergeGeometries(accent) };
-    // Rows of lit portholes, worked out from the hull's size.
-    merged.base.computeBoundingBox();
-    const bb = merged.base.boundingBox;
-    const light = (x, y, z, c, sz = 0.012) => {
-      const n = new THREE.BoxGeometry(sz, sz, sz).translate(x, y, z).toNonIndexed();
-      const col = new Float32Array(n.attributes.position.count * 3);
-      const cc = new THREE.Color(c);
-      for (let i = 0; i < col.length; i += 3) col.set([cc.r, cc.g, cc.b], i);
-      n.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      return n;
-    };
-    const lights = [light(0, 0, (bb.min.z + bb.max.z) / 2, '#000000', 0.0001)]; // (inside the hull)
-    // Portholes along the crew section: [half-width of the hull there, from z, to z, count].
-    if (port) {
-      const [px, z0, z1, n] = port;
-      for (let i = 0; i < n; i++) {
-        const z = z0 + ((z1 - z0) * i) / Math.max(1, n - 1);
-        for (const sx of [-1, 1]) lights.push(light(sx * (px + 0.002), 0.012, z, '#ffd9a0', 0.008));
-      }
-    }
-    merged.lights = mergeGeometries(lights);
-    // A little broader than drawn, so they read at a glance.
-    for (const g of [merged.base, merged.accent, merged.lights]) g.scale(1.35, 1.35, 1);
-    return merged;
-  };
-  const ribs = (w, h, z0, z1, n) => Array.from({ length: n }, (_, i) => box(w, h, 0.006, 0, 0, z0 + ((z1 - z0) * i) / (n - 1), 'dark'));
-  const pdc = (x, y, z) => box(0.016, 0.012, 0.016, x, y, z, 'dark'); // point-defence turret
-  // Corvette: a slim wedge-nosed hull in two sections, ribbed, with PDC
-  // turrets at the corners, a thin dorsal stripe and a big drive.
-  const frigate = build([
-    tag(new THREE.ConeGeometry(0.05, 0.12, 4).rotateY(Math.PI / 4).rotateX(X).translate(0, 0, 0.33), 'hull'), // bow
-    box(0.075, 0.07, 0.2, 0, 0, 0.17),
-    box(0.09, 0.08, 0.2, 0, 0, -0.03),
-    ...ribs(0.094, 0.084, -0.12, 0.06, 4),
-    box(0.06, 0.012, 0.16, 0, 0.037, 0.17, 'accent'),
-    box(0.01, 0.084, 0.03, 0.046, 0, 0.0, 'accent'),
-    pdc(0.042, 0.04, 0.22), pdc(-0.042, -0.04, 0.22), pdc(0.05, -0.044, -0.06), pdc(-0.05, 0.044, -0.06),
-    box(0.004, 0.004, 0.07, 0.02, 0.05, 0.1, 'dark'), // antenna mast
-    cyl(0.045, 0.05, 0.05, -0.16, 'dark'),
-    ...drive(0.06, -0.2),
-  ], [0.0375, 0.24, 0.1, 4]);
-  // Frigate: a long, armoured box hull in segments, a small command tower,
-  // flank radiators and a heavy drive.
-  const gunboat = build([
-    box(0.08, 0.08, 0.5, 0, 0, 0.04),
-    box(0.07, 0.07, 0.05, 0, 0, 0.31),
-    ...ribs(0.086, 0.086, -0.18, 0.26, 7),
-    box(0.04, 0.03, 0.06, 0, 0.055, 0.1), // command tower
-    box(0.082, 0.014, 0.12, 0, 0.034, 0.2, 'accent'),
-    box(0.16, 0.003, 0.08, 0, 0, -0.1, 'dark'), // radiators
-    pdc(0.044, 0.044, 0.28), pdc(-0.044, 0.044, 0.28), pdc(0.044, -0.044, -0.05), pdc(-0.044, -0.044, -0.05),
-    box(0.02, 0.02, 0.06, 0, -0.05, 0.25, 'dark'), // keel railgun
-    ...drive(0.07, -0.25),
-  ], [0.04, 0.27, -0.02, 6]);
-  // Hauler: a cab, a thin spine carrying cargo containers, and a drive.
-  const carrier = build([
-    box(0.07, 0.06, 0.08, 0, 0, 0.3),
-    box(0.071, 0.014, 0.05, 0, 0.03, 0.3, 'accent'),
-    box(0.02, 0.02, 0.5, 0, 0, 0.04, 'dark'),
-    ...[0.18, 0.08, -0.02, -0.12].flatMap((z, i) => [
-      box(0.05, 0.04, 0.08, 0.04, 0, z, i % 2 ? 'accent' : 'hull'),
-      box(0.05, 0.04, 0.08, -0.04, 0, z, i % 2 ? 'hull' : 'dark'),
-    ]),
-    box(0.12, 0.003, 0.06, 0, 0.03, -0.18, 'dark'),
-    cyl(0.04, 0.045, 0.05, -0.2, 'dark'),
-    ...drive(0.055, -0.24),
-  ], [0.035, 0.32, 0.28, 2]);
-  // Probe: a small bus with a dish and two solar wings, no crew section.
-  const probe = build([
-    box(0.05, 0.05, 0.07, 0, 0, 0),
-    tag(new THREE.CylinderGeometry(0.045, 0.01, 0.025, 14, 1, true).rotateX(X).translate(0, 0, 0.05), 'hull'), // dish
-    box(0.004, 0.004, 0.05, 0, 0, 0.07, 'dark'), // feed
-    box(0.16, 0.004, 0.045, 0.11, 0, 0, 'dark'), box(0.16, 0.004, 0.045, -0.11, 0, 0, 'dark'), // solar wings
-    box(0.05, 0.008, 0.012, 0, 0.029, 0, 'accent'),
-    ...drive(0.018, -0.045),
-  ]);
-  const ships = [frigate, gunboat, carrier];
-  ships.probe = probe;
-  return ships;
-}
-
-/** Solar cells: a grid of dark cells with bright gaps (made once). */
-let cells = null;
-function cellsTex() {
-  if (cells) return cells;
-  cells = canvasTex(64, 64, (g) => {
-    g.fillStyle = '#d8c0a0'; g.fillRect(0, 0, 64, 64);
-    g.fillStyle = '#6a4424';
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 4; x++) g.fillRect(x * 16 + 1, y * 8 + 1, 14, 6);
-  });
-  cells.wrapS = cells.wrapT = THREE.RepeatWrapping;
-  cells.repeat.set(1, 3);
-  return cells;
-}
-/** Hull plating: panels of slightly different tone, seams, hatches, scuffs (made once). */
-let plating = null;
-function platingTex() {
-  if (plating) return plating;
-  const hullTex = canvasTex(128, 128, (g) => {
-    const r = rng(17);
-    g.fillStyle = '#e4e4e4';
-    g.fillRect(0, 0, 128, 128);
-    const plate = (x, y, w, h) => {
-      if (w < 10 || h < 10 || r() < 0.15) {
-        const v = 200 + r() * 55 | 0;
-        g.fillStyle = `rgb(${v},${v},${v})`;
-        g.fillRect(x + 1, y + 1, w - 2, h - 2);
-        g.strokeStyle = 'rgba(40,44,52,0.55)';
-        g.lineWidth = 1;
-        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-        if (r() < 0.25) { g.fillStyle = 'rgba(60,64,72,0.35)'; g.fillRect(x + w * 0.3, y + h * 0.3, w * 0.25, h * 0.2); }
-        return;
-      }
-      if (w > h) { const c = w * (0.3 + r() * 0.4) | 0; plate(x, y, c, h); plate(x + c, y, w - c, h); }
-      else { const c = h * (0.3 + r() * 0.4) | 0; plate(x, y, w, c); plate(x, y + c, w, h - c); }
-    };
-    plate(0, 0, 128, 128);
-    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(30,30,36,${0.04 + r() * 0.06})`; g.fillRect(r() * 128, r() * 128, 1 + r() * 6, 1); }
-  });
-  hullTex.wrapS = hullTex.wrapT = THREE.RepeatWrapping;
-  plating = hullTex;
-  return hullTex;
-}
-
-/**
- * Stations, three designs (picked per station): a heavy wheel on a docking
- * spine; a long spine with twin rings and copper solar wings; a blocky hub
- * with booms, pods and an antenna spike. Built along z (the spin axis).
- * Windows are small, uneven clusters of light, shown once someone holds it.
- */
-function stationMesh(size, variant = 0) {
-  const r = rng(variant * 31 + 7);
-  // Plated like the ships: panels, seams and scuffs as colour, relief and shine.
-  const pl = platingTex();
-  const hull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.55, roughness: 0.6, map: pl, bumpMap: pl, bumpScale: 0.8, roughnessMap: pl });
-  const dark = new THREE.MeshStandardMaterial({ color: '#4a4f5a', metalness: 0.6, roughness: 0.6, map: pl, bumpMap: pl, bumpScale: 0.6 });
-  const copper = new THREE.MeshStandardMaterial({ color: '#8a5a2e', metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide, map: cellsTex() });
-  const g = new THREE.Group();
-  const add = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
-  const cyl = (rad, len, seg = 14) => new THREE.CylinderGeometry(rad, rad, len, seg).rotateX(Math.PI / 2); // along z
-  // A flat-sided wheel: a rectangle swept round the axis.
-  const wheel = (R, w, d, seg = 64) => new THREE.LatheGeometry([
-    new THREE.Vector2(R - w, -d), new THREE.Vector2(R, -d), new THREE.Vector2(R, d), new THREE.Vector2(R - w, d), new THREE.Vector2(R - w, -d),
-  ], seg).rotateX(Math.PI / 2);
-  const truss = (len, t, rot) => { const m = add(new THREE.BoxGeometry(t, len, t), dark); m.rotation.z = rot; return m; };
-  const win = [];
-  const windowsOn = (n, fn) => { for (let k = 0; k < n; k++) win.push(fn(r())); };
-  if (variant === 0) {
-    // Heavy wheel: thick flat ring, two crossing trusses, a long docking spine.
-    add(wheel(size, size * 0.22, size * 0.16), hull);
-    add(wheel(size * 0.79, size * 0.02, size * 0.17), dark); // inner gantry
-    truss(size * 1.6, size * 0.06, 0.3);
-    truss(size * 1.6, size * 0.06, 0.3 + Math.PI / 2);
-    add(cyl(size * 0.14, size * 2.4), hull);
-    add(cyl(size * 0.22, size * 0.5), hull, 0, 0, size * 0.25);
-    add(cyl(size * 0.18, size * 0.3), dark, 0, 0, -size * 0.5);
-    for (const zz of [0.9, 1.15]) add(cyl(size * 0.2, size * 0.08), dark, 0, 0, size * zz);
-    for (let k = 0; k < 3; k++) {
-      const a = r() * Math.PI * 2;
-      add(new THREE.BoxGeometry(size * 0.12, size * 0.12, size * 0.22), hull, Math.cos(a) * size * 1.02, Math.sin(a) * size * 1.02, 0);
-    }
-    windowsOn(26, (t) => { const a = Math.floor(t * 9) / 9 * Math.PI * 2 + r() * 0.35; return new THREE.Vector3(Math.cos(a) * size * 1.005, Math.sin(a) * size * 1.005, (r() - 0.5) * size * 0.2); });
-  } else if (variant === 1) {
-    // Long spine, twin narrow rings mid-way, copper solar wings at both ends.
-    add(cyl(size * 0.08, size * 3.2), dark);
-    for (let k = 0; k < 7; k++) add(cyl(size * (0.12 + r() * 0.05), size * 0.28), hull, (r() - 0.5) * size * 0.12, (r() - 0.5) * size * 0.12, (k - 3) * size * 0.4 + (k > 2 ? size * 0.3 : -size * 0.3));
-    for (const zz of [-0.12, 0.12]) {
-      add(new THREE.TorusGeometry(size * 0.8, size * 0.07, 8, 40), hull, 0, 0, zz * size);
-      for (let k = 0; k < 4; k++) { const m = truss(size * 1.6, size * 0.025, k * Math.PI / 4); m.position.z = zz * size; }
-    }
-    for (const zz of [-1.35, 1.35]) {
-      for (const sx of [-1, 1]) {
-        const w = add(new THREE.PlaneGeometry(size * 0.28, size * 1.5), copper, sx * size * 0.95, 0, zz * size);
-        w.rotation.y = Math.PI / 2;
-        add(new THREE.BoxGeometry(size * 0.7, size * 0.03, size * 0.03), dark, sx * size * 0.45, 0, zz * size);
-      }
-    }
-    windowsOn(18, () => { const a = r() * Math.PI * 2; return new THREE.Vector3(Math.cos(a) * size * 0.8, Math.sin(a) * size * 0.8, (r() < 0.5 ? -0.12 : 0.12) * size); });
-    windowsOn(10, () => new THREE.Vector3((r() - 0.5) * size * 0.3, size * 0.15, (r() - 0.5) * size * 2.4));
-  } else {
-    // Blocky hub: a squat core with stacked decks, two booms with pods,
-    // radiator fins and an antenna spike.
-    add(new THREE.BoxGeometry(size * 0.9, size * 0.7, size * 0.8), hull);
-    add(new THREE.BoxGeometry(size * 1.1, size * 0.18, size * 0.95), dark, 0, size * 0.3, 0);
-    add(cyl(size * 0.32, size * 0.5), hull, 0, 0, size * 0.55);
-    for (const sx of [-1, 1]) {
-      add(new THREE.BoxGeometry(size * 1.1, size * 0.1, size * 0.1), dark, sx * size * 0.95, -size * 0.05, 0);
-      add(cyl(size * 0.17, size * 0.45), hull, sx * size * 1.5, -size * 0.05, 0);
-      const fin = add(new THREE.PlaneGeometry(size * 0.6, size * 0.3), copper, sx * size * 0.9, size * 0.25, -size * 0.2);
-      fin.rotation.x = -Math.PI / 2;
-    }
-    add(new THREE.CylinderGeometry(size * 0.015, size * 0.04, size * 1.6, 6), dark, 0, -size * 1.1, 0);
-    for (let k = 0; k < 4; k++) add(new THREE.BoxGeometry(size * 0.16, size * 0.16, size * 0.16), dark, (k - 1.5) * size * 0.22, size * 0.45, -size * 0.25);
-    windowsOn(24, () => new THREE.Vector3((r() - 0.5) * size * 0.85, (Math.floor(r() * 3) - 1) * size * 0.18, size * 0.405));
-  }
-  const windows = new THREE.Points(
-    new THREE.BufferGeometry().setFromPoints(win),
-    new THREE.PointsMaterial({ color: '#ffd9a0', size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0.8 }),
-  );
-  windows.name = 'windows';
-  windows.visible = false;
-  g.add(windows);
-  // Only the wheel spins quickly; the long and blocky designs turn slowly.
-  g.userData.spin = variant === 0 ? 0.4 : 0.08;
-  return g;
-}
-
-function asteroidMesh(b) {
-  const r = rng(b.id * 97 + 1);
-  // Merge shared vertices first so the displacement is smooth (no torn,
-  // triangular facets), then shape with low-frequency noise and a few craters.
-  let geo = new THREE.IcosahedronGeometry(b.size, 5);
-  geo.deleteAttribute('normal');
-  geo.deleteAttribute('uv');
-  geo = mergeVertices(geo);
-  const waves = Array.from({ length: 5 }, () => ({
-    d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(),
-    f: 0.6 + r() * 1.2,
-    ph: r() * 6.28,
-    a: 0.05 + r() * 0.07,
-  }));
-  // Finer ripples for surface detail.
-  for (let i = 0; i < 4; i++) waves.push({ d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(), f: 3 + r() * 3, ph: r() * 6.28, a: 0.015 + r() * 0.015 });
-  const craters = Array.from({ length: 6 }, () => ({
-    d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(),
-    size: 0.2 + r() * 0.25,
-  }));
-  const stretch = new THREE.Vector3(1.2 + r() * 0.5, 0.8 + r() * 0.2, 0.9 + r() * 0.3);
-  const p = geo.attributes.position;
-  const v = new THREE.Vector3();
-  const n = new THREE.Vector3();
-  const cols = [];
-  for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i);
-    n.copy(v).normalize();
-    let k = 1;
-    for (const w of waves) k += w.a * Math.sin(n.dot(w.d) * w.f * 3 + w.ph);
-    for (const c of craters) {
-      const d = n.distanceTo(c.d);
-      if (d < c.size) k -= 0.12 * Math.cos((d / c.size) * Math.PI * 0.5) ** 2;
-      else if (d < c.size * 1.25) k += 0.03; // raised rim
-    }
-    // Grit: small lumps all over, so it isn't a smooth potato.
-    k += (fbm(n.x * 7, n.y * 7, n.z * 7, b.id + 5, 3) - 0.5) * 0.08;
-    v.multiplyScalar(k).multiply(stretch);
-    p.setXYZ(i, v.x, v.y, v.z);
-    // Colour: patchy regolith, darker in crater bowls, paler on high ground.
-    let t = 0.42 + (fbm(n.x * 2.5, n.y * 2.5, n.z * 2.5, b.id + 9, 4) - 0.5) * 0.7 + (k - 1) * 1.6;
-    t += (fbm(n.x * 12, n.y * 12, n.z * 12, b.id + 2, 2) - 0.5) * 0.3;
-    t = Math.max(0.12, Math.min(0.75, t));
-    cols.push(t * 1.05, t * 0.97, t * 0.88);
-  }
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-  geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.05 }));
-}
 
 // Screen size in pixels, for anything drawn at a fixed on-screen width.
 const screenRes = { value: new THREE.Vector2(1, 1) };
@@ -431,8 +121,34 @@ function orbitLine(b) {
 
 // ---- Structures -------------------------------------------------------------
 
-const structMat = new THREE.MeshStandardMaterial({ color: '#b9c0cc', metalness: 0.6, roughness: 0.45 });
-const ghostMat = new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.35, wireframe: true });
+const structMat = new THREE.MeshStandardMaterial({ color: '#c9ced6', map: platingTex(), roughnessMap: platingTex(), bumpMap: platingTex(), bumpScale: 0.5, metalness: 0.4, roughness: 0.5, emissive: '#06070a' });
+// Under construction: a flickering blueprint hologram with scan lines.
+const holoT = { value: 0 };
+const ghostMat = new THREE.ShaderMaterial({
+  uniforms: { uT: holoT },
+  vertexShader: `${LD_VERT_PARS}
+    varying vec3 vN; varying vec3 vV; varying vec3 vW;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vW = wp.xyz;
+      vec4 mv = viewMatrix * wp;
+      vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv;
+      ${LD_VERT}
+    }`,
+  fragmentShader: `${LD_FRAG_PARS}
+    uniform float uT; varying vec3 vN; varying vec3 vV; varying vec3 vW;
+    void main() {
+      ${LD_FRAG}
+      float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
+      float scan = 0.55 + 0.45 * sin(vW.y * 60.0 - uT * 6.0);
+      float flick = 0.85 + 0.15 * sin(uT * 23.0) * sin(uT * 7.0);
+      gl_FragColor = vec4(vec3(0.45, 0.8, 1.3) * (0.12 + rim * 0.9) * scan * flick, 1.0);
+    }`,
+  blending: THREE.AdditiveBlending,
+  transparent: true,
+  depthWrite: false,
+});
 
 /** A structure's mesh, sized to the world: yards orbit, guns and mines sit on the surface. */
 function structureMesh(type, b, k, done, level = 1) {
@@ -441,13 +157,24 @@ function structureMesh(type, b, k, done, level = 1) {
   const g = new THREE.Group();
   if (type === 'shipyard') {
     // An open gantry ring in low orbit with a docking spine.
-    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.12, 6, 48), mat));
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      const truss = new THREE.Mesh(new THREE.BoxGeometry(s * 0.25, s * 0.25, s * 1.2), mat);
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.05, 6, 64), mat));
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.03, 4, 64).translate(0, 0, s * 0.18), mat));
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(s * 0.12, s * 0.3, s * 0.9), mat);
       truss.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
       truss.lookAt(0, 0, 0);
       g.add(truss);
+    }
+    if (done) {
+      // Work lights round the gantry.
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + 0.2;
+        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color(i % 2 ? '#ffd9a0' : '#9fd4ff').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+        light.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
+        light.scale.setScalar(s * 0.5);
+        g.add(light);
+      }
     }
     g.rotation.x = Math.PI / 2 + 0.35;
     return g;
@@ -502,7 +229,7 @@ function structureMesh(type, b, k, done, level = 1) {
     hub.rotation.x = Math.PI / 2;
     g.add(hub);
     if (done) {
-      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffe39a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#ffe39a').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       light.position.y = s * 4.7;
       light.scale.setScalar(s * (1.2 + level * 0.4));
       g.add(light);
@@ -519,7 +246,7 @@ function structureMesh(type, b, k, done, level = 1) {
       g.add(dish);
     }
     if (done) {
-      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#9fd4ff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#9fd4ff').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       light.position.y = s * (1.1 + level * 0.3);
       light.scale.setScalar(s * (1 + level * 0.4));
       g.add(light);
@@ -533,7 +260,7 @@ function structureMesh(type, b, k, done, level = 1) {
       tower.position.set(x0, s * 0.7, 0);
       g.add(tower);
       if (done) {
-        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffc070', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#ffc070').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
         light.position.set(x0, s * (1.5 - i * 0.2), 0);
         light.scale.setScalar(s * 1.6);
         g.add(light);
@@ -577,9 +304,8 @@ export function createView(canvas, labelRoot, opts = {}) {
   sun2.add(new THREE.PointLight('#ffd9b0', 1.4, 0, 0)); // lights its own worlds
   scene.add(sun2);
   scene.add(new THREE.PointLight('#fff1dd', 3, 0, 0));
-  scene.add(new THREE.AmbientLight('#26304a', 0.25));
+  scene.add(new THREE.AmbientLight('#2a3550', 0.7));
 
-  const shipGeos = shipGeometries();
   const world = new THREE.Group();
   scene.add(world);
   let views = [];
@@ -587,6 +313,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   const orbit = { az: 0.4, pol: 0.9, dist: 380, minDist: 1.2, maxDist: 900, target: new THREE.Vector3(), vaz: 0, vpol: 0, follow: null };
 
   let companionPath = null;
+  let belt = null;
   const bake = createBaker(renderer, () => quality);
   const baked = [];
   const sphereGeos = new Map();
@@ -619,7 +346,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       let tail = null;
       let ring = null;
       let atmo = null;
-      if (b.kind === 'station') body = stationMesh(b.size, b.id % 3);
+      if (b.kind === 'station') body = stationMesh(b.size, b.id % 3, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else if (b.visitor) {
         // Comet: an icy nucleus with a tail streaming away from the sun.
@@ -635,7 +362,8 @@ export function createView(canvas, labelRoot, opts = {}) {
         tail.userData.coma = puff('#e8f6ff');
         for (const sp of [...tail.userData.ion, ...tail.userData.dust, tail.userData.coma]) tail.add(sp);
         g.add(tail);
-        hulk = stationMesh(0.7);
+        hulk = stationMesh(0.7, 0, shipR.uT);
+        hulk.userData.set('#3a3d44', 0.8, false); // a dead hulk: no lights
         g.add(hulk);
       }
       else {
@@ -696,6 +424,15 @@ export function createView(canvas, labelRoot, opts = {}) {
       }
       return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [] };
     });
+    // The asteroid belt: a lane of small rocks round the named asteroids.
+    if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
+    const rocks = game.bodies.filter((x) => x.kind === 'asteroid');
+    if (rocks.length) {
+      const ref = rocks[0];
+      const r0 = Math.min(...rocks.map((x) => x.r)) - 2, r1 = Math.max(...rocks.map((x) => x.r)) + 2;
+      belt = createBelt(r0, r1, (r) => ref.period * Math.pow(r / ref.r, 1.5), quality, shipR.uT);
+      world.add(belt.group);
+    }
     // Who can eclipse whom: a planet and its moons shadow each other.
     for (const v of views) {
       const b = v.b;
@@ -716,35 +453,10 @@ export function createView(canvas, labelRoot, opts = {}) {
     }
   }
 
-  // Hull plating: panels of slightly different tone, seams, hatches and a few
-  // scuffs. Multiplies the hull colour, and doubles as bump and roughness.
-  const hullTex = platingTex();
-
-  // Ships: meshes with a drive plume and a far-away glint, pooled.
-  const ships = [];
-  function ship(i) {
-    if (i >= MAX_SHIPS) return null;
-    if (!ships[i]) {
-      // A faint self-glow so the shadow side is dark grey, never black.
-      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, map: hullTex, bumpMap: hullTex, bumpScale: 0.6, roughnessMap: hullTex, metalness: 0.55, roughness: 0.45, emissive: '#0b0d12' }));
-      // Owner-coloured paint: stripes, bows and pods, lit a little so it reads.
-      const accent = new THREE.Mesh(shipGeos[0].accent, new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.5 }));
-      mesh.add(accent);
-      // Navigation lights and portholes: unlit, so they glow on the dark side.
-      const lights = new THREE.Mesh(shipGeos[0].lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
-      mesh.add(lights);
-      const plume = new THREE.Mesh(
-        // A long, thin, bright drive flame (an Epstein-style torch).
-        new THREE.ConeGeometry(0.035, 1.6, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -1.16),
-        new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
-      );
-      mesh.add(plume);
-      const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      scene.add(mesh, glint);
-      ships[i] = { mesh, accent, lights, plume, glint };
-    }
-    return ships[i];
-  }
+  // Ships: instanced hulls, drive plumes and far-away glints (gfx/ships.js).
+  const shipR = createShipRenderer(scene, MAX_SHIPS);
+  const shipGeos = shipR.geometries;
+  let used = 0; // ships drawn so far this frame
 
   // Routes and intercept points.
   const routeGeo = new THREE.BufferGeometry();
@@ -772,25 +484,12 @@ export function createView(canvas, labelRoot, opts = {}) {
   preview.frustumCulled = false;
   scene.add(preview);
 
-  // Explosions and weapon tracers.
-  const booms = [];
-  let boomNext = 0;
-  function boom(p, color, size, life) {
-    let s = booms[boomNext];
-    if (!s) {
-      s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      s.userData = {};
-      scene.add(s);
-      booms[boomNext] = s;
-    }
-    boomNext = (boomNext + 1) % MAX_BOOMS;
-    s.position.copy(p);
-    s.material.color.set(color);
-    Object.assign(s.userData, { age: 0, life, size });
-    s.visible = true;
-  }
+  // Explosions and weapon fire: one GPU particle system (gfx/fx.js).
+  const fx = createFx(scene, quality === 'high' ? 4096 : 2048);
+  // Rounds in flight, kept here only to know when and where they land.
   const MAX_SHOTS = 240;
   const shots = [];
+  const WHITE = new THREE.Color('#ffffff');
   function shoot(a, b, color, lvl = 0, pd = false) {
     let sh = shots.find((x) => !x.live);
     if (!sh) {
@@ -803,23 +502,24 @@ export function createView(canvas, labelRoot, opts = {}) {
     sh.b.copy(b);
     sh.color = color;
     // Light the shooter's colour towards white so rounds read as hot.
-    // Guns by research: tracers, then coilgun slugs, then railgun streaks.
-    sh.c.set(color).lerp(new THREE.Color('#ffffff'), [0.45, 0.6, 0.85][lvl]);
-    sh.tail = [0.18, 0.3, 1][lvl];
+    // Guns by research: PDC tracer streams, then coilgun slugs, then railguns.
+    sh.c.set(color).lerp(WHITE, [0.45, 0.6, 0.85][lvl]);
+    sh.rail = lvl === 2;
     sh.age = 0;
-    sh.life = lvl === 2 ? 0.16 : THREE.MathUtils.clamp(a.distanceTo(b) / (lvl ? 24 : 14), 0.1, 0.7);
+    sh.life = lvl === 2 ? 0.05 : THREE.MathUtils.clamp(a.distanceTo(b) / (lvl ? 24 : 14), 0.1, 0.7);
     // Point-defence drones swat some rounds short of the target.
     sh.pd = pd && Math.random() < 0.3;
     if (sh.pd) sh.b.lerpVectors(a, b, 0.7 + Math.random() * 0.2);
+    if (lvl === 2) fx.beam(sh.a, sh.b, sh.c, 0.35);
+    else if (lvl === 1) fx.bolt(sh.a, sh.b, sh.c, sh.life, 0.5, 0.035);
+    else {
+      // A short burst of tracers, slightly spread.
+      for (let k = 0; k < 4; k++) {
+        tmp2.copy(sh.b).add(tmp3.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.25));
+        fx.bolt(sh.a, tmp2, sh.c, sh.life, 0.22, 0.018, k * 0.045);
+      }
+    }
   }
-  const tracerGeo = new THREE.BufferGeometry();
-  const tracerPos = new Float32Array(MAX_SHOTS * 6);
-  const tracerCol = new Float32Array(MAX_SHOTS * 6);
-  tracerGeo.setAttribute('position', new THREE.BufferAttribute(tracerPos, 3));
-  tracerGeo.setAttribute('color', new THREE.BufferAttribute(tracerCol, 3));
-  const tracers = new THREE.LineSegments(tracerGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  tracers.frustumCulled = false;
-  scene.add(tracers);
 
   const tmp = new THREE.Vector3();
   const tmp2 = new THREE.Vector3();
@@ -909,35 +609,41 @@ export function createView(canvas, labelRoot, opts = {}) {
       p.set(q.x + dx * k, q.y + dy * k, q.z + dz * k);
     }
   }
-  function placeShip(sh, p, n, color, burning, t, seed, id = seed, plume = 1, probe = false) {
-    sh.mesh.visible = true;
-    const G = probe ? shipGeos.probe : shipGeos[Math.floor(hash(id, 3) * shipGeos.length)];
-    if (sh.mesh.geometry !== G.base) {
-      sh.mesh.geometry = G.base;
-      sh.accent.geometry = G.accent;
-      sh.lights.geometry = G.lights;
+  /** Is a point in sunlight (1), or in the shadow of a world (0)? Soft-edged. */
+  function sunlit(p) {
+    let vis = 1;
+    const sx = sunGroup.position.x, sy = sunGroup.position.y, sz = sunGroup.position.z;
+    let lx = sx - p.x, ly = sy - p.y, lz = sz - p.z;
+    const ld = Math.hypot(lx, ly, lz) || 1;
+    lx /= ld; ly /= ld; lz /= ld;
+    for (const v of views) {
+      if (v.b.kind !== 'planet' && v.b.kind !== 'moon') continue;
+      const q = bodyPos[v.b.id];
+      const ox = q.x - p.x, oy = q.y - p.y, oz = q.z - p.z;
+      const t = ox * lx + oy * ly + oz * lz;
+      if (t <= 0 || t > ld) continue;
+      const mx = ox - lx * t, my = oy - ly * t, mz = oz - lz * t;
+      const m = Math.sqrt(mx * mx + my * my + mz * mz);
+      const r = v.b.size, pen = r * 0.08 + t * 0.012;
+      if (m < r + pen) vis *= THREE.MathUtils.smoothstep(m, r - pen, r + pen);
     }
+    return vis;
+  }
+  /**
+   * Draws a ship at p, nose along n. `id` picks its hull and small variations
+   * (length, hull tone), stable for that ship. glintMul dims the far-away glint.
+   */
+  function placeShip(p, n, color, burning, t, seed, id = seed, plume = 1, probe = false, glintMul = 1) {
+    if (used >= MAX_SHIPS) return;
+    used++;
+    const type = probe ? 3 : Math.floor(hash(id, 3) * 3);
     const k = 0.9 + hash(id, 5) * 0.25;
-    if (probe) sh.mesh.scale.setScalar(0.45);
-    else sh.mesh.scale.set(0.8, 0.8, 0.8 * k);
-    // A slight per-ship tint on the hull (vertex colours carry the light/dark
-    // split); kept mid-grey so the lit side shines and the far side goes dark.
-    sh.mesh.material.color.setHSL(0.6, 0.05 + hash(id, 9) * 0.08, 0.5 + hash(id, 11) * 0.12);
+    const s = probe ? [0.45, 0.45, 0.45] : [0.8, 0.8, 0.8 * k];
     unclip(p);
-    sh.mesh.position.copy(p);
-    tmp2.copy(p).add(n);
-    sh.mesh.lookAt(tmp2);
-    sh.accent.material.color.set(color);
-    sh.accent.material.emissive.set(color).multiplyScalar(0.35);
-    sh.plume.visible = burning;
-    if (burning) sh.plume.scale.set(0.8 + plume * 0.2, 0.8 + plume * 0.2, plume * (0.8 + Math.sin(t * 40 + seed) * 0.15) * (probe ? 0.35 : 1));
-    // Visible from afar as a point of light; brighter while the drive burns.
     const ppu = ppuAt(p);
-    sh.glint.visible = true;
-    sh.glint.position.copy(p);
-    sh.glint.material.color.set(burning ? '#cfe8ff' : color);
-    sh.glint.material.opacity = ppu > 60 ? 0 : burning ? 1 : 0.7;
-    sh.glint.scale.setScalar((burning ? 9 : 5) / ppu);
+    // Visible from afar as a point of light; brighter while the drive burns.
+    const glint = ppu > 60 ? null : [(burning ? 9 : 5) * (probe ? 0.8 : 1), (burning ? 1 : 0.7) * glintMul];
+    shipR.add(type, p, n, s, color, 0.82 + hash(id, 11) * 0.28, id, burning, plume * (0.8 + Math.sin(t * 40 + seed) * 0.05) * (probe ? 0.35 : 1), glint, 0.6 * ppu, sunlit(p));
   }
 
   // Events at a world get something you can see there: a probe beacon, a
@@ -946,7 +652,6 @@ export function createView(canvas, labelRoot, opts = {}) {
   const eventObjs = new Map();
   const evHull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.5, roughness: 0.5 });
   const evDark = new THREE.MeshStandardMaterial({ color: '#4a505c', metalness: 0.4, roughness: 0.7 });
-  const evShip = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.45 });
   function eventObj(kind) {
     const g = new THREE.Group();
     const box = (w, h, d, m = evHull) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -972,7 +677,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     } else if (kind === 'convoy') {
       // Three haulers in line astern.
       for (let i = 0; i < 3; i++) {
-        const m = new THREE.Mesh(shipGeos[2].base, evShip);
+        const m = new THREE.Mesh(shipGeos[2], evHull);
         m.position.set((i - 1) * 0.25, 0, -i * 0.5);
         m.scale.setScalar(0.8);
         g.add(m);
@@ -1046,6 +751,9 @@ export function createView(canvas, labelRoot, opts = {}) {
     if (sun2.visible) starLights.col.value[1].set(1.25, 0.95, 0.72);
     else starLights.col.value[1].set(0, 0, 0);
     sun.update(t);
+    holoT.value = t;
+    fx.update(t);
+    if (belt) belt.update(now);
     if (sun2.visible) sunB.update(t + 50);
     sky.update(t, pixelRatio);
     const techOf = (o, k) => (o >= 0 && game.tech ? game.tech[o][k] : 0);
@@ -1084,7 +792,8 @@ export function createView(canvas, labelRoot, opts = {}) {
 
     const w = window.innerWidth;
     const h = window.innerHeight;
-    let used = 0;
+    used = 0;
+    shipR.begin(t, pixelRatio);
 
     // Moons and stations crowded against their planet on screen hide their
     // label; their ship counts ride on the planet's label instead.
@@ -1184,7 +893,11 @@ export function createView(canvas, labelRoot, opts = {}) {
         } else v.hulk.rotation.y += dt * 0.08;
       }
       // Slow spin; stations turn faster, asteroids tumble.
-      if (b.kind === 'station') v.body.rotation.z += dt * (v.body.userData.spin ?? 0.5);
+      if (b.kind === 'station') {
+        v.body.rotation.z += dt * (v.body.userData.spin ?? 0.5);
+        // Owner's paint, lit windows once held, and dark in a world's shadow.
+        v.body.userData.set(b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner), sunlit(p), b.owner !== NEUTRAL);
+      }
       else if (b.kind === 'asteroid') { v.body.rotation.x += dt * 0.3; v.body.rotation.y += dt * 0.2; }
       else {
         v.body.rotation.y += dt * 0.05;
@@ -1219,8 +932,6 @@ export function createView(canvas, labelRoot, opts = {}) {
         if (v.body.material && v.body.material.uniforms && v.body.material.uniforms.uCity) {
           v.body.material.uniforms.uCity.value = b.owner === NEUTRAL ? 0 : 1;
         }
-        const windows = v.body.getObjectByName && v.body.getObjectByName('windows');
-        if (windows) windows.visible = b.owner !== NEUTRAL;
         v.mark.material.color.set(col);
         v.label.style.color = col;
       }
@@ -1265,15 +976,13 @@ export function createView(canvas, labelRoot, opts = {}) {
       const atkPts = [];
       const park = (n, owner, radius, speed, seed, out) => {
         for (let j = 0; j < n; j++) {
-          const sh = ship(used++);
-          if (!sh) return;
+          if (used >= MAX_SHIPS) return;
           const r1 = hash(seed, j);
           const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
           const rr = radius * (1 + hash(j, seed) * 0.15);
           tmp.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
           dir.set(-Math.sin(a), 0, Math.cos(a));
-          placeShip(sh, tmp, dir, ownerColor(owner), false, t, j, seed * 131 + j);
-          sh.glint.material.opacity *= 0.6;
+          placeShip(tmp, dir, ownerColor(owner), false, t, j, seed * 131 + j, 1, false, 0.6);
           if (out) out.push({ p: tmp.clone(), owner });
         }
       };
@@ -1304,18 +1013,13 @@ export function createView(canvas, labelRoot, opts = {}) {
         for (const [lost, pts] of [[b.lostDef, defPts], [b.lostAtk, atkPts]]) {
           for (let k = 0; k < Math.min(3, lost || 0); k++) {
             const at = pts.length ? pts[(Math.random() * pts.length) | 0].p : tmp.set(p.x, p.y, p.z);
-            // A white flash, a fireball, and burning debris drifting apart.
-            boom(at, '#ffffff', 3, 0.3);
-            boom(at, '#ffc070', 5, 1.2);
-            for (let d = 0; d < 4; d++) {
-              tmp2.set(at.x + (Math.random() - 0.5) * 1.6, at.y + (Math.random() - 0.5) * 1.6, at.z + (Math.random() - 0.5) * 1.6);
-              boom(tmp2, '#ff8a40', 1.4, 1 + Math.random() * 0.8);
-            }
+            // A flash, a short-lived fireball, a shockwave and glowing debris.
+            fx.explosion(at, 0.9 + Math.random() * 0.3);
           }
         }
       }
       b.lostDef = b.lostAtk = 0;
-      if (b.captured) { v.pulse = 1; b.captured = false; }
+      if (b.captured) { v.pulse = 1; b.captured = false; fx.ring(tmp.set(p.x, p.y, p.z), ownerColor(b.owner), b.size * 3.5, 1.4); }
 
       // A megaproject: a gold ring round the world, drawn as far round as the
       // work has got; a full, brighter ring once it's finished.
@@ -1392,8 +1096,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       const drawn = f.probe ? 1 : knowsSize(f) ? f.n : Math.min(f.n, 3);
       const cols = Math.max(3, Math.ceil(Math.sqrt(drawn)));
       for (let j = 0; j < drawn; j++) {
-        const sh = ship(used++);
-        if (!sh) break;
+        if (used >= MAX_SHIPS) break;
         // Formation: a loose, uneven block. Each ship keeps its own offset
         // and drifts a little, so it reads as crewed ships, not a grid. It
         // opens out after launch and closes up (only partly) before arrival.
@@ -1410,7 +1113,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
         const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);
-        placeShip(sh, tmp, tmp3.set(sj.nx, sj.ny, sj.nz), color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
+        placeShip(tmp, tmp3.set(sj.nx, sj.ny, sj.nz), color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.
@@ -1436,7 +1139,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         gh.scale.setScalar((hostile ? 22 : 14) * pulse / ppuAt(gh.position));
       }
     }
-    for (let i = used; i < ships.length; i++) { ships[i].mesh.visible = false; ships[i].glint.visible = false; }
+    shipR.end();
 
     // Ship counts on fleets in flight: a small tag beside each one.
     let fl = 0;
@@ -1464,41 +1167,16 @@ export function createView(canvas, labelRoot, opts = {}) {
     routeGeo.attributes.position.needsUpdate = true;
     routeGeo.attributes.color.needsUpdate = true;
 
-    // Rounds in flight: a short bright streak moving from gun to target, with
-    // a spark where it lands.
-    let tn = 0;
+    // Rounds landing: sparks where they hit (or a puff where point defence got them).
     for (const sh of shots) {
       if (!sh.live) continue;
       sh.age += dt;
-      const k = sh.age / sh.life;
-      if (k >= 1) {
-        sh.live = false;
-        if (sh.pd) boom(sh.b, '#dff4ff', 0.35, 0.15);
-        else boom(sh.b, sh.color, sh.tail === 1 ? 0.9 : 0.5, 0.25);
-        continue;
-      }
-      if (tn >= MAX_SHOTS) continue;
-      tmp.lerpVectors(sh.a, sh.b, sh.tail === 1 ? 0 : Math.max(0, k - sh.tail));
-      if (sh.tail === 1) tmp2.copy(sh.b);
-      else tmp2.lerpVectors(sh.a, sh.b, k);
-      tracerPos.set([tmp.x, tmp.y, tmp.z, tmp2.x, tmp2.y, tmp2.z], tn * 6);
-      const c = sh.c;
-      if (sh.tail === 1) { const f = 1 - k; tracerCol.set([c.r * f * 0.6, c.g * f * 0.6, c.b * f * 0.6, c.r * f, c.g * f, c.b * f], tn * 6); }
-      else tracerCol.set([c.r * 0.2, c.g * 0.2, c.b * 0.2, c.r, c.g, c.b], tn * 6);
-      tn++;
+      if (sh.age < sh.life) continue;
+      sh.live = false;
+      if (sh.pd) fx.intercept(sh.b);
+      else fx.impact(sh.b, sh.c, sh.rail);
     }
-    tracerGeo.setDrawRange(0, tn * 2);
-    tracerGeo.attributes.position.needsUpdate = true;
-    tracerGeo.attributes.color.needsUpdate = true;
-
-    for (const s of booms) {
-      if (!s.visible) continue;
-      s.userData.age += dt;
-      const k = s.userData.age / s.userData.life;
-      if (k >= 1) { s.visible = false; continue; }
-      s.scale.setScalar(s.userData.size * (0.4 + Math.sqrt(k)));
-      s.material.opacity = Math.min(1, (1 - k) * 1.6);
-    }
+    fx.update(t, (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / window.innerHeight);
 
     // Order preview.
     if (ui.preview) {
@@ -1671,5 +1349,5 @@ export function createView(canvas, labelRoot, opts = {}) {
     }
   }
 
-  return { _debug: { scene, renderer, post, camera, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
+  return { _debug: { scene, renderer, post, camera, fx, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
 }
