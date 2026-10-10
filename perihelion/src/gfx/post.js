@@ -28,6 +28,8 @@ export function createPost(renderer) {
   const hdr = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float') ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const rtOpts = { type: hdr, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
   let sceneRT = null;
+  // The scene keeps its depth as a texture, for depth of field.
+  const makeSceneRT = (w, h) => new THREE.WebGLRenderTarget(w, h, { type: hdr, samples, depthBuffer: true, depthTexture: new THREE.DepthTexture(w, h, THREE.UnsignedIntType) });
   const down = [];
   const LEVELS = 6;
 
@@ -88,13 +90,13 @@ export function createPost(renderer) {
   const flare = { pos: new THREE.Vector2(0.5, 0.5), vis: 0, color: new THREE.Color('#ffe2b0') };
   const outMat = new THREE.ShaderMaterial({
     uniforms: {
-      tScene: { value: null }, tBloom: { value: null }, uBloom: { value: 0.17 }, uExposure: { value: 1.0 },
+      tScene: { value: null }, tDepth: { value: null }, uNear: { value: 0.1 }, uFar: { value: 6000 }, uFocus: { value: 100 }, uDof: { value: 0 }, tBloom: { value: null }, uBloom: { value: 0.17 }, uExposure: { value: 1.0 },
       uTime: { value: 0 }, uAspect: { value: 1 }, uSun: { value: flare.pos }, uSunVis: { value: 0 }, uSunColor: { value: flare.color },
       uTexel: texel(), uCA: { value: 1 }, uGrain: { value: 1 },
     },
     vertexShader: FULLSCREEN_VERT,
     fragmentShader: /* glsl */ `
-      uniform sampler2D tScene, tBloom; uniform float uBloom, uExposure, uTime, uAspect, uSunVis, uCA, uGrain;
+      uniform sampler2D tScene, tBloom, tDepth; uniform float uNear, uFar, uFocus, uDof; uniform float uBloom, uExposure, uTime, uAspect, uSunVis, uCA, uGrain;
       uniform vec2 uSun, uTexel; uniform vec3 uSunColor;
       varying vec2 vUv;
       // Khronos PBR Neutral tone mapping: keeps colours true below about 0.8,
@@ -120,6 +122,25 @@ export function createPost(renderer) {
       void main() {
         vec2 fromC = vUv - 0.5;
         vec3 col = texture2D(tScene, vUv).rgb;
+        // Depth of field when zoomed in close: what's far behind the thing
+        // you're looking at goes soft (the sky stays sharp), for a sense of
+        // distance and scale.
+        if (uDof > 0.001) {
+          float dz = texture2D(tDepth, vUv).r;
+          if (dz < 0.9999) {
+            float z = uNear * uFar / (uFar - dz * (uFar - uNear));
+            float coc = clamp((z - uFocus * 2.5) / (uFocus * 10.0), 0.0, 1.0) * uDof;
+            if (coc > 0.02) {
+              vec2 rr = uTexel * coc * 7.0;
+              vec3 acc = col;
+              acc += texture2D(tScene, vUv + rr * vec2(1.0, 0.0)).rgb + texture2D(tScene, vUv + rr * vec2(-1.0, 0.0)).rgb;
+              acc += texture2D(tScene, vUv + rr * vec2(0.0, 1.0)).rgb + texture2D(tScene, vUv + rr * vec2(0.0, -1.0)).rgb;
+              acc += texture2D(tScene, vUv + rr * vec2(0.7, 0.7)).rgb + texture2D(tScene, vUv + rr * vec2(-0.7, 0.7)).rgb;
+              acc += texture2D(tScene, vUv + rr * vec2(0.7, -0.7)).rgb + texture2D(tScene, vUv + rr * vec2(-0.7, -0.7)).rgb;
+              col = mix(col, acc / 9.0, smoothstep(0.02, 0.3, coc));
+            }
+          }
+        }
         col += texture2D(tBloom, vUv).rgb * uBloom;
         // Lens flare from the sun: ghosts strung along the line through the
         // centre of the frame, a faint halo, and a thin anamorphic streak.
@@ -157,7 +178,7 @@ export function createPost(renderer) {
   function setSize(w, h, pr) {
     const W = Math.max(1, Math.round(w * pr)), H = Math.max(1, Math.round(h * pr));
     size.set(W, H);
-    if (!sceneRT) sceneRT = new THREE.WebGLRenderTarget(W, H, { type: hdr, samples, depthBuffer: true });
+    if (!sceneRT) sceneRT = makeSceneRT(W, H);
     else sceneRT.setSize(W, H);
     let bw = Math.max(1, W >> 1), bh = Math.max(1, H >> 1);
     for (let i = 0; i < LEVELS; i++) {
@@ -170,7 +191,7 @@ export function createPost(renderer) {
   function setSamples(n) {
     if (n === samples) return;
     samples = n;
-    if (sceneRT) { sceneRT.dispose(); sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: hdr, samples, depthBuffer: true }); }
+    if (sceneRT) { sceneRT.dispose(); sceneRT = makeSceneRT(size.x, size.y); }
   }
 
   function pass(mat, target) {
@@ -180,6 +201,8 @@ export function createPost(renderer) {
   }
 
   function render(scene, camera, t) {
+    outMat.uniforms.uNear.value = camera.near;
+    outMat.uniforms.uFar.value = camera.far;
     renderer.setRenderTarget(sceneRT);
     renderer.clear();
     renderer.render(scene, camera);
@@ -204,6 +227,8 @@ export function createPost(renderer) {
     }
     const u = outMat.uniforms;
     u.tScene.value = sceneRT.texture;
+    u.tDepth.value = sceneRT.depthTexture;
+    u.uTexel.value.set(1 / size.x, 1 / size.y);
     u.tBloom.value = down[0].texture;
     u.uTime.value = t;
     u.uSunVis.value = flare.vis;
