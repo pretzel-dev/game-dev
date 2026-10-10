@@ -85,23 +85,28 @@ export function stationMesh(size, variant, uT) {
     k.light(S * 1.2, 0, S * 1.35, NAV_G, S * 0.04);
     k.light(-S * 1.2, 0, S * 1.35, NAV_R, S * 0.04);
   } else {
-    k.box(S * 0.9, S * 0.7, S * 0.8, 0, 0, 0, HULL);
-    k.greeble(S * 0.9, S * 0.7, S * 0.8, 0, 0, 0, 16);
-    k.box(S * 1.1, S * 0.18, S * 0.95, 0, S * 0.3, 0, DARK);
-    k.box(S * 0.92, S * 0.08, S * 0.82, 0, -S * 0.22, 0, PAINT);
-    cylZ(S * 0.32, S * 0.5, S * 0.55, HULL);
-    cylZ(S * 0.22, S * 0.25, S * 0.85, DARK);
-    for (const sx of [-1, 1]) {
-      k.box(S * 1.1, S * 0.1, S * 0.1, sx * S * 0.95, -S * 0.05, 0, DARK);
-      cylZ(S * 0.17, S * 0.45, 0, HULL, 14, sx * S * 1.5, -S * 0.05);
-      k.box(S * 0.6, S * 0.02, S * 0.3, sx * S * 0.9, S * 0.25, -S * 0.2, DARK, 0.5); // radiator fins
-      k.light(sx * S * 1.68, -S * 0.05, 0, sx > 0 ? NAV_G : NAV_R, S * 0.05);
+    // A spindle: a long central core with three habitat rings of different
+    // sizes stacked along it, a construction sphere frame at one end and a
+    // docking cluster at the other.
+    cylZ(S * 0.1, S * 3.0, 0, DARK, 12);
+    for (const [z, R, n] of [[-0.75, 0.62, 28], [0, 0.95, 40], [0.75, 0.62, 28]]) {
+      ring(S * R, S * 0.12, S * 0.16, n, HULL, true, z * S);
+      for (let i = 0; i < 4; i++) spoke(S * R, S * 0.03, (i / 4) * Math.PI * 2 + z, z * S);
+      cylZ(S * 0.18, S * 0.12, z * S, PAINT, 14);
     }
-    k.add(new THREE.CylinderGeometry(S * 0.015, S * 0.04, S * 1.6, 6).translate(0, -S * 1.1, 0), DARK);
-    k.light(0, -S * 1.9, 0, STROBE, S * 0.05);
-    for (let i = 0; i < 4; i++) k.box(S * 0.16, S * 0.16, S * 0.16, (i - 1.5) * S * 0.22, S * 0.45, -S * 0.25, DARK);
-    // Rows of windows on the front face.
-    for (let row = -1; row <= 1; row++) for (let i = 0; i < 9; i++) if (r() < 0.75) k.box(S * 0.05, S * 0.02, S * 0.004, (i - 4) * S * 0.09, row * S * 0.18, S * 0.402, WINDOW);
+    // Construction frame: a lattice of hoops round the bow.
+    for (let i = 0; i < 3; i++) {
+      const g = new THREE.TorusGeometry(S * 0.32, S * 0.012, 4, 24).rotateY((i / 3) * Math.PI).translate(0, 0, S * 1.35);
+      k.add(g, DARK);
+    }
+    // Docking cluster at the stern.
+    cylZ(S * 0.2, S * 0.3, -S * 1.35, HULL, 14);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      k.box(S * 0.08, S * 0.08, S * 0.3, Math.cos(a) * S * 0.26, Math.sin(a) * S * 0.26, -S * 1.4, HULL);
+      k.light(Math.cos(a) * S * 0.3, Math.sin(a) * S * 0.3, -S * 1.56, i % 2 ? NAV_R : NAV_G, S * 0.04);
+    }
+    k.light(0, 0, S * 1.6, STROBE, S * 0.05);
   }
   const geo = k.build(1);
   const mesh = singleHull(geo, uT);

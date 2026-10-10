@@ -35,28 +35,29 @@ export function createSun(radius, quality) {
           ${LD_FRAG}
           vec3 p = normalize(vP);
           float t = uT;
-          // Granules: convection cells, bright centres and dark lanes, that churn.
-          vec3 q = p * 30.0 + vec3(fbm(p * 5.0 + t * 0.015, 3), fbm(p * 5.0 + 7.0 - t * 0.015, 3), 0.0) * 1.2;
-          vec2 w = worley(q + vec3(0.0, 0.0, t * 0.05));
-          float gran = smoothstep(0.0, 0.7, w.y - w.x) * 0.7 + (snoise(q * 0.7 + t * 0.03) * 0.5 + 0.5) * 0.3;
-          ${hi ? 'vec2 w2 = worley(q * 2.3 + 11.0 - vec3(t * 0.08)); gran = gran * 0.75 + smoothstep(0.0, 0.5, w2.y - w2.x) * 0.25;' : ''}
-          float sup = fbm(p * 6.0 - t * 0.01, 3) * 0.5 + 0.5;
-          // Active regions: spots (umbra and penumbra) and bright faculae round them.
-          float act = fbm(p * 2.0 + vec3(0.0, t * 0.004, 0.0), 2) + snoise(p * 9.0) * 0.03;
-          act *= smoothstep(0.85, 0.3, abs(p.y)); // spots keep to the low latitudes
-          float pen = smoothstep(0.36, 0.41, act);
-          float umb = smoothstep(0.44, 0.47, act);
-          float fil = 0.5 + 0.5 * sin(atan(p.y, p.x) * 90.0 + fbm(p * 20.0, 2) * 6.0);
+          // Seen as in a solar observatory's images: a deep orange disc with a
+          // fine churning network, bright active regions threaded with arching
+          // magnetic loops, dark snaking filaments, and a bright fringe at the edge.
+          vec3 w = vec3(fbm(p * 3.0 + t * 0.012, 3), fbm(p * 3.0 + 5.0 - t * 0.012, 3), fbm(p * 3.0 + 9.0, 3));
+          float net = fbm(p * 38.0 + w * 2.5 + t * 0.03, ${hi ? 5 : 4}) * 0.5 + 0.5;
+          float act = fbm(p * 2.1 + w * 0.6 + vec3(0.0, t * 0.006, 0.0), 3);
+          act = smoothstep(0.08, 0.45, act) * smoothstep(0.95, 0.35, abs(p.y));
+          // Loops: bright fibres wound round each active region.
+          float loops = ridged(p * 11.0 + w * 3.0 + vec3(t * 0.02, 0.0, 0.0), 4);
+          float plage = act * (0.35 + 1.4 * pow(loops, 3.0));
+          float core = smoothstep(0.75, 1.0, act) * (0.6 + 0.4 * net);
+          // Filaments: thin dark lines away from the active regions.
+          float fil = exp(-pow(snoise(p * 3.2 + w * 0.8 + 21.0) / 0.022, 2.0)) * (1.0 - act) * smoothstep(0.2, 0.6, fbm(p * 2.0 + 40.0, 2) * 0.5 + 0.5);
           float mu = max(dot(vN, vV), 0.0);
-          float limb = 0.35 + 0.65 * pow(mu, 0.55);
-          float fac = smoothstep(0.18, 0.28, act) * (1.0 - pen) * (1.0 - mu) * 1.5;
-          vec3 hot = vec3(1.0, 0.93, 0.78), warm = vec3(1.0, 0.62, 0.25), deep = vec3(0.8, 0.28, 0.06);
-          vec3 c = mix(warm, hot, gran * 0.7 + sup * 0.3);
-          c = mix(c, deep, (1.0 - limb) * 0.85);
-          c *= 1.0 + fac * 0.6;
-          c *= 1.0 - pen * (0.45 + 0.1 * fil) - umb * 0.45;
-          // Brighter than white: the bloom does the rest.
-          gl_FragColor = vec4(c * uTint * (0.4 + 0.7 * limb), 1.0);
+          float edge = pow(1.0 - mu, 6.0);
+          vec3 deep = vec3(0.75, 0.22, 0.03), base = vec3(1.0, 0.46, 0.08), hotc = vec3(1.0, 0.78, 0.38), white = vec3(1.0, 0.95, 0.82);
+          vec3 c = mix(deep, base, 0.35 + net * 0.75);
+          c = mix(c, hotc, clamp(plage, 0.0, 1.0));
+          c += white * core * 1.4 + hotc * max(plage - 1.0, 0.0) * 0.8;
+          c *= 1.0 - fil * 0.3;
+          c = mix(c, hotc * 1.3, edge * 0.8); // the bright fringe at the limb
+          // Bright, but not white: the bloom does the rest.
+          gl_FragColor = vec4(c * uTint * (0.85 + 0.25 * mu), 1.0);
         }`,
     }),
   );
@@ -70,10 +71,10 @@ export function createSun(radius, quality) {
       vertexShader: /* glsl */ `${LD_VERT_PARS}
         uniform float uR; varying vec2 vXY;
         void main() {
-          float s = length(modelMatrix[0].xyz) * uR * 3.4;
+          float s = length(modelMatrix[0].xyz) * uR * 2.2;
           vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
           mv.xy += position.xy * s;
-          vXY = position.xy * 3.4; // in star radii
+          vXY = position.xy * 2.2; // in star radii
           gl_Position = projectionMatrix * mv;
           ${LD_VERT}
         }`,
@@ -84,21 +85,22 @@ export function createSun(radius, quality) {
           ${LD_FRAG}
           float r = length(vXY);
           if (r < 0.97) discard;
-          float a = atan(vXY.y, vXY.x);
           vec2 dir = vXY / r;
-          // Streamers: noise in angle, stretched outward, drifting slowly.
-          // Streamers turn slowly with the star and stream outward.
-          float rot = uT * 0.015;
+          // A close, fibrous fringe: fine bright threads standing off the limb,
+          // flickering and drifting, brighter over the actv longitudes, and a
+          // soft glow beyond.
+          float rot = uT * 0.01;
           vec2 rd = vec2(dir.x * cos(rot) - dir.y * sin(rot), dir.x * sin(rot) + dir.y * cos(rot));
-          float s = fbm(vec3(rd * 3.0, uT * 0.04), 4) * 0.5 + 0.5;
-          float s2 = fbm(vec3(rd * 9.0 + 4.0, r * 1.2 - uT * 0.25), 3) * 0.5 + 0.5;
-          float streak = pow(s, 2.0) * 0.8 + pow(s2, 3.0) * 0.6;
-          float fall = exp(-(r - 1.0) * 3.6) * 0.8 + exp(-(r - 1.0) * 1.4) * 0.08;
-          float inner = exp(-(r - 1.0) * 18.0) * 1.5; // the bright chromosphere edge
-          float k = fall * (0.35 + streak) + inner;
-          k *= smoothstep(3.4, 2.4, r) * (0.92 + 0.08 * sin(uT * 0.6 + s * 4.0));
-          vec3 c = mix(vec3(1.0, 0.55, 0.25), vec3(1.0, 0.85, 0.65), clamp(streak, 0.0, 1.0)) * uTint;
-          gl_FragColor = vec4(c * k * 0.7, 1.0);
+          float fib = fbm(vec3(rd * 26.0, uT * 0.12 + r * 2.0), 3) * 0.5 + 0.5;
+          float fib2 = fbm(vec3(rd * 60.0 + 3.0, uT * 0.2 - r * 4.0), 2) * 0.5 + 0.5;
+          float actv = smoothstep(0.35, 0.75, fbm(vec3(rd * 3.0, uT * 0.02), 3) * 0.5 + 0.5);
+          float h = r - 1.0;
+          float threads = pow(fib, 3.0) * 1.6 + pow(fib2, 4.0) * 0.8;
+          float fringe = exp(-h / (0.07 + 0.12 * actv * fib)) * (0.6 + threads);
+          float glow = exp(-h * 3.0) * 0.18 + exp(-h * 1.1) * 0.04;
+          float k = (fringe * (0.7 + actv * 0.8) + glow) * smoothstep(2.2, 1.6, r);
+          vec3 c = mix(vec3(1.0, 0.42, 0.08), vec3(1.0, 0.75, 0.35), clamp(fringe * 0.6, 0.0, 1.0)) * uTint;
+          gl_FragColor = vec4(c * k * 0.9, 1.0);
         }`,
       blending: THREE.AdditiveBlending,
       transparent: true,
@@ -158,7 +160,7 @@ export function createSun(radius, quality) {
   // Soft glow sprites: the halo you'd see even without bloom.
   const glowTex = makeGlowTexture();
   const glows = [];
-  for (const [s, c, o] of [[14, '#fff0c0', 0.16], [26, '#ffd890', 0.06], [55, '#ffc070', 0.02]]) {
+  for (const [s, c, o] of [[15, '#ffc080', 0.22], [28, '#ff9a50', 0.09], [60, '#ff7a30', 0.03]]) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     glow.scale.setScalar(s);
     glow.userData.base = s;

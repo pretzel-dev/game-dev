@@ -488,7 +488,7 @@ export function createShipRenderer(scene, max) {
         const i = nPlume++;
         // Nozzle at the back of the drive bell; length along -Z.
         tgt.set(0, 0, type === 1 ? -0.43 : type === 3 ? -0.07 : -0.36).multiply(sc.set(s[0], s[1], s[2])).applyQuaternion(q).add(p);
-        const len = 1.9 * plume * s[2];
+        const len = 1.9 * plume * Math.max(s[2], 0.62); // long torches even on small hulls
         m4.compose(tgt, q, sc.set(0.06 * s[0] * (type === 3 ? 0.5 : 1), 1, len));
         plumes.setMatrixAt(i, m4);
         pPow.setX(i, 1);

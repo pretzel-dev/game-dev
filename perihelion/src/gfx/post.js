@@ -136,9 +136,8 @@ export function createPost(renderer) {
           col += fl * uSunVis * uSunColor;
         }
         col *= uExposure;
-        // Gentle grade: cool the shadows a little, as through a ship's camera.
         float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-        col += vec3(-0.004, 0.0, 0.010) * (1.0 - smoothstep(0.0, 0.25, lum));
+
         col = neutral(max(col, 0.0));
         // Vignette.
         float v = smoothstep(0.95, 0.25, length(fromC * vec2(uAspect * 0.85, 1.0)));
