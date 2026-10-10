@@ -21,6 +21,9 @@ const SUN_RADIUS = 6;
 // Ships are small against worlds, for a sense of scale; formations close up to match.
 const SHIP_SCALE = 0.45;
 const FORMATION = 0.55;
+// Parking orbits turn slowly (radians per second of game time), as big orbits do.
+const DOCK_SPEED = 0.03;
+const SIEGE_SPEED = -0.045;
 const MAX_SHIPS = 400;
 
 // ---- Procedural textures ----------------------------------------------------
@@ -554,34 +557,48 @@ export function createView(canvas, labelRoot, opts = {}) {
       p.set(q.x + dx * k, q.y + dy * k, q.z + dz * k);
     }
   }
-  /** Where docked ship j sits in a world's parking orbit (matches park()). */
-  function parkPos(b, j, radius, speed, seed, t, out) {
+  /** Where docked ship j sits in a world's parking orbit (matches park()); its heading in `tan`. */
+  function parkPos(b, j, radius, speed, seed, t, out, tan) {
     const p = bodyPos[b.id];
     const r1 = hash(seed, j);
     const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
     const rr = radius * (1 + hash(j, seed) * 0.15);
+    if (tan) tan.set(-Math.sin(a), 0, Math.cos(a)).multiplyScalar(Math.sign(speed) || 1);
     return out.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
   }
-  const BLEND = 8; // seconds of game time to leave or join a parking orbit
-  const bA = new THREE.Vector3(), bB = new THREE.Vector3(), bAx = new THREE.Vector3();
-  /** Moves tmp (a ship's formation position) toward its parking slot near launch and arrival. */
-  function blendPark(f, j, since, t) {
-    const leaving = since < BLEND, arriving = f.T - since < BLEND;
-    if ((!leaving && !arriving) || f.probe) return;
+  const bA = new THREE.Vector3(), bB = new THREE.Vector3(), bAx = new THREE.Vector3(), bTan = new THREE.Vector3();
+  /**
+   * Leaving and joining a parking orbit. Near the world, each ship's place
+   * eases between its own parking slot and its place in the formation,
+   * swinging round the world's centre, by how far the fleet has climbed out
+   * (so ships always keep up with the fleet), and over the first and last
+   * couple of seconds of the flight (so nothing snaps). Moves tmp; returns
+   * how far into formation the ship is (1 = fully), with its slot heading in bTan.
+   */
+  function blendPark(f, j, since) {
+    if (f.probe) return 1;
+    const c0 = bodyPos[f.from], c1 = bodyPos[f.to];
+    const d0 = c0 ? Math.hypot(tmp.x - c0.x, tmp.y - c0.y, tmp.z - c0.z) : Infinity;
+    const d1 = c1 ? Math.hypot(tmp.x - c1.x, tmp.y - c1.y, tmp.z - c1.z) : Infinity;
+    const leaving = d0 <= d1;
     const b = game_.bodies[leaving ? f.from : f.to];
-    if (!b || !bodyPos[b.id]) return;
-    const k = leaving ? THREE.MathUtils.smootherstep(since, 0, BLEND) : THREE.MathUtils.smootherstep(f.T - since, 0, BLEND);
-    if (k >= 1) return;
-    // Slot: its old place among the docked ships, or (arriving) the next free one / the siege ring.
+    if (!b) return 1;
+    const slotR = b.size * 1.8 + 0.4;
+    const k = Math.min(
+      THREE.MathUtils.smootherstep(leaving ? d0 : d1, slotR * 0.8, slotR + 3 + b.size * 2),
+      THREE.MathUtils.smootherstep(leaving ? since : f.T - since, 0, 2.5),
+    );
+    if (k >= 1) return 1;
+    const tw = game_.time; // slots turn with game time, so docked and departing ships agree
     const friendly = b.owner === f.owner;
-    if (leaving || friendly) parkPos(b, (leaving ? j : b.ships + j) % 20, b.size * 1.8 + 0.4, 0.25, b.id * 13, t, bA);
-    else parkPos(b, j % 20, b.size * 2.4 + 0.8, -0.18, b.id * 29 + f.owner, t, bA);
+    if (leaving || friendly) parkPos(b, (leaving ? j : b.ships + j) % 20, slotR, DOCK_SPEED, b.id * 13, tw, bA, bTan);
+    else parkPos(b, j % 20, b.size * 2.4 + 0.8, SIEGE_SPEED, b.id * 29 + f.owner, tw, bA, bTan);
     // Arc from slot to formation round the world's centre.
     const c = bodyPos[b.id];
     bA.sub(c);
     bB.set(tmp.x - c.x, tmp.y - c.y, tmp.z - c.z);
     const rA = bA.length(), rB = bB.length();
-    if (rA < 1e-6 || rB < 1e-6) return;
+    if (rA < 1e-6 || rB < 1e-6) return 1;
     bA.divideScalar(rA); bB.divideScalar(rB);
     const ang = Math.acos(THREE.MathUtils.clamp(bA.dot(bB), -1, 1));
     bAx.crossVectors(bA, bB);
@@ -589,6 +606,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     bAx.normalize();
     bA.applyAxisAngle(bAx, ang * k).multiplyScalar(rA + (rB - rA) * k);
     tmp.set(c.x + bA.x, c.y + bA.y, c.z + bA.z);
+    return k;
   }
   let game_ = null;
   /** Is a point in sunlight (1), or in the shadow of a world (0)? Soft-edged. */
@@ -962,7 +980,14 @@ export function createView(canvas, labelRoot, opts = {}) {
       // Up close the world itself is the marker: fade the ring out of the way.
       if (b.size * ppu > 70) v.mark.material.uniforms.uOpacity.value *= 0.25;
       // Crowded against its planet when zoomed out: no ring (its ships show on the planet's label).
-      if (crowded.has(b.id) && !selected && !targeted) v.mark.material.uniforms.uOpacity.value = 0;
+      if (b.parent !== null && !selected && !targeted) {
+        // Fade (never snap) as it closes on its planet on screen.
+        const q = bodyPos[b.parent];
+        tmp.copy(v.g.position).project(camera);
+        tmp2.set(q.x, q.y, q.z).project(camera);
+        const sep = Math.hypot((tmp.x - tmp2.x) * w, (tmp.y - tmp2.y) * h) / 2;
+        v.mark.material.uniforms.uOpacity.value *= THREE.MathUtils.smoothstep(sep, 30, 60);
+      }
       // Garrison veterancy shows as gaps in the ring (only if we can see it).
       const lvl = knowsWorld(b) && b.ships > 0 ? vetLevel(b.vet) : 0;
       v.mark.material.uniforms.uLvl.value = lvl;
@@ -979,17 +1004,13 @@ export function createView(canvas, labelRoot, opts = {}) {
       const park = (n, owner, radius, speed, seed, out) => {
         for (let j = 0; j < n; j++) {
           if (used >= MAX_SHIPS) return;
-          const r1 = hash(seed, j);
-          const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
-          const rr = radius * (1 + hash(j, seed) * 0.15);
-          tmp.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
-          dir.set(-Math.sin(a), 0, Math.cos(a));
+          parkPos(b, j, radius, speed, seed, now, tmp, dir);
           placeShip(tmp, dir, ownerColor(owner), false, t, j, seed * 131 + j, 1, false, 0.6);
           if (out) out.push({ p: tmp.clone(), owner });
         }
       };
-      if (known) park(Math.min(b.ships, 20), b.owner, b.size * 1.8 + 0.4, 0.25, b.id * 13, fighting ? defPts : null);
-      for (const g of known ? b.sieges : []) park(Math.min(g.n, 20), g.owner, b.size * 2.4 + 0.8, -0.18, b.id * 29 + g.owner, atkPts);
+      if (known) park(Math.min(b.ships, 20), b.owner, b.size * 1.8 + 0.4, DOCK_SPEED, b.id * 13, fighting ? defPts : null);
+      for (const g of known ? b.sieges : []) park(Math.min(g.n, 20), g.owner, b.size * 2.4 + 0.8, SIEGE_SPEED, b.id * 29 + g.owner, atkPts);
 
       if (fighting) {
         // Gun emplacements: fixed points on the surface that turn with the body.
@@ -1115,11 +1136,14 @@ export function createView(canvas, labelRoot, opts = {}) {
         // Leaving and arriving: ease between the parking orbit and the
         // formation along an arc round the world (never a dash through or
         // round it at the last moment).
-        blendPark(f, j, since, t);
+        const kf = blendPark(f, j, since);
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
         const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);
-        placeShip(tmp, tmp3.set(sj.nx, sj.ny, sj.nz), color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
+        tmp3.set(sj.nx, sj.ny, sj.nz);
+        // Easing out of (or into) orbit: turn from the orbit's heading to the burn.
+        if (kf < 1) tmp3.lerp(bTan, 1 - kf).normalize();
+        placeShip(tmp, tmp3, color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.

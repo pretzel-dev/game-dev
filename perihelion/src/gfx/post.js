@@ -35,7 +35,7 @@ export function createPost(renderer) {
 
   const texel = () => ({ value: new THREE.Vector2() });
   const downMat = new THREE.ShaderMaterial({
-    uniforms: { tSrc: { value: null }, uTexel: texel(), uPrefilter: { value: 0 }, uThreshold: { value: 1.0 }, uKnee: { value: 0.6 } },
+    uniforms: { tSrc: { value: null }, uTexel: texel(), uPrefilter: { value: 0 }, uThreshold: { value: 1.3 }, uKnee: { value: 0.2 } },
     vertexShader: FULLSCREEN_VERT,
     fragmentShader: /* glsl */ `
       uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uPrefilter, uThreshold, uKnee;
@@ -146,11 +146,7 @@ export function createPost(renderer) {
         // centre of the frame, a faint halo, and a thin anamorphic streak.
         if (uSunVis > 0.001) {
           vec2 sd = uSun - 0.5;
-          vec3 fl = vec3(0.0);
-          fl += disc(vUv, 0.5 - sd * 0.45, 0.03, 0.7) * vec3(0.30, 0.55, 1.00) * 0.05;
-          fl += disc(vUv, 0.5 - sd * 0.80, 0.06, 0.9) * vec3(0.45, 0.85, 0.75) * 0.02;
-          fl += disc(vUv, 0.5 - sd * 1.25, 0.016, 0.5) * vec3(1.00, 0.60, 0.30) * 0.07;
-          fl += disc(vUv, 0.5 + sd * 0.35, 0.04, 1.0) * vec3(0.70, 0.50, 1.00) * 0.025;
+          vec3 fl = vec3(0.0); // (no ghost discs: they drifted across worlds like flashes)
           vec2 dv = (vUv - uSun) * vec2(uAspect, 1.0);
           float streak = exp(-abs(dv.y) * 700.0) * exp(-abs(dv.x) * 6.0);
           fl += streak * vec3(0.55, 0.75, 1.0) * 0.3;

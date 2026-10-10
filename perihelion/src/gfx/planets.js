@@ -242,22 +242,24 @@ void main() {
 const AUX_FRAG = /* glsl */ `
 ${NOISE}
 ${DIR_FROM_UV}
-// Wind the sphere round the nearest cyclone centre (mid-latitudes only).
+// Wind the sphere round every nearby cyclone centre (mid-latitudes only).
+// Each twist fades to nothing well before the next cell, so the cloud
+// field stays continuous (twisting round only the nearest centre left seams).
 vec3 cyclones(vec3 d, float seed) {
   vec3 p = d * 2.6;
   vec3 c0 = floor(p);
-  vec3 best = d; float bd = 9.0;
   for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
     vec3 cell = c0 + vec3(float(x), float(y), float(z));
-    vec3 c = normalize(cell + hash33(cell + seed));
-    float dd = length(d - c);
-    if (dd < bd) { bd = dd; best = c; }
+    vec3 cc = normalize(cell + hash33(cell + seed));
+    float la = asin(cc.y);
+    float str = smoothstep(0.35, 0.7, abs(la)) * smoothstep(1.35, 1.05, abs(la)) * sign(la);
+    str *= step(0.55, hash33(cell + seed + 7.0).x); // only some cells hold a storm
+    float dd = length(d - cc);
+    float ang = str * 3.0 * exp(-dd * dd / 0.008);
+    float c = cos(ang), s = sin(ang);
+    d = d * c + cross(cc, d) * s + cc * dot(cc, d) * (1.0 - c);
   }
-  float la = asin(best.y);
-  float str = smoothstep(0.35, 0.7, abs(la)) * smoothstep(1.35, 1.05, abs(la)) * sign(la);
-  float ang = str * 4.0 * exp(-bd * bd / 0.025);
-  float c = cos(ang), s = sin(ang);
-  return d * c + cross(best, d) * s + best * dot(best, d) * (1.0 - c);
+  return normalize(d);
 }
 uniform sampler2D tAlb;
 uniform vec2 uTexel;
@@ -306,7 +308,7 @@ void main() {
   float a = 0.0;
   if (uKind == 0 && uType == 4) {
     // Volcanic world: lava seams instead of water clouds.
-    float seam = exp(-pow(snoise(q * 4.0 + fbm(q * 3.0, 3)) / 0.04, 2.0)) + exp(-pow(snoise(q * 9.0 + 2.0) / 0.03, 2.0)) * 0.5;
+    float seam = exp(-pow(snoise(q * 4.0 + fbm(q * 3.0, 3)) / 0.025, 2.0)) + exp(-pow(snoise(q * 9.0 + 2.0) / 0.018, 2.0)) * 0.4;
     a = clamp(seam * step(0.5, h0) * (0.4 + 0.6 * smoothstep(0.5, 0.75, h0)), 0.0, 1.0);
   } else if (uClouds > 0.0) {
     // Weather: an equatorial band of storms, clear subtropics with scattered
@@ -323,7 +325,7 @@ void main() {
     float cov = smoothstep(0.0, 0.22, big + bias);
     float streak = fbm(vec3(dc.x * 10.0, dc.y * 40.0, dc.z * 10.0) + w * 2.0, 4);
     cov *= 0.75 + 0.35 * streak;
-    float cu = smoothstep(0.66, 0.82, fbm(d * 22.0 + 3.0, 4) * 0.5 + 0.5) * 0.3 * (1.0 - cov);
+    float cu = 0.0; // (fair-weather specks read as paint flecks)
     a = clamp(cov + cu, 0.0, 1.0) * uClouds;
     if (uType == 1) a *= 0.35; // desert: thin
     if (uType == 2) a *= 0.7;
@@ -571,7 +573,7 @@ export function surfaceMaterial(b, look, maps, ring) {
             vec3 Hh = normalize(L + V);
             float nh = max(dot(Ng, Hh), 0.0);
             float fres = 0.02 + 0.98 * pow(1.0 - max(dot(Ng, V), 0.0), 5.0);
-            float spec = (pow(nh, 160.0) * 2.0 + pow(nh, 30.0) * 0.12) * (0.4 + fres);
+            float spec = (pow(nh, 600.0) * 0.9 + pow(nh, 60.0) * 0.03) * (0.4 + fres);
             spec *= clamp(1.0 - length(fwidth(Ng)) * 25.0, 0.0, 1.0); // fade on small, distant worlds
             col += sc * spec * water * sh * smoothstep(0.0, 0.1, ngl);
           }
@@ -580,7 +582,7 @@ export function surfaceMaterial(b, look, maps, ring) {
         // Night: city lights and lava glow, dimmed under cloud.
         float night = 1.0 - smoothstep(-0.1, 0.12, dayAll);
         col += aux.b * uCity * uCityCol * night * (1.0 - clouds * 0.7) * 1.1;
-        if (uLava > 0.0) col += aux.a * vec3(3.0, 0.7, 0.12) * (0.35 + 0.65 * night);
+        if (uLava > 0.0) col += aux.a * vec3(2.2, 0.5, 0.08) * (0.08 + 0.92 * night); // lava shows at night
         // A whisper of skylight on the dark side (starlight, ring- and moonshine).
         col += albedo * vec3(0.006, 0.007, 0.01);
         gl_FragColor = vec4(col, 1.0);
