@@ -80,7 +80,7 @@ export function createPost(renderer) {
   const flare = { pos: new THREE.Vector2(0.5, 0.5), vis: 0, color: new THREE.Color('#ffe2b0') };
   const outMat = new THREE.ShaderMaterial({
     uniforms: {
-      tScene: { value: null }, tBloom: { value: null }, uBloom: { value: 0.22 }, uExposure: { value: 1.0 },
+      tScene: { value: null }, tBloom: { value: null }, uBloom: { value: 0.17 }, uExposure: { value: 1.0 },
       uTime: { value: 0 }, uAspect: { value: 1 }, uSun: { value: flare.pos }, uSunVis: { value: 0 }, uSunColor: { value: flare.color },
       uTexel: texel(), uCA: { value: 1 }, uGrain: { value: 1 },
     },
@@ -111,12 +111,7 @@ export function createPost(renderer) {
       float disc(vec2 p, vec2 c, float r, float soft) { return 1.0 - smoothstep(r * (1.0 - soft), r, length((p - c) * vec2(uAspect, 1.0))); }
       void main() {
         vec2 fromC = vUv - 0.5;
-        // A touch of lateral chromatic aberration toward the corners.
-        vec2 ca = fromC * dot(fromC, fromC) * 0.012 * uCA;
-        vec3 col;
-        col.r = texture2D(tScene, vUv - ca).r;
-        col.g = texture2D(tScene, vUv).g;
-        col.b = texture2D(tScene, vUv + ca).b;
+        vec3 col = texture2D(tScene, vUv).rgb;
         col += texture2D(tBloom, vUv).rgb * uBloom;
         // Lens flare from the sun: ghosts strung along the line through the
         // centre of the frame, a faint halo, and a thin anamorphic streak.
@@ -141,9 +136,9 @@ export function createPost(renderer) {
         float v = smoothstep(0.95, 0.25, length(fromC * vec2(uAspect * 0.85, 1.0)));
         col *= mix(0.72, 1.0, v);
         vec3 outc = toSRGB(col);
-        // Film grain (also dithers away banding in the dark).
+        // A whisper of dither, just enough to hide banding in the dark sky.
         float gr = h12(gl_FragCoord.xy + fract(uTime * 7.31) * 517.0) - 0.5;
-        outc += gr * (0.018 * uGrain + 0.004);
+        outc += gr * 0.006 * uGrain;
         gl_FragColor = vec4(outc, 1.0);
       }`,
     depthTest: false,
@@ -208,11 +203,10 @@ export function createPost(renderer) {
     pass(outMat, null);
   }
 
-  /** Low: a shorter, coarser bloom and no chromatic aberration. */
+  /** Low: a shorter, coarser bloom. */
   let levels = LEVELS;
   function setLevel(q) {
     levels = q === 'high' ? LEVELS : 4;
-    outMat.uniforms.uCA.value = q === 'high' ? 1 : 0;
   }
 
   return { setSize, setSamples, setLevel, render, flare, uniforms: outMat.uniforms };

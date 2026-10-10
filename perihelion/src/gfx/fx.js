@@ -39,7 +39,7 @@ export function createFx(scene, max = 4096) {
     vertexShader: /* glsl */ `${LD_VERT_PARS}
       attribute vec3 aP0, aVel, aDir, aCol; attribute vec2 aTime, aSize, aKind;
       uniform float uT, uPx;
-      varying vec2 vQ; varying vec3 vCol; varying float vAge; varying float vKind; varying float vSeed; varying float vLen;
+      varying vec2 vQ; varying vec3 vCol; varying float vAge; varying float vKind; varying float vSeed; varying float vLen; varying float vFade;
       void main() {
         float age = (uT - aTime.x) / aTime.y; // 0..1 over its life
         vAge = age;
@@ -52,6 +52,8 @@ export function createFx(scene, max = 4096) {
         vec3 p = aP0 + aVel * travel;
         float size = mix(aSize.x, aSize.y, aKind.x == ${FIRE}.0 ? sqrt(age) : age);
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        // Far away, a flash only a pixel or two across fades rather than sparkles.
+        vFade = aKind.x == ${FLASH}.0 || aKind.x == ${FIRE}.0 || aKind.x == ${RING}.0 ? clamp(size / (uPx * -mv.z) / 4.0, 0.12, 1.0) : 1.0;
         // Rounds, beams and sparks never get thinner than about a pixel.
         if (aKind.x == ${SPARK}.0 || aKind.x == ${BOLT}.0 || aKind.x == ${BEAM}.0) size = max(size, uPx * -mv.z * (aKind.x == ${BEAM}.0 ? 2.0 : 1.3));
         vec3 dirW = aDir;
@@ -78,7 +80,7 @@ export function createFx(scene, max = 4096) {
       }`,
     fragmentShader: /* glsl */ `${LD_FRAG_PARS}
       ${NOISE}
-      varying vec2 vQ; varying vec3 vCol; varying float vAge; varying float vKind; varying float vSeed; varying float vLen;
+      varying vec2 vQ; varying vec3 vCol; varying float vAge; varying float vKind; varying float vSeed; varying float vLen; varying float vFade;
       void main() {
         ${LD_FRAG}
         if (vAge < 0.0 || vAge > 1.0) discard;
@@ -119,7 +121,7 @@ export function createFx(scene, max = 4096) {
           float fade = pow(1.0 - vAge, 2.0);
           col = (vec3(1.0) * core * 4.0 + vCol * sheath * 1.2) * fade * smoothstep(1.0, 0.85, abs(vQ.y));
         }
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(col * vFade, 1.0);
       }`,
     blending: THREE.AdditiveBlending,
     transparent: true,
@@ -164,7 +166,7 @@ export function createFx(scene, max = 4096) {
     },
     /** A ship blowing up at p, `scale` ~ 1 for a ship. */
     explosion(p, scale = 1) {
-      emit(FLASH, p, null, null, '#ffffff', 0.16, 0.3 * scale, 1.7 * scale, 0, 8);
+      emit(FLASH, p, null, null, '#ffffff', 0.16, 0.3 * scale, 1.5 * scale, 0, 3.5);
       emit(RING, p, null, null, '#9fd4ff', 0.5, 0.15 * scale, 1.9 * scale, 0, 1.2);
       emit(FIRE, p, rnd().multiplyScalar(0.2), null, '#ffffff', 0.75 + Math.random() * 0.2, 0.25 * scale, 0.95 * scale, 0.02, 2.2);
       for (let k = 0; k < 2; k++) emit(FIRE, d.copy(p).add(rnd().multiplyScalar(0.25 * scale)), rnd().multiplyScalar(0.4), null, '#ffffff', 0.55, 0.12 * scale, 0.5 * scale, 0.08 + k * 0.12, 2);
@@ -174,7 +176,7 @@ export function createFx(scene, max = 4096) {
     },
     /** A round hitting something: a spit of sparks. */
     impact(p, color, big = false) {
-      emit(FLASH, p, null, null, color, 0.15, 0.1, big ? 0.7 : 0.4, 0, 3);
+      emit(FLASH, p, null, null, color, 0.15, 0.1, big ? 0.6 : 0.35, 0, 1.6);
       for (let k = 0; k < (big ? 6 : 3); k++) emit(SPARK, p, rnd().multiplyScalar(1.5 + Math.random() * 3), null, '#ffd090', 0.25 + Math.random() * 0.3, 0.02, 0.01, 0, 2.5);
     },
     /** Point defence swatting a round. */

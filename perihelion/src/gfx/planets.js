@@ -632,6 +632,10 @@ export function cloudMaterial(maps) {
       }`,
     transparent: true,
     depthWrite: false,
+    // Nudged toward the camera so it never flickers into the ground far away.
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -4,
   });
 }
 

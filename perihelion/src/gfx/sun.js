@@ -56,7 +56,7 @@ export function createSun(radius, quality) {
           c *= 1.0 + fac * 0.6;
           c *= 1.0 - pen * (0.45 + 0.1 * fil) - umb * 0.45;
           // Brighter than white: the bloom does the rest.
-          gl_FragColor = vec4(c * uTint * (0.45 + 0.85 * limb), 1.0);
+          gl_FragColor = vec4(c * uTint * (0.4 + 0.7 * limb), 1.0);
         }`,
     }),
   );
@@ -70,10 +70,10 @@ export function createSun(radius, quality) {
       vertexShader: /* glsl */ `${LD_VERT_PARS}
         uniform float uR; varying vec2 vXY;
         void main() {
-          float s = length(modelMatrix[0].xyz) * uR * 5.0;
+          float s = length(modelMatrix[0].xyz) * uR * 3.4;
           vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
           mv.xy += position.xy * s;
-          vXY = position.xy * 5.0; // in star radii
+          vXY = position.xy * 3.4; // in star radii
           gl_Position = projectionMatrix * mv;
           ${LD_VERT}
         }`,
@@ -87,13 +87,16 @@ export function createSun(radius, quality) {
           float a = atan(vXY.y, vXY.x);
           vec2 dir = vXY / r;
           // Streamers: noise in angle, stretched outward, drifting slowly.
-          float s = fbm(vec3(dir * 3.0, uT * 0.01), 4) * 0.5 + 0.5;
-          float s2 = fbm(vec3(dir * 9.0 + 4.0, r * 0.6 - uT * 0.02), 3) * 0.5 + 0.5;
+          // Streamers turn slowly with the star and stream outward.
+          float rot = uT * 0.015;
+          vec2 rd = vec2(dir.x * cos(rot) - dir.y * sin(rot), dir.x * sin(rot) + dir.y * cos(rot));
+          float s = fbm(vec3(rd * 3.0, uT * 0.04), 4) * 0.5 + 0.5;
+          float s2 = fbm(vec3(rd * 9.0 + 4.0, r * 1.2 - uT * 0.25), 3) * 0.5 + 0.5;
           float streak = pow(s, 2.0) * 0.8 + pow(s2, 3.0) * 0.6;
-          float fall = exp(-(r - 1.0) * 2.6) * 0.9 + exp(-(r - 1.0) * 0.7) * 0.12;
+          float fall = exp(-(r - 1.0) * 3.6) * 0.8 + exp(-(r - 1.0) * 1.4) * 0.08;
           float inner = exp(-(r - 1.0) * 18.0) * 1.5; // the bright chromosphere edge
           float k = fall * (0.35 + streak) + inner;
-          k *= smoothstep(5.0, 3.0, r);
+          k *= smoothstep(3.4, 2.4, r) * (0.92 + 0.08 * sin(uT * 0.6 + s * 4.0));
           vec3 c = mix(vec3(1.0, 0.55, 0.25), vec3(1.0, 0.85, 0.65), clamp(streak, 0.0, 1.0)) * uTint;
           gl_FragColor = vec4(c * k * 0.7, 1.0);
         }`,
@@ -155,15 +158,18 @@ export function createSun(radius, quality) {
   // Soft glow sprites: the halo you'd see even without bloom.
   const glowTex = makeGlowTexture();
   const glows = [];
-  for (const [s, c, o] of [[16, '#fff0c0', 0.2], [36, '#ffd890', 0.08], [100, '#ffc070', 0.025]]) {
+  for (const [s, c, o] of [[14, '#fff0c0', 0.16], [26, '#ffd890', 0.06], [55, '#ffc070', 0.02]]) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     glow.scale.setScalar(s);
+    glow.userData.base = s;
     glows.push(glow);
     group.add(glow);
   }
 
   function update(t) {
     uT.value = t;
+    // The halo breathes a little, so the glare is never quite still.
+    glows.forEach((g, i) => g.scale.setScalar(g.userData.base * (1 + 0.03 * Math.sin(t * (0.5 + i * 0.23) + i))));
     for (const pr of proms) {
       const u = ((t + pr.phase) % pr.period) / pr.period;
       if (u < pr.lastU) pr.place();

@@ -45,26 +45,47 @@ const glowTex = canvasTex(128, 128, (g) => {
   g.fillRect(0, 0, 128, 128);
 });
 
-// Owner ring; veterans get one short gap per level cut into its upper right.
-const ringTexs = [0, 1, 2, 3].map((lvl) => canvasTex(128, 128, (g) => {
-  g.strokeStyle = '#fff';
-  g.lineWidth = 4;
-  const gap = 0.16;
-  const step = 0.3;
-  const start = -Math.PI / 4 - ((lvl - 1) * step) / 2; // centred on the upper right
-  const cuts = Array.from({ length: lvl }, (_, k) => start + k * step);
-  let from = cuts.length ? cuts[cuts.length - 1] + gap / 2 : 0;
-  const to = cuts.length ? cuts[0] - gap / 2 + Math.PI * 2 : Math.PI * 2;
-  g.beginPath();
-  g.arc(64, 64, 58, from, to);
-  g.stroke();
-  for (let k = 0; k < cuts.length - 1; k++) {
-    g.beginPath();
-    g.arc(64, 64, 58, cuts[k] + gap / 2, cuts[k + 1] - gap / 2);
-    g.stroke();
-  }
-}));
-const ringTex = ringTexs[0];
+// Owner ring: a thin circle drawn by a shader, so it stays crisp at any size
+// (a fixed line width in pixels). Veterans get one short gap per level cut
+// into its upper right.
+const markPx = { value: 1 }; // screen pixels per CSS pixel
+const ringGeo = new THREE.PlaneGeometry(2, 2);
+function ringMarker(depthTest = false) {
+  const m = new THREE.Mesh(ringGeo, new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color('#ffffff') }, uOpacity: { value: 0.8 }, uLvl: { value: 0 }, uWidth: { value: 1.6 }, uPR: markPx },
+    vertexShader: `varying vec2 vQ;
+      void main() {
+        vQ = position.xy;
+        vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        mv.xy += position.xy * length(modelMatrix[0].xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uOpacity, uLvl, uWidth, uPR; varying vec2 vQ;
+      void main() {
+        float r = length(vQ);
+        float px = max(fwidth(r), 1e-5);
+        float d = abs(r - 0.9) / px;
+        float a = clamp(uWidth * uPR * 0.5 + 0.5 - d, 0.0, 1.0);
+        // Veterancy gaps, centred on the upper right.
+        float th = -atan(vQ.y, vQ.x);
+        float start = -0.7854 - (uLvl - 1.0) * 0.15;
+        for (int k = 0; k < 3; k++) {
+          if (float(k) >= uLvl) break;
+          float c = start + float(k) * 0.3;
+          float dd = abs(mod(th - c + 3.14159, 6.28318) - 3.14159);
+          a *= smoothstep(0.075, 0.075 + px * 1.5, dd);
+        }
+        if (a < 0.003) discard;
+        gl_FragColor = vec4(uColor, a * uOpacity);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    depthTest,
+  }));
+  m.frustumCulled = false;
+  m.renderOrder = 10;
+  return m;
+}
 
 // ---- Meshes -------------------------------------------------------------------
 
@@ -76,7 +97,7 @@ const screenRes = { value: new THREE.Vector2(1, 1) };
  * `uTh` is the world's current angle, set every frame.
  */
 function orbitLine(b) {
-  const N = 256;
+  const N = b.parent !== null ? 192 : 512;
   const pos = [], next = [], ang = [], side = [], idx = [];
   const at = (a) => [Math.cos(a) * b.r, Math.sin(a) * b.r * b.incl, Math.sin(a) * b.r];
   for (let i = 0; i <= N; i++) {
@@ -165,16 +186,6 @@ function structureMesh(type, b, k, done, level = 1) {
       truss.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
       truss.lookAt(0, 0, 0);
       g.add(truss);
-    }
-    if (done) {
-      // Work lights round the gantry.
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 + 0.2;
-        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color(i % 2 ? '#ffd9a0' : '#9fd4ff').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-        light.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
-        light.scale.setScalar(s * 0.5);
-        g.add(light);
-      }
     }
     g.rotation.x = Math.PI / 2 + 0.35;
     return g;
@@ -275,7 +286,11 @@ function structureMesh(type, b, k, done, level = 1) {
 // ---- View ---------------------------------------------------------------------
 
 export function createView(canvas, labelRoot, opts = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+  // No logarithmic depth buffer: it makes every pixel write its own depth,
+  // which stops phone GPUs (Apple's especially) skipping hidden pixels. The
+  // near plane follows the zoom instead (see render), which keeps depth
+  // precise at every scale.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   let quality = opts.quality || 'high';
   const maxPR = () => Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2 : 1.25);
   let pixelRatio = maxPR();
@@ -396,7 +411,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       const surface = new THREE.Group();
       body.add(surface);
       // Owner marker: a thin ring that always faces the camera.
-      const mark = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, transparent: true, depthWrite: false, depthTest: false, opacity: 0.8 }));
+      const mark = ringMarker(false);
       mark.scale.setScalar(b.size * 3.2);
       g.add(mark);
       world.add(g);
@@ -471,7 +486,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   const ghosts = [];
   function ghost(i) {
     if (!ghosts[i]) {
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, transparent: true, depthWrite: false, opacity: 0.5 }));
+      const s = ringMarker(true);
       scene.add(s);
       ghosts[i] = s;
     }
@@ -541,6 +556,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     post.setSize(w, h, pixelRatio);
+    markPx.value = pixelRatio;
     screenRes.value.set(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -788,6 +804,10 @@ export function createView(canvas, labelRoot, opts = {}) {
     orbit.dist = THREE.MathUtils.clamp(orbit.dist, orbit.minDist, orbit.maxDist);
     camera.position.setFromSphericalCoords(orbit.dist, orbit.pol, orbit.az).add(orbit.target);
     camera.lookAt(orbit.target);
+    // Near plane scaled to the zoom: close enough for a ship in your face,
+    // far enough out that distant worlds keep their depth precision.
+    const near = THREE.MathUtils.clamp(orbit.dist * 0.02, 0.01, 12);
+    if (Math.abs(near - camera.near) > camera.near * 0.05) { camera.near = near; camera.far = 6000; camera.updateProjectionMatrix(); }
     camera.updateMatrixWorld();
 
     const w = window.innerWidth;
@@ -932,7 +952,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         if (v.body.material && v.body.material.uniforms && v.body.material.uniforms.uCity) {
           v.body.material.uniforms.uCity.value = b.owner === NEUTRAL ? 0 : 1;
         }
-        v.mark.material.color.set(col);
+        v.mark.material.uniforms.uColor.value.set(col);
         v.label.style.color = col;
       }
       v.pulse = Math.max(0, v.pulse - dt);
@@ -958,14 +978,14 @@ export function createView(canvas, labelRoot, opts = {}) {
       // Markers stay a readable size on screen however far out we are.
       const markPx = Math.max(b.size * 3.2 * ppu, 22);
       v.mark.scale.setScalar((markPx / ppu) * (1 + v.pulse * 0.6 + (selected ? Math.sin(t * 5) * 0.06 : 0)));
-      v.mark.material.opacity = selected ? 1 : targeted ? 0.9 : b.owner === NEUTRAL ? 0.25 : 0.7;
+      v.mark.material.uniforms.uOpacity.value = selected ? 1 : targeted ? 0.9 : b.owner === NEUTRAL ? 0.25 : 0.7;
       // Up close the world itself is the marker: fade the ring out of the way.
-      if (b.size * ppu > 70) v.mark.material.opacity *= 0.25;
+      if (b.size * ppu > 70) v.mark.material.uniforms.uOpacity.value *= 0.25;
       // Garrison veterancy shows as gaps in the ring (only if we can see it).
       const lvl = knowsWorld(b) && b.ships > 0 ? vetLevel(b.vet) : 0;
-      if (v.mark.material.map !== ringTexs[lvl]) { v.mark.material.map = ringTexs[lvl]; v.mark.material.needsUpdate = true; }
-      if (selected || targeted) v.mark.material.color.set(selected ? '#ffffff' : col);
-      else v.mark.material.color.set(col);
+      v.mark.material.uniforms.uLvl.value = lvl;
+      if (selected || targeted) v.mark.material.uniforms.uColor.value.set(selected ? '#ffffff' : col);
+      else v.mark.material.uniforms.uColor.value.set(col);
 
       // Docked ships in a parking orbit; attackers circle wider.
       const known = knowsWorld(b);
@@ -1131,11 +1151,11 @@ export function createView(canvas, labelRoot, opts = {}) {
         const gh = ghost(ghostN++);
         gh.visible = true;
         gh.position.set(f.p1.x, f.p1.y, f.p1.z);
-        gh.material.color.set(color);
+        gh.material.uniforms.uColor.value.set(color);
         // Enemy landing points pulse so they stand out.
         const hostile = f.owner !== (ui.me ?? 0);
         const pulse = hostile ? 1 + 0.35 * Math.sin(t * 6) : 1;
-        gh.material.opacity = hostile ? 0.9 : 0.5;
+        gh.material.uniforms.uOpacity.value = hostile ? 0.9 : 0.5;
         gh.scale.setScalar((hostile ? 22 : 14) * pulse / ppuAt(gh.position));
       }
     }
@@ -1194,8 +1214,8 @@ export function createView(canvas, labelRoot, opts = {}) {
       const gh = ghost(ghostN++);
       gh.visible = true;
       gh.position.set(p1.x, p1.y, p1.z);
-      gh.material.color.set('#ffffff');
-      gh.material.opacity = 0.6;
+      gh.material.uniforms.uColor.value.set('#ffffff');
+      gh.material.uniforms.uOpacity.value = 0.6;
       gh.scale.setScalar(22 / ppuAt(gh.position));
     } else {
       preview.visible = false;
@@ -1326,8 +1346,10 @@ export function createView(canvas, labelRoot, opts = {}) {
   post.setLevel(quality);
 
   // Dynamic resolution: if frames run slow, render fewer pixels (and creep
-  // back up when there's headroom), so phones stay smooth.
-  let perfN = 0, perfAcc = 0, lastT = null, holdUntil = 0;
+  // back up when there's headroom), so phones stay smooth. If a drop doesn't
+  // speed things up, the frame rate is capped by the screen or power saving,
+  // not the graphics: go back up and stop trying.
+  let perfN = 0, perfAcc = 0, lastT = null, holdUntil = 0, trial = null, capped = false;
   function adapt(t) {
     if (lastT !== null) {
       const ft = t - lastT;
@@ -1338,8 +1360,16 @@ export function createView(canvas, labelRoot, opts = {}) {
     const avg = perfAcc / perfN;
     perfAcc = 0;
     perfN = 0;
-    const max = maxPR(), min = Math.min(1, max) * 0.75;
-    if (avg > 1 / 45 && pixelRatio > min) {
+    const max = maxPR();
+    // Never below about two-thirds of full sharpness on high-density screens.
+    const min = max >= 1.5 ? Math.max(1, max * 0.65) : max * 0.85;
+    if (trial) {
+      if (avg > trial.avg * 0.9) { pixelRatio = trial.pr; capped = true; resize(); }
+      trial = null;
+      return;
+    }
+    if (!capped && avg > 1 / 45 && pixelRatio > min) {
+      trial = { pr: pixelRatio, avg };
       pixelRatio = Math.max(min, pixelRatio - 0.25);
       holdUntil = t + 20;
       resize();
