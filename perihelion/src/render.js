@@ -385,7 +385,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         // Spin about the tilted axis.
         body.rotation.order = 'ZYX';
         body.rotation.z = tilt;
-        if (look.atmo) { atmo = atmosphereMesh(b, look); g.add(atmo); }
+        if (look.atmo) { atmo = atmosphereMesh(b, look, quality); g.add(atmo); }
         if (look.clouds) {
           const clouds = new THREE.Mesh(sphereGeo(b.size * 1.008, 1), cloudMaterial(maps));
           clouds.name = 'clouds';

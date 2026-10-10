@@ -22,7 +22,11 @@ export function createPost(renderer) {
   flat.add(quad);
   const cam = new THREE.Camera();
 
-  const rtOpts = { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
+  // Half-float buffers hold the HDR; on the rare device that can't render to
+  // them, fall back to 8-bit (no glow beyond white, but everything works).
+  const ext = renderer.extensions;
+  const hdr = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float') ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  const rtOpts = { type: hdr, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
   let sceneRT = null;
   const down = [];
   const LEVELS = 6;
@@ -119,16 +123,13 @@ export function createPost(renderer) {
         if (uSunVis > 0.001) {
           vec2 sd = uSun - 0.5;
           vec3 fl = vec3(0.0);
-          fl += disc(vUv, 0.5 - sd * 0.45, 0.035, 0.6) * vec3(0.30, 0.55, 1.00) * 0.10;
-          fl += disc(vUv, 0.5 - sd * 0.80, 0.075, 0.9) * vec3(0.55, 1.00, 0.70) * 0.05;
-          fl += disc(vUv, 0.5 - sd * 1.25, 0.020, 0.4) * vec3(1.00, 0.60, 0.30) * 0.14;
-          fl += disc(vUv, 0.5 + sd * 0.35, 0.050, 1.0) * vec3(0.70, 0.50, 1.00) * 0.06;
-          fl += disc(vUv, 0.5 - sd * 1.70, 0.110, 1.0) * vec3(0.35, 0.60, 1.00) * 0.04;
-          float hr = length((vUv - uSun) * vec2(uAspect, 1.0));
-          fl += exp(-pow((hr - 0.32) / 0.012, 2.0)) * vec3(0.5, 0.75, 1.0) * 0.035;
+          fl += disc(vUv, 0.5 - sd * 0.45, 0.03, 0.7) * vec3(0.30, 0.55, 1.00) * 0.05;
+          fl += disc(vUv, 0.5 - sd * 0.80, 0.06, 0.9) * vec3(0.45, 0.85, 0.75) * 0.02;
+          fl += disc(vUv, 0.5 - sd * 1.25, 0.016, 0.5) * vec3(1.00, 0.60, 0.30) * 0.07;
+          fl += disc(vUv, 0.5 + sd * 0.35, 0.04, 1.0) * vec3(0.70, 0.50, 1.00) * 0.025;
           vec2 dv = (vUv - uSun) * vec2(uAspect, 1.0);
           float streak = exp(-abs(dv.y) * 700.0) * exp(-abs(dv.x) * 6.0);
-          fl += streak * vec3(0.55, 0.75, 1.0) * 0.35;
+          fl += streak * vec3(0.55, 0.75, 1.0) * 0.3;
           col += fl * uSunVis * uSunColor;
         }
         col *= uExposure;
@@ -154,7 +155,7 @@ export function createPost(renderer) {
   function setSize(w, h, pr) {
     const W = Math.max(1, Math.round(w * pr)), H = Math.max(1, Math.round(h * pr));
     size.set(W, H);
-    if (!sceneRT) sceneRT = new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, samples, depthBuffer: true });
+    if (!sceneRT) sceneRT = new THREE.WebGLRenderTarget(W, H, { type: hdr, samples, depthBuffer: true });
     else sceneRT.setSize(W, H);
     let bw = Math.max(1, W >> 1), bh = Math.max(1, H >> 1);
     for (let i = 0; i < LEVELS; i++) {
@@ -167,7 +168,7 @@ export function createPost(renderer) {
   function setSamples(n) {
     if (n === samples) return;
     samples = n;
-    if (sceneRT) { sceneRT.dispose(); sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples, depthBuffer: true }); }
+    if (sceneRT) { sceneRT.dispose(); sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, { type: hdr, samples, depthBuffer: true }); }
   }
 
   function pass(mat, target) {

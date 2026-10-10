@@ -128,7 +128,9 @@ void main() {
 
 export function createSky(renderer, quality) {
   const res = quality === 'high' ? 1024 : 512;
-  const cubeRT = new THREE.WebGLCubeRenderTarget(res, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+  const ext = renderer.extensions;
+  const hdr = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float') ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  const cubeRT = new THREE.WebGLCubeRenderTarget(res, { type: hdr, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
   const cubeCam = new THREE.CubeCamera(0.1, 100, cubeRT);
   const bakeScene = new THREE.Scene();
   const uniforms = {

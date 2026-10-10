@@ -38,13 +38,14 @@ export function createSun(radius, quality) {
           // Granules: convection cells, bright centres and dark lanes, that churn.
           vec3 q = p * 30.0 + vec3(fbm(p * 5.0 + t * 0.015, 3), fbm(p * 5.0 + 7.0 - t * 0.015, 3), 0.0) * 1.2;
           vec2 w = worley(q + vec3(0.0, 0.0, t * 0.05));
-          float gran = smoothstep(0.0, 0.55, w.y - w.x);
+          float gran = smoothstep(0.0, 0.7, w.y - w.x) * 0.7 + (snoise(q * 0.7 + t * 0.03) * 0.5 + 0.5) * 0.3;
           ${hi ? 'vec2 w2 = worley(q * 2.3 + 11.0 - vec3(t * 0.08)); gran = gran * 0.75 + smoothstep(0.0, 0.5, w2.y - w2.x) * 0.25;' : ''}
           float sup = fbm(p * 6.0 - t * 0.01, 3) * 0.5 + 0.5;
           // Active regions: spots (umbra and penumbra) and bright faculae round them.
-          float act = fbm(p * 2.2 + vec3(0.0, t * 0.004, 0.0), 4);
-          float pen = smoothstep(0.30, 0.38, act);
-          float umb = smoothstep(0.42, 0.47, act);
+          float act = fbm(p * 2.0 + vec3(0.0, t * 0.004, 0.0), 2) + snoise(p * 9.0) * 0.03;
+          act *= smoothstep(0.85, 0.3, abs(p.y)); // spots keep to the low latitudes
+          float pen = smoothstep(0.36, 0.41, act);
+          float umb = smoothstep(0.44, 0.47, act);
           float fil = 0.5 + 0.5 * sin(atan(p.y, p.x) * 90.0 + fbm(p * 20.0, 2) * 6.0);
           float mu = max(dot(vN, vV), 0.0);
           float limb = 0.35 + 0.65 * pow(mu, 0.55);
@@ -154,7 +155,7 @@ export function createSun(radius, quality) {
   // Soft glow sprites: the halo you'd see even without bloom.
   const glowTex = makeGlowTexture();
   const glows = [];
-  for (const [s, c, o] of [[16, '#fff0c0', 0.2], [36, '#ffd27a', 0.1], [110, '#ff9a4a', 0.05]]) {
+  for (const [s, c, o] of [[16, '#fff0c0', 0.2], [36, '#ffd890', 0.08], [100, '#ffc070', 0.025]]) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     glow.scale.setScalar(s);
     glows.push(glow);

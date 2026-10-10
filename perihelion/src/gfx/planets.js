@@ -121,7 +121,7 @@ void main() {
         col = mix(col, vec3(0.5, 0.45, 0.32), smoothstep(0.0, 0.015, 0.015 - land) * 0.6); // beaches
         col = mix(col, vec3(0.28, 0.32, 0.25), smoothstep(0.65, 0.85, alat)); // tundra
         col *= 0.85 + fine * 0.25;
-        col = mix(col, vec3(0.85, 0.87, 0.9), smoothstep(0.32, 0.42, hgt - land) * 0.9); // snow on peaks
+        col = mix(col, vec3(0.68, 0.7, 0.72), smoothstep(0.32, 0.42, hgt - land) * 0.9); // snow on peaks
       }
     } else if (uType == 1) {
       // Desert: dune seas, dark rock ridges, dry basins and salt pans.
@@ -134,7 +134,7 @@ void main() {
     } else if (uType == 2) {
       // Ice: white sheets, blue crevasses, a few dark frozen seas.
       float cr = lineae(d, uSeed);
-      col = land < 0.0 ? vec3(0.08, 0.18, 0.28) * (0.8 + fine * 0.3) : mix(vec3(0.62, 0.70, 0.78), vec3(0.85, 0.88, 0.92), smoothstep(0.0, 0.3, land));
+      col = land < 0.0 ? vec3(0.08, 0.18, 0.28) * (0.8 + fine * 0.3) : mix(vec3(0.48, 0.55, 0.62), vec3(0.66, 0.69, 0.72), smoothstep(0.0, 0.3, land));
       col = mix(col, vec3(0.15, 0.3, 0.45), cr * 0.7);
       hgt = max(hgt, -0.05) - cr * 0.02;
     } else {
@@ -143,7 +143,7 @@ void main() {
       col *= 0.8 + fine * 0.4;
       hgt = max(hgt, -0.08);
     }
-    if (alat > iceLine && uType != 1) col = mix(col, vec3(0.88, 0.92, 0.96), smoothstep(0.0, 0.04, alat - iceLine));
+    if (alat > iceLine && uType != 1) col = mix(col, vec3(0.7, 0.73, 0.76), smoothstep(0.0, 0.04, alat - iceLine));
     if (uType == 1 && alat > iceLine) col = mix(col, vec3(0.8, 0.78, 0.74), 0.8);
     h = clamp(max(hgt, uType == 1 ? -1.0 : 0.0) * 0.5 + 0.5, 0.0, 1.0);
     if (land < 0.0 && uType != 1 && uType != 4) h = 0.5 + land * 0.04; // sea floor, below the waterline
@@ -255,7 +255,7 @@ vec3 cyclones(vec3 d, float seed) {
   }
   float la = asin(best.y);
   float str = smoothstep(0.35, 0.7, abs(la)) * smoothstep(1.35, 1.05, abs(la)) * sign(la);
-  float ang = str * 7.0 * exp(-bd * bd / 0.06);
+  float ang = str * 4.0 * exp(-bd * bd / 0.025);
   float c = cos(ang), s = sin(ang);
   return d * c + cross(best, d) * s + best * dot(best, d) * (1.0 - c);
 }
@@ -269,11 +269,15 @@ varying vec2 vUv;
 void main() {
   vec3 d = dirFromUv(vUv);
   float st = max(sqrt(1.0 - d.y * d.y), 0.08);
-  float hE = texture2D(tAlb, vUv + vec2(uTexel.x, 0.0)).a, hW = texture2D(tAlb, vUv - vec2(uTexel.x, 0.0)).a;
-  float hN = texture2D(tAlb, vUv + vec2(0.0, uTexel.y)).a, hS = texture2D(tAlb, vUv - vec2(0.0, uTexel.y)).a;
+  // Sobel over a two-texel spacing: smooths away the steps of 8-bit heights.
+  vec2 ex = vec2(uTexel.x * 2.0, 0.0), ey = vec2(0.0, uTexel.y * 2.0);
   float h0 = texture2D(tAlb, vUv).a;
-  float dx = (hE - hW) / (2.0 * uTexel.x * 6.2832 * st);
-  float dy = (hN - hS) / (2.0 * uTexel.y * 3.1416);
+  float hE = texture2D(tAlb, vUv + ex).a * 2.0 + texture2D(tAlb, vUv + ex + ey).a + texture2D(tAlb, vUv + ex - ey).a;
+  float hW = texture2D(tAlb, vUv - ex).a * 2.0 + texture2D(tAlb, vUv - ex + ey).a + texture2D(tAlb, vUv - ex - ey).a;
+  float hN = texture2D(tAlb, vUv + ey).a * 2.0 + texture2D(tAlb, vUv + ey + ex).a + texture2D(tAlb, vUv + ey - ex).a;
+  float hS = texture2D(tAlb, vUv - ey).a * 2.0 + texture2D(tAlb, vUv - ey + ex).a + texture2D(tAlb, vUv - ey - ex).a;
+  float dx = (hE - hW) / 4.0 / (4.0 * uTexel.x * 6.2832 * st);
+  float dy = (hN - hS) / 4.0 / (4.0 * uTexel.y * 3.1416);
   vec3 n = normalize(vec3(-dx * uRelief, -dy * uRelief, 1.0));
   vec3 q = d + uSeed;
   // City lights: clustered towns along coasts and rivers, none at sea or on ice.
@@ -319,7 +323,7 @@ void main() {
     float cov = smoothstep(0.0, 0.22, big + bias);
     float streak = fbm(vec3(dc.x * 10.0, dc.y * 40.0, dc.z * 10.0) + w * 2.0, 4);
     cov *= 0.75 + 0.35 * streak;
-    float cu = smoothstep(0.62, 0.8, fbm(d * 30.0 + 3.0, 3) * 0.5 + 0.5) * 0.55 * (1.0 - cov);
+    float cu = smoothstep(0.66, 0.82, fbm(d * 22.0 + 3.0, 4) * 0.5 + 0.5) * 0.3 * (1.0 - cov);
     a = clamp(cov + cu, 0.0, 1.0) * uClouds;
     if (uType == 1) a *= 0.35; // desert: thin
     if (uType == 2) a *= 0.7;
@@ -330,7 +334,7 @@ void main() {
 
 /** Per-world look: what kind of world it bakes as, and its sky. */
 export const BIOMES = ['temperate', 'desert', 'ice', 'jungle', 'volcanic', 'ocean'];
-const BIOME_SKY = { temperate: [0.35, 0.6, 1.0], desert: [1.0, 0.7, 0.45], ice: [0.6, 0.8, 1.0], jungle: [0.4, 0.85, 0.65], volcanic: [1.0, 0.45, 0.25], ocean: [0.3, 0.55, 1.0] };
+const BIOME_SKY = { temperate: [0.35, 0.6, 1.0], desert: [1.0, 0.7, 0.45], ice: [0.6, 0.8, 1.0], jungle: [0.4, 0.7, 0.85], volcanic: [1.0, 0.45, 0.25], ocean: [0.3, 0.55, 1.0] };
 const GIANT_PALS = [
   [[0.50, 0.33, 0.18], [0.82, 0.70, 0.52], [0.62, 0.30, 0.15]], // ochre and cream, rust storm
   [[0.30, 0.45, 0.60], [0.70, 0.82, 0.88], [0.20, 0.30, 0.55]], // ice blue
@@ -637,7 +641,7 @@ export function cloudMaterial(maps) {
  * on the day side, red and orange where sunlight skims the terminator, and
  * a bright forward-scattered rim when the world is backlit by its sun.
  */
-export function atmosphereMesh(b, look) {
+export function atmosphereMesh(b, look, quality = 'high') {
   const thick = look.kind === 3 ? 0.035 : look.kind === 0 ? 0.045 : 0.035;
   const Ra = b.size * (1 + thick);
   const c = look.atmo;
@@ -681,7 +685,7 @@ export function atmosphereMesh(b, look) {
           if (hp > 0.0) { float tp = -b - sqrt(hp); if (tp > 0.0) { t1 = min(t1, tp); ground = true; } }
           float H = uRa - uRp;
           float seg = (t1 - t0) / H; // in shell thicknesses
-          const int N = 8;
+          const int N = STEPS;
           float dt = seg / float(N);
           vec3 sum = vec3(0.0);
           vec3 mie = vec3(0.0);
@@ -720,6 +724,7 @@ export function atmosphereMesh(b, look) {
           if (ground) col *= 0.75;
           gl_FragColor = vec4(col, 1.0);
         }`,
+      defines: { STEPS: quality === 'high' ? 8 : 5 },
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,

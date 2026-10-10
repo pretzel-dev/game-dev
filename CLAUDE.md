@@ -33,6 +33,13 @@ Read `perihelion/README.md` for the rules and controls. Code map:
   plus `skill` (the chance it follows through on each smart move).
 - `src/render.js`: Three.js view. Reads game state every frame; owns the camera
   (`orbit`, `pan`, `zoomAt`, `zoomToward`, `rotateAround`, `focus`).
+- `src/gfx/`: the graphics, all procedural (no image assets): HDR post
+  (`post.js`), baked nebula sky (`sky.js`), sun, GPU-baked worlds with
+  atmospheres, clouds, rings and eclipses (`planets.js`), instanced ships and
+  plumes (`ships.js`), stations, asteroids and the belt (`rocks.js`), and a
+  GPU particle system for weapons and explosions (`fx.js`). Custom shaders
+  must include the log-depth chunks from `gfx/glsl.js`. Graphics level is
+  `prefs.gfx` (auto/high/low); `?gfx=low` forces it.
 - `src/main.js`: UI, input (touch, mouse, keyboard), notifications, end report
   and share image, and multiplayer glue.
 - `src/net.js`: host-in-browser multiplayer over WebRTC (PeerJS for the
