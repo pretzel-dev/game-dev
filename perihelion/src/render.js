@@ -2,6 +2,15 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { icon } from './icons.js';
 import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
+import { createPost } from './gfx/post.js';
+import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
+import { createSky } from './gfx/sky.js';
+import { createSun } from './gfx/sun.js';
+import { createShipRenderer, platingTex } from './gfx/ships.js';
+import { stationMesh } from './gfx/stations.js';
+import { asteroidMesh, createBelt } from './gfx/rocks.js';
+import { createFx } from './gfx/fx.js';
+import { BIOMES, createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
 
 export const OWNER_COLORS = ['#58b8ff', '#ff6a5a', '#ffb347'];
 export const NEUTRAL_COLOR = '#8a90a6';
@@ -9,7 +18,6 @@ export const ownerColor = (o) => (o === NEUTRAL ? NEUTRAL_COLOR : OWNER_COLORS[o
 
 const SUN_RADIUS = 6;
 const MAX_SHIPS = 400;
-const MAX_BOOMS = 120;
 
 // ---- Procedural textures ----------------------------------------------------
 
@@ -58,553 +66,7 @@ const ringTexs = [0, 1, 2, 3].map((lvl) => canvasTex(128, 128, (g) => {
 }));
 const ringTex = ringTexs[0];
 
-/** Fine speckle over a whole texture, so surfaces have grain when close. */
-function grain(g, w, h, r, amount) {
-  for (let i = 0; i < 6000; i++) {
-    g.fillStyle = r() < 0.5 ? `rgba(0,0,0,${amount})` : `rgba(255,255,255,${amount * 0.6})`;
-    g.fillRect(r() * w, r() * h, 0.35, 0.35);
-  }
-}
-
-// Small 3D value noise, enough for coastlines and cloud decks.
-function vhash(x, y, z, s) {
-  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ Math.imul(s, 1274126177);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-function vnoise(x, y, z, s) {
-  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
-  const fx = x - xi, fy = y - yi, fz = z - zi;
-  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
-  const L = (a, b, t) => a + (b - a) * t;
-  const c = (i, j, k) => vhash(xi + i, yi + j, zi + k, s);
-  return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v),
-    L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v), w) * 2 - 1;
-}
-function fbm(x, y, z, s, oct) {
-  let sum = 0, amp = 0.5, f = 1;
-  for (let o = 0; o < oct; o++) { sum += vnoise(x * f, y * f, z * f, s + o) * amp; f *= 2.03; amp *= 0.5; }
-  return sum;
-}
-
-/** Cloud deck for a living world: swirling, banded by latitude, mostly clear. */
-function cloudTex(b) {
-  return canvasTex(512, 256, (g) => {
-    const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-    const { width: W, height: H, data: d } = img;
-    const seed = b.id * 31 + 11;
-    for (let y = 0; y < H; y++) {
-      const lat = (y / H - 0.5) * Math.PI;
-      const cl = Math.cos(lat);
-      // Storm belts at mid latitudes, clear subtropics.
-      const belt = 0.1 + 0.25 * Math.abs(Math.sin(lat * 3));
-      for (let x = 0; x < W; x++) {
-        const lon = (x / W) * Math.PI * 2;
-        const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
-        const sw = fbm(px * 2, py * 2, pz * 2, seed + 5, 3);
-        const n = fbm(px * 3 + sw, py * 6 + sw * 0.5, pz * 3 - sw, seed, 5) + belt - 0.3;
-        const a = Math.max(0, Math.min(1, n * 2.6));
-        const i = (y * W + x) * 4;
-        d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = a * 210;
-      }
-    }
-    g.putImageData(img, 0, 0);
-  }, 1);
-}
-
-/** A gas giant's colouring [hue, saturation, lightness]: ochre, ice blue, teal, rust, violet or cream. */
-function giantPalette(b) {
-  const P = [[0.08, 0.42, 0.32], [0.57, 0.38, 0.34], [0.47, 0.3, 0.3], [0.02, 0.45, 0.3], [0.74, 0.22, 0.32], [0.11, 0.2, 0.42]];
-  return P[Math.floor(b.hue * P.length) % P.length];
-}
-/** Gas giant: soft horizontal bands. Rocky world: mottled continents and craters. */
-function surfaceTex(b) {
-  const r = rng(Math.floor(b.hue * 1e6) + b.id);
-  const col = new THREE.Color();
-  return canvasTex(256, 128, (g, w, h) => {
-    drawSurface(g, w, h);
-    grain(g, w, h, r, b.giant ? 0.05 : 0.12);
-  }, b.giant ? 2 : b.home ? 2 : b.kind === 'planet' ? 4 : 2);
-
-  function drawSurface(g, w, h) {
-    if (b.home) {
-      // A living world, drawn from 3D noise on the sphere so coastlines are
-      // fractal and seamless: oceans with shelves, continents coloured by
-      // latitude and height, ice caps. Clouds are a separate layer.
-      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-      const W = img.width;
-      const H = img.height;
-      const seed = b.id * 17 + 3;
-      const d = img.data;
-      for (let y = 0; y < H; y++) {
-        const lat = (y / H - 0.5) * Math.PI;
-        const cl = Math.cos(lat);
-        for (let x = 0; x < W; x++) {
-          const lon = (x / W) * Math.PI * 2;
-          const px = Math.cos(lon) * cl;
-          const py = Math.sin(lat);
-          const pz = Math.sin(lon) * cl;
-          // Domain warp, then fractal height.
-          const wx = fbm(px * 1.5, py * 1.5, pz * 1.5, seed + 9, 3) * 0.6;
-          const bio = b.biome || 'temperate';
-          const sea = { desert: -0.22, ocean: 0.14, ice: 0.02, jungle: 0.02, volcanic: -0.05 }[bio] || 0.04;
-          const h = fbm(px * 1.6 + wx, py * 1.6 - wx, pz * 1.6 + wx, seed, 6) - sea;
-          const ab = Math.abs(py);
-          const ice = ab > (bio === 'ice' ? 0.45 : bio === 'desert' ? 0.94 : bio === 'jungle' ? 0.92 : 0.86) - h * 0.25;
-          let R, G, B;
-          if (ice) { R = 236; G = 242; B = 248; }
-          else if (bio !== 'temperate' && bio !== 'ocean') {
-            // Other worlds: the same heights, painted in their own palette.
-            const k = Math.max(0, 1 + Math.min(0, h) * 7);
-            const m = Math.min(1, Math.max(0, h) * 3.2);
-            const v = fbm(px * 3, py * 3, pz * 3, seed + 4, 3);
-            if (bio === 'desert') {
-              // Dunes and dry basins; dark rock ridges; a few salt pans.
-              if (h < 0) { R = 150 + 40 * k; G = 105 + 30 * k; B = 70 + 20 * k; }
-              else { R = 196 + v * 40 - m * 50; G = 140 + v * 30 - m * 45; B = 82 + v * 10 - m * 30; }
-            } else if (bio === 'ice') {
-              if (h < 0) { R = 30 + 40 * k; G = 52 + 50 * k; B = 78 + 40 * k; }
-              else { R = 196 + v * 40 - m * 30; G = 210 + v * 30 - m * 25; B = 224 + v * 20 - m * 10; }
-            } else if (bio === 'jungle') {
-              if (h < 0) { R = 14 + 20 * k; G = 70 + 60 * k; B = 72 + 40 * k; }
-              else { R = 30 + v * 40 + m * 40; G = 92 + v * 50 + m * 10; B = 30 + v * 20 + m * 20; }
-            } else {
-              // Volcanic, industrial: black basalt, rust plains, glowing seams.
-              if (h < 0) { R = 70 + 50 * k; G = 30 + 16 * k; B = 22 + 10 * k; }
-              else { R = 44 + v * 40 + m * 20; G = 38 + v * 22 + m * 12; B = 36 + v * 16 + m * 10; }
-              const seam = Math.exp(-(((fbm(px * 6, py * 6, pz * 6, seed + 11, 3) - 0.5) / 0.025) ** 2));
-              if (h > 0) { R += seam * 170; G += seam * 60; }
-            }
-          }
-          else if (h < 0) {
-            // Ocean: shallow shelves turquoise, deep water dark.
-            const k = Math.max(0, 1 + h * 7);
-            R = 12 + 30 * k * k; G = 44 + 70 * k * k; B = 92 + 60 * k;
-          } else {
-            const hot = 1 - ab; // deserts near the tropics, forests elsewhere
-            const dry = Math.max(0, fbm(px * 3, py * 3, pz * 3, seed + 4, 3) + (hot > 0.55 && hot < 0.85 ? 0.25 : -0.1));
-            const m = Math.min(1, h * 3.2);
-            R = 58 + dry * 120 + m * 50; G = 86 + dry * 60 + m * 20; B = 40 + dry * 30 + m * 30;
-            if (ab > 0.7) { const t = (ab - 0.7) / 0.16; R += t * 40; G += t * 30; B += t * 40; } // tundra
-          }
-          const i = (y * W + x) * 4;
-          d[i] = R; d[i + 1] = G; d[i + 2] = B; d[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-      return;
-    }
-    if (b.kind === 'planet' && b.giant) {
-      // Cloud bands that shear and swirl: latitude bands, pushed sideways by
-      // turbulence that's strongest where neighbouring bands meet, and a
-      // great oval storm.
-      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-      const W = img.width, H = img.height, dd = img.data;
-      const seed = b.id * 13 + 5;
-      const [base, sat, lit] = giantPalette(b);
-      const sx = r(), sy = 0.3 + r() * 0.4;
-      for (let y = 0; y < H; y++) {
-        const lat = (y / H - 0.5) * Math.PI;
-        const cl = Math.cos(lat);
-        for (let x = 0; x < W; x++) {
-          const lon = (x / W) * Math.PI * 2;
-          const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
-          const turb = fbm(px * 4, py * 10, pz * 4, seed, 5) - 0.5;
-          const shear = Math.sin(py * 14 + turb * 3.2);
-          // The storm: a swirl in a small oval.
-          const ox = ((x / W - sx + 1.5) % 1) - 0.5, oy = y / H - sy;
-          const st = Math.exp(-((ox / 0.06) ** 2 + (oy / 0.035) ** 2));
-          const band = shear * 0.5 + 0.5 + st * 0.6;
-          col.setHSL(base + band * 0.05 - st * 0.03, sat * (0.75 + band * 0.6), lit + band * 0.26 + turb * 0.08);
-          const i = (y * W + x) * 4;
-          dd[i] = col.r * 255; dd[i + 1] = col.g * 255; dd[i + 2] = col.b * 255; dd[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-    } else {
-      // Rocky worlds and moons: drawn from 3D noise on the sphere (seamless):
-      // dark lava plains and bright highlands, then craters with dark floors,
-      // bright rims and ejecta, big ones rare, small ones many.
-      const moon = b.kind !== 'planet';
-      const hue = moon ? 0.08 + (b.hue - 0.5) * 0.06 : [0.08, 0.55, 0.02, 0.33][Math.floor(b.hue * 4)];
-      const sat = moon ? 0.06 + b.hue * 0.06 : 0.3;
-      const img = g.getImageData(0, 0, g.canvas.width, g.canvas.height);
-      const W = img.width, H = img.height, dd = img.data;
-      const seed = b.id * 29 + 11;
-      const cr = Array.from({ length: moon ? 46 : 28 }, () => {
-        const z = r() * 2 - 1, a = r() * Math.PI * 2, q = Math.sqrt(1 - z * z);
-        const size = 0.03 + r() ** 3 * (moon ? 0.32 : 0.22);
-        return { x: Math.cos(a) * q, y: z, z: Math.sin(a) * q, s: size, c: Math.cos(size * 1.6) };
-      });
-      for (let y = 0; y < H; y++) {
-        const lat = (y / H - 0.5) * Math.PI;
-        const cl = Math.cos(lat);
-        for (let x = 0; x < W; x++) {
-          const lon = (x / W) * Math.PI * 2;
-          const px = Math.cos(lon) * cl, py = Math.sin(lat), pz = Math.sin(lon) * cl;
-          const mare = fbm(px * 1.8, py * 1.8, pz * 1.8, seed, 4);
-          const grit = fbm(px * 9, py * 9, pz * 9, seed + 3, 3);
-          let l = (moon ? 0.5 : 0.36) + (mare > 0.55 ? -0.14 : 0.04) + (grit - 0.5) * 0.12;
-          for (const c of cr) {
-            const dot = px * c.x + py * c.y + pz * c.z;
-            if (dot < c.c) continue;
-            const d = Math.acos(Math.min(1, dot)) / c.s; // 0 at the centre, 1 at the rim
-            if (d < 0.8) l -= 0.1 * (1 - d * d);
-            else if (d < 1.05) l += 0.12 * (1 - Math.abs(d - 0.92) / 0.13);
-            else if (d < 1.6) l += 0.03 * (1.6 - d);
-          }
-          col.setHSL(hue + (grit - 0.5) * 0.02, sat, Math.max(0.05, Math.min(0.9, l)));
-          const i = (y * W + x) * 4;
-          dd[i] = col.r * 255; dd[i + 1] = col.g * 255; dd[i + 2] = col.b * 255; dd[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-      if (!moon) {
-        g.fillStyle = 'rgba(255,255,255,0.8)';
-        g.fillRect(0, 0, w, 5);
-        g.fillRect(0, h - 5, w, 5);
-      }
-    }
-  }
-}
-
-/** City lights: warm specks clustered into towns and cities (black elsewhere). */
-function lightsTex(b) {
-  const r = rng(b.id * 131 + 7);
-  const t = canvasTex(256, 128, (g, w, h) => {
-    g.fillStyle = '#000';
-    g.fillRect(0, 0, w, h);
-    const cities = b.giant ? 6 : b.kind === 'moon' ? 5 : 18;
-    for (let c = 0; c < cities; c++) {
-      const cx = r() * w;
-      const cy = h * (0.15 + r() * 0.7);
-      const n = 20 + Math.floor(r() * 60);
-      for (let i = 0; i < n; i++) {
-        // Dense cores thinning out to suburbs.
-        const k = r() ** 2;
-        g.fillStyle = r() < 0.2 ? '#fff4d0' : '#ffb95a';
-        g.globalAlpha = 0.4 + r() * 0.6;
-        g.fillRect((cx + (r() - 0.5) * 30 * k + w) % w, cy + (r() - 0.5) * 14 * k, 0.45, 0.45);
-      }
-    }
-    g.globalAlpha = 1;
-  }, 4);
-  return t;
-}
-
-// Sun position in view space, shared by every material that glows at night.
-const sunView = { value: new THREE.Vector3() };
-
-/** Makes a material's emissive map (city lights) show only on the night side. */
-function nightOnly(mat) {
-  mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uSunView = sunView;
-    sh.fragmentShader = `uniform vec3 uSunView;\n${sh.fragmentShader}`.replace(
-      '#include <emissivemap_fragment>',
-      `#include <emissivemap_fragment>
-      {
-        float day = dot(normal, normalize(uSunView + vViewPosition));
-        totalEmissiveRadiance *= smoothstep(0.12, -0.25, day);
-      }`,
-    );
-  };
-  return mat;
-}
-
 // ---- Meshes -------------------------------------------------------------------
-
-/**
- * Three hull types in a hard-sci-fi style: no aerodynamics, flat fronts,
- * stacked pressure hulls, trusses, radiators, and a big drive section. All are
- * built along +Z (front forward, drive at the back) and merged.
- */
-function shipGeometries() {
-  const X = Math.PI / 2;
-  // Each part is tagged: hull (light), dark (engines, radiators, trusses) or
-  // accent (painted in the owner's colour, as a separate mesh).
-  const tag = (g, t) => ((g.userData.tag = t), g);
-  const box = (w, h, d, x = 0, y = 0, z = 0, t = 'hull') => tag(new THREE.BoxGeometry(w, h, d).translate(x, y, z), t);
-  const cyl = (r1, r2, l, z, t = 'hull', seg = 10) => tag(new THREE.CylinderGeometry(r1, r2, l, seg).rotateX(X).translate(0, 0, z), t);
-  const drive = (r, z) => [
-    cyl(r * 0.9, r * 1.05, 0.1, z, 'dark'), // engine block
-    tag(new THREE.CylinderGeometry(r * 0.45, r * 0.9, 0.14, 12, 1, true).rotateX(-X).translate(0, 0, z - 0.11), 'dark'), // bell
-  ];
-  const HULL = new THREE.Color('#d5dae2');
-  const DARK = new THREE.Color('#6b7280'); // dark grey, not black: reads against space
-  const build = (parts, port = null) => {
-    const base = [];
-    const accent = [];
-    for (const g of parts) {
-      const n = g.toNonIndexed();
-      if (g.userData.tag === 'accent') { accent.push(n); continue; }
-      // Each plate a slightly different shade (some warmer, some cooler), so
-      // the hull reads as assembled panels rather than one flat grey.
-      const k = 0.86 + ((base.length * 0.618) % 1) * 0.22;
-      const warm = (((base.length * 0.377) % 1) - 0.5) * 0.06;
-      const c0 = g.userData.tag === 'dark' ? DARK : HULL;
-      const c = { r: c0.r * k * (1 + warm), g: c0.g * k, b: c0.b * k * (1 - warm) };
-      const col = new Float32Array(n.attributes.position.count * 3);
-      for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
-      n.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      base.push(n);
-    }
-    const merged = { base: mergeGeometries(base), accent: mergeGeometries(accent) };
-    // Rows of lit portholes, worked out from the hull's size.
-    merged.base.computeBoundingBox();
-    const bb = merged.base.boundingBox;
-    const light = (x, y, z, c, sz = 0.012) => {
-      const n = new THREE.BoxGeometry(sz, sz, sz).translate(x, y, z).toNonIndexed();
-      const col = new Float32Array(n.attributes.position.count * 3);
-      const cc = new THREE.Color(c);
-      for (let i = 0; i < col.length; i += 3) col.set([cc.r, cc.g, cc.b], i);
-      n.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      return n;
-    };
-    const lights = [light(0, 0, (bb.min.z + bb.max.z) / 2, '#000000', 0.0001)]; // (inside the hull)
-    // Portholes along the crew section: [half-width of the hull there, from z, to z, count].
-    if (port) {
-      const [px, z0, z1, n] = port;
-      for (let i = 0; i < n; i++) {
-        const z = z0 + ((z1 - z0) * i) / Math.max(1, n - 1);
-        for (const sx of [-1, 1]) lights.push(light(sx * (px + 0.002), 0.012, z, '#ffd9a0', 0.008));
-      }
-    }
-    merged.lights = mergeGeometries(lights);
-    // A little broader than drawn, so they read at a glance.
-    for (const g of [merged.base, merged.accent, merged.lights]) g.scale(1.35, 1.35, 1);
-    return merged;
-  };
-  const ribs = (w, h, z0, z1, n) => Array.from({ length: n }, (_, i) => box(w, h, 0.006, 0, 0, z0 + ((z1 - z0) * i) / (n - 1), 'dark'));
-  const pdc = (x, y, z) => box(0.016, 0.012, 0.016, x, y, z, 'dark'); // point-defence turret
-  // Corvette: a slim wedge-nosed hull in two sections, ribbed, with PDC
-  // turrets at the corners, a thin dorsal stripe and a big drive.
-  const frigate = build([
-    tag(new THREE.ConeGeometry(0.05, 0.12, 4).rotateY(Math.PI / 4).rotateX(X).translate(0, 0, 0.33), 'hull'), // bow
-    box(0.075, 0.07, 0.2, 0, 0, 0.17),
-    box(0.09, 0.08, 0.2, 0, 0, -0.03),
-    ...ribs(0.094, 0.084, -0.12, 0.06, 4),
-    box(0.06, 0.012, 0.16, 0, 0.037, 0.17, 'accent'),
-    box(0.01, 0.084, 0.03, 0.046, 0, 0.0, 'accent'),
-    pdc(0.042, 0.04, 0.22), pdc(-0.042, -0.04, 0.22), pdc(0.05, -0.044, -0.06), pdc(-0.05, 0.044, -0.06),
-    box(0.004, 0.004, 0.07, 0.02, 0.05, 0.1, 'dark'), // antenna mast
-    cyl(0.045, 0.05, 0.05, -0.16, 'dark'),
-    ...drive(0.06, -0.2),
-  ], [0.0375, 0.24, 0.1, 4]);
-  // Frigate: a long, armoured box hull in segments, a small command tower,
-  // flank radiators and a heavy drive.
-  const gunboat = build([
-    box(0.08, 0.08, 0.5, 0, 0, 0.04),
-    box(0.07, 0.07, 0.05, 0, 0, 0.31),
-    ...ribs(0.086, 0.086, -0.18, 0.26, 7),
-    box(0.04, 0.03, 0.06, 0, 0.055, 0.1), // command tower
-    box(0.082, 0.014, 0.12, 0, 0.034, 0.2, 'accent'),
-    box(0.16, 0.003, 0.08, 0, 0, -0.1, 'dark'), // radiators
-    pdc(0.044, 0.044, 0.28), pdc(-0.044, 0.044, 0.28), pdc(0.044, -0.044, -0.05), pdc(-0.044, -0.044, -0.05),
-    box(0.02, 0.02, 0.06, 0, -0.05, 0.25, 'dark'), // keel railgun
-    ...drive(0.07, -0.25),
-  ], [0.04, 0.27, -0.02, 6]);
-  // Hauler: a cab, a thin spine carrying cargo containers, and a drive.
-  const carrier = build([
-    box(0.07, 0.06, 0.08, 0, 0, 0.3),
-    box(0.071, 0.014, 0.05, 0, 0.03, 0.3, 'accent'),
-    box(0.02, 0.02, 0.5, 0, 0, 0.04, 'dark'),
-    ...[0.18, 0.08, -0.02, -0.12].flatMap((z, i) => [
-      box(0.05, 0.04, 0.08, 0.04, 0, z, i % 2 ? 'accent' : 'hull'),
-      box(0.05, 0.04, 0.08, -0.04, 0, z, i % 2 ? 'hull' : 'dark'),
-    ]),
-    box(0.12, 0.003, 0.06, 0, 0.03, -0.18, 'dark'),
-    cyl(0.04, 0.045, 0.05, -0.2, 'dark'),
-    ...drive(0.055, -0.24),
-  ], [0.035, 0.32, 0.28, 2]);
-  // Probe: a small bus with a dish and two solar wings, no crew section.
-  const probe = build([
-    box(0.05, 0.05, 0.07, 0, 0, 0),
-    tag(new THREE.CylinderGeometry(0.045, 0.01, 0.025, 14, 1, true).rotateX(X).translate(0, 0, 0.05), 'hull'), // dish
-    box(0.004, 0.004, 0.05, 0, 0, 0.07, 'dark'), // feed
-    box(0.16, 0.004, 0.045, 0.11, 0, 0, 'dark'), box(0.16, 0.004, 0.045, -0.11, 0, 0, 'dark'), // solar wings
-    box(0.05, 0.008, 0.012, 0, 0.029, 0, 'accent'),
-    ...drive(0.018, -0.045),
-  ]);
-  const ships = [frigate, gunboat, carrier];
-  ships.probe = probe;
-  return ships;
-}
-
-/** Solar cells: a grid of dark cells with bright gaps (made once). */
-let cells = null;
-function cellsTex() {
-  if (cells) return cells;
-  cells = canvasTex(64, 64, (g) => {
-    g.fillStyle = '#d8c0a0'; g.fillRect(0, 0, 64, 64);
-    g.fillStyle = '#6a4424';
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 4; x++) g.fillRect(x * 16 + 1, y * 8 + 1, 14, 6);
-  });
-  cells.wrapS = cells.wrapT = THREE.RepeatWrapping;
-  cells.repeat.set(1, 3);
-  return cells;
-}
-/** Hull plating: panels of slightly different tone, seams, hatches, scuffs (made once). */
-let plating = null;
-function platingTex() {
-  if (plating) return plating;
-  const hullTex = canvasTex(128, 128, (g) => {
-    const r = rng(17);
-    g.fillStyle = '#e4e4e4';
-    g.fillRect(0, 0, 128, 128);
-    const plate = (x, y, w, h) => {
-      if (w < 10 || h < 10 || r() < 0.15) {
-        const v = 200 + r() * 55 | 0;
-        g.fillStyle = `rgb(${v},${v},${v})`;
-        g.fillRect(x + 1, y + 1, w - 2, h - 2);
-        g.strokeStyle = 'rgba(40,44,52,0.55)';
-        g.lineWidth = 1;
-        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-        if (r() < 0.25) { g.fillStyle = 'rgba(60,64,72,0.35)'; g.fillRect(x + w * 0.3, y + h * 0.3, w * 0.25, h * 0.2); }
-        return;
-      }
-      if (w > h) { const c = w * (0.3 + r() * 0.4) | 0; plate(x, y, c, h); plate(x + c, y, w - c, h); }
-      else { const c = h * (0.3 + r() * 0.4) | 0; plate(x, y, w, c); plate(x, y + c, w, h - c); }
-    };
-    plate(0, 0, 128, 128);
-    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(30,30,36,${0.04 + r() * 0.06})`; g.fillRect(r() * 128, r() * 128, 1 + r() * 6, 1); }
-  });
-  hullTex.wrapS = hullTex.wrapT = THREE.RepeatWrapping;
-  plating = hullTex;
-  return hullTex;
-}
-
-/**
- * Stations, three designs (picked per station): a heavy wheel on a docking
- * spine; a long spine with twin rings and copper solar wings; a blocky hub
- * with booms, pods and an antenna spike. Built along z (the spin axis).
- * Windows are small, uneven clusters of light, shown once someone holds it.
- */
-function stationMesh(size, variant = 0) {
-  const r = rng(variant * 31 + 7);
-  // Plated like the ships: panels, seams and scuffs as colour, relief and shine.
-  const pl = platingTex();
-  const hull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.55, roughness: 0.6, map: pl, bumpMap: pl, bumpScale: 0.8, roughnessMap: pl });
-  const dark = new THREE.MeshStandardMaterial({ color: '#4a4f5a', metalness: 0.6, roughness: 0.6, map: pl, bumpMap: pl, bumpScale: 0.6 });
-  const copper = new THREE.MeshStandardMaterial({ color: '#8a5a2e', metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide, map: cellsTex() });
-  const g = new THREE.Group();
-  const add = (geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
-  const cyl = (rad, len, seg = 14) => new THREE.CylinderGeometry(rad, rad, len, seg).rotateX(Math.PI / 2); // along z
-  // A flat-sided wheel: a rectangle swept round the axis.
-  const wheel = (R, w, d, seg = 64) => new THREE.LatheGeometry([
-    new THREE.Vector2(R - w, -d), new THREE.Vector2(R, -d), new THREE.Vector2(R, d), new THREE.Vector2(R - w, d), new THREE.Vector2(R - w, -d),
-  ], seg).rotateX(Math.PI / 2);
-  const truss = (len, t, rot) => { const m = add(new THREE.BoxGeometry(t, len, t), dark); m.rotation.z = rot; return m; };
-  const win = [];
-  const windowsOn = (n, fn) => { for (let k = 0; k < n; k++) win.push(fn(r())); };
-  if (variant === 0) {
-    // Heavy wheel: thick flat ring, two crossing trusses, a long docking spine.
-    add(wheel(size, size * 0.22, size * 0.16), hull);
-    add(wheel(size * 0.79, size * 0.02, size * 0.17), dark); // inner gantry
-    truss(size * 1.6, size * 0.06, 0.3);
-    truss(size * 1.6, size * 0.06, 0.3 + Math.PI / 2);
-    add(cyl(size * 0.14, size * 2.4), hull);
-    add(cyl(size * 0.22, size * 0.5), hull, 0, 0, size * 0.25);
-    add(cyl(size * 0.18, size * 0.3), dark, 0, 0, -size * 0.5);
-    for (const zz of [0.9, 1.15]) add(cyl(size * 0.2, size * 0.08), dark, 0, 0, size * zz);
-    for (let k = 0; k < 3; k++) {
-      const a = r() * Math.PI * 2;
-      add(new THREE.BoxGeometry(size * 0.12, size * 0.12, size * 0.22), hull, Math.cos(a) * size * 1.02, Math.sin(a) * size * 1.02, 0);
-    }
-    windowsOn(26, (t) => { const a = Math.floor(t * 9) / 9 * Math.PI * 2 + r() * 0.35; return new THREE.Vector3(Math.cos(a) * size * 1.005, Math.sin(a) * size * 1.005, (r() - 0.5) * size * 0.2); });
-  } else if (variant === 1) {
-    // Long spine, twin narrow rings mid-way, copper solar wings at both ends.
-    add(cyl(size * 0.08, size * 3.2), dark);
-    for (let k = 0; k < 7; k++) add(cyl(size * (0.12 + r() * 0.05), size * 0.28), hull, (r() - 0.5) * size * 0.12, (r() - 0.5) * size * 0.12, (k - 3) * size * 0.4 + (k > 2 ? size * 0.3 : -size * 0.3));
-    for (const zz of [-0.12, 0.12]) {
-      add(new THREE.TorusGeometry(size * 0.8, size * 0.07, 8, 40), hull, 0, 0, zz * size);
-      for (let k = 0; k < 4; k++) { const m = truss(size * 1.6, size * 0.025, k * Math.PI / 4); m.position.z = zz * size; }
-    }
-    for (const zz of [-1.35, 1.35]) {
-      for (const sx of [-1, 1]) {
-        const w = add(new THREE.PlaneGeometry(size * 0.28, size * 1.5), copper, sx * size * 0.95, 0, zz * size);
-        w.rotation.y = Math.PI / 2;
-        add(new THREE.BoxGeometry(size * 0.7, size * 0.03, size * 0.03), dark, sx * size * 0.45, 0, zz * size);
-      }
-    }
-    windowsOn(18, () => { const a = r() * Math.PI * 2; return new THREE.Vector3(Math.cos(a) * size * 0.8, Math.sin(a) * size * 0.8, (r() < 0.5 ? -0.12 : 0.12) * size); });
-    windowsOn(10, () => new THREE.Vector3((r() - 0.5) * size * 0.3, size * 0.15, (r() - 0.5) * size * 2.4));
-  } else {
-    // Blocky hub: a squat core with stacked decks, two booms with pods,
-    // radiator fins and an antenna spike.
-    add(new THREE.BoxGeometry(size * 0.9, size * 0.7, size * 0.8), hull);
-    add(new THREE.BoxGeometry(size * 1.1, size * 0.18, size * 0.95), dark, 0, size * 0.3, 0);
-    add(cyl(size * 0.32, size * 0.5), hull, 0, 0, size * 0.55);
-    for (const sx of [-1, 1]) {
-      add(new THREE.BoxGeometry(size * 1.1, size * 0.1, size * 0.1), dark, sx * size * 0.95, -size * 0.05, 0);
-      add(cyl(size * 0.17, size * 0.45), hull, sx * size * 1.5, -size * 0.05, 0);
-      const fin = add(new THREE.PlaneGeometry(size * 0.6, size * 0.3), copper, sx * size * 0.9, size * 0.25, -size * 0.2);
-      fin.rotation.x = -Math.PI / 2;
-    }
-    add(new THREE.CylinderGeometry(size * 0.015, size * 0.04, size * 1.6, 6), dark, 0, -size * 1.1, 0);
-    for (let k = 0; k < 4; k++) add(new THREE.BoxGeometry(size * 0.16, size * 0.16, size * 0.16), dark, (k - 1.5) * size * 0.22, size * 0.45, -size * 0.25);
-    windowsOn(24, () => new THREE.Vector3((r() - 0.5) * size * 0.85, (Math.floor(r() * 3) - 1) * size * 0.18, size * 0.405));
-  }
-  const windows = new THREE.Points(
-    new THREE.BufferGeometry().setFromPoints(win),
-    new THREE.PointsMaterial({ color: '#ffd9a0', size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0.8 }),
-  );
-  windows.name = 'windows';
-  windows.visible = false;
-  g.add(windows);
-  // Only the wheel spins quickly; the long and blocky designs turn slowly.
-  g.userData.spin = variant === 0 ? 0.4 : 0.08;
-  return g;
-}
-
-function asteroidMesh(b) {
-  const r = rng(b.id * 97 + 1);
-  // Merge shared vertices first so the displacement is smooth (no torn,
-  // triangular facets), then shape with low-frequency noise and a few craters.
-  let geo = new THREE.IcosahedronGeometry(b.size, 5);
-  geo.deleteAttribute('normal');
-  geo.deleteAttribute('uv');
-  geo = mergeVertices(geo);
-  const waves = Array.from({ length: 5 }, () => ({
-    d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(),
-    f: 0.6 + r() * 1.2,
-    ph: r() * 6.28,
-    a: 0.05 + r() * 0.07,
-  }));
-  // Finer ripples for surface detail.
-  for (let i = 0; i < 4; i++) waves.push({ d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(), f: 3 + r() * 3, ph: r() * 6.28, a: 0.015 + r() * 0.015 });
-  const craters = Array.from({ length: 6 }, () => ({
-    d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(),
-    size: 0.2 + r() * 0.25,
-  }));
-  const stretch = new THREE.Vector3(1.2 + r() * 0.5, 0.8 + r() * 0.2, 0.9 + r() * 0.3);
-  const p = geo.attributes.position;
-  const v = new THREE.Vector3();
-  const n = new THREE.Vector3();
-  const cols = [];
-  for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i);
-    n.copy(v).normalize();
-    let k = 1;
-    for (const w of waves) k += w.a * Math.sin(n.dot(w.d) * w.f * 3 + w.ph);
-    for (const c of craters) {
-      const d = n.distanceTo(c.d);
-      if (d < c.size) k -= 0.12 * Math.cos((d / c.size) * Math.PI * 0.5) ** 2;
-      else if (d < c.size * 1.25) k += 0.03; // raised rim
-    }
-    // Grit: small lumps all over, so it isn't a smooth potato.
-    k += (fbm(n.x * 7, n.y * 7, n.z * 7, b.id + 5, 3) - 0.5) * 0.08;
-    v.multiplyScalar(k).multiply(stretch);
-    p.setXYZ(i, v.x, v.y, v.z);
-    // Colour: patchy regolith, darker in crater bowls, paler on high ground.
-    let t = 0.42 + (fbm(n.x * 2.5, n.y * 2.5, n.z * 2.5, b.id + 9, 4) - 0.5) * 0.7 + (k - 1) * 1.6;
-    t += (fbm(n.x * 12, n.y * 12, n.z * 12, b.id + 2, 2) - 0.5) * 0.3;
-    t = Math.max(0.12, Math.min(0.75, t));
-    cols.push(t * 1.05, t * 0.97, t * 0.88);
-  }
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-  geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.05 }));
-}
 
 // Screen size in pixels, for anything drawn at a fixed on-screen width.
 const screenRes = { value: new THREE.Vector2(1, 1) };
@@ -657,40 +119,36 @@ function orbitLine(b) {
   return mesh;
 }
 
-/** Homeworld characters: the sky colour of each. */
-const BIOMES = ['temperate', 'desert', 'ice', 'jungle', 'volcanic', 'ocean'];
-const BIOME_SKY = { temperate: '#6fb6ff', desert: '#f0b878', ice: '#c4e4ff', jungle: '#86e6a8', volcanic: '#ff8a5a', ocean: '#5aa0ff' };
-/** A thin atmosphere: a shell that glows toward the limb (fresnel). */
-function atmosphere(b) {
-  const color = b.giant ? new THREE.Color().setHSL(giantPalette(b)[0], 0.5, 0.75) : new THREE.Color(b.home ? BIOME_SKY[b.biome] || BIOME_SKY.temperate : '#b9c8dc');
-  const strength = b.home ? 1.1 : b.giant ? 0.45 : 0.6;
-  return new THREE.Mesh(
-    new THREE.SphereGeometry(b.size * 1.05, 48, 32),
-    new THREE.ShaderMaterial({
-      uniforms: { color: { value: color }, strength: { value: strength } },
-      vertexShader: `varying vec3 vN; varying vec3 vV;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vN = normalize(normalMatrix * normal);
-          vV = normalize(-mv.xyz);
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: `uniform vec3 color; uniform float strength; varying vec3 vN; varying vec3 vV;
-        void main() {
-          float rim = pow(1.0 - max(dot(vN, vV), 0.0), 3.0);
-          gl_FragColor = vec4(color, rim * strength);
-        }`,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-}
-
 // ---- Structures -------------------------------------------------------------
 
-const structMat = new THREE.MeshStandardMaterial({ color: '#b9c0cc', metalness: 0.6, roughness: 0.45 });
-const ghostMat = new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.35, wireframe: true });
+const structMat = new THREE.MeshStandardMaterial({ color: '#c9ced6', map: platingTex(), roughnessMap: platingTex(), bumpMap: platingTex(), bumpScale: 0.5, metalness: 0.4, roughness: 0.5, emissive: '#06070a' });
+// Under construction: a flickering blueprint hologram with scan lines.
+const holoT = { value: 0 };
+const ghostMat = new THREE.ShaderMaterial({
+  uniforms: { uT: holoT },
+  vertexShader: `${LD_VERT_PARS}
+    varying vec3 vN; varying vec3 vV; varying vec3 vW;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vW = wp.xyz;
+      vec4 mv = viewMatrix * wp;
+      vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv;
+      ${LD_VERT}
+    }`,
+  fragmentShader: `${LD_FRAG_PARS}
+    uniform float uT; varying vec3 vN; varying vec3 vV; varying vec3 vW;
+    void main() {
+      ${LD_FRAG}
+      float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
+      float scan = 0.55 + 0.45 * sin(vW.y * 60.0 - uT * 6.0);
+      float flick = 0.85 + 0.15 * sin(uT * 23.0) * sin(uT * 7.0);
+      gl_FragColor = vec4(vec3(0.45, 0.8, 1.3) * (0.12 + rim * 0.9) * scan * flick, 1.0);
+    }`,
+  blending: THREE.AdditiveBlending,
+  transparent: true,
+  depthWrite: false,
+});
 
 /** A structure's mesh, sized to the world: yards orbit, guns and mines sit on the surface. */
 function structureMesh(type, b, k, done, level = 1) {
@@ -699,13 +157,24 @@ function structureMesh(type, b, k, done, level = 1) {
   const g = new THREE.Group();
   if (type === 'shipyard') {
     // An open gantry ring in low orbit with a docking spine.
-    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.12, 6, 48), mat));
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      const truss = new THREE.Mesh(new THREE.BoxGeometry(s * 0.25, s * 0.25, s * 1.2), mat);
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.05, 6, 64), mat));
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(b.size * 1.35, s * 0.03, 4, 64).translate(0, 0, s * 0.18), mat));
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(s * 0.12, s * 0.3, s * 0.9), mat);
       truss.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
       truss.lookAt(0, 0, 0);
       g.add(truss);
+    }
+    if (done) {
+      // Work lights round the gantry.
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + 0.2;
+        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color(i % 2 ? '#ffd9a0' : '#9fd4ff').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+        light.position.set(Math.cos(a) * b.size * 1.35, 0, Math.sin(a) * b.size * 1.35);
+        light.scale.setScalar(s * 0.5);
+        g.add(light);
+      }
     }
     g.rotation.x = Math.PI / 2 + 0.35;
     return g;
@@ -760,7 +229,7 @@ function structureMesh(type, b, k, done, level = 1) {
     hub.rotation.x = Math.PI / 2;
     g.add(hub);
     if (done) {
-      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffe39a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#ffe39a').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       light.position.y = s * 4.7;
       light.scale.setScalar(s * (1.2 + level * 0.4));
       g.add(light);
@@ -777,7 +246,7 @@ function structureMesh(type, b, k, done, level = 1) {
       g.add(dish);
     }
     if (done) {
-      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#9fd4ff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#9fd4ff').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       light.position.y = s * (1.1 + level * 0.3);
       light.scale.setScalar(s * (1 + level * 0.4));
       g.add(light);
@@ -791,7 +260,7 @@ function structureMesh(type, b, k, done, level = 1) {
       tower.position.set(x0, s * 0.7, 0);
       g.add(tower);
       if (done) {
-        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffc070', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+        const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color('#ffc070').multiplyScalar(2.5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
         light.position.set(x0, s * (1.5 - i * 0.2), 0);
         light.scale.setScalar(s * 1.6);
         g.add(light);
@@ -805,172 +274,38 @@ function structureMesh(type, b, k, done, level = 1) {
 
 // ---- View ---------------------------------------------------------------------
 
-export function createView(canvas, labelRoot) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+export function createView(canvas, labelRoot, opts = {}) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+  let quality = opts.quality || 'high';
+  const maxPR = () => Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2 : 1.25);
+  let pixelRatio = maxPR();
+  renderer.setPixelRatio(1);
+  renderer.autoClear = true;
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#03040a');
   const camera = new THREE.PerspectiveCamera(45, 1, 0.02, 20000);
+  const post = createPost(renderer);
+  post.setSamples(quality === 'high' ? 4 : 2);
 
-  // Distant stars.
-  {
-    const n = 2500;
-    const pos = new Float32Array(n * 3);
-    const v = new THREE.Vector3();
-    for (let i = 0; i < n; i++) {
-      v.randomDirection().multiplyScalar(4000 + Math.random() * 2000);
-      pos.set([v.x, v.y, v.z], i * 3);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.3, sizeAttenuation: false, color: '#9aa6c8', transparent: true, opacity: 0.7 })));
-  }
+  // The sky: a painted nebula backdrop (baked per system) and live bright
+  // stars. Its blurred copy lights the metal of ships and stations.
+  const sky = createSky(renderer, quality);
+  scene.add(sky.stars);
+  scene.environmentIntensity = 0.9;
 
-  // The Milky Way: the galaxy's disc seen edge-on from inside it, a band of
-  // star clouds round the sky with a brighter core and dark dust lanes; and
-  // a small spiral galaxy far beyond it.
-  {
-    const W = 768, H = 384;
-    const tex = canvasTex(W, H, (g) => {
-      const img = g.getImageData(0, 0, W, H);
-      const d = img.data;
-      const N = new THREE.Vector3(0.32, 0.86, 0.4).normalize(); // galactic pole
-      const X = new THREE.Vector3(1, 0, 0).sub(N.clone().multiplyScalar(N.x)).normalize(); // towards the core
-      const Y = new THREE.Vector3().crossVectors(N, X);
-      const v = new THREE.Vector3();
-      for (let y = 0; y < H; y++) {
-        const th = (y / H) * Math.PI;
-        for (let x = 0; x < W; x++) {
-          const ph = (x / W) * Math.PI * 2;
-          v.set(-Math.cos(ph) * Math.sin(th), Math.cos(th), Math.sin(ph) * Math.sin(th));
-          const lat = Math.asin(Math.max(-1, Math.min(1, v.dot(N))));
-          const lon = Math.atan2(v.dot(Y), v.dot(X));
-          // A ragged, wide falloff (no hard edge): the band's width wanders with
-          // the clouds, and a faint halo fades it into the dark.
-          const clouds = fbm(v.x * 5, v.y * 5, v.z * 5, 41, 5);
-          const wob = 0.17 * (0.75 + 0.6 * fbm(v.x * 2.5, v.y * 2.5, v.z * 2.5, 13, 3));
-          const band = Math.exp(-((lat / wob) ** 2)) + 0.22 * Math.exp(-((lat / 0.5) ** 2));
-          if (band < 0.003) continue;
-          const core = Math.exp(-((lon / 0.7) ** 2)) * Math.exp(-((lat / 0.32) ** 2));
-          const dust = Math.exp(-(((lat - 0.01 * Math.sin(lon * 3)) / 0.035) ** 2)) * Math.max(0, fbm(v.x * 9, v.y * 9, v.z * 9, 77, 4) + 0.15);
-          let k = band * (0.35 + clouds * 1.1) + core * 0.9;
-          k *= 1 - Math.min(0.85, dust * 1.4);
-          k = Math.max(0, k) * 0.38;
-          const i = (y * W + x) * 4;
-          d[i] = Math.min(255, (150 + core * 105) * k);
-          d[i + 1] = Math.min(255, (160 + core * 60) * k);
-          d[i + 2] = Math.min(255, (205 - core * 40) * k);
-          d[i + 3] = 255;
-        }
-      }
-      g.putImageData(img, 0, 0);
-    });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true }));
-    sky.renderOrder = -2;
-    scene.add(sky);
-    // A distant spiral galaxy: two arms of soft light round a bright bulge.
-    const spiral = canvasTex(256, 256, (g) => {
-      g.translate(128, 128);
-      const r = rng(5);
-      for (let i = 0; i < 2600; i++) {
-        const arm = i % 2;
-        const t = r() ** 0.7 * 4.2;
-        const a = t * 1.25 + arm * Math.PI + (r() - 0.5) * 0.55;
-        const rad = 8 + t * 26 + (r() - 0.5) * 8;
-        g.fillStyle = `rgba(${200 + r() * 55 | 0},${200 + r() * 40 | 0},255,${0.05 + r() * 0.12 * (1 - t / 4.5)})`;
-        g.beginPath();
-        g.arc(Math.cos(a) * rad, Math.sin(a) * rad * 0.55, 1 + r() * 2.5, 0, Math.PI * 2);
-        g.fill();
-      }
-      const core = g.createRadialGradient(0, 0, 0, 0, 0, 30);
-      core.addColorStop(0, 'rgba(255,240,215,0.9)');
-      core.addColorStop(1, 'rgba(255,240,215,0)');
-      g.fillStyle = core;
-      g.fillRect(-30, -30, 60, 60);
-    });
-    const gal = new THREE.Sprite(new THREE.SpriteMaterial({ map: spiral, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55, rotation: 0.6 }));
-    gal.position.set(-5200, 2600, -4600);
-    gal.scale.setScalar(700);
-    scene.add(gal);
-  }
-
-  // The sun: bright core, layered glow, and the only real light.
-  // Churning granulation with dark-edged cells, limb darkening, and slow
-  // brighter faculae, dark sunspots, and a soft glow around it.
-  const sunTime = { value: 0 };
-  const sunGroup = new THREE.Group();
+  // The sun: the only real light (a second, smaller and oranger one in
+  // binary systems), with a little cold fill so night sides aren't pure black.
+  const sun = createSun(SUN_RADIUS, quality);
+  const sunGroup = sun.group;
   scene.add(sunGroup);
-  sunGroup.add(new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 48), new THREE.ShaderMaterial({
-    uniforms: { uT: sunTime },
-    vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vV;
-      void main() {
-        vP = position; vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: `uniform float uT; varying vec3 vP; varying vec3 vN; varying vec3 vV;
-      float h(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-      float n3(vec3 p) {
-        vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
-                   mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z);
-      }
-      float fbm(vec3 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += n3(p) * a; p *= 2.1; a *= 0.5; } return s; }
-      void main() {
-        vec3 p = normalize(vP);
-        float t = uT * 0.02;
-        float warp = fbm(p * 3.0 + t);
-        float cells = fbm(p * 9.0 + warp * 2.0 - t * 2.0);
-        float spots = smoothstep(0.66, 0.74, fbm(p * 2.6 + vec3(0.0, t * 0.3, 0.0)));
-        float pen = smoothstep(0.6, 0.66, fbm(p * 2.6 + vec3(0.0, t * 0.3, 0.0)));
-        float fac = smoothstep(0.55, 0.62, fbm(p * 5.0 - t * 0.5)) * (1.0 - pen);
-        float mu = max(dot(vN, vV), 0.0);
-        float limb = 0.45 + 0.55 * pow(mu, 0.5);
-        vec3 hot = vec3(1.0, 0.96, 0.82), mid = vec3(1.0, 0.72, 0.32), cool = vec3(0.85, 0.35, 0.1);
-        vec3 c = mix(mid * 0.85, hot, smoothstep(0.4, 0.75, cells));
-        c = mix(c, cool, (1.0 - limb) * 0.8);
-        c += fac * 0.18 * hot;
-        c *= 1.0 - pen * 0.35 - spots * 0.5;
-        gl_FragColor = vec4(c * (0.55 + 0.4 * limb), 1.0);
-      }`,
-  })));
-  // Prominences: glowing loops of plasma rising off the surface, each
-  // swelling and fading on its own clock, then reappearing somewhere else.
-  const proms = [];
-  {
-    const r = rng(7);
-    const up = new THREE.Vector3(0, 1, 0);
-    for (let i = 0; i < 9; i++) {
-      const size = 0.7 + r() * 1.3;
-      const m = new THREE.Mesh(
-        new THREE.TorusGeometry(size, 0.07 + r() * 0.08, 6, 28, Math.PI),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.04 + r() * 0.05, 1, 0.55), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
-      );
-      const place = () => {
-        const n = new THREE.Vector3().randomDirection();
-        m.position.copy(n).multiplyScalar(SUN_RADIUS * 0.97);
-        m.quaternion.setFromUnitVectors(up, n);
-        m.rotateY(Math.random() * Math.PI);
-      };
-      place();
-      proms.push({ m, place, phase: r() * 40, period: 25 + r() * 30, peak: 0.5 + r() * 0.4, grow: size });
-      sunGroup.add(m);
-    }
-  }
-  for (const [s, c, o] of [[18, '#fff0c0', 0.5], [40, '#ffd27a', 0.35], [110, '#ff9a4a', 0.2]]) {
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-    glow.scale.setScalar(s);
-    sunGroup.add(glow);
-  }
-  // Binary systems: a second, smaller star (same look) circling with the first.
-  const sun2 = sunGroup.clone();
+  const sunB = createSun(SUN_RADIUS, quality);
+  sunB.tint.set(1.0, 0.78, 0.6);
+  const sun2 = sunB.group;
   sun2.visible = false;
   sun2.add(new THREE.PointLight('#ffd9b0', 1.4, 0, 0)); // lights its own worlds
   scene.add(sun2);
   scene.add(new THREE.PointLight('#fff1dd', 3, 0, 0));
-  scene.add(new THREE.AmbientLight('#26304a', 0.35));
+  scene.add(new THREE.AmbientLight('#2a3550', 0.7));
 
-  const shipGeos = shipGeometries();
   const world = new THREE.Group();
   scene.add(world);
   let views = [];
@@ -978,6 +313,16 @@ export function createView(canvas, labelRoot) {
   const orbit = { az: 0.4, pol: 0.9, dist: 380, minDist: 1.2, maxDist: 900, target: new THREE.Vector3(), vaz: 0, vpol: 0, follow: null };
 
   let companionPath = null;
+  let belt = null;
+  const bake = createBaker(renderer, () => quality);
+  const baked = [];
+  const sphereGeos = new Map();
+  /** Shared sphere geometry per size (fine for big worlds, lighter for moons). */
+  function sphereGeo(r, fine) {
+    const k = `${r}:${fine}`;
+    if (!sphereGeos.has(k)) sphereGeos.set(k, new THREE.SphereGeometry(r, fine ? 128 : 96, fine ? 80 : 56));
+    return sphereGeos.get(k);
+  }
   function build(game) {
     // Each homeworld gets its own character (no two alike in a game).
     {
@@ -985,6 +330,12 @@ export function createView(canvas, labelRoot) {
       const pool = [...BIOMES];
       for (const h of game.bodies.filter((b) => b.home)) h.biome = pool.splice(Math.floor(r() * pool.length), 1)[0] || 'temperate';
     }
+    // A sky of its own for each system.
+    sky.bake((game.nameSeed || 1) + 1);
+    scene.background = sky.background;
+    scene.environment = sky.env;
+    for (const rt of baked) rt.dispose();
+    baked.length = 0;
     world.clear();
     labelRoot.innerHTML = '';
     fleetLabels.length = 0;
@@ -993,7 +344,9 @@ export function createView(canvas, labelRoot) {
       let body;
       let hulk = null;
       let tail = null;
-      if (b.kind === 'station') body = stationMesh(b.size, b.id % 3);
+      let ring = null;
+      let atmo = null;
+      if (b.kind === 'station') body = stationMesh(b.size, b.id % 3, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else if (b.visitor) {
         // Comet: an icy nucleus with a tail streaming away from the sun.
@@ -1009,38 +362,34 @@ export function createView(canvas, labelRoot) {
         tail.userData.coma = puff('#e8f6ff');
         for (const sp of [...tail.userData.ion, ...tail.userData.dust, tail.userData.coma]) tail.add(sp);
         g.add(tail);
-        hulk = stationMesh(0.7);
+        hulk = stationMesh(0.7, 0, shipR.uT);
+        hulk.userData.set('#3a3d44', 0.8, false); // a dead hulk: no lights
         g.add(hulk);
       }
       else {
-        // Rocky worlds get relief from their own surface (craters and
-        // highlands catch the light); gas giants stay smooth.
-        const surf = surfaceTex(b);
-        body = new THREE.Mesh(
-          new THREE.SphereGeometry(b.size, 64, 40),
-          nightOnly(new THREE.MeshStandardMaterial({
-            map: surf, roughness: b.home ? 0.8 : 1, metalness: 0,
-            bumpMap: b.giant ? null : surf, bumpScale: b.home ? 0.6 : b.kind === 'moon' ? 2 : 1.2,
-            emissiveMap: lightsTex(b), emissive: '#ffd08a', emissiveIntensity: 0,
-          })),
-        );
-        body.rotation.z = 0.2 + b.hue * 0.3;
-        if (b.kind === 'planet') g.add(atmosphere(b));
-        if (b.home) {
-          const clouds = new THREE.Mesh(
-            new THREE.SphereGeometry(b.size * 1.012, 48, 32),
-            new THREE.MeshStandardMaterial({ map: cloudTex(b), transparent: true, depthWrite: false, roughness: 1 }),
-          );
+        // A world painted on the GPU (see gfx/planets.js) and lit by its own shader.
+        const look = lookOf(b);
+        const maps = bake(b, look);
+        baked.push(...maps.rts);
+        const tilt = 0.2 + b.hue * 0.3;
+        if (b.giant && b.hue > 0.4) {
+          // Rings in the equatorial plane, tilted with the planet.
+          ring = ringMesh(b);
+          ring.rotation.x = Math.PI / 2;
+          const holder = new THREE.Group();
+          holder.rotation.z = tilt;
+          holder.add(ring);
+          g.add(holder);
+        }
+        body = new THREE.Mesh(sphereGeo(b.size, look.kind === 0 || look.kind === 3 ? 1 : 0), surfaceMaterial(b, look, maps, ring && ring.userData.ring));
+        // Spin about the tilted axis.
+        body.rotation.order = 'ZYX';
+        body.rotation.z = tilt;
+        if (look.atmo) { atmo = atmosphereMesh(b, look, quality); g.add(atmo); }
+        if (look.clouds) {
+          const clouds = new THREE.Mesh(sphereGeo(b.size * 1.008, 1), cloudMaterial(maps));
           clouds.name = 'clouds';
           body.add(clouds);
-        }
-        if (b.giant && b.hue > 0.4) {
-          const ring = new THREE.Mesh(
-            new THREE.RingGeometry(b.size * 1.4, b.size * 2.2, 64),
-            new THREE.MeshStandardMaterial({ color: '#c8b89a', transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
-          );
-          ring.rotation.x = Math.PI / 2 - 0.25;
-          g.add(ring);
         }
       }
       g.add(body);
@@ -1073,8 +422,25 @@ export function createView(canvas, labelRoot) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [] };
     });
+    // The asteroid belt: a lane of small rocks round the named asteroids.
+    if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
+    const rocks = game.bodies.filter((x) => x.kind === 'asteroid');
+    if (rocks.length) {
+      const ref = rocks[0];
+      const r0 = Math.min(...rocks.map((x) => x.r)) - 2, r1 = Math.max(...rocks.map((x) => x.r)) + 2;
+      belt = createBelt(r0, r1, (r) => ref.period * Math.pow(r / ref.r, 1.5), quality, shipR.uT);
+      world.add(belt.group);
+    }
+    // Who can eclipse whom: a planet and its moons shadow each other.
+    for (const v of views) {
+      const b = v.b;
+      if (b.kind !== 'planet' && b.kind !== 'moon') continue;
+      const fam = b.kind === 'planet' ? game.bodies.filter((x) => x.parent === b.id && x.kind === 'moon')
+        : game.bodies.filter((x) => x.id === b.parent || (x.parent === b.parent && x.kind === 'moon' && x.id !== b.id));
+      v.occ = fam.slice(0, 4).map((x) => x.id);
+    }
     // Binary: the companion sun's (eccentric) path, so you can see where it's headed.
     if (companionPath) { companionPath.removeFromParent(); companionPath = null; }
     if (game.stars && game.stars[1]) {
@@ -1087,35 +453,10 @@ export function createView(canvas, labelRoot) {
     }
   }
 
-  // Hull plating: panels of slightly different tone, seams, hatches and a few
-  // scuffs. Multiplies the hull colour, and doubles as bump and roughness.
-  const hullTex = platingTex();
-
-  // Ships: meshes with a drive plume and a far-away glint, pooled.
-  const ships = [];
-  function ship(i) {
-    if (i >= MAX_SHIPS) return null;
-    if (!ships[i]) {
-      // A faint self-glow so the shadow side is dark grey, never black.
-      const mesh = new THREE.Mesh(shipGeos[0].base, new THREE.MeshStandardMaterial({ vertexColors: true, map: hullTex, bumpMap: hullTex, bumpScale: 0.6, roughnessMap: hullTex, metalness: 0.55, roughness: 0.45, emissive: '#0b0d12' }));
-      // Owner-coloured paint: stripes, bows and pods, lit a little so it reads.
-      const accent = new THREE.Mesh(shipGeos[0].accent, new THREE.MeshStandardMaterial({ metalness: 0.3, roughness: 0.5 }));
-      mesh.add(accent);
-      // Navigation lights and portholes: unlit, so they glow on the dark side.
-      const lights = new THREE.Mesh(shipGeos[0].lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
-      mesh.add(lights);
-      const plume = new THREE.Mesh(
-        // A long, thin, bright drive flame (an Epstein-style torch).
-        new THREE.ConeGeometry(0.035, 1.6, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -1.16),
-        new THREE.MeshBasicMaterial({ color: '#9fd4ff', transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
-      );
-      mesh.add(plume);
-      const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      scene.add(mesh, glint);
-      ships[i] = { mesh, accent, lights, plume, glint };
-    }
-    return ships[i];
-  }
+  // Ships: instanced hulls, drive plumes and far-away glints (gfx/ships.js).
+  const shipR = createShipRenderer(scene, MAX_SHIPS);
+  const shipGeos = shipR.geometries;
+  let used = 0; // ships drawn so far this frame
 
   // Routes and intercept points.
   const routeGeo = new THREE.BufferGeometry();
@@ -1143,25 +484,12 @@ export function createView(canvas, labelRoot) {
   preview.frustumCulled = false;
   scene.add(preview);
 
-  // Explosions and weapon tracers.
-  const booms = [];
-  let boomNext = 0;
-  function boom(p, color, size, life) {
-    let s = booms[boomNext];
-    if (!s) {
-      s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      s.userData = {};
-      scene.add(s);
-      booms[boomNext] = s;
-    }
-    boomNext = (boomNext + 1) % MAX_BOOMS;
-    s.position.copy(p);
-    s.material.color.set(color);
-    Object.assign(s.userData, { age: 0, life, size });
-    s.visible = true;
-  }
+  // Explosions and weapon fire: one GPU particle system (gfx/fx.js).
+  const fx = createFx(scene, quality === 'high' ? 4096 : 2048);
+  // Rounds in flight, kept here only to know when and where they land.
   const MAX_SHOTS = 240;
   const shots = [];
+  const WHITE = new THREE.Color('#ffffff');
   function shoot(a, b, color, lvl = 0, pd = false) {
     let sh = shots.find((x) => !x.live);
     if (!sh) {
@@ -1174,23 +502,24 @@ export function createView(canvas, labelRoot) {
     sh.b.copy(b);
     sh.color = color;
     // Light the shooter's colour towards white so rounds read as hot.
-    // Guns by research: tracers, then coilgun slugs, then railgun streaks.
-    sh.c.set(color).lerp(new THREE.Color('#ffffff'), [0.45, 0.6, 0.85][lvl]);
-    sh.tail = [0.18, 0.3, 1][lvl];
+    // Guns by research: PDC tracer streams, then coilgun slugs, then railguns.
+    sh.c.set(color).lerp(WHITE, [0.45, 0.6, 0.85][lvl]);
+    sh.rail = lvl === 2;
     sh.age = 0;
-    sh.life = lvl === 2 ? 0.16 : THREE.MathUtils.clamp(a.distanceTo(b) / (lvl ? 24 : 14), 0.1, 0.7);
+    sh.life = lvl === 2 ? 0.05 : THREE.MathUtils.clamp(a.distanceTo(b) / (lvl ? 24 : 14), 0.1, 0.7);
     // Point-defence drones swat some rounds short of the target.
     sh.pd = pd && Math.random() < 0.3;
     if (sh.pd) sh.b.lerpVectors(a, b, 0.7 + Math.random() * 0.2);
+    if (lvl === 2) fx.beam(sh.a, sh.b, sh.c, 0.35);
+    else if (lvl === 1) fx.bolt(sh.a, sh.b, sh.c, sh.life, 0.5, 0.035);
+    else {
+      // A short burst of tracers, slightly spread.
+      for (let k = 0; k < 4; k++) {
+        tmp2.copy(sh.b).add(tmp3.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.25));
+        fx.bolt(sh.a, tmp2, sh.c, sh.life, 0.22, 0.018, k * 0.045);
+      }
+    }
   }
-  const tracerGeo = new THREE.BufferGeometry();
-  const tracerPos = new Float32Array(MAX_SHOTS * 6);
-  const tracerCol = new Float32Array(MAX_SHOTS * 6);
-  tracerGeo.setAttribute('position', new THREE.BufferAttribute(tracerPos, 3));
-  tracerGeo.setAttribute('color', new THREE.BufferAttribute(tracerCol, 3));
-  const tracers = new THREE.LineSegments(tracerGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  tracers.frustumCulled = false;
-  scene.add(tracers);
 
   const tmp = new THREE.Vector3();
   const tmp2 = new THREE.Vector3();
@@ -1207,10 +536,41 @@ export function createView(canvas, labelRoot) {
   };
 
   function resize() {
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-    screenRes.value.set(window.innerWidth, window.innerHeight);
-    camera.aspect = window.innerWidth / window.innerHeight;
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(Math.round(w * pixelRatio), Math.round(h * pixelRatio), false);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    post.setSize(w, h, pixelRatio);
+    screenRes.value.set(w, h);
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
+  }
+
+  // Lens flare: follows the sun while it's on screen and not behind a world.
+  const sunNdc = new THREE.Vector3();
+  function updateFlare(dt) {
+    sunNdc.copy(sunGroup.position).project(camera);
+    let vis = sunNdc.z < 1 && Math.abs(sunNdc.x) < 1.1 && Math.abs(sunNdc.y) < 1.1 ? 1 : 0;
+    if (vis) {
+      // Hidden behind a world? (A ray from the camera to the sun's centre.)
+      const o = camera.position;
+      tmp3.copy(sunGroup.position).sub(o);
+      const len = tmp3.length();
+      tmp3.divideScalar(len);
+      for (const v of views) {
+        if (!v.g.visible) continue;
+        tmp2.copy(v.g.position).sub(o);
+        const along = tmp2.dot(tmp3);
+        if (along < 0 || along > len) continue;
+        const miss = Math.sqrt(Math.max(0, tmp2.lengthSq() - along * along));
+        if (miss < v.b.size) { vis = 0; break; }
+      }
+      // Fade at the screen edges, and when the sun is tiny far away.
+      vis *= THREE.MathUtils.clamp((1.1 - Math.max(Math.abs(sunNdc.x), Math.abs(sunNdc.y))) * 4, 0, 1);
+    }
+    const f = post.flare;
+    f.vis += (vis * 0.9 - f.vis) * Math.min(1, dt * 8 + 0.05);
+    f.pos.set(sunNdc.x * 0.5 + 0.5, sunNdc.y * 0.5 + 0.5);
   }
 
   const bodyPos = [];
@@ -1249,35 +609,41 @@ export function createView(canvas, labelRoot) {
       p.set(q.x + dx * k, q.y + dy * k, q.z + dz * k);
     }
   }
-  function placeShip(sh, p, n, color, burning, t, seed, id = seed, plume = 1, probe = false) {
-    sh.mesh.visible = true;
-    const G = probe ? shipGeos.probe : shipGeos[Math.floor(hash(id, 3) * shipGeos.length)];
-    if (sh.mesh.geometry !== G.base) {
-      sh.mesh.geometry = G.base;
-      sh.accent.geometry = G.accent;
-      sh.lights.geometry = G.lights;
+  /** Is a point in sunlight (1), or in the shadow of a world (0)? Soft-edged. */
+  function sunlit(p) {
+    let vis = 1;
+    const sx = sunGroup.position.x, sy = sunGroup.position.y, sz = sunGroup.position.z;
+    let lx = sx - p.x, ly = sy - p.y, lz = sz - p.z;
+    const ld = Math.hypot(lx, ly, lz) || 1;
+    lx /= ld; ly /= ld; lz /= ld;
+    for (const v of views) {
+      if (v.b.kind !== 'planet' && v.b.kind !== 'moon') continue;
+      const q = bodyPos[v.b.id];
+      const ox = q.x - p.x, oy = q.y - p.y, oz = q.z - p.z;
+      const t = ox * lx + oy * ly + oz * lz;
+      if (t <= 0 || t > ld) continue;
+      const mx = ox - lx * t, my = oy - ly * t, mz = oz - lz * t;
+      const m = Math.sqrt(mx * mx + my * my + mz * mz);
+      const r = v.b.size, pen = r * 0.08 + t * 0.012;
+      if (m < r + pen) vis *= THREE.MathUtils.smoothstep(m, r - pen, r + pen);
     }
+    return vis;
+  }
+  /**
+   * Draws a ship at p, nose along n. `id` picks its hull and small variations
+   * (length, hull tone), stable for that ship. glintMul dims the far-away glint.
+   */
+  function placeShip(p, n, color, burning, t, seed, id = seed, plume = 1, probe = false, glintMul = 1) {
+    if (used >= MAX_SHIPS) return;
+    used++;
+    const type = probe ? 3 : Math.floor(hash(id, 3) * 3);
     const k = 0.9 + hash(id, 5) * 0.25;
-    if (probe) sh.mesh.scale.setScalar(0.45);
-    else sh.mesh.scale.set(0.8, 0.8, 0.8 * k);
-    // A slight per-ship tint on the hull (vertex colours carry the light/dark
-    // split); kept mid-grey so the lit side shines and the far side goes dark.
-    sh.mesh.material.color.setHSL(0.6, 0.05 + hash(id, 9) * 0.08, 0.5 + hash(id, 11) * 0.12);
+    const s = probe ? [0.45, 0.45, 0.45] : [0.8, 0.8, 0.8 * k];
     unclip(p);
-    sh.mesh.position.copy(p);
-    tmp2.copy(p).add(n);
-    sh.mesh.lookAt(tmp2);
-    sh.accent.material.color.set(color);
-    sh.accent.material.emissive.set(color).multiplyScalar(0.35);
-    sh.plume.visible = burning;
-    if (burning) sh.plume.scale.set(0.8 + plume * 0.2, 0.8 + plume * 0.2, plume * (0.8 + Math.sin(t * 40 + seed) * 0.15) * (probe ? 0.35 : 1));
-    // Visible from afar as a point of light; brighter while the drive burns.
     const ppu = ppuAt(p);
-    sh.glint.visible = true;
-    sh.glint.position.copy(p);
-    sh.glint.material.color.set(burning ? '#cfe8ff' : color);
-    sh.glint.material.opacity = ppu > 60 ? 0 : burning ? 1 : 0.7;
-    sh.glint.scale.setScalar((burning ? 9 : 5) / ppu);
+    // Visible from afar as a point of light; brighter while the drive burns.
+    const glint = ppu > 60 ? null : [(burning ? 9 : 5) * (probe ? 0.8 : 1), (burning ? 1 : 0.7) * glintMul];
+    shipR.add(type, p, n, s, color, 0.82 + hash(id, 11) * 0.28, id, burning, plume * (0.8 + Math.sin(t * 40 + seed) * 0.05) * (probe ? 0.35 : 1), glint, 0.6 * ppu, sunlit(p));
   }
 
   // Events at a world get something you can see there: a probe beacon, a
@@ -1286,7 +652,6 @@ export function createView(canvas, labelRoot) {
   const eventObjs = new Map();
   const evHull = new THREE.MeshStandardMaterial({ color: '#b9bec8', metalness: 0.5, roughness: 0.5 });
   const evDark = new THREE.MeshStandardMaterial({ color: '#4a505c', metalness: 0.4, roughness: 0.7 });
-  const evShip = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.45 });
   function eventObj(kind) {
     const g = new THREE.Group();
     const box = (w, h, d, m = evHull) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -1312,7 +677,7 @@ export function createView(canvas, labelRoot) {
     } else if (kind === 'convoy') {
       // Three haulers in line astern.
       for (let i = 0; i < 3; i++) {
-        const m = new THREE.Mesh(shipGeos[2].base, evShip);
+        const m = new THREE.Mesh(shipGeos[2], evHull);
         m.position.set((i - 1) * 0.25, 0, -i * 0.5);
         m.scale.setScalar(0.8);
         g.add(m);
@@ -1372,7 +737,6 @@ export function createView(canvas, labelRoot) {
 
   function render(game, ui, dt, t) {
     const now = game.time;
-    sunTime.value = t;
     const stars = game.stars || [{ r: 0, period: 1, phase: 0, size: 1 }];
     stars.slice(0, 2).forEach((st, i) => {
       const g = i ? sun2 : sunGroup;
@@ -1382,13 +746,16 @@ export function createView(canvas, labelRoot) {
       g.scale.setScalar(st.size);
     });
     if (stars.length < 2) sun2.visible = false;
-    for (const pr of proms) {
-      const u = ((t + pr.phase) % pr.period) / pr.period;
-      if (u < pr.lastU) pr.place();
-      pr.lastU = u;
-      pr.m.material.opacity = Math.sin(u * Math.PI) ** 2 * pr.peak;
-      pr.m.scale.setScalar(0.6 + u * 0.6);
-    }
+    starLights.pos.value[0].copy(sunGroup.position);
+    starLights.pos.value[1].copy(sun2.position);
+    if (sun2.visible) starLights.col.value[1].set(1.25, 0.95, 0.72);
+    else starLights.col.value[1].set(0, 0, 0);
+    sun.update(t);
+    holoT.value = t;
+    fx.update(t);
+    if (belt) belt.update(now);
+    if (sun2.visible) sunB.update(t + 50);
+    sky.update(t, pixelRatio);
     const techOf = (o, k) => (o >= 0 && game.tech ? game.tech[o][k] : 0);
     // Camera: follow the focused body, with inertia on rotation.
     for (const v of views) {
@@ -1425,8 +792,8 @@ export function createView(canvas, labelRoot) {
 
     const w = window.innerWidth;
     const h = window.innerHeight;
-    let used = 0;
-    sunView.value.set(0, 0, 0).applyMatrix4(camera.matrixWorldInverse);
+    used = 0;
+    shipR.begin(t, pixelRatio);
 
     // Moons and stations crowded against their planet on screen hide their
     // label; their ship counts ride on the planet's label instead.
@@ -1526,12 +893,35 @@ export function createView(canvas, labelRoot) {
         } else v.hulk.rotation.y += dt * 0.08;
       }
       // Slow spin; stations turn faster, asteroids tumble.
-      if (b.kind === 'station') v.body.rotation.z += dt * (v.body.userData.spin ?? 0.5);
+      if (b.kind === 'station') {
+        v.body.rotation.z += dt * (v.body.userData.spin ?? 0.5);
+        // Owner's paint, lit windows once held, and dark in a world's shadow.
+        v.body.userData.set(b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner), sunlit(p), b.owner !== NEUTRAL);
+      }
       else if (b.kind === 'asteroid') { v.body.rotation.x += dt * 0.3; v.body.rotation.y += dt * 0.2; }
       else {
         v.body.rotation.y += dt * 0.05;
         const cl = v.body.getObjectByName('clouds');
         if (cl) cl.rotation.y += dt * 0.012;
+        const u = v.body.material.uniforms;
+        if (u) {
+          u.uT.value = t;
+          if (cl) u.uCloudShift.value = -cl.rotation.y / (Math.PI * 2);
+          u.uCenter.value.set(p.x, p.y, p.z);
+          v.occ.forEach((id, k) => { const q = bodyPos[id]; u.uOcc.value[k].set(q.x, q.y, q.z, game.bodies[id].size); });
+          if (cl) cl.material.uniforms.uOcc.value = u.uOcc.value;
+          if (v.atmo) {
+            v.atmo.material.uniforms.uCenter.value.set(p.x, p.y, p.z);
+            v.atmo.material.uniforms.uOcc.value = u.uOcc.value;
+          }
+          if (v.ring) {
+            v.ring.updateMatrixWorld(true);
+            u.uRingN.value.set(0, 0, 1).transformDirection(v.ring.matrixWorld);
+            u.uRingIn.value = v.ring.userData.ring.inner;
+            u.uRingOut.value = v.ring.userData.ring.outer;
+            v.ring.material.uniforms.uCenter.value.set(p.x, p.y, p.z);
+          }
+        }
       }
 
       const col = ownerColor(b.owner);
@@ -1539,11 +929,9 @@ export function createView(canvas, labelRoot) {
         if (v.owner !== null) v.pulse = 1;
         v.owner = b.owner;
         // Signs of life: city lights on the night side of worlds someone holds.
-        if (v.body.material && v.body.material.emissiveMap) {
-          v.body.material.emissiveIntensity = b.owner === NEUTRAL ? 0 : 1.6;
+        if (v.body.material && v.body.material.uniforms && v.body.material.uniforms.uCity) {
+          v.body.material.uniforms.uCity.value = b.owner === NEUTRAL ? 0 : 1;
         }
-        const windows = v.body.getObjectByName && v.body.getObjectByName('windows');
-        if (windows) windows.visible = b.owner !== NEUTRAL;
         v.mark.material.color.set(col);
         v.label.style.color = col;
       }
@@ -1588,15 +976,13 @@ export function createView(canvas, labelRoot) {
       const atkPts = [];
       const park = (n, owner, radius, speed, seed, out) => {
         for (let j = 0; j < n; j++) {
-          const sh = ship(used++);
-          if (!sh) return;
+          if (used >= MAX_SHIPS) return;
           const r1 = hash(seed, j);
           const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
           const rr = radius * (1 + hash(j, seed) * 0.15);
           tmp.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
           dir.set(-Math.sin(a), 0, Math.cos(a));
-          placeShip(sh, tmp, dir, ownerColor(owner), false, t, j, seed * 131 + j);
-          sh.glint.material.opacity *= 0.6;
+          placeShip(tmp, dir, ownerColor(owner), false, t, j, seed * 131 + j, 1, false, 0.6);
           if (out) out.push({ p: tmp.clone(), owner });
         }
       };
@@ -1627,18 +1013,13 @@ export function createView(canvas, labelRoot) {
         for (const [lost, pts] of [[b.lostDef, defPts], [b.lostAtk, atkPts]]) {
           for (let k = 0; k < Math.min(3, lost || 0); k++) {
             const at = pts.length ? pts[(Math.random() * pts.length) | 0].p : tmp.set(p.x, p.y, p.z);
-            // A white flash, a fireball, and burning debris drifting apart.
-            boom(at, '#ffffff', 3, 0.3);
-            boom(at, '#ffc070', 5, 1.2);
-            for (let d = 0; d < 4; d++) {
-              tmp2.set(at.x + (Math.random() - 0.5) * 1.6, at.y + (Math.random() - 0.5) * 1.6, at.z + (Math.random() - 0.5) * 1.6);
-              boom(tmp2, '#ff8a40', 1.4, 1 + Math.random() * 0.8);
-            }
+            // A flash, a short-lived fireball, a shockwave and glowing debris.
+            fx.explosion(at, 0.9 + Math.random() * 0.3);
           }
         }
       }
       b.lostDef = b.lostAtk = 0;
-      if (b.captured) { v.pulse = 1; b.captured = false; }
+      if (b.captured) { v.pulse = 1; b.captured = false; fx.ring(tmp.set(p.x, p.y, p.z), ownerColor(b.owner), b.size * 3.5, 1.4); }
 
       // A megaproject: a gold ring round the world, drawn as far round as the
       // work has got; a full, brighter ring once it's finished.
@@ -1715,8 +1096,7 @@ export function createView(canvas, labelRoot) {
       const drawn = f.probe ? 1 : knowsSize(f) ? f.n : Math.min(f.n, 3);
       const cols = Math.max(3, Math.ceil(Math.sqrt(drawn)));
       for (let j = 0; j < drawn; j++) {
-        const sh = ship(used++);
-        if (!sh) break;
+        if (used >= MAX_SHIPS) break;
         // Formation: a loose, uneven block. Each ship keeps its own offset
         // and drifts a little, so it reads as crewed ships, not a grid. It
         // opens out after launch and closes up (only partly) before arrival.
@@ -1733,7 +1113,7 @@ export function createView(canvas, labelRoot) {
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
         const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);
-        placeShip(sh, tmp, tmp3.set(sj.nx, sj.ny, sj.nz), color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
+        placeShip(tmp, tmp3.set(sj.nx, sj.ny, sj.nz), color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.
@@ -1759,7 +1139,7 @@ export function createView(canvas, labelRoot) {
         gh.scale.setScalar((hostile ? 22 : 14) * pulse / ppuAt(gh.position));
       }
     }
-    for (let i = used; i < ships.length; i++) { ships[i].mesh.visible = false; ships[i].glint.visible = false; }
+    shipR.end();
 
     // Ship counts on fleets in flight: a small tag beside each one.
     let fl = 0;
@@ -1787,41 +1167,16 @@ export function createView(canvas, labelRoot) {
     routeGeo.attributes.position.needsUpdate = true;
     routeGeo.attributes.color.needsUpdate = true;
 
-    // Rounds in flight: a short bright streak moving from gun to target, with
-    // a spark where it lands.
-    let tn = 0;
+    // Rounds landing: sparks where they hit (or a puff where point defence got them).
     for (const sh of shots) {
       if (!sh.live) continue;
       sh.age += dt;
-      const k = sh.age / sh.life;
-      if (k >= 1) {
-        sh.live = false;
-        if (sh.pd) boom(sh.b, '#dff4ff', 0.35, 0.15);
-        else boom(sh.b, sh.color, sh.tail === 1 ? 0.9 : 0.5, 0.25);
-        continue;
-      }
-      if (tn >= MAX_SHOTS) continue;
-      tmp.lerpVectors(sh.a, sh.b, sh.tail === 1 ? 0 : Math.max(0, k - sh.tail));
-      if (sh.tail === 1) tmp2.copy(sh.b);
-      else tmp2.lerpVectors(sh.a, sh.b, k);
-      tracerPos.set([tmp.x, tmp.y, tmp.z, tmp2.x, tmp2.y, tmp2.z], tn * 6);
-      const c = sh.c;
-      if (sh.tail === 1) { const f = 1 - k; tracerCol.set([c.r * f * 0.6, c.g * f * 0.6, c.b * f * 0.6, c.r * f, c.g * f, c.b * f], tn * 6); }
-      else tracerCol.set([c.r * 0.2, c.g * 0.2, c.b * 0.2, c.r, c.g, c.b], tn * 6);
-      tn++;
+      if (sh.age < sh.life) continue;
+      sh.live = false;
+      if (sh.pd) fx.intercept(sh.b);
+      else fx.impact(sh.b, sh.c, sh.rail);
     }
-    tracerGeo.setDrawRange(0, tn * 2);
-    tracerGeo.attributes.position.needsUpdate = true;
-    tracerGeo.attributes.color.needsUpdate = true;
-
-    for (const s of booms) {
-      if (!s.visible) continue;
-      s.userData.age += dt;
-      const k = s.userData.age / s.userData.life;
-      if (k >= 1) { s.visible = false; continue; }
-      s.scale.setScalar(s.userData.size * (0.4 + Math.sqrt(k)));
-      s.material.opacity = Math.min(1, (1 - k) * 1.6);
-    }
+    fx.update(t, (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / window.innerHeight);
 
     // Order preview.
     if (ui.preview) {
@@ -1846,7 +1201,9 @@ export function createView(canvas, labelRoot) {
       preview.visible = false;
     }
 
-    renderer.render(scene, camera);
+    updateFlare(dt);
+    adapt(t);
+    post.render(scene, camera, t);
   }
 
   /** Nearest body to a screen point, within a finger's reach. */
@@ -1958,5 +1315,39 @@ export function createView(canvas, labelRoot) {
     return { x: (tmp.x * 0.5 + 0.5) * window.innerWidth, y: (-tmp.y * 0.5 + 0.5) * window.innerHeight };
   }
 
-  return { build, render, resize, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
+  /** Switch graphics level: resolution, anti-aliasing and bloom now; world detail from the next game. */
+  function setQuality(q) {
+    quality = q;
+    pixelRatio = maxPR();
+    post.setSamples(q === 'high' ? 4 : 2);
+    post.setLevel(q);
+    resize();
+  }
+  post.setLevel(quality);
+
+  // Dynamic resolution: if frames run slow, render fewer pixels (and creep
+  // back up when there's headroom), so phones stay smooth.
+  let perfN = 0, perfAcc = 0, lastT = null, holdUntil = 0;
+  function adapt(t) {
+    if (lastT !== null) {
+      const ft = t - lastT;
+      if (ft > 0 && ft < 0.5) { perfAcc += ft; perfN++; }
+    }
+    lastT = t;
+    if (perfN < 90) return;
+    const avg = perfAcc / perfN;
+    perfAcc = 0;
+    perfN = 0;
+    const max = maxPR(), min = Math.min(1, max) * 0.75;
+    if (avg > 1 / 45 && pixelRatio > min) {
+      pixelRatio = Math.max(min, pixelRatio - 0.25);
+      holdUntil = t + 20;
+      resize();
+    } else if (avg < 1 / 57 && pixelRatio < max && t > holdUntil) {
+      pixelRatio = Math.min(max, pixelRatio + 0.25);
+      resize();
+    }
+  }
+
+  return { _debug: { scene, renderer, post, camera, fx, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
 }

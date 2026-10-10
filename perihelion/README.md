@@ -259,6 +259,14 @@ clock lets you see the map as any empire (or everything), and run the clock
 at 16×; a selected fleet shows which empires can see it right now (handy for
 checking running dark).
 
+## Graphics
+
+The menu's **Graphics** link cycles Auto, High and Low (Auto picks Low on
+small, low-memory phones). Low uses smaller world textures, a lighter bloom
+and fewer belt rocks. Either way the game lowers its resolution by itself if
+frames run slow, and raises it again when there's room. Add `?gfx=low` or
+`?gfx=high` to the URL to force one.
+
 ## Controls
 
 - Touch: tap to select, drag to rotate, two fingers to pan and zoom, double-tap
@@ -285,7 +293,15 @@ Playwright (`npm run preview` first; Playwright isn't a dependency).
 
 - `src/sim.js`: orbits, intercept planning, flights, production, battles
 - `src/ai.js`: AI rivals, one action at a time
-- `src/render.js`: Three.js scene, procedural worlds, ships and effects
+- `src/render.js`: Three.js scene: camera, labels, what goes where each frame
+- `src/gfx/`: the look (all procedural, no image files):
+  - `post.js`: HDR rendering, bloom, sun lens flare, tone mapping, grain
+  - `sky.js`: the nebula sky baked per system, live bright stars
+  - `sun.js`: the star (granulation, sunspots, corona, prominences)
+  - `planets.js`: worlds painted on the GPU (continents, craters, gas
+    bands, clouds, city lights), atmospheres, rings, eclipses
+  - `ships.js`: instanced hulls, drive plumes, glints; `stations.js`
+  - `rocks.js`: asteroids and the belt; `fx.js`: weapons fire and explosions
 - `src/main.js`: touch input, UI, game loop
 
 ## Ideas for later

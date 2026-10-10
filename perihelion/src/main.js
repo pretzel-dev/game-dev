@@ -6,13 +6,25 @@ import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
-const view = createView($('scene'), $('labels'));
 
 const prefs = (() => {
-  const d = { rivals: 1, difficulty: 'normal', system: 'random', pct: 100, dev: false };
+  const d = { rivals: 1, difficulty: 'normal', system: 'random', pct: 100, dev: false, gfx: 'auto' };
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion') || '{}') }; } catch { return d; }
 })();
 const savePrefs = () => { try { localStorage.setItem('perihelion', JSON.stringify(prefs)); } catch { /* ignore */ } };
+
+// Graphics: High (bloom, sharper worlds, full resolution) or Low (for older
+// phones). Auto picks Low on small, low-memory touch devices. `?gfx=low`
+// in the URL overrides it.
+function gfxLevel() {
+  const q = new URLSearchParams(location.search).get('gfx');
+  if (q === 'high' || q === 'low') return q;
+  if (prefs.gfx === 'high' || prefs.gfx === 'low') return prefs.gfx;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const weak = (navigator.deviceMemory || 8) <= 4 || (navigator.hardwareConcurrency || 8) <= 4;
+  return touch && weak ? 'low' : 'high';
+}
+const view = createView($('scene'), $('labels'), { quality: gfxLevel() });
 
 let game = null;
 let ais = [];
@@ -263,6 +275,14 @@ $('join').addEventListener('click', () => { menuMsg(''); showJoin(true); });
 $('join-back').addEventListener('click', () => { menuMsg(''); showJoin(false); });
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('join-go').click(); });
 $('devtoggle').addEventListener('click', () => { prefs.dev = !prefs.dev; savePrefs(); syncDev(); });
+$('gfxtoggle').addEventListener('click', () => {
+  prefs.gfx = { auto: 'high', high: 'low', low: 'auto' }[prefs.gfx] || 'auto';
+  savePrefs();
+  view.setQuality(gfxLevel());
+  syncGfx();
+});
+function syncGfx() { $('gfxtoggle').textContent = `Graphics ${prefs.gfx === 'auto' ? `auto (${gfxLevel()})` : prefs.gfx}`; }
+syncGfx();
 function syncDev() { $('devtoggle').textContent = `Dev view ${prefs.dev ? 'on' : 'off'}`; $('devbar').hidden = !prefs.dev || net !== null || !game; }
 syncDev();
 /** Dev bar: whose eyes the map uses, and a faster clock for testing. */
@@ -1638,4 +1658,4 @@ view.orbit.dist = 330;
 requestAnimationFrame(frame);
 
 // Hook for the headless smoke test.
-window.__perihelion = { get game() { return game; }, view, ui, sim: { launch, fleetState, step } };
+window.__perihelion = { get game() { return game; }, view, ui, sim: { launch, fleetState, step, posAt } };
