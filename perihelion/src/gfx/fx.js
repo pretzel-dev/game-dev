@@ -89,7 +89,7 @@ export function createFx(scene, max = 4096) {
         if (vKind < 0.5) {
           // Flash: hot core, soft halo, gone fast.
           float k = (exp(-r * r * 6.0) * 1.5 + exp(-r * 3.5) * 0.35) * smoothstep(1.0, 0.6, r);
-          col = vCol * k * pow(1.0 - vAge, 2.0);
+          col = vCol * k * pow(abs(1.0 - vAge), 2.0);
         } else if (vKind < 1.5) {
           // Fireball: billowing noise, cooling from white-yellow to red, thinning out.
           float n = fbm(vec3(vQ * 1.8, vSeed * 10.0 + vAge * 1.5), 4) * 0.5 + 0.5;
@@ -106,19 +106,19 @@ export function createFx(scene, max = 4096) {
           col = hot * k * (1.0 - vAge) * 2.0;
         } else if (vKind < 3.5) {
           // Shockwave: a thin bright ring.
-          float k = exp(-pow((r - 0.85) / 0.06, 2.0));
-          col = vCol * k * pow(1.0 - vAge, 1.5);
+          float k = exp(-pow(abs((r - 0.85) / 0.06), 2.0));
+          col = vCol * k * pow(max(1.0 - vAge, 0.0), 1.5);
         } else if (vKind < 4.5) {
           // Tracer round: a short bright dash with a hotter head.
           float across = exp(-vQ.x * vQ.x * 3.0);
           float along = smoothstep(1.0, 0.2, vQ.y) * smoothstep(-1.0, -0.85, vQ.y);
-          float head = exp(-pow((vQ.y + 0.8) / 0.2, 2.0));
+          float head = exp(-pow(abs((vQ.y + 0.8) / 0.2), 2.0));
           col = (vCol * along + vec3(1.0, 0.95, 0.9) * head * 1.5) * across * 1.6;
         } else {
           // Railgun beam: a white-hot core in a coloured sheath, fading fast.
           float core = exp(-vQ.x * vQ.x * 30.0);
           float sheath = exp(-vQ.x * vQ.x * 3.0);
-          float fade = pow(1.0 - vAge, 2.0);
+          float fade = pow(abs(1.0 - vAge), 2.0);
           col = (vec3(1.0) * core * 4.0 + vCol * sheath * 1.2) * fade * smoothstep(1.0, 0.85, abs(vQ.y));
         }
         gl_FragColor = vec4(col * vFade, 1.0);

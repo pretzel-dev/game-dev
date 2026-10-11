@@ -46,11 +46,11 @@ void main() {
   vec3 Y = cross(uPole, X);
   float lon = atan(dot(d, Y), dot(d, X));
   float wob = 0.16 * (0.75 + 0.5 * fbm(d * 2.5 + 13.0, 3));
-  float band = exp(-pow(lat / wob, 2.0)) + 0.25 * exp(-pow(lat / 0.55, 2.0));
+  float band = exp(-pow(abs(lat / wob), 2.0)) + 0.25 * exp(-pow(abs(lat / 0.55), 2.0));
   float clouds = fbm(d * 6.0 + 41.0, 6) * 0.5 + 0.5;
-  float core = exp(-pow(lon / 0.75, 2.0)) * exp(-pow(lat / 0.28, 2.0));
+  float core = exp(-pow(abs(lon / 0.75), 2.0)) * exp(-pow(abs(lat / 0.28), 2.0));
   float lanes = ridged(d * 7.0 + 77.0, 5);
-  float dust = smoothstep(0.35, 0.8, lanes) * exp(-pow((lat - 0.02 * sin(lon * 3.0)) / 0.07, 2.0));
+  float dust = smoothstep(0.35, 0.8, lanes) * exp(-pow(abs((lat - 0.02 * sin(lon * 3.0)) / 0.07), 2.0));
   float mw = band * (0.25 + clouds * 0.9) + core * 1.4;
   mw *= 1.0 - min(0.92, dust * 1.3);
   col += mix(vec3(0.55, 0.62, 0.85), vec3(1.0, 0.82, 0.6), clamp(core * 1.4, 0.0, 1.0)) * mw * 0.016;

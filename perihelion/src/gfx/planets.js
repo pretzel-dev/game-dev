@@ -59,7 +59,7 @@ void craters(vec3 d, float freq, float density, float depth, float seed, inout f
     float prof;
     if (r < 1.0) prof = -(1.0 - r * r) * 0.8 + (R > 0.42 ? 0.35 * exp(-r * r * 30.0) : 0.0);
     else prof = 0.0;
-    prof += 0.32 * exp(-pow((r - 1.0) / 0.16, 2.0));
+    prof += 0.32 * exp(-pow(abs((r - 1.0) / 0.16), 2.0));
     prof += r > 1.0 ? 0.05 * exp(-(r - 1.0) * 2.5) : 0.0;
     h += prof * k;
     // Old craters have dark lava-filled floors; young ones throw bright rays.
@@ -67,7 +67,7 @@ void craters(vec3 d, float freq, float density, float depth, float seed, inout f
       vec3 t1 = normalize(cross(cd, vec3(0.3, 1.0, 0.2)));
       vec3 t2 = cross(cd, t1);
       float ang = atan(dot(d, t2), dot(d, t1));
-      float rays = pow(0.5 + 0.5 * sin(ang * 23.0 + hh.y * 40.0), 6.0) * pow(0.5 + 0.5 * sin(ang * 9.0 + hh.x * 70.0), 2.0);
+      float rays = pow(0.5 + 0.5 * sin(ang * 23.0 + hh.y * 40.0), 6.0) * pow(abs(0.5 + 0.5 * sin(ang * 9.0 + hh.x * 70.0)), 2.0);
       a += (r < 1.15 ? 0.18 : rays * 0.22 * exp(-(r - 1.0) * 0.9) * step(1.0, r));
     } else if (r < 1.0) a -= 0.05 * hh.z;
   }
@@ -79,7 +79,7 @@ float lineae(vec3 d, float s) {
   for (int i = 0; i < 3; i++) {
     float f = float(i);
     float n = snoise(d * (2.0 + f * 1.7) + s + f * 13.0 + vec3(0.0, fbm(d * 3.0 + f, 3) * 0.6, 0.0));
-    l = max(l, exp(-pow(n / 0.025, 2.0)) * (0.6 + 0.4 * snoise(d * 5.0 + f * 3.0)));
+    l = max(l, exp(-pow(abs(n / 0.025), 2.0)) * (0.6 + 0.4 * snoise(d * 5.0 + f * 3.0)));
   }
   return clamp(l, 0.0, 1.0);
 }
@@ -209,7 +209,7 @@ void main() {
       float sz = uStorm[i].w;
       if (sz <= 0.0) continue;
       float dd = length(p - sd);
-      float ang = 5.0 * exp(-pow(dd / sz, 2.0)) * (i == 0 ? 1.0 : -1.0);
+      float ang = 5.0 * exp(-pow(abs(dd / sz), 2.0)) * (i == 0 ? 1.0 : -1.0);
       float c = cos(ang), s = sin(ang);
       p = p * c + cross(sd, p) * s + sd * dot(sd, p) * (1.0 - c);
     }
@@ -229,9 +229,9 @@ void main() {
     col = mix(col, uPalB * 1.12, smoothstep(0.75, 1.1, band) * 0.6);
     col *= 0.92 + wisp * 0.12;
     // The great storm: a paler (or redder) oval.
-    float st = exp(-pow(length(d - uStorm[0].xyz) / (uStorm[0].w * 0.6), 2.0));
+    float st = exp(-pow(abs(length(d - uStorm[0].xyz) / (uStorm[0].w * 0.6)), 2.0));
     col = mix(col, uPalC * 1.15, st * 0.7);
-    for (int i = 1; i < 4; i++) col = mix(col, vec3(0.85, 0.83, 0.78), exp(-pow(length(d - uStorm[i].xyz) / (uStorm[i].w * 0.35), 2.0)) * 0.8);
+    for (int i = 1; i < 4; i++) col = mix(col, vec3(0.85, 0.83, 0.78), exp(-pow(abs(length(d - uStorm[i].xyz) / (uStorm[i].w * 0.35)), 2.0)) * 0.8);
     col = mix(col, col * vec3(0.8, 0.85, 0.95), smoothstep(0.75, 0.95, alat)); // bluish poles
     h = 0.5;
   }
@@ -308,7 +308,7 @@ void main() {
   float a = 0.0;
   if (uKind == 0 && uType == 4) {
     // Volcanic world: lava seams instead of water clouds.
-    float seam = exp(-pow(snoise(q * 4.0 + fbm(q * 3.0, 3)) / 0.025, 2.0)) + exp(-pow(snoise(q * 9.0 + 2.0) / 0.018, 2.0)) * 0.4;
+    float seam = exp(-pow(abs(snoise(q * 4.0 + fbm(q * 3.0, 3)) / 0.025), 2.0)) + exp(-pow(abs(snoise(q * 9.0 + 2.0) / 0.018), 2.0)) * 0.4;
     a = clamp(seam * step(0.5, h0) * (0.4 + 0.6 * smoothstep(0.5, 0.75, h0)), 0.0, 1.0);
   } else if (uClouds > 0.0) {
     // Weather: an equatorial band of storms, clear subtropics with scattered
@@ -319,9 +319,9 @@ void main() {
     vec3 w = vec3(fbm(dc * 2.0 + 5.0, 4), fbm(dc * 2.0 + 8.0, 4), fbm(dc * 2.0 + 11.0, 4));
     float big = fbm(vec3(dc.x * 2.4, dc.y * 4.5, dc.z * 2.4) + w * 0.7 + uSeed + 50.0, 7);
     float alat = abs(lat);
-    float bias = -0.1 + 0.25 * exp(-pow(lat / 0.12, 2.0))
+    float bias = -0.1 + 0.25 * exp(-pow(abs(lat / 0.12), 2.0))
       + 0.2 * smoothstep(0.6, 0.9, alat) * smoothstep(1.45, 1.1, alat)
-      - 0.18 * exp(-pow((alat - 0.4) / 0.14, 2.0));
+      - 0.18 * exp(-pow(abs((alat - 0.4) / 0.14), 2.0));
     float cov = smoothstep(0.0, 0.22, big + bias);
     float streak = fbm(vec3(dc.x * 10.0, dc.y * 40.0, dc.z * 10.0) + w * 2.0, 4);
     cov *= 0.75 + 0.35 * streak;
@@ -504,7 +504,7 @@ export function surfaceMaterial(b, look, maps, ring) {
       uniform float uCity, uCloudShift, uCloudK, uLava, uOcean, uAirless, uAtmoK, uT, uFlow, uRingIn, uRingOut, uRadius;
       uniform vec3 uCityCol, uAtmo, uRingN, uCenter;
       varying vec2 vUv; varying vec3 vWorld; varying vec3 vWT; varying vec3 vWB; varying vec3 vWN;
-      vec3 fromS(vec3 c) { return pow(c, vec3(2.2)); }
+      vec3 fromS(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
       void main() {
         ${LD_FRAG}
         vec2 uv = vUv;
@@ -572,8 +572,8 @@ export function surfaceMaterial(b, look, maps, ring) {
           if (water > 0.0) {
             vec3 Hh = normalize(L + V);
             float nh = max(dot(Ng, Hh), 0.0);
-            float fres = 0.02 + 0.98 * pow(1.0 - max(dot(Ng, V), 0.0), 5.0);
-            float spec = (pow(nh, 600.0) * 0.9 + pow(nh, 60.0) * 0.03) * (0.4 + fres);
+            float fres = 0.02 + 0.98 * pow(max(1.0 - dot(Ng, V), 0.0), 5.0);
+            float spec = (pow(max(nh, 0.0), 600.0) * 0.9 + pow(max(nh, 0.0), 60.0) * 0.03) * (0.4 + fres);
             spec *= clamp(1.0 - length(fwidth(Ng)) * 25.0, 0.0, 1.0); // fade on small, distant worlds
             col += sc * spec * water * sh * smoothstep(0.0, 0.1, ngl);
           }
@@ -815,7 +815,7 @@ export function ringMesh(b) {
           float sameSide = sign(dot(vN, L)) * sign(dot(vN, V));
           // Lit face: diffuse. Seen against the light: forward scattering through thin ring.
           float lit = sameSide > 0.0 ? (0.35 + 0.65 * abs(dot(vN, L))) : (1.0 - tx.a) * 1.6 * pow(max(0.0, dot(-V, L)), 3.0) + 0.12;
-          col += pow(tx.rgb, vec3(2.2)) * sc * lit * sh;
+          col += pow(max(tx.rgb, vec3(0.0)), vec3(2.2)) * sc * lit * sh;
         }
         gl_FragColor = vec4(col, tx.a * 0.92);
       }`,

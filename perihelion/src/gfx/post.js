@@ -40,7 +40,9 @@ export function createPost(renderer) {
     fragmentShader: /* glsl */ `
       uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uPrefilter, uThreshold, uKnee;
       varying vec2 vUv;
-      vec3 s(vec2 o) { return texture2D(tSrc, vUv + o * uTexel).rgb; }
+      // Any broken (not-a-number or infinite) pixel counts as black, so one bad
+      // value from any shader can never bloom into a flash.
+      vec3 s(vec2 o) { vec3 c = texture2D(tSrc, vUv + o * uTexel).rgb; return any(isnan(c)) || any(isinf(c)) ? vec3(0.0) : c; }
       void main() {
         // 13 taps in five overlapping boxes, weighted toward the centre.
         vec3 a = s(vec2(-2, 2)), b = s(vec2(0, 2)), c = s(vec2(2, 2));
@@ -115,13 +117,14 @@ export function createPost(renderer) {
       }
       vec3 toSRGB(vec3 c) {
         c = clamp(c, 0.0, 1.0);
-        return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+        return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
       }
       float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       float disc(vec2 p, vec2 c, float r, float soft) { return 1.0 - smoothstep(r * (1.0 - soft), r, length((p - c) * vec2(uAspect, 1.0))); }
       void main() {
         vec2 fromC = vUv - 0.5;
         vec3 col = texture2D(tScene, vUv).rgb;
+        if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
         // Depth of field when zoomed in close: what's far behind the thing
         // you're looking at goes soft (the sky stays sharp), for a sense of
         // distance and scale.

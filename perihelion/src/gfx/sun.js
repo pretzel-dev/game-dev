@@ -44,12 +44,12 @@ export function createSun(radius, quality) {
           act = smoothstep(0.08, 0.45, act) * smoothstep(0.95, 0.35, abs(p.y));
           // Loops: bright fibres wound round each active region.
           float loops = ridged(p * 11.0 + w * 3.0 + vec3(t * 0.02, 0.0, 0.0), 4);
-          float plage = act * (0.35 + 1.4 * pow(loops, 3.0));
+          float plage = act * (0.35 + 1.4 * pow(max(loops, 0.0), 3.0));
           float core = smoothstep(0.75, 1.0, act) * (0.6 + 0.4 * net);
           // Filaments: thin dark lines away from the active regions.
-          float fil = exp(-pow(snoise(p * 3.2 + w * 0.8 + 21.0) / 0.022, 2.0)) * (1.0 - act) * smoothstep(0.2, 0.6, fbm(p * 2.0 + 40.0, 2) * 0.5 + 0.5);
+          float fil = exp(-pow(abs(snoise(p * 3.2 + w * 0.8 + 21.0) / 0.022), 2.0)) * (1.0 - act) * smoothstep(0.2, 0.6, fbm(p * 2.0 + 40.0, 2) * 0.5 + 0.5);
           float mu = max(dot(vN, vV), 0.0);
-          float edge = pow(1.0 - mu, 6.0);
+          float edge = pow(max(1.0 - mu, 0.0), 6.0);
           vec3 deep = vec3(0.75, 0.22, 0.03), base = vec3(1.0, 0.46, 0.08), hotc = vec3(1.0, 0.78, 0.38), white = vec3(1.0, 0.95, 0.82);
           vec3 c = mix(deep, base, 0.35 + net * 0.75);
           c = mix(c, hotc, clamp(plage, 0.0, 1.0));
@@ -95,7 +95,7 @@ export function createSun(radius, quality) {
           float fib2 = fbm(vec3(rd * 60.0 + 3.0, uT * 0.2 - r * 4.0), 2) * 0.5 + 0.5;
           float actv = smoothstep(0.35, 0.75, fbm(vec3(rd * 3.0, uT * 0.02), 3) * 0.5 + 0.5);
           float h = r - 1.0;
-          float threads = pow(fib, 3.0) * 1.6 + pow(fib2, 4.0) * 0.8;
+          float threads = pow(max(fib, 0.0), 3.0) * 1.6 + pow(max(fib2, 0.0), 4.0) * 0.8;
           float fringe = exp(-h / (0.07 + 0.12 * actv * fib)) * (0.6 + threads);
           float glow = exp(-h * 3.0) * 0.18 + exp(-h * 1.1) * 0.04;
           float k = (fringe * (0.7 + actv * 0.8) + glow) * smoothstep(2.2, 1.6, r);

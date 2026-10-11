@@ -17,6 +17,8 @@ import { rng } from '../sim.js';
  */
 
 // Part tags (stored per vertex).
+/** Screen pixels per world unit at distance 1 (set by the view each frame). */
+export const hullPx = { value: 800 };
 export const HULL = 0, DARK = 1, PAINT = 2, WINDOW = 3, NAV_R = 4, NAV_G = 5, STROBE = 6, THROAT = 7;
 
 /** Hull plating: panels of slightly different tone, seams, hatches, scuffs. */
@@ -242,16 +244,21 @@ export function hullMaterial(uT) {
   const mat = new THREE.MeshStandardMaterial({ color: '#d4d8de', map: pl, roughnessMap: pl, metalness: 0.35, roughness: 0.62, emissive: '#06070a' });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uT = uT;
+    sh.uniforms.uPxK = hullPx;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         attribute float kind; attribute float tint; attribute vec3 iPaint; attribute float iSun; attribute float iSeed; attribute float iHull; attribute float iLit;
-        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit;`)
+        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit;
+        uniform float uPxK; varying float vPx;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit;`);
+        vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        // How big the whole vessel is on screen, in pixels.
+        vPx = uPxK * length((modelMatrix * instanceMatrix)[0].xyz) * 0.6 / max(-mvPosition.z, 1e-3);`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uT;
-        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit;
+        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx;
         float isK(float k) { return 1.0 - step(0.5, abs(vKind - k)); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float dark = isK(1.0) + isK(7.0);
@@ -262,13 +269,20 @@ export function hullMaterial(uT) {
         roughnessFactor = mix(roughnessFactor, 0.7, isK(1.0)) ;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
-          float blink = step(fract(uT * 0.7 + vSeed), 0.06);
-          float flash = step(fract(uT * 0.45 + vSeed * 1.7), 0.03);
-          totalEmissiveRadiance += isK(3.0) * vec3(1.6, 1.1, 0.55) * vLit;
-          totalEmissiveRadiance += isK(4.0) * vec3(2.2, 0.1, 0.06) * (0.35 + blink * 0.6) * vLit;
-          totalEmissiveRadiance += isK(5.0) * vec3(0.08, 2.2, 0.45) * (0.35 + blink * 0.6) * vLit;
-          totalEmissiveRadiance += isK(6.0) * vec3(2.2) * flash * vLit;
-          totalEmissiveRadiance += isK(7.0) * vec3(0.6, 0.9, 1.6) * vLit;
+          // Soft pulses, not on/off: a light switching on in one frame reads as a flash.
+          float ph = fract(uT * 0.7 + vSeed);
+          float blink = smoothstep(0.0, 0.03, ph) * smoothstep(0.12, 0.05, ph);
+          float ps = fract(uT * 0.45 + vSeed * 1.7);
+          float flash = smoothstep(0.0, 0.02, ps) * smoothstep(0.08, 0.03, ps);
+          // Running lights only show once the vessel is big enough on screen
+          // to see them on it; far off, a lone bright pixel blooms into a halo
+          // bigger than the ship (the "flashes" round distant worlds).
+          float near = smoothstep(10.0, 30.0, vPx);
+          totalEmissiveRadiance += isK(3.0) * vec3(1.6, 1.1, 0.55) * vLit * near;
+          totalEmissiveRadiance += isK(4.0) * vec3(2.2, 0.1, 0.06) * (0.35 + blink * 0.6) * vLit * near;
+          totalEmissiveRadiance += isK(5.0) * vec3(0.08, 2.2, 0.45) * (0.35 + blink * 0.6) * vLit * near;
+          totalEmissiveRadiance += isK(6.0) * vec3(2.2) * flash * vLit * near;
+          totalEmissiveRadiance += isK(7.0) * vec3(0.6, 0.9, 1.6) * vLit * near;
           totalEmissiveRadiance += paint * vPaint * 0.05;
         }`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
@@ -320,8 +334,8 @@ function plumeMaterial(uT) {
           float v = clamp(vQ.y, 0.0, 1.0);
           float u = vQ.x;
           float w = 0.16 * (1.0 + v * 1.6);
-          float core = exp(-pow(u / (w * 0.35), 2.0)) * pow(1.0 - v, 1.4);
-          float sheath = exp(-pow(u / w, 2.0)) * pow(1.0 - v, 2.2);
+          float core = exp(-pow(abs(u / (w * 0.35)), 2.0)) * pow(max(1.0 - v, 0.0), 1.4);
+          float sheath = exp(-pow(abs(u / w), 2.0)) * pow(max(1.0 - v, 0.0), 2.2);
           // Shock diamonds: bright knots that fade down the jet.
           float diam = (0.5 + 0.5 * cos(v * 70.0 - uT * 4.0)) * exp(-v * 9.0);
           float k = core * (1.0 + diam * 2.5) * 5.0 + sheath * 0.9;
