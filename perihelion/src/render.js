@@ -6,7 +6,7 @@ import { createPost } from './gfx/post.js';
 import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
-import { createShipRenderer, platingTex } from './gfx/ships.js';
+import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
 import { stationMesh } from './gfx/stations.js';
 import { structureMesh } from './gfx/structures.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
@@ -1232,6 +1232,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     }
 
     updateFlare(dt);
+    hullPx.value = (window.innerHeight * pixelRatio) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
     dustMat.uniforms.uBox.value = orbit.dist * 0.9;
     dustMat.uniforms.uPR.value = pixelRatio;
     // Depth of field only when zoomed in close (and on High).
