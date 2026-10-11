@@ -568,48 +568,96 @@ export function createView(canvas, labelRoot, opts = {}) {
     if (tan) tan.set(-Math.sin(a), 0, Math.cos(a)).multiplyScalar(Math.sign(speed) || 1);
     return out.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
   }
-  const bA = new THREE.Vector3(), bB = new THREE.Vector3(), bAx = new THREE.Vector3(), bTan = new THREE.Vector3();
+  const bA = new THREE.Vector3(), bB = new THREE.Vector3(), bTan = new THREE.Vector3(), bSide = new THREE.Vector3(), bH = new THREE.Vector3(), bN = new THREE.Vector3();
   /**
-   * Leaving and joining a parking orbit. Near the world, each ship's place
-   * eases between its own parking slot and its place in the formation,
-   * swinging round the world's centre, by how far the fleet has climbed out
-   * (so ships always keep up with the fleet), and over the first and last
-   * couple of seconds of the flight (so nothing snaps). Moves tmp; returns
-   * how far into formation the ship is (1 = fully), with its slot heading in bTan.
+   * Leaving and joining a parking orbit. A departing ship starts from its own
+   * parking slot and from there follows the fleet's motion exactly (the same
+   * steady burn, so it never moves faster than its fleet), while its offset
+   * from the fleet eases from "where it was parked" to "its place in the
+   * formation" until the fleet is well clear of the world. Arriving is the
+   * same in reverse, starting while the fleet is still well out (a fleet's
+   * path ends at the world's centre, so its formation would otherwise sink
+   * into it). Ships are kept clear of the world itself. `tmp` holds the ship's
+   * formation place and `s` the fleet's centre; moves tmp; returns how far into
+   * formation the ship is (1 = fully), with its slot heading in bTan.
    */
-  function blendPark(f, j, since) {
-    if (f.probe) return 1;
-    const c0 = bodyPos[f.from], c1 = bodyPos[f.to];
-    const d0 = c0 ? Math.hypot(tmp.x - c0.x, tmp.y - c0.y, tmp.z - c0.z) : Infinity;
-    const d1 = c1 ? Math.hypot(tmp.x - c1.x, tmp.y - c1.y, tmp.z - c1.z) : Infinity;
-    const leaving = d0 <= d1;
+  const reach = (b) => b.size * 3 + 4; // the blend ends (or starts) this far out
+  function blendTime(f, leaving) {
+    // How long the fleet takes to get `reach` from the world (cached per fleet).
+    const key = leaving ? '_wDep' : '_wArr';
+    if (f[key] !== undefined) return f[key];
     const b = game_.bodies[leaving ? f.from : f.to];
-    if (!b) return 1;
-    const slotR = b.size * 1.8 + 0.4;
-    const k = Math.min(
-      THREE.MathUtils.smootherstep(leaving ? d0 : d1, slotR * 0.8, slotR + 3 + b.size * 2),
-      THREE.MathUtils.smootherstep(leaving ? since : f.T - since, 0, 2.5),
-    );
-    if (k >= 1) return 1;
-    const tw = game_.time; // slots turn with game time, so docked and departing ships agree
-    const friendly = b.owner === f.owner;
-    if (leaving || friendly) parkPos(b, (leaving ? j : b.ships + j) % 20, slotR, DOCK_SPEED, b.id * 13, tw, bA, bTan);
-    else parkPos(b, j % 20, b.size * 2.4 + 0.8, SIEGE_SPEED, b.id * 29 + f.owner, tw, bA, bTan);
-    // Arc from slot to formation round the world's centre.
-    const c = bodyPos[b.id];
+    let w = Math.min(12, f.T * 0.3);
+    if (b) {
+      const far = (u) => {
+        const tt = leaving ? f.t0 + u : f.t0 + f.T - u;
+        const q = fleetState(f, tt), c = posAt(game_, b, tt);
+        return Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z) >= reach(b);
+      };
+      let lo = 0, hi = f.T * 0.45;
+      if (far(hi)) {
+        for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (far(m)) hi = m; else lo = m; }
+        w = hi;
+      } else w = hi;
+      w = Math.max(4, w);
+    }
+    Object.defineProperty(f, key, { value: w, enumerable: false, configurable: true });
+    return w;
+  }
+  function slotOf(f, b, j, leaving, t, out, tan) {
+    if (leaving || b.owner === f.owner) return parkPos(b, (leaving ? j : b.ships + j) % 20, b.size * 1.8 + 0.4, DOCK_SPEED, b.id * 13, t, out, tan);
+    return parkPos(b, j % 20, b.size * 2.4 + 0.8, SIEGE_SPEED, b.id * 29 + f.owner, t, out, tan);
+  }
+  function blendPark(f, j, since, s, now) {
+    if (f.probe) return 1;
+    const leaving = since < f.T - since;
+    const W = blendTime(f, leaving);
+    const u = leaving ? since : f.T - since;
+    if (u >= W) return 1;
+    const b = game_.bodies[leaving ? f.from : f.to];
+    const c = b && bodyPos[b.id];
+    if (!c) return 1;
+    const e = THREE.MathUtils.smootherstep(u, 0, W);
+    slotOf(f, b, j, leaving, now, bA, bTan);
+    // Both ends relative to the world: parked (bA) and in formation (bB,
+    // which includes the fleet's own climb out).
     bA.sub(c);
     bB.set(tmp.x - c.x, tmp.y - c.y, tmp.z - c.z);
-    const rA = bA.length(), rB = bB.length();
-    if (rA < 1e-6 || rB < 1e-6) return 1;
-    bA.divideScalar(rA); bB.divideScalar(rB);
-    const ang = Math.acos(THREE.MathUtils.clamp(bA.dot(bB), -1, 1));
-    bAx.crossVectors(bA, bB);
-    if (bAx.lengthSq() < 1e-10) bAx.set(0, 1, 0);
-    bAx.normalize();
-    bA.applyAxisAngle(bAx, ang * k).multiplyScalar(rA + (rB - rA) * k);
-    tmp.set(c.x + bA.x, c.y + bA.y, c.z + bA.z);
-    return k;
+    // Blend in polar terms round the world, so a ship never passes through
+    // it: its distance out eases between two safe values, and its angle swings
+    // round the side it was already on. The plane of the swing: the line from
+    // the world toward the fleet (steadied near the world by the route's
+    // heading) and the ship's own side of it (fixed per ship, from its slot as
+    // the fleet leaves or lands, so it never flips).
+    bH.set(s.x - c.x, s.y - c.y, s.z - c.z).addScaledVector(dir, leaving ? reach(b) : -reach(b));
+    if (bH.lengthSq() < 1e-8) bH.copy(dir);
+    bH.normalize();
+    slotOf(f, b, j, leaving, leaving ? f.t0 : f.t0 + f.T, bSide);
+    bSide.sub(c).addScaledVector(bH, -bSide.dot(bH));
+    if (bSide.lengthSq() < 1e-8) bSide.crossVectors(bH, UP);
+    if (bSide.lengthSq() < 1e-8) bSide.set(1, 0, 0);
+    bSide.normalize();
+    bN.crossVectors(bH, bSide);
+    // The slot's angle runs from just in front round the ship's side to just
+    // past behind (so it never wraps); the formation's is centred on the
+    // fleet's line, where it gathers (the side it's on never changes).
+    let a0 = Math.atan2(bA.dot(bSide), bA.dot(bH));
+    if (a0 < -Math.PI / 2) a0 += Math.PI * 2;
+    const a1 = Math.atan2(bB.dot(bSide), bB.dot(bH));
+    const r0 = Math.hypot(bA.dot(bH), bA.dot(bSide)), r1 = Math.hypot(bB.dot(bH), bB.dot(bSide));
+    const z0 = bA.dot(bN), z1 = bB.dot(bN);
+    const ang = a0 + (a1 - a0) * e, z = z0 + (z1 - z0) * e;
+    // Never closer than a safe height (a smooth limit, so there's no kink).
+    const min = b.size * 1.15 + 0.2, k = min * 0.3;
+    let r = r0 + (r1 - r0) * e;
+    r = (r + min + Math.sqrt((r - min) ** 2 + k * k)) / 2;
+    // ...though a parked ship stays exactly in its slot as it starts.
+    r = r0 + (r - r0) * THREE.MathUtils.smoothstep(e, 0, 0.05);
+    bB.copy(bH).multiplyScalar(Math.cos(ang) * r).addScaledVector(bSide, Math.sin(ang) * r).addScaledVector(bN, z);
+    tmp.set(c.x + bB.x, c.y + bB.y, c.z + bB.z);
+    return e;
   }
+
   let game_ = null;
   /** Is a point in sunlight (1), or in the shadow of a world (0)? Soft-edged. */
   function sunlit(p) {
@@ -1138,7 +1186,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         // Leaving and arriving: ease between the parking orbit and the
         // formation along an arc round the world (never a dash through or
         // round it at the last moment).
-        const kf = blendPark(f, j, since);
+        const kf = blendPark(f, j, since, s, now);
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
         const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);

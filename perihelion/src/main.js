@@ -405,9 +405,18 @@ function setWarp(v) {
   $('warp').textContent = `${warp === 0.5 ? '½' : warp}×`;
 }
 $('warp').addEventListener('click', () => setWarp(WARPS[(WARPS.indexOf(warp) + 1) % WARPS.length]));
-/** Reset the camera to a view of the whole system. */
+/** Clear any selection, pick or followed fleet. */
+function deselect() {
+  ui.selected = ui.target = ui.peek = ui.fleet = null;
+  ui.mode = null;
+  $('research').hidden = true;
+  updateActions();
+}
+/** Reset the camera to a view of the whole system, and deselect. */
 function systemView() {
+  deselect();
   view.orbit.follow = null;
+  view.orbit.fleet = null;
   view.orbit.target.set(0, 0, 0);
   view.orbit.vaz = view.orbit.vpol = 0;
   view.orbit.pol = 0.9;
@@ -1152,6 +1161,9 @@ function tap(id, x, y, mouse = false) {
   if (!ui.mode) {
     const f = view.pickFleet(game, x, y, me);
     const again = id !== null && (id === ui.peek || id === ui.selected);
+    // A third tap on the same spot (world, then fleet) clears both, so a
+    // world with a fleet beside it can always be deselected.
+    if (f !== null && ui.fleet === f && id !== null) { deselect(); return; }
     if (f !== null && (id === null || again) && ui.fleet !== f) {
       ui.selected = ui.target = ui.peek = null;
       ui.fleet = f;
@@ -1180,6 +1192,7 @@ function tap(id, x, y, mouse = false) {
     if (id === null) { ui.selected = ui.target = null; ui.mode = null; } else ui.target = id !== ui.selected ? id : null;
   } else if (id === null || id === ui.selected) {
     ui.selected = ui.target = null;
+    ui.mode = null;
   } else if (game.bodies[id].owner === me) {
     ui.selected = id; ui.slot = null; ui.pick = null; ui.target = null;
   } else {
