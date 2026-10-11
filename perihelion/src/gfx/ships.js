@@ -334,8 +334,8 @@ function plumeMaterial(uT) {
           float v = clamp(vQ.y, 0.0, 1.0);
           float u = vQ.x;
           float w = 0.16 * (1.0 + v * 1.6);
-          float core = exp(-pow(u / (w * 0.35), 2.0)) * pow(1.0 - v, 1.4);
-          float sheath = exp(-pow(u / w, 2.0)) * pow(1.0 - v, 2.2);
+          float core = exp(-pow(abs(u / (w * 0.35)), 2.0)) * pow(max(1.0 - v, 0.0), 1.4);
+          float sheath = exp(-pow(abs(u / w), 2.0)) * pow(max(1.0 - v, 0.0), 2.2);
           // Shock diamonds: bright knots that fade down the jet.
           float diam = (0.5 + 0.5 * cos(v * 70.0 - uT * 4.0)) * exp(-v * 9.0);
           float k = core * (1.0 + diam * 2.5) * 5.0 + sheath * 0.9;

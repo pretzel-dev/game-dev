@@ -129,14 +129,16 @@ function orbitLine(b) {
         vec4 n = projectionMatrix * modelViewMatrix * vec4(nextPos, 1.0);
         vec2 dir = normalize((n.xy / n.w - c.xy / c.w) * uRes + 1e-6);
         vF = fract((uTh - ang) / 6.2831853); // 0 just behind the world, 1 a full turn later
-        float w = uWidth * pow(1.0 - vF, 0.9);
+        float w = uWidth * pow(max(1.0 - vF, 0.0), 0.9);
         c.xy += vec2(-dir.y, dir.x) * side * w / uRes * c.w;
         vSide = side;
         gl_Position = c;
       }`,
     fragmentShader: `uniform vec3 uColor; uniform float uOpacity; varying float vF; varying float vSide;
       void main() {
-        float a = uOpacity * pow(1.0 - vF, 1.3) * smoothstep(1.0, 0.35, abs(vSide));
+        // max(): rounding on phone GPUs can push 1 - vF a hair below zero, and
+        // pow() of a negative is not-a-number: a broken pixel the bloom blew up into a flash.
+        float a = uOpacity * pow(max(1.0 - vF, 0.0), 1.3) * smoothstep(1.0, 0.35, abs(vSide));
         gl_FragColor = vec4(uColor, a);
       }`,
     transparent: true,
@@ -167,7 +169,7 @@ const ghostMat = new THREE.ShaderMaterial({
     uniform float uT; varying vec3 vN; varying vec3 vV; varying vec3 vW;
     void main() {
       ${LD_FRAG}
-      float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
+      float rim = pow(max(1.0 - abs(dot(normalize(vN), normalize(vV))), 0.0), 2.0);
       float scan = 0.55 + 0.45 * sin(vW.y * 60.0 - uT * 6.0);
       float flick = 0.85 + 0.15 * sin(uT * 23.0) * sin(uT * 7.0);
       gl_FragColor = vec4(vec3(0.45, 0.8, 1.3) * (0.12 + rim * 0.9) * scan * flick, 1.0);
