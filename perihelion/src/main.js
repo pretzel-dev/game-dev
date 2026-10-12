@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
@@ -526,7 +526,7 @@ function spyLine(b) {
   }
   const why = cantSpy(game, me, b);
   if (why === 'needs Signals intercept') return `<div class="spy dim">${icon('spy')} Agents need Signals intercept (Intel I)</div>`;
-  return `<div class="spy">${icon('spy')} <span class="dim">No agent here</span><span class="grow"></span><button data-spy="${b.id}" ${why ? 'disabled' : ''} title="Recruit an agent there">Recruit agent<small>${SPY.cost}</small></button></div>`;
+  return `<div class="spy">${icon('spy')} <span class="dim">${why || 'No agent here'}</span><span class="grow"></span><button data-spy="${b.id}" ${why ? 'disabled' : ''} title="Recruit an agent there (${fmt(SPY.travel)} to get in place)">Recruit agent<small>${SPY.cost}</small></button></div>`;
 }
 $('peek').addEventListener('click', (e) => {
   const sb = e.target.closest('button[data-spy]');
@@ -565,7 +565,7 @@ function updateActions() {
   if (!s.ships && ui.mode === 'launch') ui.mode = null;
   const ready = readyShips(game, s);
   if (ui.mode === 'probe' && !yardsOf(s)) ui.mode = null;
-  const probing = ui.mode === 'probe' || ui.mode === 'spy'; // one-off picks: no ship count, no dark
+  const probing = ui.mode === 'probe'; // a one-off pick: no ship count, no dark
   // The share of ready ships to send (kept between launches); the count follows it.
   ui.count = ready ? Math.max(1, Math.min(ready, Math.round((ready * prefs.pct) / 100))) : 0;
   setHTML($('count'), `${ui.count}<small>${prefs.pct}%</small>`);
@@ -592,7 +592,7 @@ function updateActions() {
     renderBuildRow(s);
   } else if (ui.target === null) {
     ui.preview = null;
-    setHTML($('info'), `<span class="tag">${ui.mode === 'spy' ? 'Send an agent' : probing ? 'Probe from' : 'Launch from'}</span><b>${s.name}</b><span class="grow"></span><span class="tag">tap a destination</span>`);
+    setHTML($('info'), `<span class="tag">${probing ? 'Probe from' : 'Launch from'}</span><b>${s.name}</b><span class="grow"></span><span class="tag">tap a destination</span>`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = true;
   } else {
@@ -603,14 +603,6 @@ function updateActions() {
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'unknown' : cover ? `${defence} ${tip(`+${cover.toFixed(1)}`, `Cover from ${coverFrom(game, t).map((c) => c.from.name).join(', ')}`)}` : defence;
     const assist = ui.preview.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[ui.preview.assist].name}: a faster route`, 'assist')}` : '';
-    if (ui.mode === 'spy') {
-      ui.preview = null;
-      const why = cantSpy(game, me, t);
-      setHTML($('info'), `<span>${icon('spy')} Agent → <b>${t.name}</b> · <b>${SPY.cost}</b> · ${fmt(SPY.travel)}${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
-      $('launch').textContent = 'Confirm';
-      $('launch').disabled = !!why;
-      return;
-    }
     if (probing) {
       const why = cantProbe(game, s, t);
       setHTML($('info'), `<span>Probe → <b>${t.name}</b> · <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
@@ -782,14 +774,9 @@ function renderBuildRow(s) {
     html += `<div class="ctx ships"><span class="what">${s.queue ? `Queue <b class="num">${s.queue}</b>` : `${yards} yard${yards === 1 ? '' : 's'} idle`}<span class="bars">${bars}</span><span class="dim">${next}</span></span></div>`
       + `<div class="ctx shipbtns"><button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost} · ${fmt(shipTime(game, s))}</small></button>`
       + `<button data-cancel="1" class="danger" title="Cancel the last queued ship" ${s.queue ? '' : 'disabled'}>${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>`
-      + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button>${spyBtn()}</div>`;
-  } else html += `<div class="ctx shipbtns">${spyBtn()}</div>`;
+      + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
+  }
   setHTML($('buildrow'), html);
-}
-/** Spy: pick an enemy world to slip an agent onto (needs Signals intercept). */
-function spyBtn() {
-  const locked = game.tech[me].intel < 1;
-  return `<button class="mini" data-spy-mode="1" ${locked || game.credits[me] < SPY.cost ? 'disabled' : ''} title="${locked ? 'Agents need Signals intercept (Intel I)' : 'Agent: recruit one on an enemy world'}">${icon('spy')}<small>${SPY.cost}</small></button>`;
 }
 $('buildrow').addEventListener('click', (e) => {
   if (ui.selected === null) return;
@@ -802,7 +789,6 @@ $('buildrow').addEventListener('click', (e) => {
     updateActions();
     return;
   }
-  if (e.target.closest('button[data-spy-mode]')) { ui.mode = 'spy'; ui.target = null; ui.slot = null; updateActions(); return; }
   if (e.target.closest('button[data-probe]')) {
     ui.mode = 'probe'; ui.target = null; ui.slot = null;
     updateActions();
@@ -1012,14 +998,6 @@ function doLaunch() {
     return;
   }
   if (ui.selected === null || ui.target === null) return;
-  if (ui.mode === 'spy') {
-    const t = game.bodies[ui.target];
-    if (act({ type: 'spy', b: ui.target })) toast(`Recruiting an agent on ${t.name}`, ownerColor(me), 'spy');
-    ui.mode = null;
-    ui.selected = ui.target = null;
-    updateActions();
-    return;
-  }
   if (ui.mode === 'probe') {
     // A probe: a fast, one-way flyby that shows the target for a while.
     const t = game.bodies[ui.target];
@@ -1215,7 +1193,7 @@ function tap(id, x, y, mouse = false) {
     updateActions();
     return;
   }
-  if (ui.mode === 'launch' || ui.mode === 'probe' || ui.mode === 'spy') {
+  if (ui.mode === 'launch' || ui.mode === 'probe') {
     // Picking a destination: any other world becomes the target; empty
     // space backs out of launching and deselects.
     if (id === null) { ui.selected = ui.target = null; ui.mode = null; } else ui.target = id !== ui.selected ? id : null;

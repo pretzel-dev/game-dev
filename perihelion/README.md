@@ -174,9 +174,8 @@ preview server running).
   fleet makes a short burn, coasts with its drive off, then makes a short
   braking burn: it takes about half as long again, but while coasting enemy
   sensors only spot it at a third of their usual range (a ☾ on its tag), and a launch from a world they can't see goes unannounced.
-- **Agents:** Signals intercept (Intel I) unlocks them. Select one of your worlds,
-  tap the agent button (250 credits), then an enemy world and Confirm (or tap
-  the enemy world and **Recruit agent**). Recruiting takes 40 seconds, then the agent shows you that world, its launches
+- **Agents:** Signals intercept (Intel I) unlocks them. Tap an enemy world and
+  **Recruit agent** (250 credits). Recruiting takes 40 seconds, then the agent shows you that world, its launches
   (even dark ones) and its surroundings, skims part of its income, and slows
   any megaproject there by a quarter. Every second there's a small chance the
   agent is caught (about five minutes on average); the owner's Intel level
