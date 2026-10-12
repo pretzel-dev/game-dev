@@ -564,6 +564,7 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
 
 // Upkeep beyond the free ships; drill restores a garrison's rank.
 {
+  const S = await import('../src/sim.js');
   const g = createGame({ seed: 5 });
   const home = g.bodies.find((b) => b.owner === 0);
   assert.equal(S.upkeepOf(g, 0), 0, 'a small fleet is free');
