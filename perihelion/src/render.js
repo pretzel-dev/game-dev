@@ -457,6 +457,9 @@ export function createView(canvas, labelRoot, opts = {}) {
     sh.c.set(color).lerp(WHITE, [0.45, 0.6, 0.85][lvl]);
     sh.rail = lvl === 2;
     sh.age = 0;
+    // Rounds fired at a world move with it (see fx.drift).
+    (sh.drift ??= new THREE.Vector3()).copy(fx.drift);
+    sh.t0 = tNow;
     sh.life = lvl === 2 ? 0.05 : THREE.MathUtils.clamp(a.distanceTo(b) / (lvl ? 24 : 14), 0.1, 0.7);
     // Point-defence drones swat some rounds short of the target.
     sh.pd = pd && Math.random() < 0.3;
@@ -616,25 +619,27 @@ export function createView(canvas, labelRoot, opts = {}) {
    */
   const reach = (b) => b.size * 3 + 4; // the blend ends (or starts) this far out
   function blendTime(f, leaving) {
-    // How long the fleet takes to get `reach` from the world (cached per fleet).
-    const key = leaving ? '_wDep' : '_wArr';
-    if (f[key] !== undefined) return f[key];
+    // How long the fleet takes to get `reach` from the world. Cached per
+    // fleet and per plan: a fleet re-planned in flight (new drives, running
+    // dark, turned for home) restarts its clock mid-space, nowhere near its
+    // origin, so then there's no departure to ease out of (0).
+    const key = `${leaving ? 'd' : 'a'}${f.t0}:${f.T}`;
+    if (f._blend && f._blend.key === key) return f._blend.w;
     const b = game_.bodies[leaving ? f.from : f.to];
-    let w = Math.min(12, f.T * 0.3);
-    if (b) {
-      const far = (u) => {
-        const tt = leaving ? f.t0 + u : f.t0 + f.T - u;
-        const q = fleetState(f, tt), c = posAt(game_, b, tt);
-        return Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z) >= reach(b);
-      };
+    let w = 0;
+    const gap = (u) => {
+      const tt = leaving ? f.t0 + u : f.t0 + f.T - u;
+      const q = fleetState(f, tt), c = posAt(game_, b, tt);
+      return Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z);
+    };
+    if (b && gap(0) < b.size * 2 + 1) {
       let lo = 0, hi = f.T * 0.45;
-      if (far(hi)) {
-        for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (far(m)) hi = m; else lo = m; }
-        w = hi;
-      } else w = hi;
-      w = Math.min(25, Math.max(4, w));
+      if (gap(hi) >= reach(b)) {
+        for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (gap(m) >= reach(b)) hi = m; else lo = m; }
+      }
+      w = Math.min(25, Math.max(4, hi));
     }
-    Object.defineProperty(f, key, { value: w, enumerable: false, configurable: true });
+    Object.defineProperty(f, '_blend', { value: { key, w }, enumerable: false, configurable: true, writable: true });
     return w;
   }
   function slotOf(f, b, j, leaving, t, out, tan) {
@@ -826,8 +831,14 @@ export function createView(canvas, labelRoot, opts = {}) {
     }
   }
 
+  let tNow = 0, warpK = 1;
   function render(game, ui, dt, t) {
     game_ = game;
+    // Game seconds per real second (time warp, pause), smoothed: effects run
+    // on the real clock but must keep up with worlds moving in game time.
+    const realDt = t - tNow;
+    if (realDt > 0 && realDt < 0.5) warpK += (THREE.MathUtils.clamp(dt / realDt, 0, 20) - warpK) * Math.min(1, realDt * 4);
+    tNow = t;
     const now = game.time;
     const stars = game.stars || [{ r: 0, period: 1, phase: 0, size: 1 }];
     stars.slice(0, 2).forEach((st, i) => {
@@ -1099,6 +1110,10 @@ export function createView(canvas, labelRoot, opts = {}) {
       for (const g of known ? b.sieges : []) park(Math.min(g.n, 20), g.owner, b.size * 2.4 + 0.8, SIEGE_SPEED, b.id * 29 + g.owner, atkPts);
 
       if (fighting) {
+        // Battle effects drift with the world (in real seconds), so explosions
+        // stay with the ships fighting there even with time sped up.
+        const qa = posAt(game, b, now + 0.5), qb = posAt(game, b, now - 0.5);
+        fx.drift.set(qa.x - qb.x, qa.y - qb.y, qa.z - qb.z).multiplyScalar(warpK);
         // Gun emplacements: fixed points on the surface that turn with the body.
         for (let k = 0; k < Math.ceil(b.guns); k++) {
           const th = hash(b.id, k * 2) * Math.PI * 2 + t * 0.05;
@@ -1118,15 +1133,24 @@ export function createView(canvas, labelRoot, opts = {}) {
           }
           n -= 1;
         }
-        // Each ship lost goes up where it was.
-        for (const [lost, pts] of [[b.lostDef, defPts], [b.lostAtk, atkPts]]) {
-          for (let k = 0; k < Math.min(3, lost || 0); k++) {
-            const at = pts.length ? pts[(Math.random() * pts.length) | 0].p : tmp.set(p.x, p.y, p.z);
-            // A flash, a short-lived fireball, a shockwave and glowing debris.
-            fx.explosion(at, 0.9 + Math.random() * 0.3);
-          }
+        // Each ship lost goes up exactly where it was: the parking slots just
+        // past the ones still drawn (the last ships in line are the ones
+        // that vanish), so the flash is where a ship just disappeared.
+        // (Ships go first; with none left, the losses are guns on the surface.)
+        for (let k = 0; k < Math.min(3, b.lostDef || 0); k++) {
+          if (b.ships > 0 || !defPts.length) parkPos(b, b.ships + k, b.size * 1.8 + 0.4, DOCK_SPEED, b.id * 13, now, tmp2);
+          else tmp2.copy(defPts[(Math.random() * defPts.length) | 0].p);
+          fx.explosion(tmp2, 0.9 + Math.random() * 0.3);
+        }
+        const g = b.sieges[0];
+        for (let k = 0; k < Math.min(3, b.lostAtk || 0); k++) {
+          if (g) parkPos(b, g.n + k, b.size * 2.4 + 0.8, SIEGE_SPEED, b.id * 29 + g.owner, now, tmp2);
+          else if (atkPts.length) tmp2.copy(atkPts[(Math.random() * atkPts.length) | 0].p);
+          else break;
+          fx.explosion(tmp2, 0.9 + Math.random() * 0.3);
         }
       }
+      fx.drift.set(0, 0, 0);
       b.lostDef = b.lostAtk = 0;
       if (b.captured) { v.pulse = 1; b.captured = false; fx.ring(tmp.set(p.x, p.y, p.z), ownerColor(b.owner), b.size * 3.5, 1.4); }
 
@@ -1289,9 +1313,12 @@ export function createView(canvas, labelRoot, opts = {}) {
       sh.age += dt;
       if (sh.age < sh.life) continue;
       sh.live = false;
-      if (sh.pd) fx.intercept(sh.b);
-      else fx.impact(sh.b, sh.c, sh.rail);
+      fx.drift.copy(sh.drift);
+      tmp.copy(sh.b).addScaledVector(sh.drift, tNow - sh.t0);
+      if (sh.pd) fx.intercept(tmp);
+      else fx.impact(tmp, sh.c, sh.rail);
     }
+    fx.drift.set(0, 0, 0);
     fx.update(t, (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / window.innerHeight);
 
     // Order preview.
@@ -1431,8 +1458,17 @@ export function createView(canvas, labelRoot, opts = {}) {
     orbit.pol = sph.phi;
     orbit.dist = sph.radius;
   }
-  /** Zoom toward a world if the cursor is on one, else toward the cursor. */
+  /** Is the camera locked onto a world or a fleet? */
+  const following = () => orbit.follow !== null || orbit.fleet != null;
+  /** Zoom in or out about the view centre (keeps any lock). */
+  function zoomBy(factor) {
+    orbit.goalDist = null;
+    orbit.dist = THREE.MathUtils.clamp(orbit.dist * factor, orbit.minDist, orbit.maxDist);
+  }
+  /** Zoom toward a world if the cursor is on one, else toward the cursor.
+   * While locked onto something, zoom about it instead. */
   function zoomToward(x, y, factor) {
+    if (following()) { zoomBy(factor); return; }
     const id = pick(x, y);
     orbit.goalDist = null;
     if (id === null) { zoomAt(x, y, factor); return; }
@@ -1493,5 +1529,5 @@ export function createView(canvas, labelRoot, opts = {}) {
     }
   }
 
-  return { _debug: { scene, renderer, post, camera, fx, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, followFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward };
+  return { _debug: { scene, renderer, post, camera, fx, get pixelRatio() { return pixelRatio; } }, build, render, resize, setQuality, pick, pickFleet, followFleet, orbit, zoomAt, pan, focus, screenOf, pivotAt, rotateAround, zoomToward, zoomBy, following };
 }

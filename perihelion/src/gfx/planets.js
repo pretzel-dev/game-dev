@@ -6,8 +6,7 @@ import { NOISE, LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG, FULLSCREEN_VERT } 
  * textures each, then lit live by a shader of their own:
  *
  *  - albedo: surface colour (sRGB) and height (alpha);
- *  - aux: tangent-space normal (RG), city lights (B), and clouds (A; lava
- *    on volcanic worlds, which have no water clouds).
+ *  - aux: tangent-space normal (RG), city lights (B), and clouds (A).
  *
  * Homeworlds have oceans with sun glitter, continents with mountain ranges
  * and ice caps, a cloud deck that drifts and casts shadows, city lights on
@@ -131,22 +130,33 @@ void main() {
       col *= 0.9 + dunes * 0.15;
       col = mix(col, vec3(0.75, 0.70, 0.62), smoothstep(-0.02, -0.12, land) * 0.7);
       hgt = max(hgt, -0.15) + dunes * 0.01;
+    } else if (uType == 4) {
+      // Steppe: a dry, lived-in world. Golden grassland and savanna, ochre
+      // uplands, dark scrub along the wetter lowlands, and long inland seas.
+      if (land < 0.0) {
+        float k = clamp(1.0 + land * 5.0, 0.0, 1.0);
+        col = mix(vec3(0.006, 0.022, 0.05), vec3(0.04, 0.13, 0.15), k * k * k);
+      } else {
+        float wet = clamp(moist * 1.3 - 0.2 + smoothstep(0.08, 0.0, land) * 0.3, 0.0, 1.0);
+        vec3 gold = vec3(0.34, 0.27, 0.11), ochre = vec3(0.40, 0.24, 0.11), scrub = vec3(0.10, 0.11, 0.04);
+        col = mix(ochre, gold, smoothstep(0.1, 0.45, wet));
+        col = mix(col, scrub, smoothstep(0.55, 0.9, wet));
+        col = mix(col, vec3(0.26, 0.17, 0.10), smoothstep(0.08, 0.3, hgt - land) * 0.8); // uplands
+        col = mix(col, vec3(0.55, 0.47, 0.33), smoothstep(0.0, 0.015, 0.015 - land) * 0.6); // shores
+        col *= 0.85 + fine * 0.25;
+        col = mix(col, vec3(0.66, 0.66, 0.64), smoothstep(0.34, 0.44, hgt - land) * 0.8); // snow on peaks
+      }
     } else if (uType == 2) {
       // Ice: white sheets, blue crevasses, a few dark frozen seas.
       float cr = lineae(d, uSeed);
       col = land < 0.0 ? vec3(0.08, 0.18, 0.28) * (0.8 + fine * 0.3) : mix(vec3(0.48, 0.55, 0.62), vec3(0.66, 0.69, 0.72), smoothstep(0.0, 0.3, land));
       col = mix(col, vec3(0.15, 0.3, 0.45), cr * 0.7);
       hgt = max(hgt, -0.05) - cr * 0.02;
-    } else {
-      // Volcanic: black basalt, rust highlands, glowing lava seams (in aux).
-      col = land < 0.0 ? vec3(0.025, 0.018, 0.015) : mix(vec3(0.05, 0.04, 0.035), vec3(0.22, 0.09, 0.04), smoothstep(0.0, 0.4, land + moist * 0.2));
-      col *= 0.8 + fine * 0.4;
-      hgt = max(hgt, -0.08);
     }
     if (alat > iceLine && uType != 1) col = mix(col, vec3(0.7, 0.73, 0.76), smoothstep(0.0, 0.04, alat - iceLine));
     if (uType == 1 && alat > iceLine) col = mix(col, vec3(0.8, 0.78, 0.74), 0.8);
     h = clamp(max(hgt, uType == 1 ? -1.0 : 0.0) * 0.5 + 0.5, 0.0, 1.0);
-    if (land < 0.0 && uType != 1 && uType != 4) h = 0.5 + land * 0.04; // sea floor, below the waterline
+    if (land < 0.0 && uType != 1) h = 0.5 + land * 0.04; // sea floor, below the waterline
   } else if (uKind == 1 || uKind == 2) {
     // ---- Rocky planets and moons ----
     float mare = fbm(q * 1.6, 5);
@@ -306,11 +316,7 @@ void main() {
   }
   // Clouds: storm belts at mid latitudes and the tropics, swirls, clear subtropics.
   float a = 0.0;
-  if (uKind == 0 && uType == 4) {
-    // Volcanic world: lava seams instead of water clouds.
-    float seam = exp(-pow(abs(snoise(q * 4.0 + fbm(q * 3.0, 3)) / 0.025), 2.0)) + exp(-pow(abs(snoise(q * 9.0 + 2.0) / 0.018), 2.0)) * 0.4;
-    a = clamp(seam * step(0.5, h0) * (0.4 + 0.6 * smoothstep(0.5, 0.75, h0)), 0.0, 1.0);
-  } else if (uClouds > 0.0) {
+  if (uClouds > 0.0) {
     // Weather: an equatorial band of storms, clear subtropics with scattered
     // fair-weather cumulus, and mid-latitude storm tracks wound into spiral
     // cyclones (turning opposite ways in each hemisphere).
@@ -335,8 +341,8 @@ void main() {
 }`;
 
 /** Per-world look: what kind of world it bakes as, and its sky. */
-export const BIOMES = ['temperate', 'desert', 'ice', 'jungle', 'volcanic', 'ocean'];
-const BIOME_SKY = { temperate: [0.35, 0.6, 1.0], desert: [1.0, 0.7, 0.45], ice: [0.6, 0.8, 1.0], jungle: [0.4, 0.7, 0.85], volcanic: [1.0, 0.45, 0.25], ocean: [0.3, 0.55, 1.0] };
+export const BIOMES = ['temperate', 'desert', 'ice', 'jungle', 'steppe', 'ocean'];
+const BIOME_SKY = { temperate: [0.35, 0.6, 1.0], desert: [1.0, 0.7, 0.45], ice: [0.6, 0.8, 1.0], jungle: [0.4, 0.7, 0.85], steppe: [0.55, 0.62, 0.9], ocean: [0.3, 0.55, 1.0] };
 const GIANT_PALS = [
   [[0.50, 0.33, 0.18], [0.82, 0.70, 0.52], [0.62, 0.30, 0.15]], // ochre and cream, rust storm
   [[0.30, 0.45, 0.60], [0.70, 0.82, 0.88], [0.20, 0.30, 0.55]], // ice blue
@@ -349,7 +355,7 @@ const GIANT_PALS = [
 export function giantPalette(b) { return GIANT_PALS[Math.floor(b.hue * GIANT_PALS.length) % GIANT_PALS.length]; }
 
 export function lookOf(b) {
-  if (b.home) return { kind: 0, type: Math.max(0, BIOMES.indexOf(b.biome || 'temperate')), atmo: BIOME_SKY[b.biome] || BIOME_SKY.temperate, atmoK: 1.0, clouds: b.biome === 'volcanic' ? 0 : 1, relief: 0.06 };
+  if (b.home) return { kind: 0, type: Math.max(0, BIOMES.indexOf(b.biome || 'temperate')), atmo: BIOME_SKY[b.biome] || BIOME_SKY.temperate, atmoK: 1.0, clouds: 1, relief: 0.06 };
   if (b.giant) return { kind: 3, type: 0, atmo: giantPalette(b)[1].map((x) => x * 0.9 + 0.1), atmoK: 0.55, clouds: 0, relief: 0 };
   if (b.kind === 'planet') {
     const type = Math.floor(b.hue * 4) % 4;
@@ -470,8 +476,7 @@ export function surfaceMaterial(b, look, maps, ring) {
     uStarPos: starLights.pos, uStarCol: starLights.col,
     uCity: { value: 0 }, uCityCol: { value: new THREE.Vector3(2.4, 1.5, 0.7) },
     uCloudShift: { value: 0 }, uCloudK: { value: look.clouds ? 0.55 : 0 },
-    uLava: { value: look.kind === 0 && look.type === 4 ? 1 : 0 },
-    uOcean: { value: look.kind === 0 && look.type !== 1 && look.type !== 4 ? 1 : 0 },
+    uOcean: { value: look.kind === 0 && look.type !== 1 ? 1 : 0 },
     uAirless: { value: look.airless ? 1 : 0 },
     uAtmo: { value: new THREE.Vector3(...(look.atmo || [0, 0, 0])) },
     uAtmoK: { value: look.atmoK },
@@ -501,7 +506,7 @@ export function surfaceMaterial(b, look, maps, ring) {
       ${ECLIPSE}
       uniform sampler2D tAlb, tAux, tRing;
       uniform vec3 uStarPos[2], uStarCol[2];
-      uniform float uCity, uCloudShift, uCloudK, uLava, uOcean, uAirless, uAtmoK, uT, uFlow, uRingIn, uRingOut, uRadius;
+      uniform float uCity, uCloudShift, uCloudK, uOcean, uAirless, uAtmoK, uT, uFlow, uRingIn, uRingOut, uRadius;
       uniform vec3 uCityCol, uAtmo, uRingN, uCenter;
       varying vec2 vUv; varying vec3 vWorld; varying vec3 vWT; varying vec3 vWB; varying vec3 vWN;
       vec3 fromS(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
@@ -579,10 +584,9 @@ export function surfaceMaterial(b, look, maps, ring) {
           }
           dayAll = max(dayAll, smoothstep(-0.15, 0.25, ngl));
         }
-        // Night: city lights and lava glow, dimmed under cloud.
+        // Night: city lights, dimmed under cloud.
         float night = 1.0 - smoothstep(-0.1, 0.12, dayAll);
         col += aux.b * uCity * uCityCol * night * (1.0 - clouds * 0.7) * 1.1;
-        if (uLava > 0.0) col += aux.a * vec3(2.2, 0.5, 0.08) * (0.08 + 0.92 * night); // lava shows at night
         // A whisper of skylight on the dark side (starlight, ring- and moonshine).
         col += albedo * vec3(0.006, 0.007, 0.01);
         gl_FragColor = vec4(col, 1.0);

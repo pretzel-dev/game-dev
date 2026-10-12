@@ -1178,9 +1178,9 @@ function tap(id, x, y, mouse = false) {
     }
   }
   ui.fleet = null;
-  // On touch the camera locks onto whatever you tap; a mouse click only
-  // selects (the mouse steers the camera itself).
-  if (id !== null && !mouse) view.focus(game, id, false);
+  // The camera locks onto whatever you tap or click (without moving yet):
+  // turning and zooming then go round it, until you drag the map away.
+  if (id !== null) view.focus(game, id, false);
   if (ui.mode === 'project') {
     const b = id !== null ? game.bodies[id] : null;
     const why = b ? cantProject(game, b, ui.projKey) : 'cancelled';
@@ -1225,9 +1225,10 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse') {
     // Mouse: left drags pan, right or middle drags turn the view around
     // whatever is under the cursor. A left click without a drag selects.
+    // While locked onto a world or fleet, turning circles it instead.
     const turn = e.button === 2 || e.button === 1 || e.altKey;
     gesture = { kind: turn ? 'turn' : 'click', right: e.button === 2, mouse: true, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
-      pivot: turn ? view.pivotAt(game, e.clientX, e.clientY) : null };
+      pivot: turn && !view.following() ? view.pivotAt(game, e.clientX, e.clientY) : null };
     ui.dragging = true;
     view.orbit.vaz = view.orbit.vpol = 0;
     return;
@@ -1237,7 +1238,7 @@ canvas.addEventListener('pointerdown', (e) => {
     gesture = { kind: 'tap', x0: e.clientX, y0: e.clientY };
   } else if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
-    gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+    gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, mx0: (a.x + b.x) / 2, my0: (a.y + b.y) / 2 };
   }
   ui.dragging = true;
   view.orbit.vaz = view.orbit.vpol = 0;
@@ -1252,7 +1253,8 @@ canvas.addEventListener('pointermove', (e) => {
     if (gesture.kind === 'click' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) gesture.kind = 'pan';
     if (gesture.kind === 'pan') view.pan(dx, dy);
     if (gesture.kind === 'turn') {
-      view.rotateAround(gesture.pivot, -dx * 0.006, -dy * 0.006);
+      if (gesture.pivot) view.rotateAround(gesture.pivot, -dx * 0.006, -dy * 0.006);
+      else { view.orbit.az -= dx * 0.006; view.orbit.pol -= dy * 0.006; }
       if (Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) gesture.moved = true;
     }
     return;
@@ -1271,9 +1273,14 @@ canvas.addEventListener('pointermove', (e) => {
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
-    // Two fingers drag the map and zoom toward themselves.
-    view.pan(mx - gesture.mx, my - gesture.my);
-    view.zoomAt(mx, my, gesture.d / Math.max(1, d));
+    // Two fingers drag the map and zoom toward themselves. While locked onto
+    // a world or fleet, a pinch just zooms about it, until the fingers
+    // clearly drag the map away.
+    if (view.following() && Math.hypot(mx - gesture.mx0, my - gesture.my0) < 40) view.zoomBy(gesture.d / Math.max(1, d));
+    else {
+      view.pan(mx - gesture.mx, my - gesture.my);
+      view.zoomAt(mx, my, gesture.d / Math.max(1, d));
+    }
     gesture.d = d;
     gesture.mx = mx;
     gesture.my = my;
