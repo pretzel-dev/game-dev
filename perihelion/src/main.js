@@ -666,13 +666,15 @@ function chips(b, { income = true, seen = true } = {}) {
   return out.length ? `<div class="chips">${out.join('')}</div>` : '';
 }
 /** What one level of a structure does, for the upgrade breakdown. */
-function levelEffect(type, level) {
+function levelEffect(type, level, b) {
   const mining = 1 + 0.15 * game.tech[me].industry;
-  if (type === 'mine') return `+${(RULES.mineIncome * level * mining).toFixed(1)}/s`;
+  // A special world that suits the structure boosts it (see PERKS.fits).
+  const fit = b && b.perk && PERKS[b.perk].fits === type;
+  if (type === 'mine') return `+${(RULES.mineIncome * level * mining * (fit ? 2 : 1)).toFixed(1)}/s`;
   if (RULES.structures[type].income) return `+${(RULES.structures[type].income * level).toFixed(1)}/s`;
-  if (type === 'defence') return `${RULES.gunsPerDefence * level} guns`;
+  if (type === 'defence') return `${Math.round(RULES.gunsPerDefence * level * (fit ? 1.5 : 1))} guns`;
   if (type === 'bureau') return `${level === 1 ? '2.5' : '4'}× catch`;
-  if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * 100)}% research`;
+  if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * (fit ? 2 : 1) * 100)}% research`;
   return '';
 }
 const ABBR = { bureau: 'Security', shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Gas rig', exchange: 'Exchange' };
@@ -711,7 +713,10 @@ function renderBuildRow(s) {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
         const def = RULES.structures[k];
-        return `<button class="opt" data-b="${k}" data-hold="${esc(`${def.name}: ${def.desc}`)}" title="${def.name}: ${def.desc}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${def.cost} · ${fmt(def.time / buildSpeed(game, me, s))}</small></button>`;
+        // A special world that suits this structure: marked, and says why.
+        const fit = s.perk && PERKS[s.perk].fits === k;
+        const desc = `${def.name}: ${def.desc}${fit ? ` · boosted by the ${PERKS[s.perk].name}` : ''}`;
+        return `<button class="opt${fit ? ' fit' : ''}" data-b="${k}" data-hold="${esc(desc)}" title="${esc(desc)}" ${why ? 'disabled' : ''}>${ABBR[k]}<small>${def.cost} · ${fmt(def.time / buildSpeed(game, me, s))}</small></button>`;
       }).join('');
     } else {
       const def = RULES.structures[x.type];
@@ -730,7 +735,7 @@ function renderBuildRow(s) {
           const next = k === x.level + 1 && !x.next && (!why || why === 'not enough credits');
           const tag = next ? `button data-u="${ui.slot}" ${why ? 'disabled' : ''}` : 'span';
           const note = k <= x.level ? '✓' : k === x.next ? fmt(x.left / buildSpeed(game, me, s)) : next ? `Upgrade · ${cost} · ${fmt(upgradeTime({ type: x.type, level: k - 1 }) / buildSpeed(game, me, s))}` : cost;
-          steps.push(`<${tag} class="lv ${cls}${next ? ' next' : ''}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k)}<small>${note}</small></${tag.split(' ')[0]}>`);
+          steps.push(`<${tag} class="lv ${cls}${next ? ' next' : ''}"><b>${ROMAN[k]}</b> ${levelEffect(x.type, k, s)}<small>${note}</small></${tag.split(' ')[0]}>`);
         }
         row += `<div class="ladder">${steps.join('')}</div>`;
 

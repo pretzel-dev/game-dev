@@ -39,11 +39,15 @@ inside right now).
 | Rich seam (asteroid or moon) | Mines here pay double |
 | Old relay | See everything inside its (large) ring |
 | Fuel depot | Fleets launched from your worlds inside its ring fly 20% faster |
-| Listening post | Warnings of fleets heading for your worlds |
-| Fortress rock | Starts with heavy guns; +1 gun on each of your worlds inside its ring |
-| Ancient archive | Research 25% faster |
-| Drydock hulk | Comes with a shipyard; ships built here start as veterans |
+| Listening post | Warnings of fleets heading for your worlds; a Security bureau here reaches twice as far |
+| Fortress rock | Starts with heavy guns; +1 gun on each of your worlds inside its ring; Guns built here give half as many again |
+| Ancient archive | Research 25% faster; Research stations here count double |
+| Drydock hulk | Comes with a shipyard; ships built here start as veterans; its shipyards build 50% faster |
 | Tidal forge (moon of a gas giant) | Structures, upgrades and ships build twice as fast here |
+
+Build the structure that suits a special world (mines on a seam, guns on a
+fortress, labs on an archive, a bureau on a listening post, yards on a hulk)
+and it gets the extra bonus above; its build button is marked in the same colour.
 
 ## Events
 

@@ -7,7 +7,7 @@ import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
 import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
-import { stationMesh } from './gfx/stations.js';
+import { stationMesh, stationPorts } from './gfx/stations.js';
 import { structureMesh } from './gfx/structures.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
@@ -23,6 +23,7 @@ const SHIP_SCALE = 0.45;
 const FORMATION = 0.55;
 // Parking orbits turn slowly (radians per second of game time), as big orbits do.
 const DOCK_SPEED = 0.03;
+const STATION_SCALE = 0.8;
 const SIEGE_SPEED = -0.045;
 const MAX_SHIPS = 400;
 
@@ -295,7 +296,8 @@ export function createView(canvas, labelRoot, opts = {}) {
       let tail = null;
       let ring = null;
       let atmo = null;
-      if (b.kind === 'station') body = stationMesh(b.size, b.id % 3, shipR.uT);
+      // Stations: a little smaller than their size (a real one is tiny beside a world).
+      if (b.kind === 'station') body = stationMesh(b.size * STATION_SCALE, b.id % 3, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else if (b.visitor) {
         // Comet: an icy nucleus with a tail streaming away from the sun.
@@ -371,7 +373,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [] };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % 3) : null };
     });
     // The asteroid belt: a lane of small rocks round the named asteroids.
     if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
@@ -542,6 +544,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   /** Keep ships outside worlds (launching from a planet, a moon passing a fleet). */
   function unclip(p) {
     for (const v of views) {
+      if (v.b.kind === 'station') continue; // ships dock there
       const q = bodyPos[v.b.id];
       if (!q) continue;
       // Ease ships out round the world over a zone twice its clearance, so
@@ -566,7 +569,37 @@ export function createView(canvas, labelRoot, opts = {}) {
     const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
     const rr = radius * (1 + hash(j, seed) * 0.15);
     if (tan) tan.set(-Math.sin(a), 0, Math.cos(a)).multiplyScalar(Math.sign(speed) || 1);
-    return out.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
+    out.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
+    if (b.kind === 'station' && speed > 0) dock(b, j, t, out, tan);
+    return out;
+  }
+  const dP = new THREE.Vector3(), dN = new THREE.Vector3();
+  /**
+   * Ships at a station take turns docking: about half of them, now and then,
+   * drift in from the parking orbit to a port, sit there turning with the
+   * station for a while, then back out. Moves `out` (and `tan`) from the
+   * parking slot toward the port.
+   */
+  function dock(b, j, t, out, tan) {
+    const h = hash(j, b.id * 7 + 3);
+    if (h < 0.45) return; // this one never docks
+    const period = 120 + h * 80;
+    const ph = (t / period + hash(b.id, j * 5)) % 1;
+    const w = THREE.MathUtils.smootherstep(ph, 0.5, 0.57) * (1 - THREE.MathUtils.smootherstep(ph, 0.75, 0.82));
+    if (w <= 0) return;
+    const v = views[b.id]?.b === b ? views[b.id] : views.find((x) => x.b === b);
+    if (!v || !v.ports) return;
+    const port = v.ports[j % v.ports.length];
+    v.body.updateMatrixWorld();
+    const S = b.size * STATION_SCALE;
+    dP.set(port.p[0] * S, port.p[1] * S, port.p[2] * S).applyMatrix4(v.body.matrixWorld);
+    dN.set(port.n[0], port.n[1], port.n[2]).transformDirection(v.body.matrixWorld);
+    // Sit out from the port (a second ship at the same port waits further
+    // out), and come in along the port's line.
+    const off = SHIP_SCALE * 0.7 + Math.floor(j / v.ports.length) * SHIP_SCALE * 1.6;
+    dP.addScaledVector(dN, off + (1 - w) * (1 - w) * 1.2);
+    out.lerp(dP, w);
+    if (tan) tan.lerp(dN.negate(), w).normalize();
   }
   const bA = new THREE.Vector3(), bB = new THREE.Vector3(), bTan = new THREE.Vector3(), bSide = new THREE.Vector3(), bH = new THREE.Vector3(), bN = new THREE.Vector3();
   /**
@@ -599,7 +632,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (far(m)) hi = m; else lo = m; }
         w = hi;
       } else w = hi;
-      w = Math.max(4, w);
+      w = Math.min(25, Math.max(4, w));
     }
     Object.defineProperty(f, key, { value: w, enumerable: false, configurable: true });
     return w;
@@ -639,21 +672,24 @@ export function createView(canvas, labelRoot, opts = {}) {
     bSide.normalize();
     bN.crossVectors(bH, bSide);
     // The slot's angle runs from just in front round the ship's side to just
-    // past behind (so it never wraps); the formation's is centred on the
-    // fleet's line, where it gathers (the side it's on never changes).
+    // past behind (so it never wraps), and swings to the fleet's line (angle
+    // 0); the formation's own spread across that line is added on top.
     let a0 = Math.atan2(bA.dot(bSide), bA.dot(bH));
     if (a0 < -Math.PI / 2) a0 += Math.PI * 2;
-    const a1 = Math.atan2(bB.dot(bSide), bB.dot(bH));
-    const r0 = Math.hypot(bA.dot(bH), bA.dot(bSide)), r1 = Math.hypot(bB.dot(bH), bB.dot(bSide));
-    const z0 = bA.dot(bN), z1 = bB.dot(bN);
-    const ang = a0 + (a1 - a0) * e, z = z0 + (z1 - z0) * e;
-    // Never closer than a safe height (a smooth limit, so there's no kink).
-    const min = b.size * 1.15 + 0.2, k = min * 0.3;
-    let r = r0 + (r1 - r0) * e;
-    r = (r + min + Math.sqrt((r - min) ** 2 + k * k)) / 2;
-    // ...though a parked ship stays exactly in its slot as it starts.
-    r = r0 + (r - r0) * THREE.MathUtils.smoothstep(e, 0, 0.05);
-    bB.copy(bH).multiplyScalar(Math.cos(ang) * r).addScaledVector(bSide, Math.sin(ang) * r).addScaledVector(bN, z);
+    const r0 = Math.hypot(bA.dot(bH), bA.dot(bSide)), z0 = bA.dot(bN);
+    const fAlong = bB.dot(bH);
+    bB.addScaledVector(bH, -fAlong); // now just the spread across the line
+    const ang = a0 * (1 - e);
+    // Distance out: never closer than a safe height (a smooth limit, so no
+    // kink), exact at both ends.
+    const min = b.size * 1.3 + 0.4, k = min * 0.3;
+    let r = r0 + (fAlong - r0) * e;
+    const safe = (r + min + Math.sqrt((r - min) ** 2 + k * k)) / 2;
+    r += (safe - r) * (1 - e) * THREE.MathUtils.smoothstep(e, 0, 0.05);
+    bB.multiplyScalar(e)
+      .addScaledVector(bH, Math.cos(ang) * r)
+      .addScaledVector(bSide, Math.sin(ang) * r)
+      .addScaledVector(bN, z0 * (1 - e));
     tmp.set(c.x + bB.x, c.y + bB.y, c.z + bB.z);
     return e;
   }

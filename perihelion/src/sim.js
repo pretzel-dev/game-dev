@@ -222,7 +222,8 @@ export function nextTech(game, owner, key) {
   return lvl < d.cost.length ? { level: lvl + 1, cost: d.cost[lvl], time: d.time[lvl], text: d.text[lvl], title: d.levels[lvl] } : null;
 }
 export function researchSpeed(game, owner) {
-  const labs = game.bodies.reduce((n, b) => n + (b.owner === owner ? count(b, 'lab') : 0), 0);
+  // Research stations on an archive world count double.
+  const labs = game.bodies.reduce((n, b) => n + (b.owner === owner ? count(b, 'lab') * (b.perk === 'archive' ? 2 : 1) : 0), 0);
   return (1 + RULES.labSpeed * labs) * (holds(game, owner, 'archive') ? PERKS.archive.boost : 1);
 }
 export function cantResearch(game, owner, key) {
@@ -272,7 +273,8 @@ export function catchRate(game, b) {
   for (const w of game.bodies) {
     if (w.owner !== b.owner) continue;
     const s = w.structures.find((y) => y.type === 'bureau' && y.left <= 0);
-    if (s && (w === b || dist(posAt(game, w, game.time), here) <= SPY.bureauRange)) bureau = Math.max(bureau, s.level);
+    // A bureau on a listening post reaches twice as far.
+    if (s && (w === b || dist(posAt(game, w, game.time), here) <= SPY.bureauRange * (w.perk === 'post' ? 2 : 1))) bureau = Math.max(bureau, s.level);
   }
   return SPY.catch * (1 + SPY.intel * techLevel(game, b.owner, 'intel')) * (1 + SPY.bureau * bureau);
 }
@@ -403,13 +405,13 @@ const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
 
 // Special worlds: a few neutrals carry a perk for whoever holds them.
 export const PERKS = {
-  seam: { name: 'Rich seam', text: 'Mines here pay double', kinds: ['asteroid', 'moon'] },
+  seam: { name: 'Rich seam', text: 'Mines here pay double', kinds: ['asteroid', 'moon'], fits: 'mine' },
   relay: { name: 'Old relay', text: 'See everything inside its ring', range: 160 },
   depot: { name: 'Fuel depot', text: 'Fleets launched from your worlds inside its ring fly 20% faster', range: 120, boost: 1.2 },
-  post: { name: 'Listening post', text: 'Warns of fleets heading for your worlds' },
-  fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on each of your worlds inside its ring', range: 100 },
-  archive: { name: 'Ancient archive', text: 'Research 25% faster', boost: 1.25 },
-  hulk: { name: 'Drydock hulk', text: 'Ships built here start as veterans', vet: 2.5 },
+  post: { name: 'Listening post', text: 'Warns of fleets heading for your worlds. A Security bureau here reaches twice as far', fits: 'bureau' },
+  fortress: { name: 'Fortress rock', text: 'Heavy guns; +1 gun on each of your worlds inside its ring. Guns built here give half as many again', range: 100, fits: 'defence' },
+  archive: { name: 'Ancient archive', text: 'Research 25% faster. Research stations here count double', boost: 1.25, fits: 'lab' },
+  hulk: { name: 'Drydock hulk', text: 'Ships built here start as veterans. Its shipyards build 50% faster', vet: 2.5, fits: 'shipyard' },
   forge: { name: 'Tidal forge', text: 'Tidal heat runs the foundries: structures, upgrades and ships build twice as fast here', boost: 2, giantMoon: true },
 };
 // Events: announced a minute ahead at a world; whoever holds that world for
@@ -646,7 +648,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // A home's one companion is its station if it has one, otherwise its moon.
   for (const i of homeIdx) if (specs[i].station) specs[i].moons = [];
   for (const sp of specs) {
-    sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.size * 1.5 + 1 : 0, ...sp.moons.map((m) => m.r + m.size));
+    sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.size * 2.4 + 2.5 : 0, ...sp.moons.map((m) => m.r + m.size));
   }
 
   // Orbits outward from the sun, each at least both families' reach plus a gap
@@ -685,7 +687,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     }
     if (sp.station) {
       add({
-        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.size * 1.45,
+        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.size * 2.4 + 1.5,
         period: 200 + rand() * 60, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45, hue: 0,
       });
     }
@@ -794,7 +796,8 @@ export function fortressGuns(game, b) {
 }
 /** Guns a held world rebuilds to: batteries, fortress cover, hardening, a fortress world. */
 export const topGuns = (game, b) => (maxGuns(b) + fortressGuns(game, b) + (hasJoint(game, b.owner, 'hardened') ? 1 : 0)) * (b.wonder === 'citadel' ? 3 : 1);
-export const maxGuns = (b) => RULES.baseGuns + RULES.gunsPerDefence * count(b, 'defence');
+// Guns built on a fortress rock you hold give half as many again.
+export const maxGuns = (b) => RULES.baseGuns + Math.round(RULES.gunsPerDefence * count(b, 'defence') * (b.perk === 'fortress' && b.owner !== NEUTRAL ? 1.5 : 1));
 /** Where a world's income comes from. */
 export const incomeParts = (b, game) => {
   if (b.owner === NEUTRAL) return { worlds: 0, mines: 0, skimmers: 0, exchanges: 0, bonuses: 0 };
@@ -869,7 +872,7 @@ export function buildStructure(game, b, type) {
 /** Upgrading costs more at each level and takes longer. */
 export const upgradeCost = (x) => Math.round(RULES.structures[x.type].cost * (x.level + 1) * 0.75);
 /** Seconds for one yard here to build a ship. */
-export const shipTime = (game, b) => RULES.ship.time / (buildSpeed(game, b.owner, b) * (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1));
+export const shipTime = (game, b) => RULES.ship.time / (buildSpeed(game, b.owner, b) * (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1) * (b.perk === 'hulk' ? 1.5 : 1));
 export const upgradeTime = (x) => RULES.structures[x.type].time * (1 + x.level * 0.5);
 export function cantUpgrade(game, b, x) {
   const def = RULES.structures[x.type];
@@ -1402,7 +1405,7 @@ export function step(game, dt) {
     if (!b.slips) b.slips = [];
     while (b.slips.length < Math.min(yards, b.queue)) b.slips.push(0);
     b.slips.length = Math.min(b.slips.length, yards, b.queue);
-    const yardK = (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1);
+    const yardK = (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1) * (b.perk === 'hulk' ? 1.5 : 1);
     b.slips = b.slips.map((p) => p + (dt * speed * yardK) / RULES.ship.time);
     for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, Math.max(b.perk === 'hulk' ? PERKS.hulk.vet : 0, holdsWonder(game, b.owner, 'college') ? 2.5 : 0), 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
