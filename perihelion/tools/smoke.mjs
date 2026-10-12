@@ -41,7 +41,7 @@ else { p = await pos(ids.t); await page.touchscreen.tap(p.x, p.y); }
 await page.waitForTimeout(400);
 const info = await page.textContent('#info');
 await page.screenshot({ path: out + '/ph-order.png' });
-await page.tap('#more'); await page.tap('#launch');
+await page.tap('#launch'); // with the share slider's default
 const after = await page.evaluate(() => ({ sel: window.__perihelion.ui.selected, mode: window.__perihelion.ui.mode }));
 await page.waitForTimeout(300);
 const fleets = await page.evaluate(() => window.__perihelion.game.fleets.filter((f) => f.owner === 0).map((f) => f.n));
