@@ -1173,7 +1173,7 @@ export function launch(game, from, to, n, dark = false) {
   else f.name = fleetName(game);
   if (!from.ships) from.tf = null;
   game.fleets.push(f);
-  note(game, { type: 'launch', owner: f.owner, fleet: f.id, name: f.name, n, from: from.id, to: to.id });
+  note(game, { type: 'launch', owner: f.owner, fleet: f.id, name: f.name, n, from: from.id, to: to.id, T: f.T, ...(dark ? { dark: true } : {}) });
   return f;
 }
 
