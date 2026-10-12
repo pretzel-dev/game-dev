@@ -114,3 +114,31 @@ export function stationMesh(size, variant, uT) {
   mesh.userData.spin = variant === 0 ? 0.4 : 0.08;
   return mesh;
 }
+
+/**
+ * Where ships can dock on each design, in units of the station's size: a
+ * point on the hull and the direction a docked ship sits out along (in the
+ * station's own frame, so docked ships turn with it).
+ */
+export function stationPorts(variant) {
+  const out = [];
+  const port = (x, y, z, nx, ny, nz) => out.push({ p: [x, y, z], n: [nx, ny, nz] });
+  if (variant === 0) {
+    // The tips of the docking arms at the end of the spine.
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 2;
+      port(Math.cos(a) * 0.5, Math.sin(a) * 0.5, 1.05, Math.cos(a), Math.sin(a), 0);
+    }
+  } else if (variant === 1) {
+    // Both ends of the long spine.
+    port(0, 0, 1.62, 0, 0, 1);
+    port(0, 0, -1.62, 0, 0, -1);
+  } else {
+    // The docking cluster at the stern.
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      port(Math.cos(a) * 0.34, Math.sin(a) * 0.34, -1.4, Math.cos(a), Math.sin(a), 0);
+    }
+  }
+  return out;
+}
