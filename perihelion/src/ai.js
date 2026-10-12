@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf, cantSpy, plantSpy } from './sim.js';
+import { NEUTRAL, RULES, income, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, fundProject, attackPowerOf, cantSpy, plantSpy, PERKS } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -260,6 +260,12 @@ function economy(game, ai, mine, coming, will) {
   // 2'. Ships first: every yard keeps at least one in the queue.
   const idle = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 1)[0];
   if (idle) return orderShip(game, idle);
+  // 2a'. A special world we hold: build the structure that suits it (guns on
+  // a fortress, labs on an archive, a bureau on a listening post, a yard on a
+  // drydock hulk), once. Smart AIs always do; weaker ones only sometimes.
+  const suited = mine.find((b) => b.perk && PERKS[b.perk].fits && PERKS[b.perk].fits !== 'mine'
+    && !b.structures.some((x) => x.type === PERKS[b.perk].fits) && free(b, PERKS[b.perk].fits));
+  if (suited && (smart || will())) return buildStructure(game, suited, PERKS[suited.perk].fits);
   // 2a. Skimmers on held gas giants, an exchange at home: steady income.
   for (const type of ['exchange', 'skimmer']) {
     const site = mine.find((b) => free(b, type) && !threatened(b) && !b.structures.some((x) => x.type === type));
@@ -328,7 +334,7 @@ function economy(game, ai, mine, coming, will) {
   // 2d. Research stations once things are comfortable: one, then a second.
   const labs = mine.reduce((n, b) => n + b.structures.filter((x) => x.type === 'lab').length, 0);
   if (labs < 2 && credits > 700 + labs * 500 && mine.length > 2 + labs * 2 && will()) {
-    const site = mine.find((b) => free(b, 'lab') && b.kind !== 'asteroid');
+    const site = mine.find((b) => b.perk === 'archive' && free(b, 'lab')) || mine.find((b) => free(b, 'lab') && b.kind !== 'asteroid');
     if (site) return buildStructure(game, site, 'lab');
     // No room: scrap a spare gun battery at a safe inner world to make some.
     const safe = mine.find((b) => b.kind !== 'asteroid' && !threatened(b)

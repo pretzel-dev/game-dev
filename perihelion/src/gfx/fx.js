@@ -29,7 +29,7 @@ export function createFx(scene, max = 4096) {
     geo.setAttribute(name, a);
     A[name] = a;
   };
-  attr('aP0', 3); attr('aVel', 3); attr('aDir', 3); attr('aCol', 3); attr('aTime', 2); attr('aSize', 2); attr('aKind', 2);
+  attr('aP0', 3); attr('aVel', 3); attr('aDrift', 3); attr('aDir', 3); attr('aCol', 3); attr('aTime', 2); attr('aSize', 2); attr('aKind', 2);
   // Start everything long dead.
   A.aTime.array.fill(-1e6);
   geo.instanceCount = max;
@@ -37,7 +37,7 @@ export function createFx(scene, max = 4096) {
   const mat = new THREE.ShaderMaterial({
     uniforms: { uT, uPx: { value: 0.002 } },
     vertexShader: /* glsl */ `${LD_VERT_PARS}
-      attribute vec3 aP0, aVel, aDir, aCol; attribute vec2 aTime, aSize, aKind;
+      attribute vec3 aP0, aVel, aDrift, aDir, aCol; attribute vec2 aTime, aSize, aKind;
       uniform float uT, uPx;
       varying vec2 vQ; varying vec3 vCol; varying float vAge; varying float vKind; varying float vSeed; varying float vLen; varying float vFade;
       void main() {
@@ -49,7 +49,7 @@ export function createFx(scene, max = 4096) {
         // Debris and sparks slow a little (a tidy look, not physics).
         float drag = aKind.x == ${SPARK}.0 ? 1.2 : aKind.x == ${FIRE}.0 ? 2.5 : 0.0;
         float travel = drag > 0.0 ? (1.0 - exp(-drag * t)) / drag : t;
-        vec3 p = aP0 + aVel * travel;
+        vec3 p = aP0 + aVel * travel + aDrift * t; // drift: carried along with the world it's at
         float size = mix(aSize.x, aSize.y, aKind.x == ${FIRE}.0 ? sqrt(age) : age);
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         // Far away, a flash only a pixel or two across fades rather than sparkles.
@@ -142,6 +142,7 @@ export function createFx(scene, max = 4096) {
     next = (next + 1) % max;
     A.aP0.setXYZ(i, p.x, p.y, p.z);
     A.aVel.setXYZ(i, vel ? vel.x : 0, vel ? vel.y : 0, vel ? vel.z : 0);
+    A.aDrift.setXYZ(i, drift.x, drift.y, drift.z);
     A.aDir.setXYZ(i, dir ? dir.x : 0, dir ? dir.y : 0, dir ? dir.z : 0);
     c.set(color).multiplyScalar(intensity);
     A.aCol.setXYZ(i, c.r, c.g, c.b);
@@ -152,10 +153,13 @@ export function createFx(scene, max = 4096) {
   }
   const v = new THREE.Vector3();
   const d = new THREE.Vector3();
+  // Explosions and hits at a world drift with it (set per world by the view).
+  const drift = new THREE.Vector3();
   const rnd = () => v.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
 
   return {
     uT,
+    drift,
     update(t, px) {
       uT.value = t;
       if (px) mat.uniforms.uPx.value = px;

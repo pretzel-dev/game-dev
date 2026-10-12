@@ -278,8 +278,10 @@ frames run slow, and raises it again when there's room. Add `?gfx=low` or
 - Mouse: click to select, drag to pan, right-drag (or Alt-drag) to rotate
   around whatever is under the cursor, scroll to zoom toward the cursor,
   double-click to fly to a world.
+- With a world or fleet selected, the view locks onto it: rotating and zooming
+  go round it until you drag the map away (or pinch while dragging).
 - Keys: WASD/arrows pan, Q/E rotate, +/- zoom, F focus the selection,
-  H whole system, D run dark, Esc back out.
+  H (or the target button) whole system and deselect, D run dark, Esc back out.
 
 ## Run
 
