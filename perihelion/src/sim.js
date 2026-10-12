@@ -43,6 +43,9 @@ export const RULES = {
   probe: { cost: 80, speed: 4, scan: 150 }, // speed multiplies thrust: twice as fast as a ship
   cancelRefund: 0.8, // share of a ship's cost returned when cancelled
   labSpeed: 0.5, // research speed added per research-station level
+  // Crews, fuel and refits: every ship beyond the first `free` costs credits per second.
+  upkeep: { free: 40, cost: 0.05 },
+  drill: 0.004, // experience per second a garrison regains, up to the rank it once held
 };
 
 // ---- Research -----------------------------------------------------------------
@@ -115,7 +118,7 @@ export const PROJECTS = {
   sundiver: { needs: 'torch', name: 'Sun-diver collectors', where: 'inner', text: 'Every world you hold earns 50% more', cost: 2000, time: 480 },
   massdriver: { needs: 'kinetic', name: 'Mass driver', where: 'planet', text: 'Fleets launched here fly 50% faster', cost: 2000, time: 480 },
   ringyard: { needs: 'hardened', name: 'Ring yard', where: 'giant', text: 'Ships build three times as fast here', cost: 2000, time: 480 },
-  citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Three times the guns here, and its cover reaches its family at full strength', cost: 2000, time: 480 },
+  citadel: { needs: 'pdnet', name: 'Fortress world', where: 'any', text: 'Twice the guns here, and its cover reaches its family at full strength', cost: 2000, time: 480 },
   array: { needs: 'ansible', name: 'Ansible array', where: 'any', text: 'See every world and fleet in the system, and where they are going', cost: 2000, time: 480 },
   college: { needs: 'targeting', name: 'War college', where: 'any', text: 'Simulator-trained crews: every ship you build starts as a veteran (second rank)', cost: 2000, time: 480 },
 };
@@ -145,11 +148,12 @@ export function startProject(game, b, key) {
   note(game, { type: 'project', phase: 'start', owner: b.owner, at: b.id, key });
   return true;
 }
+/** Megaprojects: research stations help, at half the rate they help research. */
+export const projectSpeed = (game, owner) => 1 + 0.5 * (researchSpeed(game, owner) - 1);
 function stepProjects(game, dt) {
   for (const b of game.bodies) {
     if (!b.project || b.owner === NEUTRAL || b.sieges.length) continue;
-    // Research stations work for megaprojects too.
-    b.project.left -= dt * researchSpeed(game, b.owner) * (spyOn(game, b).length ? 1 - SPY.slow : 1);
+    b.project.left -= dt * projectSpeed(game, b.owner) * (spyOn(game, b).length ? 1 - SPY.slow : 1);
     if (b.project.left > 0) continue;
     const key = b.project.key;
     b.wonder = key;
@@ -467,7 +471,7 @@ function endVisit(game) {
     const home = nearest(f.owner, s);
     if (!home) { tally(game, f.owner, 'lost', f.n); f.n = 0; continue; }
     const p = planWith(game, null, home, game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
-    delete f.assist;
+    delete f.assist; delete f.gs; delete f.legs; delete f.detour;
     Object.assign(f, p, { t0: game.time, to: home.id });
   }
   game.fleets = game.fleets.filter((f) => f.n > 0 || f.probe);
@@ -792,7 +796,7 @@ export function fortressGuns(game, b) {
   return game.bodies.some((f) => f.perk === 'fortress' && f.owner === b.owner && dist(posAt(game, f, game.time), p) <= PERKS.fortress.range) ? 1 : 0;
 }
 /** Guns a held world rebuilds to: batteries, fortress cover, hardening, a fortress world. */
-export const topGuns = (game, b) => (maxGuns(b) + fortressGuns(game, b) + (hasJoint(game, b.owner, 'hardened') ? 1 : 0)) * (b.wonder === 'citadel' ? 3 : 1);
+export const topGuns = (game, b) => (maxGuns(b) + fortressGuns(game, b) + (hasJoint(game, b.owner, 'hardened') ? 1 : 0)) * (b.wonder === 'citadel' ? 2 : 1);
 // Guns built on a fortress rock you hold give half as many again.
 export const maxGuns = (b) => RULES.baseGuns + Math.round(RULES.gunsPerDefence * count(b, 'defence') * (b.perk === 'fortress' && b.owner !== NEUTRAL ? 1.5 : 1));
 /** Where a world's income comes from. */
@@ -813,6 +817,10 @@ export const incomeParts = (b, game) => {
 };
 export const incomeOf = (b, game) => { const p = incomeParts(b, game); return p.worlds + p.mines + p.skimmers + p.exchanges + p.bonuses; };
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
+/** Ships an empire has, docked and in flight. */
+export const shipsOf = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? b.ships : 0), 0) + game.fleets.reduce((n, f) => n + (f.owner === owner && !f.probe ? f.n : 0), 0);
+/** Credits per second a fleet costs beyond the free ships. */
+export const upkeepOf = (game, owner) => Math.max(0, shipsOf(game, owner) - RULES.upkeep.free) * RULES.upkeep.cost;
 /** Working shipyards here: each builds one ship at a time. */
 export const yardsOf = (b) => b.structures.filter((x) => x.type === 'shipyard' && working(x)).length;
 
@@ -967,6 +975,7 @@ function burns(p0, v0, p1, v1, T, tb = T / 2) {
 
 /** Position and velocity along a transfer, tau seconds after launch (with any gravity drift). */
 function along(f, tau) {
+  if (f.legs) { const [a, b] = f.legs; return tau < a.T ? along(a, tau) : along(b, tau - a.T); }
   const p = pureAlong(f, tau);
   if (!f.gs) return p;
   const d = lerpDrift(f.gs, Math.max(0, Math.min(1, tau / f.T)));
@@ -1083,17 +1092,25 @@ function lerpDrift(gs, u) {
   return a.map((v, j) => v + (b[j] - v) * k);
 }
 
-function planWith(game, from, to, now, accel, start = null, quick = false, bf = 0.5) {
+function planWith(game, from, to, now, accel, start = null, quick = false, bf = 0.5, noDetour = false) {
   const p0 = start ? start.p : posAt(game, from, now);
   const v0 = start ? start.v : velAt(game, from, now);
+  // If the straight line would cross the sun, a torch ship doesn't wait for
+  // the planets to move: it steers round, and that route is used if faster.
+  const done = (f, blocked) => {
+    if (noDetour || !blocked || to.fixed) return f;
+    const d = planDetour(game, to, now, accel, p0, v0, quick, bf);
+    return d && d.T < f.T ? d : f;
+  };
   const make0 = (T) => {
-    // Aim for a parking orbit beside the target, on the side we come in from.
-    const c = posAt(game, to, now + T);
+    // Aim for a parking orbit beside the target, on the side we come in from
+    // (a fixed waypoint is hit exactly).
+    const c = to.fixed ? to.fixed.p : posAt(game, to, now + T);
     const away = sub(p0, c);
     const l = len(away) || 1;
-    const park = parkRadius(to);
+    const park = to.fixed ? 0 : parkRadius(to);
     const p1 = { x: c.x + (away.x / l) * park, y: c.y + (away.y / l) * park, z: c.z + (away.z / l) * park };
-    const v1 = velAt(game, to, now + T);
+    const v1 = to.fixed ? to.fixed.v : velAt(game, to, now + T);
     return { p0, v0, p1, v1, T, ...(bf < 0.5 ? { bf } : {}), ...burns(p0, v0, p1, v1, T, T * bf) };
   };
   // With gravity: solve for burns that land on target once the pull is added
@@ -1125,6 +1142,7 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
   // fast, so the answer isn't monotonic), bisect it down, then make sure the
   // path misses the sun; if not, keep looking at longer transfers.
   let prev = 1;
+  let blocked = false; // a transfer the drive could fly was rejected for the sun
   for (let T = 2; T < 20000; T += 2) {
     let f = make(T);
     if (f.need > accel) { prev = T; continue; }
@@ -1141,14 +1159,54 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
       // flight settles, fall back to the plain path (rare, very long hauls).
       for (let T2 = hi; T2 < hi * 2.5 + 40; T2 *= 1.06) {
         const g = makeG(T2);
-        if (g.need <= accel && clearOfSun(g, game, now)) return g;
+        if (g.need <= accel && clearOfSun(g, game, now)) return done(g, blocked);
       }
-      return f;
+      return done(f, blocked);
     }
-    if (clearOfSun(f, game, now)) return f;
+    if (clearOfSun(f, game, now)) return done(f, blocked);
+    blocked = true;
     prev = T;
   }
-  return game.gravity && !quick ? makeG(20000) : make(20000);
+  return done(game.gravity && !quick ? makeG(20000) : make(20000), blocked);
+}
+
+/**
+ * Round the sun: a burn to a turning point beside it, then on to the target.
+ * A few turning points are tried (either side, two distances) and the
+ * fastest pair of legs wins. The result reads like one plan: T is the total,
+ * legs hold the two transfers.
+ */
+function planDetour(game, to, now, accel, p0, v0, quick, bf) {
+  const clear = game.sunClear || SUN_CLEAR;
+  // Where the target will be, roughly: pick the side of the sun from that.
+  const guess = burnTime(dist(p0, posAt(game, to, now))) * Math.sqrt(RULES.accel / accel);
+  const c = posAt(game, to, now + guess);
+  const ch = sub(c, p0);
+  const l2 = ch.x * ch.x + ch.y * ch.y + ch.z * ch.z || 1;
+  const u = Math.max(0, Math.min(1, -(p0.x * ch.x + p0.y * ch.y + p0.z * ch.z) / l2));
+  let n = { x: p0.x + ch.x * u, y: 0, z: p0.z + ch.z * u }; // closest point of the line to the sun
+  if (len(n) < 1) n = { x: -ch.z, y: 0, z: ch.x }; // straight through: either side
+  const ln = len(n) || 1;
+  n = { x: n.x / ln, y: 0, z: n.z / ln };
+  let best = null;
+  for (const side of [1, -1]) for (const k of quick ? [1.35] : [1.35, 1.9]) {
+    const w = { x: n.x * side * clear * k, y: 0, z: n.z * side * clear * k };
+    // Pass the turning point moving along the way round, at a brachistochrone's speed there.
+    let t = { x: -w.z, y: 0, z: w.x };
+    if (t.x * ch.x + t.z * ch.z < 0) t = { x: -t.x, y: 0, z: -t.z };
+    const lt = len(t) || 1;
+    const d1 = dist(p0, w), d2 = dist(w, c);
+    const speed = 0.8 * Math.sqrt(2 * accel * Math.min(d1, d2));
+    const vw = { x: (t.x / lt) * speed, y: 0, z: (t.z / lt) * speed };
+    const a = planWith(game, null, { fixed: { p: w, v: vw } }, now, accel, { p: p0, v: v0 }, quick, bf, true);
+    if (a.need > accel || best && a.T >= best.T) continue;
+    const e = along(a, a.T);
+    const b = planWith(game, null, to, now + a.T, accel, { p: { x: e.x, y: e.y, z: e.z }, v: { x: e.vx, y: e.vy, z: e.vz } }, quick, bf, true);
+    if (b.need > accel) continue;
+    const T = a.T + b.T;
+    if (!best || T < best.T) best = { legs: [a, b], T, p0, v0, p1: b.p1, v1: b.v1, a1: a.a1, a2: b.a2, need: Math.max(a.need, b.need), detour: true, ...(bf < 0.5 ? { bf } : {}) };
+  }
+  return best;
 }
 
 /** Ships that just arrived need a short turnaround before they can leave. */
@@ -1168,7 +1226,7 @@ export function launch(game, from, to, n, dark = false) {
   // Breaking out of a world under attack: the attackers get a free shot at
   // ships leaving orbit, and half of them never make it out.
   if (from.sieges.length) {
-    const lost = Math.ceil(n / 2);
+    const lost = Math.floor(n / 2);
     n -= lost;
     tally(game, from.owner, 'lost', lost);
     for (const g of from.sieges) tally(game, g.owner, 'killed', lost / from.sieges.length);
@@ -1200,7 +1258,7 @@ function refit(game, owner) {
     const p = planWith(game, null, game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, f.bf || 0.5);
     if (p.T >= left) continue;
     delete f.assist;
-    delete f.gs; // the new plan brings its own gravity drift, if any
+    delete f.gs; delete f.legs; delete f.detour; // the new plan brings its own drift and route
     Object.assign(f, p, { t0: game.time });
   }
 }
@@ -1216,7 +1274,7 @@ export function setDark(game, f, on) {
   if (left < 10) return false;
   const s = fleetState(f, game.time);
   const p = planWith(game, null, game.bodies[f.to], game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, on ? DARK.burn : 0.5);
-  delete f.assist; delete f.bf; delete f.gs;
+  delete f.assist; delete f.bf; delete f.gs; delete f.legs; delete f.detour;
   Object.assign(f, p, { t0: game.time });
   if (on) f.dark = true; else delete f.dark;
   return true;
@@ -1246,6 +1304,13 @@ export function launchProbe(game, from, to) {
  */
 export function fleetState(f, t) {
   const tau = Math.min(f.T, Math.max(0, t - f.t0));
+  if (f.legs) {
+    // Round the sun: two transfers flown back to back.
+    const [a, b] = f.legs;
+    const leg = tau < a.T ? a : b;
+    const st = fleetState({ ...leg, t0: 0 }, leg === a ? tau : tau - a.T);
+    return { ...st, progress: tau / f.T, leg: leg === a ? 1 : 2 };
+  }
   const s = along(f, tau);
   const h = f.T / 2;
   const flipStart = h - RULES.flipTime / 2;
@@ -1353,6 +1418,7 @@ function fight(game, b, dt) {
     rest(game, b, win.n);
     // Survivors gain experience, more for winning against the odds.
     b.vet = Math.min(4.5, (win.vet || 0) + winXP(win.foe0 || 1, win.n0 || win.n, win.kills || 0));
+    b.cadre = vetLevel(b.vet);
     b.tf = win.name;
     if (vetLevel(b.vet) > vetLevel(win.vet)) note(game, { type: 'promoted', owner: b.owner, at: b.id, name: b.tf, v: b.vet });
     b.guns = 0;
@@ -1424,6 +1490,20 @@ export function step(game, dt) {
     if (b.guns < top) b.guns = Math.min(top, b.guns + regen * dt);
   }
 
+  for (let owner = 0; owner < game.players; owner++) {
+    const up = upkeepOf(game, owner) * dt;
+    if (up > 0) { const paid = Math.min(game.credits[owner], up); game.credits[owner] -= paid; tally(game, owner, 'spent', paid); }
+  }
+  for (const b of game.bodies) {
+    if (b.owner === NEUTRAL) continue;
+    // Veterans drill the crews: a garrison that has held a rank trains new
+    // arrivals back up to it over a few minutes. An empty world forgets.
+    if (!b.ships) b.cadre = 0;
+    else {
+      b.cadre = Math.max(b.cadre || 0, vetLevel(b.vet));
+      if (!b.sieges.length && vetLevel(b.vet) < b.cadre) b.vet = Math.min(VET_STEPS[b.cadre - 1], (b.vet || 0) + RULES.drill * dt);
+    }
+  }
   for (const [owner, t] of (game.tech || []).entries()) {
     if (!t.project) continue;
     t.project.left -= dt * researchSpeed(game, owner);
@@ -1445,6 +1525,7 @@ export function step(game, dt) {
       return false;
     }
     if (b.owner === f.owner) {
+      b.cadre = Math.max(b.cadre || 0, vetLevel(b.vet), vetLevel(f.vet));
       b.vet = mix(b.vet || 0, b.ships, f.vet || 0, f.n);
       if (!b.tf || f.n >= b.ships) b.tf = f.name;
       b.ships += f.n;

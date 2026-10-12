@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
@@ -12,6 +12,8 @@ const prefs = (() => {
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion') || '{}') }; } catch { return d; }
 })();
 const savePrefs = () => { try { localStorage.setItem('perihelion', JSON.stringify(prefs)); } catch { /* ignore */ } };
+// A random key this browser keeps: rejoining a game takes your seat back only with it.
+if (!prefs.token) { prefs.token = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join(''); savePrefs(); }
 
 // Graphics: High (bloom, sharper worlds, full resolution) or Low (for older
 // phones). Auto picks Low on small, low-memory touch devices. `?gfx=low`
@@ -72,6 +74,7 @@ function applyCmd(owner, c) {
   }
 }
 function act(c) {
+  if (paused) return false; // nothing moves while the host holds the game
   if (net?.role === 'client') { net.room.send({ t: 'cmd', cmd: c }); return true; }
   return applyCmd(me, c);
 }
@@ -135,6 +138,7 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   view.orbit.pol = 0.9;
   for (const id of ['menu', 'end', 'lobby']) $(id).hidden = true;
   $('hud').hidden = false;
+  $('leave').hidden = true;
   // No time warp in multiplayer; only the host can pause.
   $('warp').hidden = !!net;
   $('pause').hidden = net?.role === 'client';
@@ -179,6 +183,15 @@ $('again').addEventListener('click', () => {
   $('play').textContent = 'Play vs AI';
 });
 $('pause').addEventListener('click', pause);
+// A knocked-out guest can leave; the host stays, since the game runs in its browser.
+$('leave').addEventListener('click', () => {
+  leaveNet();
+  running = false;
+  $('leave').hidden = true;
+  $('hud').hidden = true;
+  $('menu').hidden = false;
+  $('resume').hidden = true;
+});
 $('resume').addEventListener('click', () => { $('menu').hidden = true; $('menu').classList.remove('paused'); running = true; });
 function pause() {
   if (!game || game.winner !== null || !running) return;
@@ -258,7 +271,7 @@ $('host').addEventListener('click', () => {
     open: (code) => { menuMsg(''); $('menu').hidden = true; $('lobby').hidden = false; renderLobby(room.seats, code); },
     seats: (seats) => renderLobby(seats, room.code),
     error: (t) => { menuMsg(t); if (!room.started) { leaveNet(); $('lobby').hidden = true; $('menu').hidden = false; } },
-    cmd: (seat, c) => { if (game && running) applyCmd(seat, c); },
+    cmd: (seat, c) => { if (game && running && !paused) applyCmd(seat, c); },
     left: (seat) => toast(`${game.names[seat]} disconnected`, ownerColor(seat)),
     rejoin: (seat) => {
       room.sendTo(seat, startMsg(seat));
@@ -334,7 +347,7 @@ $('join-go').addEventListener('click', () => {
   if (code.length !== 5) { menuMsg('Enter the 5-letter code'); return; }
   leaveNet();
   menuMsg('Connecting…');
-  const room = joinRoom(code, myName(), {
+  const room = joinRoom(code, myName(), prefs.token, {
     message: (m) => onHostMessage(m),
     // Once playing, the handshake server dropping doesn't matter: the game
     // connection carries on, and closed() handles losing the host.
@@ -378,23 +391,37 @@ function onHostMessage(m) {
 
 // Snapshots: bodies are updated in place (the renderer holds on to them).
 const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus', 'name', 'project', 'wonder'];
-function snapshot() {
+/** Is this seat still in the game (worlds, fleets or ships in a fight)? Knocked-out players watch everything. */
+const seatAlive = (seat) => game.bodies.some((b) => b.owner === seat || b.sieges.some((g) => g.owner === seat)) || game.fleets.some((f) => f.owner === seat && !f.probe);
+// What a world shows everyone: who holds it and any megaproject there. The rest needs sensors.
+const PUBLIC_KEYS = ['owner', 'bonus', 'name', 'project', 'wonder'];
+/**
+ * The state for one guest, with fog of war applied on the host: only the
+ * fleets its sensors can see, its own scans and agents, and nothing but the
+ * public facts about worlds out of range. (No seat: everything.)
+ */
+function snapshot(seat = null) {
+  const vis = seat !== null && seatAlive(seat) ? visibility(game, seat) : null;
   return {
     time: game.time,
     winner: game.winner,
     credits: game.credits,
     tech: game.tech,
-    fleets: game.fleets,
-    scans: game.scans,
-    spies: game.spies,
+    fleets: vis ? game.fleets.filter((f) => vis.seesFleet(f)) : game.fleets,
+    scans: vis ? (game.scans || []).filter((x) => x.owner === seat) : game.scans,
+    spies: vis ? (game.spies || []).filter((x) => x.owner === seat) : game.spies,
     happenings: game.happenings,
     wonders: game.wonders,
     visit: game.visit,
     nextId: game.nextId,
-    bodies: game.bodies.map((b) => Object.fromEntries(BODY_KEYS.map((k) => [k, b[k]]))),
+    bodies: game.bodies.map((b) => (vis && !vis.bodies.has(b.id)
+      ? { ...Object.fromEntries(PUBLIC_KEYS.map((k) => [k, b[k]])), hidden: true }
+      : Object.fromEntries(BODY_KEYS.map((k) => [k, b[k]])))),
     stats: game.winner !== null ? game.stats : undefined,
   };
 }
+// Fields a world out of sensor range shows as empty on a guest.
+const HIDDEN_BODY = { ships: 0, guns: 0, structures: [], sieges: [], queue: 0, build: 0, slips: [], vet: 0, tf: null, fighting: false, resting: 0, restUntil: 0 };
 function applySnapshot(s) {
   // Keep local time smooth: small differences are eased out, big ones snap.
   const d = s.time - game.time;
@@ -410,12 +437,15 @@ function applySnapshot(s) {
   game.nextId = s.nextId;
   s.bodies.forEach((x, i) => {
     const b = game.bodies[i];
+    if (x.hidden) { Object.assign(b, x, HIDDEN_BODY); return; } // out of range: public facts only
     // Losses since the last update become explosions; a new owner flashes.
-    // (Not on the first update: a rejoining guest would see every past loss at once.)
-    const lostDef = firstSnap ? 0 : (b.lostDef || 0) + Math.max(0, (x.totDef || 0) - (b.totDef || 0));
-    const lostAtk = firstSnap ? 0 : (b.lostAtk || 0) + Math.max(0, (x.totAtk || 0) - (b.totAtk || 0));
-    const captured = !firstSnap && (b.captured || x.owner !== b.owner);
-    Object.assign(b, x, { lostDef, lostAtk, captured });
+    // (Not on the first update, or when a world comes back into view: a
+    // rejoining guest would see every past loss at once.)
+    const fresh = firstSnap || b.hidden;
+    const lostDef = fresh ? 0 : (b.lostDef || 0) + Math.max(0, (x.totDef || 0) - (b.totDef || 0));
+    const lostAtk = fresh ? 0 : (b.lostAtk || 0) + Math.max(0, (x.totAtk || 0) - (b.totAtk || 0));
+    const captured = !fresh && (b.captured || x.owner !== b.owner);
+    Object.assign(b, x, { lostDef, lostAtk, captured, hidden: false });
   });
   firstSnap = false;
   if (s.stats) game.stats = s.stats;
@@ -476,7 +506,7 @@ function updateFleetInfo() {
   // Dev view: who can see this fleet right now.
   const seenBy = prefs.dev && !net ? `<br><span class="dim">seen by ${game.names ? '' : ''}${Array.from({ length: game.players }, (_, o) => o).filter((o) => o !== f.owner).map((o) => `<span style="color:${ownerColor(o)}">${nameOf(o)} ${visibility(game, o).seesFleet(f) ? '✓' : '✗'}</span>`).join(' · ')}</span>` : '';
   setHTML($('fleetText'), `<b>${tf(f.name)}</b>${vetLevel(f.vet) ? ` <span class="vet">${vetName(f.vet)}</span>` : ''} · <b>${f.n}</b> → <b>${to.name}</b><br><span class="dim">${phase}</span> · `
-    + `arrive in <b>${fmt(left)}</b>${f.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[f.assist].name}`, 'assist')}` : ''} ${tip(`${Math.round(s.progress * 100)}%`, `${speed.toFixed(2)} units/s`, 'dim')}${toggle}${seenBy}`);
+    + `arrive in <b>${fmt(left)}</b>${f.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[f.assist].name}`, 'assist')}` : ''}${f.detour ? ` ${tip('round the sun', 'Steering round the sun: a turn beside it, then on to the target', 'dim')}` : ''} ${tip(`${Math.round(s.progress * 100)}%`, `${speed.toFixed(2)} units/s`, 'dim')}${toggle}${seenBy}`);
 }
 
 $('fdark').addEventListener('click', () => {
@@ -512,7 +542,8 @@ function incomeBreakdown() {
   const agents = (game.spies || []).filter((x) => x.owner === me && x.since <= game.time).reduce((t, x) => t + incomeOf(game.bodies[x.body], game) * SPY.skim, 0);
   const comet = (game.happenings || []).some((h) => h.kind === 'comet' && h.holder === me && game.time >= h.starts) ? EVENTS.comet.pay : 0;
   const rows = [[`${n} world${n === 1 ? '' : 's'}`, sum.worlds], ['Mines', sum.mines], ['Gas harvesters', sum.skimmers], ['Exchanges', sum.exchanges], ['Bonuses and wonders', sum.bonuses], ['Agents', agents], ['Comet mining', comet]];
-  return rows.filter(([, v]) => v > 0.001).map(([k, v]) => `${k}  +${v.toFixed(1)}/s`).join('\n');
+  const up = upkeepOf(game, me);
+  return rows.filter(([, v]) => v > 0.001).map(([k, v]) => `${k}  +${v.toFixed(1)}/s`).concat(up > 0.001 ? [`Fleet upkeep (ships beyond ${RULES.upkeep.free})  −${up.toFixed(1)}/s`] : []).join('\n');
 }
 /** Spy line on an enemy world: plant one, or how long yours has been there. */
 function spyLine(b) {
@@ -557,7 +588,7 @@ function updateActions() {
     $('actions').classList.add('launching');
     $('buildrow').hidden = $('stepper').hidden = $('dark').hidden = true;
     $('cancel').hidden = false;
-    setHTML($('info'), `<span>${icon(ui.projKey)} Build the <b>${P.name}</b> at <b>${s.name}</b> · <b>${P.cost}</b> · ${fmt(P.time / researchSpeed(game, me))}${why ? ` · <span class="warn">${why}</span>` : ''}</span><small class="dim" style="flex-basis:100%">${P.text}. Only one empire can finish it; if a rival gets there first you get half back.</small>`);
+    setHTML($('info'), `<span>${icon(ui.projKey)} Build the <b>${P.name}</b> at <b>${s.name}</b> · <b>${P.cost}</b> · ${fmt(P.time / projectSpeed(game, me))}${why ? ` · <span class="warn">${why}</span>` : ''}</span><small class="dim" style="flex-basis:100%">${P.text}. Only one empire can finish it; if a rival gets there first you get half back.</small>`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = !!why;
     return;
@@ -602,7 +633,8 @@ function updateActions() {
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'unknown' : cover ? `${defence} ${tip(`+${cover.toFixed(1)}`, `Cover from ${coverFrom(game, t).map((c) => c.from.name).join(', ')}`)}` : defence;
-    const assist = ui.preview.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[ui.preview.assist].name}: a faster route`, 'assist')}` : '';
+    const assist = (ui.preview.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[ui.preview.assist].name}: a faster route`, 'assist')}` : '')
+      + (ui.preview.detour ? ` ${tip('round the sun', 'The straight line would cross the sun: the fleet steers round it under full thrust', 'dim')}` : '');
     if (probing) {
       const why = cantProbe(game, s, t);
       setHTML($('info'), `<span>Probe → <b>${t.name}</b> · <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
@@ -907,11 +939,11 @@ function megaDetail(joint) {
   const rivals = game.bodies.filter((b) => b.owner !== me && b.project && b.project.key === key).length;
   const race = rivals ? `<small class="warn">${rivals} rival${rivals === 1 ? '' : 's'} building it</small>` : '';
   if (mine) {
-    return `${head}${race}<div class="nextrow"><span><small>At ${mine.name} · ${fmt(mine.project.left / researchSpeed(game, me))} left · research stations speed it up</small><i class="meter"><i style="width:${pct(1 - mine.project.left / P.time)}"></i></i></span></div></div>`;
+    return `${head}${race}<div class="nextrow"><span><small>At ${mine.name} · ${fmt(mine.project.left / projectSpeed(game, me))} left · research stations speed it up (half as much as research)</small><i class="meter"><i style="width:${pct(1 - mine.project.left / P.time)}"></i></i></span></div></div>`;
   }
   const ready = game.tech[me][joint];
   const sites = game.bodies.filter((b) => b.owner === me && !cantProject(game, b, key));
-  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? fmt(P.time / researchSpeed(game, me)) : 'No world of yours can take it yet') : `Needs ${JOINTS[joint].name}${game.tech[me][JOINTS[joint].needs[0]] < 2 || game.tech[me][JOINTS[joint].needs[1]] < 2 ? ` (after ${JOINTS[joint].needs.map((k) => `${TECH[k].name} II`).join(' and ')})` : ''}`}</small></span>`
+  return `${head}${race}<div class="nextrow"><span><small>${ready ? (sites.length ? fmt(P.time / projectSpeed(game, me)) : 'No world of yours can take it yet') : `Needs ${JOINTS[joint].name}${game.tech[me][JOINTS[joint].needs[0]] < 2 || game.tech[me][JOINTS[joint].needs[1]] < 2 ? ` (after ${JOINTS[joint].needs.map((k) => `${TECH[k].name} II`).join(' and ')})` : ''}`}</small></span>`
     + `<button data-mega="${key}" ${ready && sites.length ? '' : 'disabled'}>Build<small>${P.cost}</small></button></div></div>`;
 }
 function renderResearch() {
@@ -1654,7 +1686,10 @@ function frame(now) {
       }
       if (net?.role === 'host') {
         netClock -= dt;
-        if (netClock <= 0 || game.winner !== null) { netClock = 0.25; net.room.broadcast({ t: 'state', s: snapshot() }); }
+        if (netClock <= 0 || game.winner !== null) {
+          netClock = 0.25;
+          net.room.seats.forEach((seat, i) => { if (i > 0 && seat.conn) net.room.sendTo(i, { t: 'state', s: snapshot(i) }); });
+        }
       }
       // Knocked out (as the sim counts it): no worlds, no fleets, no ships fighting anywhere.
       const alive = game.bodies.some((b) => b.owner === me || b.sieges.some((g) => g.owner === me)) || game.fleets.some((f) => f.owner === me && !f.probe);
@@ -1665,6 +1700,7 @@ function frame(now) {
           toast('Your empire has fallen · watching the rest', '#ff7a4d');
           ui.vis = null; // observers see everything
         } else ui.vis = visibility(game, me);
+        $('leave').hidden = !(knockedOut && net?.role === 'client');
       }
       if (ui.fleet !== null) updateFleetInfo();
       uiClock -= dt;
@@ -1675,7 +1711,7 @@ function frame(now) {
         if (prefs.dev && !net) renderDev();
         updateActions();
         renderResearch();
-        setHTML($('clock'), `<b>₵ ${Math.floor(game.credits[me])}</b> ${tip(`+${income(game, me).toFixed(1)}/s`, incomeBreakdown(), 'inc')} · T+${fmt(game.time)}`);
+        { const net_ = income(game, me) - upkeepOf(game, me); setHTML($('clock'), `<b>₵ ${Math.floor(game.credits[me])}</b> ${tip(`${net_ < 0 ? '−' : '+'}${Math.abs(net_).toFixed(1)}/s`, incomeBreakdown(), 'inc')} · T+${fmt(game.time)}`); }
       }
       if (game.winner !== null) finish();
     }
