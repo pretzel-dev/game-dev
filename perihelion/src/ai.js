@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, attackPowerOf, cantSpy, plantSpy, PERKS } from './sim.js';
+import { NEUTRAL, RULES, income, upkeepOf, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, attackPowerOf, cantSpy, plantSpy, PERKS } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -257,9 +257,9 @@ function economy(game, ai, mine, coming, will) {
     if (free(rock, 'mine')) return buildStructure(game, rock, 'mine');
     if (!threatened(rock) && will()) return 'save';
   }
-  // 2'. Ships first: every yard keeps at least one in the queue.
+  // 2'. Ships first: every yard keeps at least one in the queue (unless the fleet's upkeep already bites).
   const idle = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 1)[0];
-  if (idle) return orderShip(game, idle);
+  if (idle && upkeepOf(game, ai.owner) < income(game, ai.owner) * 0.4) return orderShip(game, idle);
   // 2a'. A special world we hold: build the structure that suits it (guns on
   // a fortress, labs on an archive, a bureau on a listening post, a yard on a
   // drydock hulk), once. Smart AIs always do; weaker ones only sometimes.
@@ -343,9 +343,11 @@ function economy(game, ai, mine, coming, will) {
     const x = safe && safe.structures.find((y) => y.type === 'defence' && y.level === 1 && !cantDemolish(game, safe, y));
     if (x && credits > 900) return demolish(game, safe, x);
   }
-  // 4. Ships: keep every yard busy, but leave credits for the rest now and then.
+  // 4. Ships: keep every yard busy, but leave credits for the rest now and
+  // then, and don't pile up a fleet whose upkeep eats the income.
+  const bloated = upkeepOf(game, ai.owner) > income(game, ai.owner) * 0.4;
   const yard = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 3).sort((a, b) => a.queue - b.queue)[0];
-  if (yard && (smart || ai.rand() < 0.8)) return orderShip(game, yard);
+  if (yard && !bloated && (smart || ai.rand() < 0.8)) return orderShip(game, yard);
   // 5. More guns at home once things are running.
   const home = mine.find((b) => b.home) || mine[0];
   if (home && game.credits[ai.owner] > 600 && free(home, 'defence') && home.structures.filter((x) => x.type === 'defence').length < 2) return buildStructure(game, home, 'defence');

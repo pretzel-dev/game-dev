@@ -28,7 +28,7 @@ export function hostRoom(name, on) {
   const peer = new Peer(PREFIX + code, OPTS);
   const seats = [{ kind: 'human', name, online: true }];
   let started = false;
-  const pub = () => seats.map((s) => ({ kind: s.kind, name: s.name, online: s.online, difficulty: s.difficulty }));
+  const pub = () => seats.map((s) => ({ kind: s.kind, name: s.name, online: s.online, difficulty: s.difficulty })); // never the tokens
   const send = (conn, msg) => { try { if (conn && conn.open) conn.send(msg); } catch { /* ignore */ } };
   const room = {
     code,
@@ -57,14 +57,15 @@ export function hostRoom(name, on) {
     conn.on('data', (msg) => {
       if (msg.t === 'hello') {
         const name = cleanName(msg.name);
-        // Rejoining mid-game with the same name takes the old seat back.
-        const offline = (j, s) => j !== 0 && s.kind === 'human' && !s.online;
-        let i = seats.findIndex((s, j) => offline(j, s) && s.name === name);
-        if (i < 0) i = seats.findIndex((s, j) => offline(j, s) && s.asked === name); // renamed "Bob 2" on joining
+        const token = typeof msg.token === 'string' ? msg.token.slice(0, 64) : '';
+        // Rejoining mid-game: the browser's key takes its old seat back (a
+        // name alone would let anyone with the code take a dropped player's seat).
+        let i = token ? seats.findIndex((s, j) => j !== 0 && s.kind === 'human' && !s.online && s.token === token) : -1;
         if (i < 0 && started) { send(conn, { t: 'full', why: 'Game already started' }); return; }
         if (i < 0) {
           if (seats.length >= MAX_SEATS) { send(conn, { t: 'full', why: 'Room is full' }); return; }
-          seats.push({ kind: 'human', name: uniqueName(seats, name), asked: name });
+          if (seats.some((s) => s.online && s.token && s.token === token)) { send(conn, { t: 'full', why: 'Already in this room' }); return; }
+          seats.push({ kind: 'human', name: uniqueName(seats, name), token });
           i = seats.length - 1;
         }
         Object.assign(seats[i], { conn, online: true });
@@ -102,8 +103,8 @@ function uniqueName(seats, name) {
   return n;
 }
 
-/** Join a room by code. `on` receives every message from the host, plus error(text) and closed(). */
-export function joinRoom(code, name, on) {
+/** Join a room by code with this browser's rejoin token. `on` receives every message from the host, plus error(text) and closed(). */
+export function joinRoom(code, name, token, on) {
   const peer = new Peer(OPTS);
   let conn = null;
   const room = {
@@ -113,7 +114,7 @@ export function joinRoom(code, name, on) {
   peer.on('open', () => {
     conn = peer.connect(PREFIX + code.toUpperCase(), { reliable: true });
     const timer = setTimeout(() => { if (!conn.open) on.error('No game found with that code'); }, 9000);
-    conn.on('open', () => { clearTimeout(timer); room.send({ t: 'hello', name }); });
+    conn.on('open', () => { clearTimeout(timer); room.send({ t: 'hello', name, token }); });
     conn.on('data', (msg) => on.message(msg));
     conn.on('close', () => on.closed());
   });

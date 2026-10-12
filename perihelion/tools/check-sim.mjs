@@ -467,7 +467,7 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.equal(homes[0].wonder, 'citadel', 'first to finish wins');
   assert.ok(!homes[1].project && g.credits[1] > c1, 'the loser is refunded half');
   assert.equal(S.cantProject(g, homes[1], 'citadel'), 'already built');
-  assert.ok(S.topGuns(g, homes[0]) >= 3 * S.maxGuns(homes[0]), 'fortress world triples guns');
+  assert.ok(S.topGuns(g, homes[0]) >= 2 * S.maxGuns(homes[0]), 'fortress world doubles guns');
   console.log('hex research and megaprojects: ok');
 }
 // Running dark and spies.
@@ -537,4 +537,46 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   const a = createGame({ seed: 77, opponents: 2 }), b = createGame({ seed: 77, opponents: 2 });
   assert.deepEqual(a.bodies.map((x) => [x.r, x.perk, x.owner]), b.bodies.map((x) => [x.r, x.perk, x.owner]));
   console.log('event rewards and seeded maps: ok');
+}
+
+// Round the sun: a blocked route steers past the sun instead of waiting, so
+// faster drives help; it still arrives beside the target, matching its speed.
+{
+  const g = createGame({ seed: 9 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  const far = g.bodies.filter((b) => b.owner === NEUTRAL && !b.visitor).sort((a, b) => dist(posAt(g, b, 0), posAt(g, home, 0)) - dist(posAt(g, a, 0), posAt(g, home, 0)))[0];
+  const f = { ...plan(g, home, far), t0: 0 };
+  assert.ok(f.detour && f.legs.length === 2, 'the far world is reached round the sun');
+  let closest = Infinity;
+  for (let k = 0; k <= 400; k++) { const q = fleetState(f, (k / 400) * f.T); closest = Math.min(closest, Math.hypot(q.x, q.y, q.z)); }
+  assert.ok(closest > g.sunClear, `the detour keeps clear of the sun (${closest.toFixed(1)})`);
+  const end = fleetState(f, f.T);
+  assert.ok(Math.abs(dist(end, posAt(g, far, f.T)) - parkRadius(far)) < 0.5, 'and parks beside the target');
+  const v1 = velAt(g, far, f.T);
+  assert.ok(Math.hypot(end.vx - v1.x, end.vy - v1.y, end.vz - v1.z) < 0.05, 'matching its speed');
+  const probe = plan(g, home, far, 0, RULES.probe.speed);
+  assert.ok(probe.T < f.T / 1.6, `a probe is much faster round the sun (${probe.T.toFixed(0)} vs ${f.T.toFixed(0)} s)`);
+  const fl = launch(g, home, far, 2);
+  for (let t = 0; t < fl.T + 1; t += 0.5) step(g, 0.5);
+  assert.ok(far.sieges.some((x) => x.owner === 0) || far.owner === 0, 'the fleet gets there');
+  console.log(`round the sun: ship ${f.T.toFixed(0)}s, probe ${probe.T.toFixed(0)}s, closest ${closest.toFixed(1)}`);
+}
+
+// Upkeep beyond the free ships; drill restores a garrison's rank.
+{
+  const g = createGame({ seed: 5 });
+  const home = g.bodies.find((b) => b.owner === 0);
+  assert.equal(S.upkeepOf(g, 0), 0, 'a small fleet is free');
+  home.ships = RULES.upkeep.free + 20;
+  assert.ok(Math.abs(S.upkeepOf(g, 0) - 20 * RULES.upkeep.cost) < 1e-9, 'upkeep per ship beyond the free ones');
+  const c0 = g.credits[0];
+  step(g, 1);
+  assert.ok(g.credits[0] < c0 + income(g, 0) - 20 * RULES.upkeep.cost + 1e-6, 'upkeep is paid');
+  home.ships = 4; home.vet = 2.6; // a veteran garrison
+  step(g, 0.5);
+  assert.equal(home.cadre, 2);
+  home.vet = 0.2; // rookies flood in
+  for (let t = 0; t < 700; t += 0.5) step(g, 0.5);
+  assert.equal(S.vetLevel(home.vet), 2, 'drill brings the garrison back to its rank');
+  console.log('upkeep and drill: ok');
 }

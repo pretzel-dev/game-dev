@@ -100,7 +100,7 @@ The end of each joint tech: researching it unlocks a megaproject (a wonder).
 Each has a gold tile in the row under the R&D board:
 tap it to see what it needs, Build, then tap one of your worlds. One per world, 2000 credits,
 8 minutes, and your research
-stations speed it up. Each kind can be finished only once per game; several
+stations speed it up (half as much as they speed research). Each kind can be finished only once per game; several
 empires can race for the same one, and the first to finish wins it; the rest
 get half their money back. Only research stations speed one up. Building asks you to confirm, like a
 launch. A violet ring round the world shows how far along it is, to everyone. Everyone is told when a project
@@ -111,7 +111,7 @@ starts, and a captured world's project or wonder goes to the captor.
 | Sun-diver collectors | Torch production | Innermost planet | Every world you hold earns 50% more |
 | Mass driver | Kinetic strike | Any planet | Fleets launched here fly 50% faster |
 | Ring yard | Hardened colonies | Gas giant | Ships build three times as fast here |
-| Fortress world | Point-defence net | Any world | Three times the guns; its cover reaches its family at full strength |
+| Fortress world | Point-defence net | Any world | Twice the guns; its cover reaches its family at full strength |
 | Ansible array | Entangled signals | Any world | See every world and fleet in the system, and where they are going |
 | War college | Targeting data | Any world | Every ship you build starts as a veteran (second rank) |
 
@@ -135,7 +135,10 @@ preview server running).
   orbital velocity, burn with one thrust vector for the first half, flip, and
   burn with a second, arriving in a parking orbit beside the target at its
   speed (they don't overshoot or fly into it). The planner picks the fastest transfer the drive allows
-  that stays clear of the sun. The sun's gravity pulls on ships all through
+  that stays clear of the sun; when the straight line would cross it, the
+  fleet steers round under full thrust (a burn to a turning point beside
+  the sun, then on to the target; the panel says "round the sun"), so a
+  better drive always shortens the trip. The sun's gravity pulls on ships all through
   the flight (at the strength that holds the planets in orbit), so routes
   bend round it: dives inward are quick, climbs outward cost more. The
   planner solves for burns that still land on target (about 1 route in 20
@@ -144,6 +147,10 @@ preview server running).
   minutes. Drive plumes are visible from far away. Ships can't be recalled.
 - **Credits:** every world you hold earns credits (planets 1/s, stations
   0.6, moons 0.5, asteroids 0.3), homeworlds +0.4, plus 1.5/s per mine. They show top left.
+- **Upkeep:** the first 40 ships are free; each one beyond that costs
+  0.05/s (crews, fuel, refits). The income tooltip shows it.
+- **Drill:** a garrison that has held a rank trains new arrivals back up to
+  it over a few minutes, so reinforcing veterans doesn't cost the rank for long.
 - **Building:** select one of your worlds for its build row (on touch, tap an
   option once to read what it does, again to build; with a mouse, hover). Worlds have
   build slots by size (asteroids and small moons 1, small planets and larger
@@ -248,10 +255,15 @@ every other (and a quick "human" stand-in) to check the order holds.
 - The host's browser runs the whole game, AIs included. Guests send orders and
   receive the state four times a second over WebRTC. The free PeerJS cloud only
   brokers the first handshake.
-- No time warp. Only the host can pause, and it pauses for everyone.
-- If a guest drops, their empire sits idle; rejoining with the same code and
-  name takes the seat back. If the host leaves, the game ends.
-- Knocked-out players keep watching until one empire is left.
+- No time warp. Only the host can pause, and it pauses for everyone; no
+  orders go through while paused.
+- If a guest drops, their empire sits idle; rejoining with the same code from
+  the same browser takes the seat back (the browser keeps a random key, so
+  nobody else can claim the seat). If the host leaves, the game ends.
+- Fog of war is applied on the host: a guest is only sent the fleets and
+  worlds its sensors can see.
+- Knocked-out players keep watching until one empire is left, or tap
+  **Leave**.
 - For testing against a self-hosted PeerJS server, add `?peer=host:port`.
 
 Later: move the game onto a server (Cloudflare) so it keeps running without
@@ -260,7 +272,7 @@ the host and nobody can pause.
 ## Breaking out
 
 Ships can leave a world that's under attack, but the attackers get a free
-shot as they climb out: half of them are lost. The AI won't try it.
+shot as they climb out: half of them (rounded down) are lost. The AI won't try it.
 
 ## Dev view
 
@@ -287,7 +299,8 @@ frames run slow, and raises it again when there's room. Add `?gfx=low` or
 - With a world or fleet selected, the view locks onto it: rotating and zooming
   go round it until you drag the map away (or pinch while dragging).
 - Keys: WASD/arrows pan, Q/E rotate, +/- zoom, F focus the selection,
-  H (or the target button) whole system and deselect, D run dark, Esc back out.
+  H (or the target button) whole system and deselect, L launch/confirm,
+  P probe, R research, D run dark, Space pause, 1–5 time speed, Esc back out.
 
 ## Run
 
@@ -318,5 +331,5 @@ Playwright (`npm run preview` first; Playwright isn't a dependency).
 
 ## Ideas for later
 
-Ship types and per-ship fitting, gravity assists, fog of war, battles in open
-space, and more detail on worlds up close (bases, yards, docks).
+Ship types and per-ship fitting, battles in open space, and more detail on
+worlds up close (bases, yards, docks).
