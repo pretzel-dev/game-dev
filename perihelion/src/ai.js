@@ -49,7 +49,7 @@ export function shipsToTake(game, owner, t, vet = 0, _known = true, def = null) 
     for (let k = 0; k < 1200; k++) {
       aD += RULES.fire * (s * dVet + g + d.cover) * dFp * aDmg * 0.5;
       bD += RULES.fire * a * aFp * dDmg * 0.5;
-      while (bD >= 1 && s + g > 0) { bD -= 1; if (s > 0) s -= 1; else g = Math.max(0, g - 1); }
+      while (bD >= 1 && s + g > 0) { bD -= 1; if (s > 0 && (g < 1 || s >= g)) s -= 1; else g = Math.max(0, g - 1); }
       while (aD >= 1 && a > 0) { aD -= 1; a -= 1; }
       if (a <= 0) return false;
       if (s + g <= 0) return true;
@@ -313,7 +313,8 @@ function economy(game, ai, mine, coming, will) {
     if (t && will()) return !!plantSpy(game, ai.owner, t);
   }
   const home0 = mine.find((b) => b.home);
-  if (smart && home0 && mine.length >= 6 && credits > 1000 && free(home0, 'bureau') && !home0.structures.some((x) => x.type === 'bureau')) return buildStructure(game, home0, 'bureau');
+  // Normal and up guard home against agents once the empire is worth spying on.
+  if (ai.d.skill >= 0.7 && home0 && mine.length >= (smart ? 6 : 5) && credits > 1000 && free(home0, 'bureau') && !home0.structures.some((x) => x.type === 'bureau')) return buildStructure(game, home0, 'bureau');
   // 3. More shipyards as the empire grows (one per three worlds).
   // A ring yard (built or building) without a shipyard is wasted: give it one first.
   const ring = mine.find((b) => (b.wonder === 'ringyard' || b.project?.key === 'ringyard') && !b.structures.some((x) => x.type === 'shipyard') && free(b, 'shipyard'));

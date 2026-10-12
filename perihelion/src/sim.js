@@ -40,7 +40,7 @@ export const RULES = {
   scrapTime: 20, // seconds to tear one down (cancelled if the world is taken)
   cooldown: 15, // seconds before newly arrived ships can launch again
   // Unmanned probe: fast, single use; a flyby reveals a world for a while.
-  probe: { cost: 80, speed: 4, scan: 150 },
+  probe: { cost: 80, speed: 4, scan: 150 }, // speed multiplies thrust: twice as fast as a ship
   cancelRefund: 0.8, // share of a ship's cost returned when cancelled
   labSpeed: 0.5, // research speed added per research-station level
 };
@@ -184,7 +184,8 @@ function sample(game) {
   });
 }
 
-export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives')) * (hasJoint(game, owner, 'torch') ? 1.1 : 1);
+// Trip time goes with 1/sqrt(thrust), so a fleet that flies k times as fast needs k² the thrust.
+export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives')) * (hasJoint(game, owner, 'torch') ? 1.1 ** 2 : 1);
 export const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
 /** Firepower when attacking (targeting data helps here). */
 export const attackPowerOf = (game, owner) => firepowerOf(game, owner) * (hasJoint(game, owner, 'targeting') ? 1.2 : 1);
@@ -439,7 +440,7 @@ function startVisit(game, kind) {
   const T = 2 * tau * barker(outer + 60);
   game.visit = { kind, t0: game.time, T, q, w: evRand(game) * Math.PI * 2, tau };
   const b = game.bodies.find((x) => x.visitor);
-  b.owner = NEUTRAL; b.ships = 0; b.guns = V.guns; b.sieges = []; b.vet = 0; b.tf = null;
+  b.owner = NEUTRAL; b.ships = 0; b.guns = b.guns0 = V.guns; b.sieges = []; b.vet = 0; b.tf = null;
   b.name = kind === 'comet' ? `Comet ${String.fromCharCode(65 + Math.floor(evRand(game) * 26))}/${10 + Math.floor(evRand(game) * 90)}` : `Derelict ${fleetName(game)}`;
   return b;
 }
@@ -475,7 +476,8 @@ function endVisit(game) {
   game.visit = null;
 }
 
-export const EVENT_RULES = { first: 300, every: 510, jitter: 90, notice: 60, grace: 45 };
+// Notice and grace leave time to fly in from across the system and take the world.
+export const EVENT_RULES = { first: 300, every: 510, jitter: 90, notice: 90, grace: 120 };
 function evRand(game) {
   // Deterministic, separate from map generation.
   game.evSeed = (Math.imul(game.evSeed ^ (game.evSeed >>> 15), 2246822507) + 0x6d2b79f5) >>> 0;
@@ -495,7 +497,9 @@ function events(game, dt) {
       const b = startVisit(game, kind);
       h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.visit.t0 + game.visit.T - 20, holder: NEUTRAL, held: 0 };
     } else {
-      const spots = game.bodies.filter((b) => !b.home && !b.visitor && !game.happenings.some((x) => x.at === b.id));
+      // Independent worlds first, so it's a race rather than a gift to whoever holds it.
+      const open = game.bodies.filter((b) => !b.home && !b.visitor && !game.happenings.some((x) => x.at === b.id));
+      const spots = open.some((b) => b.owner === NEUTRAL) ? open.filter((b) => b.owner === NEUTRAL) : open;
       const b = spots[Math.floor(evRand(game) * spots.length)];
       h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.time + R.notice + EVENTS[kind].hold + R.grace, holder: NEUTRAL, held: 0 };
     }
@@ -624,7 +628,8 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   const homeIdx = shuffle([1, 2, 3, 4]).slice(0, players);
   for (let i = 0; i < 6; i++) {
     const court = sys.court && i === 5;
-    const giant = court || (!homeIdx.includes(i) && i >= 3 && rand() < (sys.court ? 0.3 : 0.7));
+    // At least one gas giant on every map (harvesters, the ring yard and the tidal forge need one).
+    const giant = court || (!homeIdx.includes(i) && i >= 3 && (rand() < (sys.court ? 0.3 : 0.7) || (i === 5 && !specs.some((x) => x.giant))));
     const size = court ? 5 : giant ? 3.2 + rand() * 1.2 : 1.6 + rand() * 1.1;
     let count = i === 0 ? 0 : homeIdx.includes(i) ? 1 : court ? 5 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
     if (sys.moons && !homeIdx.includes(i)) count = Math.floor(count * sys.moons);
@@ -752,6 +757,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     if (k === 'hulk' && !b.structures.some((x) => x.type === 'shipyard')) b.structures.push({ type: 'shipyard', level: 1, left: 0 });
     placed++;
   }
+  for (const b of bodies) b.guns0 = b.owner === NEUTRAL ? b.guns : 0; // what independents rebuild to
   game.evSeed = Math.floor(rand() * 2 ** 31);
   game.credits = Array.from({ length: game.players }, () => RULES.startCredits);
   // Per-player totals and a time series, for the end-of-game report.
@@ -861,7 +867,8 @@ export function buildStructure(game, b, type) {
 }
 
 /** Upgrading costs more at each level and takes longer. */
-export const upgradeCost = (x) => Math.round(RULES.structures[x.type].cost * (x.level + 1) * 0.75);
+// Gun upgrades cost a little less than a new battery (same +2 guns, no extra slot).
+export const upgradeCost = (x) => Math.round(RULES.structures[x.type].cost * (x.type === 'defence' ? 0.9 : (x.level + 1) * 0.75));
 /** Seconds for one yard here to build a ship. */
 export const shipTime = (game, b) => RULES.ship.time / (buildSpeed(game, b.owner, b) * (hasJoint(game, b.owner, 'torch') ? 1.25 : 1) * (b.wonder === 'ringyard' ? 3 : 1) * (b.perk === 'hulk' ? 1.5 : 1));
 export const upgradeTime = (x) => RULES.structures[x.type].time * (1 + x.level * 0.5);
@@ -1033,7 +1040,9 @@ export function depotBoost(game, from, now = game.time) {
  * gravity solve: a close estimate of the flight time, for AI planning.
  */
 export function plan(game, from, to, now = game.time, speed = 1, quick = false, bf = 0.5) {
-  speed *= depotBoost(game, from, now) * (from.wonder === 'massdriver' ? 1.5 : 1);
+  // `speed` multiplies thrust; a depot or mass driver makes the trip that much faster (thrust squared).
+  const boost = depotBoost(game, from, now) * (from.wonder === 'massdriver' ? 1.5 : 1);
+  speed *= boost * boost;
   const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick, bf);
   const g = assistBy(game, direct, from, to, now);
   if (!g) return direct;
@@ -1308,10 +1317,11 @@ function fight(game, b, dt) {
   }
   b.dmg = (b.dmg || 0) + RULES.fire * attackFire * damageTaken(game, b.owner) * dt;
   b.fighting = true;
-  // Damage becomes whole ships lost: docked ships first, then guns.
+  // Damage becomes whole losses, from whichever there's more of (docked
+  // ships or guns), so neither shields the other.
   while (b.dmg >= 1 && b.ships + b.guns > 0) {
     b.dmg -= 1;
-    if (b.ships > 0) {
+    if (b.ships > 0 && (b.guns < 1 || b.ships >= b.guns)) {
       b.ships -= 1;
       tally(game, b.owner, 'lost');
       tally(game, b.sieges.slice().sort((x, y) => y.n - x.n)[0].owner, 'killed');
@@ -1374,7 +1384,11 @@ export function step(game, dt) {
   game.time += dt;
 
   for (const b of game.bodies) {
-    if (b.owner === NEUTRAL) continue;
+    if (b.owner === NEUTRAL) {
+      // Independents repair their guns between raids, slowly.
+      if (!b.sieges.length && b.guns < (b.guns0 || 0)) b.guns = Math.min(b.guns0, b.guns + RULES.gunRegen * dt);
+      continue;
+    }
     game.credits[b.owner] += incomeOf(b, game) * dt;
     tally(game, b.owner, 'earned', incomeOf(b, game) * dt);
     const speed = buildSpeed(game, b.owner, b);
@@ -1439,15 +1453,20 @@ export function step(game, dt) {
     } else {
       // A point-defence net picks off part of the fleet on the way in; a
       // kinetic strike opens with a volley that knocks out defenders.
+      // Fractions carry into the battle as damage already done, so splitting
+      // a fleet into small groups doesn't dodge either.
+      let hit = 0;
       if (hasJoint(game, b.owner, 'pdnet')) {
-        const shot = Math.round(f.n * 0.15);
+        const shot = Math.floor(f.n * 0.15);
+        hit = f.n * 0.15 - shot;
         f.n -= shot;
         tally(game, f.owner, 'lost', shot);
         tally(game, b.owner, 'killed', shot);
       }
       if (f.n <= 0) { note(game, { type: 'wiped', owner: f.owner, name: f.name, at: b.id, vs: b.owner }); return false; }
       if (hasJoint(game, f.owner, 'kinetic')) {
-        let k = Math.round(f.n * 0.1);
+        let k = Math.floor(f.n * 0.1);
+        b.dmg = (b.dmg || 0) + (f.n * 0.1 - k);
         while (k-- > 0 && b.ships + b.guns > 0) {
           if (b.ships > 0) { b.ships -= 1; tally(game, b.owner, 'lost'); tally(game, f.owner, 'killed'); } else b.guns = Math.max(0, b.guns - 1);
         }
@@ -1457,8 +1476,8 @@ export function step(game, dt) {
       b.own0 = Math.max(b.own0 || 0, defence);
       b.foe0 = (b.foe0 || 0) + f.n;
       const g = b.sieges.find((x) => x.owner === f.owner);
-      if (g) { g.vet = mix(g.vet || 0, g.n, f.vet || 0, f.n); g.n += f.n; g.n0 += f.n; }
-      else b.sieges.push({ owner: f.owner, n: f.n, vet: f.vet || 0, name: f.name, n0: f.n, foe0: defence });
+      if (g) { g.vet = mix(g.vet || 0, g.n, f.vet || 0, f.n); g.n += f.n; g.n0 += f.n; g.dmg = (g.dmg || 0) + hit; }
+      else b.sieges.push({ owner: f.owner, n: f.n, vet: f.vet || 0, name: f.name, n0: f.n, foe0: defence, dmg: hit });
       note(game, { type: 'engaged', owner: f.owner, name: f.name, n: f.n, at: b.id, vs: b.owner });
     }
     return false;

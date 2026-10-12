@@ -7,7 +7,8 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
 ## Systems
 
 Every map has a big sun (about 16 units across); the nearest planet orbits at
-52 and ships keep a few units clear of its surface.
+52 and ships keep a few units clear of its surface. Every map has at least one
+gas giant.
 
 Pick a **System** on the menu (or Random). Each is a different layout; the
 rules don't change:
@@ -61,7 +62,9 @@ orbits; slow enough to catch, since ships must match a visitor's speed to
 board it), so you have to
 catch them on the way; the launch panel warns if they'll be gone before your
 ships arrive, and anyone still aboard when one leaves heads for home. The
-other events happen at a world (never a homeworld). It's announced a minute ahead; then whoever holds
+other events happen at a world: an independent one while any are left (never a
+homeworld). It's announced a minute and a half ahead, with two minutes' grace
+after it starts, so there's time to fly in and take it; then whoever holds
 that world, with no fight going on there, for the hold time gets the reward.
 Losing the world resets the clock. The label shows the icon and countdown.
 
@@ -144,19 +147,22 @@ preview server running).
 - **Building:** select one of your worlds for its build row (on touch, tap an
   option once to read what it does, again to build; with a mouse, hover). Worlds have
   build slots by size (asteroids and small moons 1, small planets and larger
-  moons 2, rocky planets 3, gas giants 4, stations 2):
+  moons 2, rocky planets 3, gas giants 4, stations 2, homeworlds 5):
   - **Shipyard** (400, 90 s): needed to build ships there. Each yard on a
     world builds one ship at a time, so two yards build two at once.
     Stations come with one.
   - **Mine** (200, 45 s): asteroids and moons only; +1.5 credits/s per level.
-  - **Guns** (250, 50 s): +2 guns per level (every held world has 1).
+  - **Guns** (250, 50 s): +2 guns per level (every held world has 1); each
+    upgrade costs 225, a little less than a new battery. Independent worlds
+    slowly rebuild guns lost to a raid.
   - **Research station** (300, 60 s): each level speeds research by 50%.
   - **Gas harvester** (350, 70 s): gas giants only; +2 credits/s per level.
   - **Orbital exchange** (450, 80 s): homeworlds only; +2.5 credits/s per level (up to II).
   - **Upgrades:** mines, guns, research stations and gas harvesters go up to level 3.
-  - **Scrap:** tearing a structure down gives back 40% of what it cost (all its levels) and takes 20 s;
-    it stops working at once. If the world is taken first, the scrapping is
-    cancelled and the captor gets the structure.
+  - **Scrap:** tearing a structure down gives back 40% of what it cost (all its levels) once it's
+    done, after 20 s; it stops working at once (a battery's guns go with it). Not while the
+    world is under attack. If the world is taken first, the scrapping is cancelled, nothing
+    is paid, and the captor gets the structure.
   - **Ship** (150, 45 s): ordered at a shipyard. Queued ships can be
     cancelled for an 80% refund.
   Ships are never built automatically. Your homeworld starts with a shipyard
@@ -177,8 +183,8 @@ preview server running).
   and a **Security bureau** (on the world or within reach of it) make that
   much quicker. One agent per enemy world.
 - **Probes:** select a world with a shipyard and tap **Probe** (80 credits)
-  next to **+ Ship**, then tap a destination and Confirm. A probe flies four
-  times faster than ships and is used up on a flyby: the target stays in view
+  next to **+ Ship**, then tap a destination and Confirm. A probe flies twice
+  as fast as ships and is used up on a flyby: the target stays in view
   (ships, structures) for 2½ minutes. On the map it shows as ◇ (named when
   you zoom in close). On desktop, right-click a world with one of yours
   selected to go straight to launch with it as the target.
@@ -204,7 +210,8 @@ preview server running).
   taking the covering world (or its own guns) removes it. The world panel
   shows the cover a world gets and which worlds its guns defend.
 - **Battles:** ships arriving at a hostile site circle it and trade fire with
-  its docked ships and surface guns until one side is gone. Rounds streak
+  its docked ships and surface guns until one side is gone. Losses fall on
+  whichever the defenders have more of, ships or guns. Rounds streak
   between actual ships in the shooter's colour, and each ship lost goes up
   in a flash and fireball where it was.
 - **Camera:** the game opens on your homeworld. Tapping a world locks the
