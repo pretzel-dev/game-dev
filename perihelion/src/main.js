@@ -1,8 +1,8 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
-import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
+import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
@@ -39,7 +39,7 @@ let warp = 1;
 
 const ui = { peek: null, pick: null, selected: null, target: null, fleet: null, count: 1, dark: false, preview: null, dragging: false, vis: null, slot: null, mode: null };
 
-const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const fmt = (s) => { s = Math.max(0, s); return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 
 // ---- Orders ----------------------------------------------------------------
 // Every order goes through here: applied directly in solo or on the host,
@@ -48,6 +48,14 @@ const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(
 function applyCmd(owner, c) {
   const b = game.bodies[c.b];
   if (c.type !== 'research' && c.type !== 'spy' && c.type !== 'dark' && (!b || b.owner !== owner)) return false;
+  // Orders from guests arrive over the network: accept only well-formed ones.
+  const known = (table, k) => typeof k === 'string' && Object.hasOwn(table, k);
+  if ((c.type === 'launch' || c.type === 'probe') && !game.bodies[c.to]) return false;
+  if (c.type === 'launch' && !Number.isFinite(c.n)) return false;
+  if (c.type === 'build' && !known(RULES.structures, c.k)) return false;
+  if (c.type === 'research' && !known(TECH, c.k) && !known(JOINTS, c.k)) return false;
+  if (c.type === 'project' && !known(PROJECTS, c.k)) return false;
+  if ((c.type === 'upgrade' || c.type === 'demolish') && !Number.isInteger(c.i)) return false;
   switch (c.type) {
     case 'launch': return !!launch(game, b, game.bodies[c.to], c.n, !!c.dark);
     case 'spy': return !!plantSpy(game, owner, b);
@@ -60,7 +68,6 @@ function applyCmd(owner, c) {
     case 'research': return research(game, owner, c.k);
     case 'probe': return !!launchProbe(game, b, game.bodies[c.to]);
     case 'project': return startProject(game, b, c.k);
-    case 'fund': return fundProject(game, b, c.how === 'ship' ? 'ship' : 'cash');
     default: return false;
   }
 }
@@ -109,6 +116,12 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   ui.me = me;
   paused = false;
   knockedOut = false;
+  knockedOutAt = null;
+  firstSnap = true;
+  lastStateAt = performance.now();
+  stalled = false;
+  // Dev view's "view as" may point at an empire this game doesn't have.
+  if (typeof ui.devAs === 'number' && ui.devAs >= game.players) ui.devAs = undefined;
   game.events.length = 0;
   $('feed').innerHTML = '';
   $('research').hidden = true;
@@ -128,6 +141,9 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   warp = 1;
   $('warp').textContent = '1×';
   running = true;
+  syncDev(); // the dev bar is for solo games only
+  $('resume').hidden = true;
+  $('menu').classList.remove('paused');
   updateActions();
   const sys = SYSTEMS[game.system];
   toast(`${daily ? 'Daily · ' : ''}${sys.name}`, '#aab1c8');
@@ -156,10 +172,10 @@ $('play').addEventListener('click', start);
 $('again').addEventListener('click', () => {
   leaveNet();
   $('end').hidden = true;
-  if (daily) { startDaily(); return; }
-  $('menu').hidden = false;
   $('resume').hidden = true;
   $('menu').classList.remove('paused');
+  if (daily) { startDaily(); return; }
+  $('menu').hidden = false;
   $('play').textContent = 'Play vs AI';
 });
 $('pause').addEventListener('click', pause);
@@ -193,7 +209,7 @@ $('keys').textContent = matchMedia('(pointer: fine)').matches
   : 'Drag to rotate · two fingers to pan and zoom · double-tap to fly to a world.';
 $('name').value = prefs.name || '';
 $('name').addEventListener('input', () => { prefs.name = $('name').value.trim(); savePrefs(); });
-const myName = () => ($('name').value.trim() || 'Player').slice(0, 16);
+const myName = () => cleanName($('name').value);
 const menuMsg = (t) => { $('menu-msg').textContent = t || ''; };
 let lobbySeats = [];
 
@@ -295,6 +311,7 @@ function renderDev() {
 $('devbar').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
+  if (net) return;
   if (b.dataset.w16) { setWarp(16); return; }
   ui.devAs = b.dataset.as === 'all' ? 'all' : Number(b.dataset.as);
   ui.vis = ui.devAs === 'all' ? null : visibility(game, ui.devAs);
@@ -319,7 +336,9 @@ $('join-go').addEventListener('click', () => {
   menuMsg('Connecting…');
   const room = joinRoom(code, myName(), {
     message: (m) => onHostMessage(m),
-    error: (t) => { menuMsg(t); leaveNet(); $('lobby').hidden = true; $('menu').hidden = false; },
+    // Once playing, the handshake server dropping doesn't matter: the game
+    // connection carries on, and closed() handles losing the host.
+    error: (t) => { if (running && game?.mp) return; menuMsg(t); leaveNet(); $('lobby').hidden = true; $('menu').hidden = false; },
     closed: () => {
       if (!net) return;
       leaveNet();
@@ -335,7 +354,7 @@ function onHostMessage(m) {
     me = m.you;
     menuMsg('');
     $('menu').hidden = true;
-    if (!running) $('lobby').hidden = false;
+    if (!running && $('end').hidden) $('lobby').hidden = false;
     renderLobby(m.seats, m.code);
   } else if (m.t === 'full' || m.t === 'kicked') {
     menuMsg(m.t === 'kicked' ? 'The host removed you' : m.why);
@@ -347,6 +366,7 @@ function onHostMessage(m) {
     paused = m.paused;
     showPaused();
   } else if (m.t === 'state' && game && running) {
+    lastStateAt = performance.now();
     applySnapshot(m.s);
   } else if (m.t === 'events' && game && running) {
     drainEvents(m.list);
@@ -391,11 +411,13 @@ function applySnapshot(s) {
   s.bodies.forEach((x, i) => {
     const b = game.bodies[i];
     // Losses since the last update become explosions; a new owner flashes.
-    const lostDef = (b.lostDef || 0) + Math.max(0, (x.totDef || 0) - (b.totDef || 0));
-    const lostAtk = (b.lostAtk || 0) + Math.max(0, (x.totAtk || 0) - (b.totAtk || 0));
-    const captured = b.captured || x.owner !== b.owner;
+    // (Not on the first update: a rejoining guest would see every past loss at once.)
+    const lostDef = firstSnap ? 0 : (b.lostDef || 0) + Math.max(0, (x.totDef || 0) - (b.totDef || 0));
+    const lostAtk = firstSnap ? 0 : (b.lostAtk || 0) + Math.max(0, (x.totAtk || 0) - (b.totAtk || 0));
+    const captured = !firstSnap && (b.captured || x.owner !== b.owner);
     Object.assign(b, x, { lostDef, lostAtk, captured });
   });
+  firstSnap = false;
   if (s.stats) game.stats = s.stats;
   if (s.winner !== null) game.winner = s.winner;
 }
@@ -459,7 +481,8 @@ function updateFleetInfo() {
 
 $('fdark').addEventListener('click', () => {
   const f = game.fleets.find((x) => x.id === ui.fleet);
-  if (f && act({ type: 'dark', f: f.id, on: !f.dark })) toast(`${tf(f.name)} ${f.dark ? 'running dark' : 'drive lit'}`, ownerColor(me), 'dark');
+  const dark = f && !f.dark;
+  if (f && act({ type: 'dark', f: f.id, on: dark })) toast(`${tf(f.name)} ${dark ? 'running dark' : 'drive lit'}`, ownerColor(me), 'dark');
   updateFleetInfo();
 });
 /** Read-only panel for a world that isn't yours: owner, what you can see, perk, events. */
@@ -513,6 +536,7 @@ $('peek').addEventListener('click', (e) => {
   updateActions();
 });
 
+$('hintCancel').addEventListener('click', () => { ui.mode = null; ui.target = null; updateActions(); });
 function updateActions() {
   // Picking a world for a megaproject: a standing hint with Cancel; the
   // worlds that can take it are ringed on the map.
@@ -925,8 +949,6 @@ function renderResearch() {
 $('rlist').addEventListener('click', (e) => {
   const h = e.target.closest('[data-hex]');
   if (h) { ui.techSel = h.dataset.hex; renderResearch(); return; }
-  const fd = e.target.closest('button[data-fund]');
-  if (fd) { act({ type: 'fund', b: Number(fd.dataset.fb), how: fd.dataset.fund }); renderResearch(); return; }
   const mg = e.target.closest('button[data-mega]');
   if (mg) {
     // Pick the world: the sheet closes and the next tap on one of yours builds it.
@@ -1094,11 +1116,13 @@ function drainEvents(evs = game.events.splice(0)) {
       case 'launch':
         if (e.owner === me) {
           const f = game.fleets.find((x) => x.id === e.fleet);
-          toast(`${tf(e.name)} · ${e.n} ship${e.n === 1 ? '' : 's'} → ${nm(e.to)}${f ? ` · ${fmt(f.T)}` : ''}${f && f.assist !== undefined ? ` · assist via ${nm(f.assist)}` : ''}`, mine);
+          const T = f ? f.T : e.T;
+          toast(`${tf(e.name)} · ${e.n} ship${e.n === 1 ? '' : 's'} → ${nm(e.to)}${T ? ` · ${fmt(T)}` : ''}${f && f.assist !== undefined ? ` · assist via ${nm(f.assist)}` : ''}`, mine);
           break;
         }
         if (!vis || vis.intel < 1 || !vis.bodies.has(e.from)) break;
-        { const f = game.fleets.find((x) => x.id === e.fleet); if (f && f.dark && !vis.seesFleet(f)) break; }
+        // A dark launch only shows if the fleet can be seen (a guest may not have it yet: stay quiet).
+        if (e.dark) { const f = game.fleets.find((x) => x.id === e.fleet); if (!f || !vis.seesFleet(f)) break; }
         toast(`Launch detected at ${nm(e.from)} · ${e.n} ship${e.n === 1 ? '' : 's'}${vis.intel >= 2 ? ` → ${nm(e.to)}` : ''}`, c);
         break;
       case 'arrived':
@@ -1327,7 +1351,7 @@ function endPointer(e) {
     return;
   }
   if (!pointers.delete(e.pointerId)) return;
-  if (gesture?.kind === 'tap' && pointers.size === 0) {
+  if (gesture?.kind === 'tap' && pointers.size === 0 && e.type !== 'pointercancel') {
     const id = view.pick(e.clientX, e.clientY);
     const now = performance.now();
     if (id !== null && lastTap.id === id && now - lastTap.t < 350) {
@@ -1380,7 +1404,8 @@ window.addEventListener('keydown', (e) => {
     // L: launch, then confirm.
     if (ui.selected !== null && !$('launch').disabled) $('launch').click();
   } else if (k === 'd') {
-    if (!$('dark').hidden) $('dark').click();
+    // D runs dark while picking a target; otherwise it pans like the other WASD keys.
+    if (!$('dark').hidden) { $('dark').click(); held.delete('d'); }
   } else if (k === 'p') {
     const b = document.querySelector('#buildrow button[data-probe]');
     if (b && !b.disabled) b.click();
@@ -1604,7 +1629,7 @@ function finish() {
   $('end-title').style.color = ownerColor(won ? me : game.winner);
   const diffs = [...new Set(aiSeatDiffs)];
   const vs = diffs.length ? ` · ${diffs.map((d) => d[0].toUpperCase() + d.slice(1)).join(' / ')} AI` : '';
-  $('end-sub').textContent = (won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(game.time)}.`) + vs + ` · ${daily ? 'Daily · ' : ''}${SYSTEMS[game.system].name}`;
+  $('end-sub').textContent = (won ? `The system is yours after ${fmt(game.time)}.` : `Your last world fell at ${fmt(knockedOutAt ?? game.time)}.`) + vs + ` · ${daily ? 'Daily · ' : ''}${SYSTEMS[game.system].name}`;
   renderReport();
   setTimeout(() => ($('end').hidden = false), 1200);
 }
@@ -1613,6 +1638,10 @@ let last = performance.now();
 let uiClock = 0;
 let netClock = 0;
 let knockedOut = false;
+let knockedOutAt = null;
+let firstSnap = true; // a guest's first state update after (re)joining
+let lastStateAt = 0; // when a guest last heard from the host
+let stalled = false;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -1621,7 +1650,13 @@ function frame(now) {
       if (net?.role === 'client') {
         // Guests don't simulate: orbits and flights are functions of time, so
         // advancing the clock keeps everything moving between host updates.
-        game.time += dt;
+        // If the host goes quiet (its tab in the background, say), hold still.
+        const quiet = now - lastStateAt > 3000;
+        if (quiet !== stalled) {
+          stalled = quiet;
+          if (stalled) { $('banner').hidden = false; $('banner').textContent = 'Waiting for the host…'; } else showPaused();
+        }
+        if (!stalled) game.time += dt;
       } else {
         // Time warp in small steps so battles and arrivals stay accurate.
         let left = dt * warp;
@@ -1643,10 +1678,15 @@ function frame(now) {
         netClock -= dt;
         if (netClock <= 0 || game.winner !== null) { netClock = 0.25; net.room.broadcast({ t: 'state', s: snapshot() }); }
       }
-      if (game.mp && !knockedOut && !game.bodies.some((b) => b.owner === me) && !game.fleets.some((f) => f.owner === me && !f.probe) && game.winner === null) {
-        knockedOut = true;
-        toast('Your empire has fallen · watching the rest', '#ff7a4d');
-        ui.vis = null; // observers see everything
+      // Knocked out (as the sim counts it): no worlds, no fleets, no ships fighting anywhere.
+      const alive = game.bodies.some((b) => b.owner === me || b.sieges.some((g) => g.owner === me)) || game.fleets.some((f) => f.owner === me && !f.probe);
+      if (game.mp && game.winner === null && knockedOut === alive) {
+        knockedOut = !alive;
+        if (knockedOut) {
+          knockedOutAt = game.time;
+          toast('Your empire has fallen · watching the rest', '#ff7a4d');
+          ui.vis = null; // observers see everything
+        } else ui.vis = visibility(game, me);
       }
       if (ui.fleet !== null) updateFleetInfo();
       uiClock -= dt;

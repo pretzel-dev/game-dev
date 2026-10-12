@@ -108,4 +108,3 @@ block it; append `?peer=127.0.0.1:9000` to the URL to use a local
   - In game: a leaderboard button on the menu, and your placing on the end screen.
 - Possibly move hosting from GitHub Pages to Cloudflare with a custom domain,
   and one repo per project.
-- Balance idea: make gun upgrades a little cheaper than a new battery.

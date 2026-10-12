@@ -56,20 +56,25 @@ export function hostRoom(name, on) {
   peer.on('connection', (conn) => {
     conn.on('data', (msg) => {
       if (msg.t === 'hello') {
+        const name = cleanName(msg.name);
         // Rejoining mid-game with the same name takes the old seat back.
-        let i = seats.findIndex((s, j) => j !== 0 && s.kind === 'human' && s.name === msg.name && !s.online);
+        const offline = (j, s) => j !== 0 && s.kind === 'human' && !s.online;
+        let i = seats.findIndex((s, j) => offline(j, s) && s.name === name);
+        if (i < 0) i = seats.findIndex((s, j) => offline(j, s) && s.asked === name); // renamed "Bob 2" on joining
         if (i < 0 && started) { send(conn, { t: 'full', why: 'Game already started' }); return; }
         if (i < 0) {
           if (seats.length >= MAX_SEATS) { send(conn, { t: 'full', why: 'Room is full' }); return; }
-          seats.push({ kind: 'human', name: uniqueName(seats, msg.name) });
+          seats.push({ kind: 'human', name: uniqueName(seats, name), asked: name });
           i = seats.length - 1;
         }
         Object.assign(seats[i], { conn, online: true });
-        conn.seat = i;
         room.lobby();
         if (started) on.rejoin(i);
-      } else if (msg.t === 'cmd' && conn.seat !== undefined) {
-        on.cmd(conn.seat, msg.cmd);
+      } else if (msg.t === 'cmd' && msg.cmd && typeof msg.cmd === 'object') {
+        // The seat is looked up each time: seats shift down when someone
+        // leaves the lobby before the start.
+        const i = seats.findIndex((s) => s.conn === conn);
+        if (i > 0) on.cmd(i, msg.cmd);
       }
     });
     conn.on('close', () => {
@@ -83,6 +88,11 @@ export function hostRoom(name, on) {
     });
   });
   return room;
+}
+
+/** A player name as shown to everyone: plain text, at most 16 characters. */
+export function cleanName(name) {
+  return String(name ?? '').replace(/[<>&"'`]/g, '').trim().slice(0, 16) || 'Player';
 }
 
 function uniqueName(seats, name) {

@@ -151,10 +151,11 @@ import { rng } from '../src/sim.js';
   const slots = home.structures.length;
   const c2 = g.credits[0];
   assert.ok(demolish(g, home, home.structures[1]));
-  assert.ok(g.credits[0] > c2, 'scrapping refunds part of the cost');
   assert.equal(home.structures.length, slots, 'scrapping takes time');
   for (let t = 0; t < RULES.scrapTime + 1; t += 0.5) step(g, 0.5);
   assert.equal(home.structures.length, slots - 1);
+  assert.ok(g.credits[0] > c2 + RULES.structures.defence.cost * RULES.scrapRefund, 'scrapping refunds part of the cost once done');
+  assert.ok(home.guns <= 1, 'scrapped batteries take their guns with them');
   // Research: drives raise thrust; research stations speed it up.
   const a0 = accelOf(g, 0);
   assert.ok(research(g, 0, 'drives'));
@@ -177,6 +178,7 @@ import { rng } from '../src/sim.js';
     const p = h.bodies[planet.id];
     const m = h.bodies[moon.id];
     p.owner = m.owner = 1;
+    p.structures.push({ type: 'defence', level: 3, left: 0 }); // room for the guns below
     p.guns = covered ? 7 : 0;
     m.guns = 1; m.ships = 2;
     m.sieges.push({ owner: 0, n: 6 });
@@ -260,7 +262,9 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
 
 // Probes, gas skimmers, exchanges, and scrapping cut short by a capture.
 {
-  const g = createGame({ seed: 9 });
+  // (A seed whose far world isn't behind the sun: routes round the sun take as
+  // long however fast the drive.)
+  const g = createGame({ seed: 13 });
   const home = g.bodies.find((b) => b.owner === 0);
   g.credits[0] = 5000;
   const far = g.bodies.filter((b) => b.owner === NEUTRAL && !b.visitor).sort((a, b) => dist(posAt(g, b, 0), posAt(g, home, 0)) - dist(posAt(g, a, 0), posAt(g, home, 0)))[0];
@@ -276,14 +280,16 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   const giant = g.bodies.find((b) => b.giant);
   giant.owner = 0;
   assert.ok(!cantBuildAt(g, giant, 'skimmer'));
-  // Scrap guns, then lose the world: the guns stay for the captor.
+  // Scrap guns, then lose the world: the guns stay for the captor, and no refund.
   const guns = home.structures.find((x) => x.type === 'defence');
+  const c3 = g.credits[0];
   demolish(g, home, guns);
   home.ships = 0; home.guns = 0;
   home.sieges.push({ owner: 1, n: 5, vet: 0, name: 'X', n0: 5, foe0: 1 });
   step(g, 0.5);
   assert.equal(home.owner, 1);
   assert.ok(home.structures.includes(guns) && !guns.scrap, 'capture cancels scrapping');
+  assert.ok(g.credits[0] < c3 + 50, 'a cancelled scrapping pays nothing');
   console.log('probe, skimmer, exchange, scrapping: ok');
 }
 
@@ -510,4 +516,25 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
     assert.ok(S.setDark(g2, fl, false) && !fl.dark, 'and can light up again');
   }
   console.log('running dark and spies: ok');
+}
+
+// Event rewards never push research past its top level.
+{
+  const g = createGame({ seed: 11 });
+  const t = g.tech[0];
+  Object.assign(t, { drives: 3, sensors: 2, intel: 3, weapons: 2, armour: 2, industry: 2 });
+  g.credits[0] = 5000;
+  assert.ok(research(g, 0, 'sensors'));
+  t.project.left = 30;
+  const spot = g.bodies.find((b) => b.owner === NEUTRAL && !b.home && !b.visitor);
+  spot.owner = 0; spot.guns = 3;
+  g.nextEvent = 1e9;
+  g.happenings = [{ id: 999, kind: 'signal', at: spot.id, starts: 0, ends: 1e9, holder: 0, held: 39 }];
+  for (let i = 0; i < 80; i++) step(g, 0.5);
+  assert.equal(t.sensors, 3, 'sensors stop at III');
+  assert.ok(visibility(g, 0).bodies.size > 2, 'and still see the system');
+  // Maps come from the seed alone.
+  const a = createGame({ seed: 77, opponents: 2 }), b = createGame({ seed: 77, opponents: 2 });
+  assert.deepEqual(a.bodies.map((x) => [x.r, x.perk, x.owner]), b.bodies.map((x) => [x.r, x.perk, x.owner]));
+  console.log('event rewards and seeded maps: ok');
 }
