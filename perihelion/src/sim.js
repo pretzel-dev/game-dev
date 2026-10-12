@@ -86,7 +86,7 @@ export const TECH = {
 // burn. Slower, but while coasting enemy sensors only pick the fleet up close.
 export const DARK = { burn: 0.12, seen: 0.3 }; // each burn is 12% of the flight; the rest is a silent coast
 // Spies: planted on an enemy world. While there they show you the world and
-// its fleets, skim its income and slow its research and megaproject. Each
+// its fleets, skim its income and slow any megaproject there. Each
 // second there's a chance they're caught; the owner's Intel and any security
 // bureau nearby raise it.
 export const SPY = { travel: 40, cost: 250, catch: 1 / 300, intel: 0.5, bureau: 1.5, bureauRange: 40, skim: 0.4, slow: 0.25 };
@@ -119,7 +119,6 @@ export const PROJECTS = {
   array: { needs: 'ansible', name: 'Ansible array', where: 'any', text: 'See every world and fleet in the system, and where they are going', cost: 2000, time: 480 },
   college: { needs: 'targeting', name: 'War college', where: 'any', text: 'Simulator-trained crews: every ship you build starts as a veteran (second rank)', cost: 2000, time: 480 },
 };
-export const PROJECT_FUND = { credits: 200, cut: 30, crewCut: 20 };
 const holdsWonder = (game, owner, key) => owner !== NEUTRAL && game.bodies.some((b) => b.wonder === key && b.owner === owner);
 export function cantProject(game, b, key) {
   const P = PROJECTS[key];
@@ -127,6 +126,7 @@ export function cantProject(game, b, key) {
   if (!hasJoint(game, b.owner, P.needs)) return `needs ${JOINTS[P.needs].name}`;
   if (b.project || b.wonder) return 'this world already has one';
   if (game.wonders && game.wonders[key] !== undefined) return 'already built';
+  if (game.bodies.some((x) => x.project && x.project.key === key && x.owner === b.owner)) return 'already building it';
   if (P.where === 'giant' && !b.giant) return 'gas giants only';
   if (P.where === 'planet' && b.kind !== 'planet') return 'planets only';
   if (P.where === 'inner') {
@@ -145,32 +145,11 @@ export function startProject(game, b, key) {
   note(game, { type: 'project', phase: 'start', owner: b.owner, at: b.id, key });
   return true;
 }
-/** Speed a project up: pay credits, or break a docked ship up for parts and crew. */
-export function fundProject(game, b, how) {
-  return false; // retired: only research stations speed megaprojects now
-  if (!b.project || b.owner === NEUTRAL) return false;
-  if (how === 'ship') {
-    if (readyShips(game, b) < 1) return false;
-    b.ships -= 1;
-    b.project.rush = (b.project.rush || 0) + PROJECT_FUND.crewCut;
-    return true;
-  }
-  if (game.credits[b.owner] < PROJECT_FUND.credits) return false;
-  game.credits[b.owner] -= PROJECT_FUND.credits;
-  tally(game, b.owner, 'spent', PROJECT_FUND.credits);
-  b.project.paid += PROJECT_FUND.credits;
-  b.project.rush = (b.project.rush || 0) + PROJECT_FUND.cut;
-  return true;
-}
 function stepProjects(game, dt) {
   for (const b of game.bodies) {
     if (!b.project || b.owner === NEUTRAL || b.sieges.length) continue;
     // Research stations work for megaprojects too.
-    // Funding doesn't jump ahead: it buys rush time, during which work goes
-    // twice as fast (so each payment saves its seconds, spread out).
-    const rush = b.project.rush > 0 ? 2 : 1;
-    if (b.project.rush > 0) b.project.rush = Math.max(0, b.project.rush - dt);
-    b.project.left -= dt * rush * researchSpeed(game, b.owner) * (spyOn(game, b).length ? 1 - SPY.slow : 1);
+    b.project.left -= dt * researchSpeed(game, b.owner) * (spyOn(game, b).length ? 1 - SPY.slow : 1);
     if (b.project.left > 0) continue;
     const key = b.project.key;
     b.wonder = key;
@@ -290,6 +269,7 @@ function stepSpies(game, dt) {
     // Skim income while hidden.
     const skim = Math.min(game.credits[b.owner], incomeOf(b, game) * SPY.skim * dt);
     game.credits[b.owner] -= skim; game.credits[x.owner] += skim;
+    tally(game, x.owner, 'earned', skim);
     const rate = catchRate(game, b);
     for (let k = Math.max(before, Math.floor(x.since)) + 1; k <= Math.floor(game.time); k++) {
       if (coin(x.id, k) < rate) { note(game, { type: 'spycaught', owner: x.owner, by: b.owner, at: b.id, after: game.time - x.since }); return false; }
@@ -471,7 +451,8 @@ function endVisit(game) {
   const here = posAt(game, b, game.time);
   const leave = (owner, n, vet, name) => {
     const home = nearest(owner, here);
-    if (!home || n < 1) return;
+    if (n < 1) return;
+    if (!home) { tally(game, owner, 'lost', n); return; }
     b.owner = owner; b.ships = n; b.vet = vet; b.tf = name; b.restUntil = 0;
     launch(game, b, home, n);
   };
@@ -483,7 +464,7 @@ function endVisit(game) {
     if (f.to !== b.id) continue;
     const s = fleetState(f, game.time);
     const home = nearest(f.owner, s);
-    if (!home) { f.n = 0; continue; }
+    if (!home) { tally(game, f.owner, 'lost', f.n); f.n = 0; continue; }
     const p = planWith(game, null, home, game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
     delete f.assist;
     Object.assign(f, p, { t0: game.time, to: home.id });
@@ -547,13 +528,14 @@ function reward(game, h, b, owner) {
   if (h.kind === 'convoy') { b.bonus = (b.bonus || 0) + E.bonus; what = `+${E.bonus}/s here`; }
   if (h.kind === 'comet') what = 'the comet mined';
   if (h.kind === 'signal') {
-    const open = Object.keys(TECH).filter((k) => nextTech(game, owner, k));
+    // Never the branch being researched (it would overshoot its top level when that finishes).
+    const open = Object.keys(TECH).filter((k) => nextTech(game, owner, k) && game.tech[owner].project?.key !== k);
     const k = open[Math.floor(evRand(game) * open.length)];
-    if (k) { game.tech[owner][k] += 1; if (k === 'drives') refit(game, owner); what = TECH[k].levels[game.tech[owner][k] - 1]; } else { game.credits[owner] += 400; what = '400 credits'; }
+    if (k) { game.tech[owner][k] += 1; if (k === 'drives') refit(game, owner); what = TECH[k].levels[game.tech[owner][k] - 1]; } else { game.credits[owner] += 400; tally(game, owner, 'earned', 400); what = '400 credits'; }
   }
   if (h.kind === 'cache') {
     const x = b.structures.find((y) => RULES.structures[y.type].maxLevel && y.level < RULES.structures[y.type].maxLevel && y.left <= 0 && !y.scrap);
-    if (x) { x.level += 1; what = `${RULES.structures[x.type].name} to level ${x.level}`; } else { game.credits[owner] += 300; what = '300 credits'; }
+    if (x) { x.level += 1; what = `${RULES.structures[x.type].name} to level ${x.level}`; } else { game.credits[owner] += 300; tally(game, owner, 'earned', 300); what = '300 credits'; }
   }
   note(game, { type: 'event', phase: 'won', kind: h.kind, at: b.id, owner, what });
 }
@@ -608,6 +590,15 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     used.add(n);
     return n;
   };
+  // A seeded shuffle (Fisher-Yates): the same in every browser, unlike
+  // sorting with a random comparator, so host and guests build the same map.
+  const shuffle = (list) => {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+  };
   const names = new Set();
   const bodies = [];
   const add = (b) => {
@@ -630,7 +621,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // Home planets are picked up front from the middle orbits: each is a plain
   // rocky world with exactly one companion (a moon or a station).
   const players = opponents + 1;
-  const homeIdx = [1, 2, 3, 4].sort(() => rand() - 0.5).slice(0, players);
+  const homeIdx = shuffle([1, 2, 3, 4]).slice(0, players);
   for (let i = 0; i < 6; i++) {
     const court = sys.court && i === 5;
     const giant = court || (!homeIdx.includes(i) && i >= 3 && rand() < (sys.court ? 0.3 : 0.7));
@@ -643,7 +634,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     }
     specs.push({ giant, size, moons, station: false });
   }
-  const hostIdx = [1, 2, 3, 4, 5].sort(() => rand() - 0.5).slice(0, sys.stations || 2);
+  const hostIdx = shuffle([1, 2, 3, 4, 5]).slice(0, sys.stations || 2);
   for (const i of hostIdx) specs[i].station = true;
   // A home's one companion is its station if it has one, otherwise its moon.
   for (const i of homeIdx) if (specs[i].station) specs[i].moons = [];
@@ -741,7 +732,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   });
   // Special worlds: three perks on neutral worlds away from the homes.
   const homeFamily = new Set(homes.flatMap((h) => [h.id, ...bodies.filter((b) => b.parent === h.id).map((b) => b.id)]));
-  const perkKeys = Object.keys(PERKS).sort(() => rand() - 0.5);
+  const perkKeys = shuffle(Object.keys(PERKS));
   let placed = 0;
   for (const k of perkKeys) {
     if (placed >= 3) break;
@@ -829,13 +820,13 @@ export const demolishFee = (x) => {
 export function cantDemolish(game, b, x) {
   if (b.owner === NEUTRAL) return 'not yours';
   if (x.scrap) return 'already scrapping';
+  if (b.sieges.length) return 'under attack';
   return null;
 }
 export function demolish(game, b, x) {
   if (cantDemolish(game, b, x)) return false;
-  game.credits[b.owner] += demolishFee(x);
-  tally(game, b.owner, 'earned', demolishFee(x));
-  // It stops working now and is gone once the crews finish.
+  // It stops working now; the credits come once the crews finish (nothing if
+  // the world is taken first: the captor gets the structure).
   x.scrap = RULES.scrapTime;
   if (!yardsOf(b)) b.build = 0;
   return true;
@@ -1051,7 +1042,7 @@ export function plan(game, from, to, now = game.time, speed = 1, quick = false, 
   return fast.T < direct.T && assistBy(game, fast, from, to, now) === g ? { ...fast, assist: g.id } : direct;
 }
 
-// Gravity (Giant sun only): the sun's pull, consistent with the planets'
+// Gravity: the sun's pull, consistent with the planets'
 // orbits (GM = 4π² r³ / P²), acts on ships all through a flight. The drive
 // still flies two straight burns; the pull adds a drift the plan corrects for.
 export const GRAVITY = { share: 1 }; // 1 = the full pull that holds the planets in orbit
@@ -1387,6 +1378,10 @@ export function step(game, dt) {
     game.credits[b.owner] += incomeOf(b, game) * dt;
     tally(game, b.owner, 'earned', incomeOf(b, game) * dt);
     const speed = buildSpeed(game, b.owner, b);
+    // Guns above what the world supports (a battery scrapped, a fortress out
+    // of reach) are stood down at once.
+    const top = topGuns(game, b);
+    if (b.guns > top) b.guns = top;
     if (b.sieges.length) continue; // nothing gets built under fire
     for (const x of b.structures) {
       if (x.scrap) { x.scrap = Math.max(0, x.scrap - dt); if (!x.scrap) x.gone = true; continue; }
@@ -1394,11 +1389,12 @@ export function step(game, dt) {
       x.left = Math.max(0, x.left - dt * speed);
       if (x.left === 0 && x.next) { x.level = x.next; delete x.next; }
     }
-    if (b.structures.some((x) => x.gone)) {
-      const x = b.structures.find((y) => y.gone);
-      b.structures = b.structures.filter((y) => !y.gone);
-      note(game, { type: 'scrapped', owner: b.owner, at: b.id, what: x.type });
+    for (const x of b.structures.filter((y) => y.gone)) {
+      game.credits[b.owner] += demolishFee(x);
+      tally(game, b.owner, 'earned', demolishFee(x));
+      note(game, { type: 'scrapped', owner: b.owner, at: b.id, what: x.type, fee: demolishFee(x) });
     }
+    b.structures = b.structures.filter((y) => !y.gone);
     // Each working yard builds one ship at a time, in parallel.
     // b.slips holds each yard's progress on the ship it's building.
     const yards = yardsOf(b);
@@ -1410,7 +1406,6 @@ export function step(game, dt) {
     for (const p of b.slips) if (p >= 1) { b.vet = mix(b.vet || 0, b.ships, Math.max(b.perk === 'hulk' ? PERKS.hulk.vet : 0, holdsWonder(game, b.owner, 'college') ? 2.5 : 0), 1); b.queue -= 1; b.ships += 1; tally(game, b.owner, 'built'); }
     b.slips = b.slips.filter((p) => p < 1);
     b.build = b.slips.length ? Math.max(...b.slips) : 0;
-    const top = topGuns(game, b);
     const regen = RULES.gunRegen * (hasJoint(game, b.owner, 'hardened') ? 2 : 1);
     if (b.guns < top) b.guns = Math.min(top, b.guns + regen * dt);
   }
@@ -1419,7 +1414,8 @@ export function step(game, dt) {
     if (!t.project) continue;
     t.project.left -= dt * researchSpeed(game, owner);
     if (t.project.left <= 0) {
-      t[t.project.key] = (t[t.project.key] || 0) + 1;
+      const top = JOINTS[t.project.key] ? 1 : TECH[t.project.key].cost.length;
+      t[t.project.key] = Math.min(top, (t[t.project.key] || 0) + 1);
       if (t.project.key === 'drives') refit(game, owner); note(game, { type: 'research', owner, key: t.project.key, level: t[t.project.key] }); t.project = null; tally(game, owner, 'research'); }
   }
 
@@ -1443,11 +1439,18 @@ export function step(game, dt) {
     } else {
       // A point-defence net picks off part of the fleet on the way in; a
       // kinetic strike opens with a volley that knocks out defenders.
-      if (hasJoint(game, b.owner, 'pdnet')) f.n -= Math.round(f.n * 0.15);
+      if (hasJoint(game, b.owner, 'pdnet')) {
+        const shot = Math.round(f.n * 0.15);
+        f.n -= shot;
+        tally(game, f.owner, 'lost', shot);
+        tally(game, b.owner, 'killed', shot);
+      }
       if (f.n <= 0) { note(game, { type: 'wiped', owner: f.owner, name: f.name, at: b.id, vs: b.owner }); return false; }
       if (hasJoint(game, f.owner, 'kinetic')) {
         let k = Math.round(f.n * 0.1);
-        while (k-- > 0 && b.ships + b.guns > 0) { if (b.ships > 0) b.ships -= 1; else b.guns = Math.max(0, b.guns - 1); }
+        while (k-- > 0 && b.ships + b.guns > 0) {
+          if (b.ships > 0) { b.ships -= 1; tally(game, b.owner, 'lost'); tally(game, f.owner, 'killed'); } else b.guns = Math.max(0, b.guns - 1);
+        }
       }
       // Odds as the fight is joined, so wins can be judged by them later.
       const defence = b.ships * (1 + VET_BONUS * vetLevel(b.vet)) + b.guns + coverOf(game, b);

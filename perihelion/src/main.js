@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, PROJECT_FUND, cantProject, startProject, fundProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, PLAYER, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS } from './net.js';
@@ -60,7 +60,6 @@ function applyCmd(owner, c) {
     case 'research': return research(game, owner, c.k);
     case 'probe': return !!launchProbe(game, b, game.bodies[c.to]);
     case 'project': return startProject(game, b, c.k);
-    case 'fund': return fundProject(game, b, c.how === 'ship' ? 'ship' : 'cash');
     default: return false;
   }
 }
@@ -925,8 +924,6 @@ function renderResearch() {
 $('rlist').addEventListener('click', (e) => {
   const h = e.target.closest('[data-hex]');
   if (h) { ui.techSel = h.dataset.hex; renderResearch(); return; }
-  const fd = e.target.closest('button[data-fund]');
-  if (fd) { act({ type: 'fund', b: Number(fd.dataset.fb), how: fd.dataset.fund }); renderResearch(); return; }
   const mg = e.target.closest('button[data-mega]');
   if (mg) {
     // Pick the world: the sheet closes and the next tap on one of yours builds it.
