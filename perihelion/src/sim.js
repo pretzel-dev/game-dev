@@ -566,7 +566,7 @@ export const SYSTEMS = {
   binary: { name: 'Binary', text: 'A second sun and its worlds swing around the system; its worlds earn +50%', companion: true },
   // Classic, at an almost absurd scale: every trip is a journey and a
   // commitment. Picked by hand only (never Random or the Daily).
-  vast: { name: 'Vast', text: 'Classic at four times the scale: every voyage is a commitment', scale: 4, thrust: 0.5, test: true },
+  vast: { name: 'Vast', text: 'Classic at four times the scale: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2.5, sun: 3, test: true },
 };
 /** Distances on this map relative to the usual (reaches, sensors and so on scale with it). */
 export const scaleOf = (game) => game.scale || 1;
@@ -736,7 +736,12 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // A bigger system: the same layout with the planets' orbits (and the belt)
   // spread out; moons and stations keep their distance from their planets.
   if (sys.scale) for (const b of bodies) if (b.parent === null && !b.star && !b.visitor) { b.r *= sys.scale; b.period = periodAt(b.r); }
-  const game = { mp, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * SUN_SIZE * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  // Bigger worlds too, so they hold their own against the distances: each
+  // family grows as one (moons and stations move out with their planet).
+  // Build slots go by the original size.
+  if (sys.worlds) for (const b of bodies) if (!b.visitor) { b.baseSize = b.size; b.size *= sys.worlds; if (b.parent !== null) b.r *= sys.worlds; }
+  if (sys.sun) stars[0].size *= sys.sun;
+  const game = { mp, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -795,9 +800,10 @@ export function slotsOf(b) {
   if (b.visitor) return 0;
   if (b.kind === 'station') return 2;
   if (b.kind === 'asteroid') return 1;
-  if (b.kind === 'moon') return b.homeMoon || b.size > 0.8 ? 2 : 1;
+  const size = b.baseSize ?? b.size;
+  if (b.kind === 'moon') return b.homeMoon || size > 0.8 ? 2 : 1;
   if (b.home) return 5; // homeworlds: room to build a capital
-  return b.giant ? 4 : b.size > 2.2 ? 3 : 2;
+  return b.giant ? 4 : size > 2.2 ? 3 : 2;
 }
 /** A structure works once built; while upgrading it keeps working at its old level. */
 const working = (x) => !x.scrap && (x.left <= 0 || x.next);

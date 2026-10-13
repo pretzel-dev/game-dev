@@ -29,7 +29,9 @@ rules don't change:
   (minutes to a neighbour, ten or more to the far planets). Every voyage is a
   commitment: research and fleet size matter. Sensor, relay, depot, fortress
   and security reaches scale with the map; event warnings and visitor passes
-  stretch to match. Random and the Daily never pick it.
+  stretch to match. Worlds are 2.5 times the size (with their moons and
+  stations) and the sun three times, so they hold their own against the
+  distances. Random and the Daily never pick it.
 
 **Daily system:** everyone gets the same map each day (seed and system from
 the date). The end screen and share image say which day it was.
