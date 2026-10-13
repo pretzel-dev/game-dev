@@ -478,6 +478,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   const tmp = new THREE.Vector3();
   const tmp2 = new THREE.Vector3();
   const tmp3 = new THREE.Vector3();
+  const tmp4 = new THREE.Vector3(), tmp5 = new THREE.Vector3();
   const dir = new THREE.Vector3();
   const perp = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
@@ -1228,32 +1229,65 @@ export function createView(canvas, labelRoot, opts = {}) {
       // Without Intel I you can't count an enemy fleet: draw it as a token few.
       const drawn = f.probe ? 1 : knowsSize(f) ? f.n : Math.min(f.n, 3);
       const cols = Math.max(3, Math.ceil(Math.sqrt(drawn)));
+      const since = now - f.t0;
+      // Where ship j sits in the formation (into tmp) with the fleet at state
+      // `fs`, `el` seconds after launch; then eased to or from its parking slot.
+      const formation = (j, fs, el, when) => {
+        const row = Math.floor(j / cols);
+        const col = (j % cols) - (cols - 1) / 2;
+        const open = (THREE.MathUtils.smoothstep(Math.min(el, f.T - el), 0, 12) * 0.5 + 0.5) * FORMATION;
+        const h1 = hash(f.id, j), h2 = hash(j, f.id), h3 = hash(f.id + 7, j * 3);
+        const drift = t * (0.3 + h1 * 0.4) + h2 * 6;
+        tmp.set(fs.x, fs.y, fs.z)
+          .addScaledVector(perp, (col * (0.8 + h3 * 0.4) + (row % 2) * 0.4 + (h1 - 0.5) * 0.6 + Math.sin(drift) * 0.08) * open)
+          .addScaledVector(UP, ((h2 - 0.5) * 0.9 + Math.cos(drift * 0.8) * 0.06) * open)
+          .addScaledVector(dir, (-row * (0.9 + h3 * 0.4) - (h2 - 0.5) * 0.7) * open);
+        return blendPark(f, j, el, fs, when);
+      };
+      // Near the world (leaving or joining a parking orbit) ships move on
+      // manoeuvring thrusters, nose along the way they're actually going
+      // relative to the world; the main drive lights only once they're clear
+      // (and is cut as they come in), so a torch never fires against the motion.
+      const NEAR = 0.8; // formation blend below which only thrusters fire
+      const ahead = f.probe ? null : fleetState(f, now + 0.5);
+      const home = !f.probe && game_.bodies[since < f.T - since ? f.from : f.to];
       for (let j = 0; j < drawn; j++) {
         if (used >= MAX_SHIPS) break;
         // Formation: a loose, uneven block. Each ship keeps its own offset
         // and drifts a little, so it reads as crewed ships, not a grid. It
         // opens out after launch and closes up (only partly) before arrival.
-        const row = Math.floor(j / cols);
-        const col = (j % cols) - (cols - 1) / 2;
-        const since = now - f.t0;
-        const open = (THREE.MathUtils.smoothstep(Math.min(since, f.T - since), 0, 12) * 0.5 + 0.5) * FORMATION;
-        const h1 = hash(f.id, j), h2 = hash(j, f.id), h3 = hash(f.id + 7, j * 3);
-        const drift = t * (0.3 + h1 * 0.4) + h2 * 6;
-        tmp.set(s.x, s.y, s.z)
-          .addScaledVector(perp, (col * (0.8 + h3 * 0.4) + (row % 2) * 0.4 + (h1 - 0.5) * 0.6 + Math.sin(drift) * 0.08) * open)
-          .addScaledVector(UP, ((h2 - 0.5) * 0.9 + Math.cos(drift * 0.8) * 0.06) * open)
-          .addScaledVector(dir, (-row * (0.9 + h3 * 0.4) - (h2 - 0.5) * 0.7) * open);
         // Leaving and arriving: ease between the parking orbit and the
         // formation along an arc round the world (never a dash through or
         // round it at the last moment).
-        const kf = blendPark(f, j, since, s, now);
+        const kf = formation(j, s, since, now);
+        const h3 = hash(f.id + 7, j * 3);
         // Each ship turns over for braking at its own moment (a few seconds
         // either side), so a task force doesn't flip as one.
         const sj = f.probe ? s : fleetState(f, now + (h3 - 0.5) * 2.5);
         tmp3.set(sj.nx, sj.ny, sj.nz);
-        // Easing out of (or into) orbit: turn from the orbit's heading to the burn.
-        if (kf < 1) tmp3.lerp(bTan, 1 - kf).normalize();
-        placeShip(tmp, tmp3, color, sj.burning, t, j, f.id * 97 + j, 1 + 0.35 * techOf(f.owner, 'drives'), f.probe);
+        let burning = sj.burning;
+        let plume = 1 + 0.35 * techOf(f.owner, 'drives');
+        if (kf < 1 && home) {
+          // Its own motion relative to the world, half a second on.
+          const here = tmp4.copy(tmp);
+          formation(j, ahead, since + 0.5, now + 0.5);
+          const c0 = posAt(game_, home, now), c1 = posAt(game_, home, now + 0.5);
+          tmp5.set(tmp.x - here.x - (c1.x - c0.x), tmp.y - here.y - (c1.y - c0.y), tmp.z - here.z - (c1.z - c0.z));
+          tmp.copy(here);
+          bTan.lerp(tmp5.lengthSq() > 1e-8 ? tmp5.normalize() : bTan, THREE.MathUtils.smoothstep(kf, 0, 0.25));
+          // Turn from that heading to the burn as the drive comes up (via a
+          // sideways axis if they're nearly opposite, never through zero).
+          const w = THREE.MathUtils.smoothstep(kf, NEAR, 1);
+          tmp3.lerp(bTan, 1 - w);
+          if (tmp3.lengthSq() < 0.05) tmp3.addScaledVector(perp, 0.4);
+          tmp3.normalize();
+          if (kf < NEAR) {
+            // Thrusters only: short, flickering puffs.
+            burning = Math.sin(t * (5 + h3 * 4) + j * 1.7) > 0.35;
+            plume = 0.12;
+          } else plume *= THREE.MathUtils.smoothstep(kf, NEAR, 1) * 0.9 + 0.1;
+        }
+        placeShip(tmp, tmp3, color, burning, t, j, f.id * 97 + j, plume, f.probe);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.
