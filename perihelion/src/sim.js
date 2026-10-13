@@ -28,7 +28,7 @@ export const RULES = {
     defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3, desc: '+2 guns per level' },
     bureau: { name: 'Security bureau', cost: 250, time: 50, maxLevel: 2, desc: 'Hunts enemy spies here and on nearby worlds' },
     lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3, desc: 'Research +50% per level' },
-    habitat: { name: 'Habitat', cost: 300, time: 60, maxLevel: 3, crewOnly: true, desc: 'Quarters for crews: +8 crew per level' },
+    habitat: { name: 'Habitat', cost: 300, time: 60, maxLevel: 3, crewOnly: true, desc: 'Quarters for crews: +4 crew per level' },
   },
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
@@ -48,7 +48,7 @@ export const RULES = {
   upkeep: { free: 40, cost: 0.05 },
   // Crews (Vast only): ships need crews, and crews come from your worlds. The
   // fleet (in service and on order) can't outgrow the crew you can field.
-  crew: { home: 16, planet: 8, giant: 6, station: 6, moon: 3, asteroid: 1, habitat: 8, industry: 0.1, convoy: 4 },
+  crew: { home: 16, planet: 8, giant: 6, station: 6, moon: 3, asteroid: 1, habitat: 4, industry: 0.1, convoy: 4 },
   drill: 0.004, // experience per second a garrison regains, up to the rank it once held
 };
 
