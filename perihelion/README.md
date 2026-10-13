@@ -24,14 +24,15 @@ rules don't change:
   that happens depends on the map. Its worlds earn 50% more. Routes steer
   clear of both suns.
 
-- **Vast** (test, picked by hand only): Classic at four times the scale, with
-  drives half as strong there, so trips take roughly three times as long
-  (minutes to a neighbour, ten or more to the far planets). Every voyage is a
-  commitment: research and fleet size matter. Sensor, relay, depot, fortress
-  and security reaches scale with the map; event warnings and visitor passes
-  stretch to match. Worlds are 2.5 times the size (with their moons and
-  stations) and the sun three times, so they hold their own against the
-  distances. Random and the Daily never pick it.
+- **Vast** (test, picked by hand only): a system at proportions closer to
+  life. Worlds are small beside the gaps to their moons, and the sun is about
+  three and a half times as wide as the gap between a planet and its moon.
+  Distances are several times Classic's and drives are half as strong, so a
+  trip to a neighbour takes minutes and to the far planets ten or more. Every
+  voyage is a commitment: research and fleet size matter. Sensor, relay,
+  depot, fortress and security reaches scale with the map; event warnings
+  and visitor passes stretch to match; build slots are as usual. Random and
+  the Daily never pick it.
 
 **Daily system:** everyone gets the same map each day (seed and system from
 the date). The end screen and share image say which day it was.

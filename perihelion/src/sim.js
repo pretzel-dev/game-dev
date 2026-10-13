@@ -566,7 +566,9 @@ export const SYSTEMS = {
   binary: { name: 'Binary', text: 'A second sun and its worlds swing around the system; its worlds earn +50%', companion: true },
   // Classic, at an almost absurd scale: every trip is a journey and a
   // commitment. Picked by hand only (never Random or the Daily).
-  vast: { name: 'Vast', text: 'Classic at four times the scale: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2.5, sun: 3, test: true },
+  // Proportions closer to life: worlds small beside the gaps to their moons,
+  // and a sun far wider than a planet and its moon together.
+  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, test: true },
 };
 /** Distances on this map relative to the usual (reaches, sensors and so on scale with it). */
 export const scaleOf = (game) => game.scale || 1;
@@ -638,6 +640,9 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // Plan each planet's family first (its moons and any station), so orbits can
   // be spaced to give every family room: neighbours never come close.
   const specs = [];
+  // Map proportions (all 1 except on Vast): world sizes, moon and station
+  // distances from their planet, and the spacing between families.
+  const W = sys.worlds || 1, O = sys.orbits || 1, L = sys.scale || 1;
   // Home planets are picked up front from the middle orbits: each is a plain
   // rocky world with exactly one companion (a moon or a station).
   const players = opponents + 1;
@@ -651,29 +656,31 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     if (sys.moons && !homeIdx.includes(i)) count = Math.floor(count * sys.moons);
     const moons = [];
     for (let m = 0; m < count; m++) {
-      moons.push({ r: size * 3.4 + 6 + m * 7 + rand() * 0.8, size: 0.5 + rand() * 0.5, period: 300 + m * 150 + rand() * 120 });
+      moons.push({ r: (size * 3.4 + 6 + m * 7 + rand() * 0.8) * O, size: (0.5 + rand() * 0.5) * W, period: 300 + m * 150 + rand() * 120 });
     }
-    specs.push({ giant, size, moons, station: false });
+    specs.push({ giant, size: size * W, base: size, moons, station: false });
   }
   const hostIdx = shuffle([1, 2, 3, 4, 5]).slice(0, sys.stations || 2);
   for (const i of hostIdx) specs[i].station = true;
   // A home's one companion is its station if it has one, otherwise its moon.
   for (const i of homeIdx) if (specs[i].station) specs[i].moons = [];
   for (const sp of specs) {
-    sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.size * 2.4 + 2.5 : 0, ...sp.moons.map((m) => m.r + m.size));
+    sp.reach = Math.max(sp.size * 1.6, sp.station ? (sp.base * 2.4 + 2.5) * O : 0, ...sp.moons.map((m) => m.r + m.size));
   }
 
   // Orbits outward from the sun, each at least both families' reach plus a gap
   // apart; the asteroid belt gets its own lane after the fourth planet.
-  const GAP = sys.gap || 16;
+  const GAP = (sys.gap || 16) * L;
+  // A big sun: the innermost planet starts clear of it.
+  const SUN_R = sys.sunR || SUN_RADIUS_SIM * SUN_SIZE;
   let beltR = 0;
   let prev = null;
   for (const [i, sp] of specs.entries()) {
-    if (!prev) sp.r = sys.inner || 56;
-    else sp.r = prev.r + prev.reach + sp.reach + GAP + rand() * 10;
+    if (!prev) sp.r = sys.sunR ? SUN_R * 1.8 + sp.reach + GAP : sys.inner || 56;
+    else sp.r = prev.r + prev.reach + sp.reach + GAP + rand() * 10 * L;
     if (i === 4) {
       beltR = prev.r + prev.reach + GAP;
-      sp.r = beltR + (sys.beltW || 6) + GAP + sp.reach + rand() * 10;
+      sp.r = beltR + (sys.beltW || 6) * L + GAP + sp.reach + rand() * 10 * L;
     }
     prev = sp;
   }
@@ -688,30 +695,32 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
       phase: rand() * Math.PI * 2,
       incl: (rand() - 0.5) * 0.06,
       size: sp.size,
+      baseSize: sp.base, // build slots go by this
       giant: sp.giant,
       hue: rand(),
     });
     for (const m of sp.moons) {
       add({
         kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: m.r, period: m.period,
-        phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.3, size: m.size, hue: rand(),
+        phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.3, size: m.size, baseSize: m.size / W, hue: rand(),
       });
     }
     if (sp.station) {
       add({
-        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.size * 2.4 + 1.5,
-        period: 200 + rand() * 60, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45, hue: 0,
+        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: (sp.base * 2.4 + 1.5) * O,
+        period: 200 + rand() * 60, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45 * W, baseSize: 0.45, hue: 0,
       });
     }
   }
   // The asteroid belt, in its own lane.
   const rocks = sys.rocks || 4;
   for (let k = 0; k < rocks; k++) {
-    const r = beltR + rand() * (sys.beltW || 6);
-    add({
+    const r = beltR + rand() * (sys.beltW || 6) * L;
+    const a = add({
       kind: 'asteroid', name: pick(ROCK_NAMES, names), parent: null, r, period: periodAt(r),
       phase: (k / rocks) * Math.PI * 2 + rand() * 0.8, incl: (rand() - 0.5) * 0.1, size: 0.5 + rand() * 0.4, hue: rand(),
     });
+    a.baseSize = a.size; a.size *= W;
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
@@ -735,12 +744,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
   // A bigger system: the same layout with the planets' orbits (and the belt)
   // spread out; moons and stations keep their distance from their planets.
-  if (sys.scale) for (const b of bodies) if (b.parent === null && !b.star && !b.visitor) { b.r *= sys.scale; b.period = periodAt(b.r); }
-  // Bigger worlds too, so they hold their own against the distances: each
-  // family grows as one (moons and stations move out with their planet).
-  // Build slots go by the original size.
-  if (sys.worlds) for (const b of bodies) if (!b.visitor) { b.baseSize = b.size; b.size *= sys.worlds; if (b.parent !== null) b.r *= sys.worlds; }
-  if (sys.sun) stars[0].size *= sys.sun;
+  if (sys.sunR) stars[0].size = sys.sunR / SUN_RADIUS_SIM;
   const game = { mp, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.

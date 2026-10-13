@@ -582,23 +582,23 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   console.log('upkeep and drill: ok');
 }
 
-// Vast: classic at four times the scale, hand-picked only. Same layout spread
-// out, reaches scaled with it, trips much longer; the other maps unchanged.
+// Vast: a system at true-to-life proportions, hand-picked only. Worlds small
+// beside the gaps to their moons, a sun far wider than planet and moon
+// together; reaches scale with the map; the other maps unchanged.
 {
   const S = await import('../src/sim.js');
   assert.ok(!RANDOM_KEYS.includes('vast') && SYSTEM_KEYS.includes('vast'), 'Vast is picked by hand only');
-  const a = createGame({ seed: 31, system: 'classic' }), v = createGame({ seed: 31, system: 'vast' });
-  const pa = a.bodies.filter((b) => b.parent === null && !b.visitor), pv = v.bodies.filter((b) => b.parent === null && !b.visitor);
-  assert.ok(pv.every((b, i) => Math.abs(b.r - pa[i].r * 4) < 1e-9), 'orbits four times as wide');
-  const moonA = a.bodies.find((b) => b.kind === 'moon'), moonV = v.bodies[moonA.id];
-  assert.ok(Math.abs(moonV.r - moonA.r * 2.5) < 1e-9 && Math.abs(moonV.size - moonA.size * 2.5) < 1e-9, 'worlds and their families are 2.5 times the size');
+  const a = createGame({ seed: 7, system: 'classic' }), v = createGame({ seed: 7, system: 'vast' });
   assert.ok(v.bodies.every((b, i) => S.slotsOf(b) === S.slotsOf(a.bodies[i])), 'build slots unchanged');
-  assert.ok(v.stars[0].size === a.stars[0].size * 3 && v.sunClear === a.sunClear * 3, 'a bigger sun, kept clear of');
+  const home = v.bodies.find((b) => b.owner === 0), moon = v.bodies.find((b) => b.parent === home.id && b.kind === 'moon');
+  const sunD = 2 * 6 * v.stars[0].size;
+  assert.ok(moon && sunD > 3 * moon.r && sunD < 4.5 * moon.r, `the sun is about 3.5 planet-to-moon gaps across (${(sunD / moon.r).toFixed(1)})`);
+  assert.ok(moon.r > 8 * 2 * home.size, 'worlds are small beside the gaps to their moons');
+  assert.ok(v.bodies[0].r > v.sunClear + 10, 'the innermost planet clears the sun');
   assert.equal(S.perkRange(v, 'relay'), 4 * S.perkRange(a, 'relay'));
-  const ha = a.bodies.find((b) => b.owner === 0), hv = v.bodies[ha.id];
-  const far = pa.find((b) => b.giant) || pa[5];
-  const Ta = plan(a, ha, far).T, Tv = plan(v, hv, v.bodies[far.id]).T;
+  const ha = a.bodies.find((b) => b.owner === 0), far = a.bodies.find((b) => b.giant);
+  const Ta = plan(a, ha, far).T, Tv = plan(v, home, v.bodies[far.id]).T;
   assert.ok(Tv > Ta * 2.2, `trips are a journey (${Math.round(Ta)}s -> ${Math.round(Tv)}s)`);
   assert.equal(S.travelOf(a), 1, 'other maps keep their timings');
-  console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast`);
+  console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast; sun ${(sunD / moon.r).toFixed(1)} moon-gaps across`);
 }
