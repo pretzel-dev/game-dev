@@ -749,22 +749,44 @@ export function createView(canvas, labelRoot, opts = {}) {
     st.a.lerp(jN, k);
     st.n.copy(n);
     st.t = gt;
+    if (px < 2) return; // too small to see
     const alpha = st.a.length();
-    if (alpha < 0.04 || px < 2) return; // steady (or no turn), or too small to see
-    const pow = Math.min(1, (alpha - 0.04) * 3);
-    // Pulsed, as attitude jets are: short bursts, not a steady stream.
-    if (Math.sin(t * 23 + id * 1.3) < -0.2) return;
+    // A pilot's hand, not a metronome: time is cut into uneven slots (each
+    // ship its own rhythm), and each slot is a burst or a pause by the dice.
+    const rate = 5 + hash(id, 17) * 5;
+    const u = t * rate + hash(id, 23) * 9;
+    const slot = Math.floor(u);
+    const r1 = hash(id * 7 + slot, 31), r2 = hash(slot, id * 3 + 1);
+    const frac = u - slot;
+    let pow;
+    if (alpha >= 0.04) {
+      // Turning: mostly bursts, some longer, some cut short.
+      pow = Math.min(1, (alpha - 0.04) * 3);
+      const duty = 0.45 + 0.35 * pow;
+      if (r1 > duty || frac > 0.35 + r2 * 0.6) return;
+    } else {
+      // Holding course: now and then a small trim to settle the heading.
+      if (r1 > 0.05 || frac > 0.3) return;
+      pow = 0.15 + r2 * 0.2;
+      jN.set(r2 - 0.5, hash(slot, id) - 0.5, hash(id, slot * 5) - 0.5); // a small nudge, any way
+    }
     const L = s * 0.32;
     // The nose must be pushed along a x n: its jet's exhaust points the other way; the tail's mirrors it.
-    jD.crossVectors(st.a, n);
+    jD.crossVectors(alpha >= 0.04 ? st.a : jN, n);
     if (jD.lengthSq() < 1e-10) return;
     jD.normalize();
-    const len = s * (0.07 + 0.09 * pow), wid = s * 0.05;
-    jP.copy(p).addScaledVector(n, L).addScaledVector(jD, -s * 0.06);
-    shipR.jet(jP, jD.negate(), len, wid, 0.35 + 0.5 * pow, id);
-    jD.negate();
-    jP.copy(p).addScaledVector(n, -L * 0.85).addScaledVector(jD, s * 0.06);
-    shipR.jet(jP, jD, len, wid, 0.35 + 0.5 * pow, id + 0.5);
+    const len = s * (0.06 + 0.1 * pow) * (0.75 + r2 * 0.5), wid = s * 0.05;
+    const p0 = (0.35 + 0.5 * pow) * (0.8 + r1 * 0.4);
+    // Sometimes only one of the pair fires (a nudge rather than a clean couple).
+    const which = r2 < 0.18 ? 1 : r2 > 0.86 ? 2 : 3;
+    if (which & 1) {
+      jP.copy(p).addScaledVector(n, L).addScaledVector(jD, -s * 0.06);
+      shipR.jet(jP, tmp5.copy(jD).negate(), len, wid, p0, id);
+    }
+    if (which & 2) {
+      jP.copy(p).addScaledVector(n, -L * 0.85).addScaledVector(jD, s * 0.06);
+      shipR.jet(jP, jD, len * (0.85 + r1 * 0.3), wid, p0, id + 0.5);
+    }
   }
   function placeShip(p, n, color, burning, t, seed, id = seed, plume = 1, probe = false, glintMul = 1, gt = null) {
     if (used >= MAX_SHIPS) return;
