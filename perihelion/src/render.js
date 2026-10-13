@@ -7,7 +7,7 @@ import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
 import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
-import { stationMesh, stationPorts, STATION_KINDS } from './gfx/stations.js';
+import { stationMesh, stationPorts, setStationModules, STATION_CORES } from './gfx/stations.js';
 import { structureMesh } from './gfx/structures.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
@@ -302,7 +302,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       let ring = null;
       let atmo = null;
       // Stations: a little smaller than their size (a real one is tiny beside a world).
-      if (b.kind === 'station') body = stationMesh(b.size * STATION_SCALE, b.id % STATION_KINDS, shipR.uT);
+      if (b.kind === 'station') body = stationMesh(b.size * STATION_SCALE, b.id % STATION_CORES, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else if (b.visitor) {
         // Comet: an icy nucleus with a tail streaming away from the sun.
@@ -319,6 +319,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         for (const sp of [...tail.userData.ion, ...tail.userData.dust, tail.userData.coma]) tail.add(sp);
         g.add(tail);
         hulk = stationMesh(0.7, 0, shipR.uT);
+        setStationModules(hulk, [{ type: 'shipyard', level: 1, done: true }, { type: 'habitat', level: 1, done: true }], null);
         hulk.userData.set('#3a3d44', 0.8, false); // a dead hulk: no lights
         g.add(hulk);
       }
@@ -378,7 +379,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_KINDS) : null };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_CORES) : null };
     });
     // The asteroid belt: a lane of small rocks round the named asteroids.
     if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
@@ -1147,8 +1148,9 @@ export function createView(canvas, labelRoot, opts = {}) {
         if (v.structs) v.structs.removeFromParent();
         v.surface.clear();
         v.structs = new THREE.Group();
-        b.structures.forEach((x, k) => {
-          if (b.kind === 'station' && x.type === 'shipyard') return; // the station is the yard
+        // A station shows what's built on it as modules on its hub.
+        if (b.kind === 'station') setStationModules(v.body, b.structures.map((x) => ({ type: x.type, level: x.level, done: !x.scrap && (x.left <= 0 || !!x.next) })), ghostMat);
+        else b.structures.forEach((x, k) => {
           const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner));
           // Surface structures turn with the world; yards and skimmers orbit on their own.
           (x.type === 'shipyard' || x.type === 'skimmer' ? v.structs : v.surface).add(m);
@@ -1188,6 +1190,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       const known = knowsWorld(b);
       if (v.structs) v.structs.visible = known;
       v.surface.visible = known;
+      if (b.kind === 'station') for (const m of v.body.userData.station.parts) m.visible = known;
       const fighting = known && b.sieges.length > 0;
       const defPts = [];
       const atkPts = [];

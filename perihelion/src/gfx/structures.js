@@ -96,6 +96,19 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
     }
     K.add(new THREE.CylinderGeometry(s * 0.01, s * 0.01, s * 0.6, 3).translate(-s * 0.28, s * 0.6, -s * 0.2), DARK);
     K.box(s * 0.04, s * 0.04, s * 0.04, -s * 0.28, s * 0.92, -s * 0.2, STROBE);
+  } else if (type === 'bureau') {
+    // Security bureau: a low armoured operations block, a laser-comm head
+    // (a lens, not a gun) and a sensor mast; a second dish at level 2.
+    K.add(new THREE.CylinderGeometry(s * 0.42, s * 0.5, s * 0.26, 8).translate(0, s * 0.13, 0), HULL);
+    K.add(new THREE.CylinderGeometry(s * 0.43, s * 0.43, s * 0.04, 8).translate(0, s * 0.2, 0), PAINT);
+    K.box(s * 0.3, s * 0.03, s * 0.01, 0, s * 0.12, s * 0.45, WINDOW);
+    K.add(new THREE.CylinderGeometry(s * 0.08, s * 0.1, s * 0.12, 10).translate(s * 0.15, s * 0.32, 0), DARK);
+    K.box(s * 0.14, s * 0.1, s * 0.12, s * 0.15, s * 0.43, 0, HULL);
+    K.box(s * 0.05, s * 0.05, s * 0.01, s * 0.15, s * 0.43, s * 0.065, WINDOW);
+    K.add(new THREE.CylinderGeometry(s * 0.02, s * 0.03, s * 0.8, 6).translate(-s * 0.22, s * 0.6, -s * 0.1), DARK);
+    K.add(new THREE.SphereGeometry(s * 0.08, 10, 8).translate(-s * 0.22, s * 1.02, -s * 0.1), DARK);
+    if (level > 1) K.add(new THREE.SphereGeometry(s * 0.2, 14, 6, 0, Math.PI * 2, 0, Math.PI / 3.2).rotateX(Math.PI - 0.7).translate(-s * 0.05, s * 0.5, s * 0.22), HULL);
+    K.box(s * 0.04, s * 0.04, s * 0.04, -s * 0.22, s * 1.12, -s * 0.1, STROBE);
   } else {
     // Mine: a pad that widens per level, a derrick and ore hopper per level,
     // and a conveyor between them, with lit control cabins.
