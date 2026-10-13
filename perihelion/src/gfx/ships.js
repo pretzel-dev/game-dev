@@ -19,7 +19,7 @@ import { rng } from '../sim.js';
 // Part tags (stored per vertex).
 /** Screen pixels per world unit at distance 1 (set by the view each frame). */
 export const hullPx = { value: 800 };
-export const HULL = 0, DARK = 1, PAINT = 2, WINDOW = 3, NAV_R = 4, NAV_G = 5, STROBE = 6, THROAT = 7, RAD = 8;
+export const HULL = 0, DARK = 1, PAINT = 2, WINDOW = 3, NAV_R = 4, NAV_G = 5, STROBE = 6, THROAT = 7, RAD = 8, SOLAR = 9;
 
 /** Hull plating: panels of slightly different tone, seams, hatches, scuffs. */
 let plating = null;
@@ -85,7 +85,7 @@ export function kit(seed) {
     oct: (w, h, len, z, taper = 1, x = 0, y = 0, kind = HULL, tint) => tag(new THREE.CylinderGeometry(0.5 * taper, 0.5, len, 8).rotateY(Math.PI / 8).rotateX(X).scale(w, h, 1).translate(x, y, z), kind, tint),
     sphere: (rad, x, y, z, kind = HULL, tint, seg = 10) => tag(new THREE.SphereGeometry(rad, seg, Math.max(6, seg * 0.6 | 0)).translate(x, y, z), kind, tint),
     // A propellant tank: a capsule along the hull axis.
-    tank: (rad, len, x, y, z, kind = HULL, tint) => tag(new THREE.CapsuleGeometry(rad, len, 2, 10).rotateX(X).translate(x, y, z), kind, tint),
+    tank: (rad, len, x, y, z, kind = HULL, tint) => tag(new THREE.CapsuleGeometry(rad, len, 2, 8).rotateX(X).translate(x, y, z), kind, tint),
     // A straight member from (x, y, z) out along dir, len long, t thick. Returns its far end.
     boom: (x, y, z, dir, len, t = 0.004, kind = DARK, tint) => {
       const d = new THREE.Vector3(...dir).normalize();
@@ -104,29 +104,97 @@ export function kit(seed) {
     // A radiator: thin panels in segments with a coolant manifold along the
     // root. From (x, y), reaching out at angle a round the hull axis, len
     // long along z. Returns the outer edge, to hang a folding second panel.
-    radiator: (x, y, z, reach, len, a, segs = 3, t = 0.003) => {
+    radiator: (x, y, z, reach, len, a, segs = 3, t = 0.003, kind = RAD) => {
       const gap = len * 0.035;
       const sl = (len - gap * (segs - 1)) / segs;
       for (let i = 0; i < segs; i++) {
         const zz = z - len / 2 + sl / 2 + i * (sl + gap);
-        tag(new THREE.BoxGeometry(reach, t, sl).translate(reach / 2, 0, 0).rotateZ(a).translate(x, y, zz), RAD, 0.92 + r() * 0.14);
+        tag(new THREE.BoxGeometry(reach, t, sl).translate(reach / 2, 0, 0).rotateZ(a).translate(x, y, zz), kind, (kind === RAD ? 0.92 : 0.55) + r() * 0.14);
+        // A coolant header along the outer edge of each panel.
+        k.strut(x + Math.cos(a) * reach, y + Math.sin(a) * reach, zz - sl / 2, x + Math.cos(a) * reach, y + Math.sin(a) * reach, zz + sl / 2, t * 1.8, DARK, 0.7);
       }
       tag(new THREE.BoxGeometry(t * 2, t * 2, len).translate(x, y, z), DARK, 0.8);
       return [x + Math.cos(a) * reach, y + Math.sin(a) * reach];
     },
+    // A straight member between two points.
+    strut: (x0, y0, z0, x1, y1, z1, t = 0.003, kind = DARK, tint) => {
+      const d = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0);
+      const len = d.length();
+      if (len < 1e-6) return;
+      const g = new THREE.CylinderGeometry(t * 0.62, t * 0.62, len, 3, 1, true).translate(0, len / 2, 0);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, d.normalize())).translate(x0, y0, z0);
+      tag(g, kind, tint);
+    },
+    // A feed line (thin pipe) between two points.
+    pipe: (x0, y0, z0, x1, y1, z1, rad = 0.0022, kind = HULL) => {
+      const d = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0);
+      const len = d.length();
+      if (len < 1e-6) return;
+      const g = new THREE.CylinderGeometry(rad, rad, len, 4, 1, true).translate(0, len / 2, 0);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, d.normalize())).translate(x0, y0, z0);
+      tag(g, kind, 0.8);
+    },
+    // A triangular truss along z: three longerons, triangular frames and zig-zag diagonals.
+    truss3: (x, y, z0, z1, R, bays, t = 0.004, rot = 0, kind = DARK) => {
+      const P = [0, 1, 2].map((i) => { const a = rot + Math.PI / 2 + (i * 2 * Math.PI) / 3; return [x + Math.cos(a) * R, y + Math.sin(a) * R]; });
+      for (const [px, py] of P) k.strut(px, py, z0, px, py, z1, t, kind);
+      const L = (z1 - z0) / bays;
+      for (let i = 0; i <= bays; i++) {
+        const z = z0 + i * L;
+        for (let j = 0; j < 3; j++) k.strut(P[j][0], P[j][1], z, P[(j + 1) % 3][0], P[(j + 1) % 3][1], z, t * 0.8, kind);
+        if (i === bays) break;
+        for (let j = 0; j < 3; j++) {
+          const [A, B] = i % 2 ? [P[j], P[(j + 1) % 3]] : [P[(j + 1) % 3], P[j]];
+          k.strut(A[0], A[1], z, B[0], B[1], z + L, t * 0.7, kind, 0.85);
+        }
+      }
+    },
+    // An open box frame (cargo framing, clamps): twelve edges.
+    frame: (w, h, d, x, y, z, t = 0.003, kind = DARK) => {
+      const X0 = x - w / 2, X1 = x + w / 2, Y0 = y - h / 2, Y1 = y + h / 2, Z0 = z - d / 2, Z1 = z + d / 2;
+      for (const yy of [Y0, Y1]) for (const zz of [Z0, Z1]) k.strut(X0, yy, zz, X1, yy, zz, t, kind);
+      for (const xx of [X0, X1]) for (const zz of [Z0, Z1]) k.strut(xx, Y0, zz, xx, Y1, zz, t, kind);
+      for (const xx of [X0, X1]) for (const yy of [Y0, Y1]) k.strut(xx, yy, Z0, xx, yy, Z1, t, kind);
+    },
+    // A propellant tank with straps and (optionally) a band in the owner's paint.
+    strapped: (rad, len, x, y, z, paint = false, tint = 1) => {
+      k.tank(rad, len, x, y, z, HULL, tint);
+      const band = (rr, w, zz, kind, tint) => tag(new THREE.CylinderGeometry(rr, rr, w, 10, 1, true).rotateX(X).translate(x, y, zz), kind, tint);
+      for (const f of [-0.32, 0.32]) band(rad * 1.06, rad * 0.16, z + f * len, DARK, 0.8);
+      if (paint) band(rad * 1.04, len * 0.3, z, PAINT, 1);
+    },
+    // A docking collar facing +z (dir 1) or -z: a short neck and a flange.
+    collar: (rad, z, x = 0, y = 0, dir = 1) => {
+      k.cyl(rad * 0.85, rad * 0.85, 0.014, z, HULL, 12, x, y, 0.9);
+      k.cyl(rad * 1.25, rad * 1.25, 0.004, z + dir * 0.007, DARK, 14, x, y);
+    },
+    // The main drive: a bell on a thrust frame (struts from a ring forward of it).
+    engine: (rad, z, len, frameR, frameZ, n = 6) => {
+      k.bell(rad, z, len);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + 0.3;
+        k.strut(Math.cos(a) * frameR, Math.sin(a) * frameR, frameZ, Math.cos(a) * rad * 0.5, Math.sin(a) * rad * 0.5, z - len * 0.12, 0.004, DARK, 0.8);
+      }
+      k.cyl(frameR * 1.05, frameR * 1.05, 0.008, frameZ, DARK, 14);
+    },
+    // A solar array: a framed panel of cells, reaching out from (x, y) at angle a.
+    solar: (x, y, z, reach, len, a, t = 0.003) => {
+      tag(new THREE.BoxGeometry(reach, t, len).translate(reach / 2, 0, 0).rotateZ(a).translate(x, y, z), SOLAR, 1);
+      tag(new THREE.BoxGeometry(reach, t * 1.4, t * 1.4).translate(reach / 2, 0, 0).rotateZ(a).translate(x, y, z), DARK, 0.7);
+      tag(new THREE.BoxGeometry(t * 1.4, t * 1.4, len).translate(reach, 0, 0).rotateZ(a).translate(x, y, z), DARK, 0.7);
+    },
     // An open lattice truss along z: four rails, frames and diagonals.
     truss: (x, y, z0, z1, w, bays, t = 0.004, kind = DARK) => {
       const L = (z1 - z0) / bays;
-      for (const sx of [-1, 1]) for (const sy of [-1, 1]) k.box(t, t, z1 - z0, x + (sx * w) / 2, y + (sy * w) / 2, (z0 + z1) / 2, kind);
-      const diag = Math.hypot(w, L), ang = Math.atan2(w, L);
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) k.strut(x + (sx * w) / 2, y + (sy * w) / 2, z0, x + (sx * w) / 2, y + (sy * w) / 2, z1, t, kind);
       for (let i = 0; i <= bays; i++) {
         const z = z0 + i * L;
-        for (const s of [-1, 1]) { k.box(w, t, t, x, y + (s * w) / 2, z, kind); k.box(t, w, t, x + (s * w) / 2, y, z, kind); }
+        for (const s of [-1, 1]) { k.strut(x - w / 2, y + (s * w) / 2, z, x + w / 2, y + (s * w) / 2, z, t, kind); k.strut(x + (s * w) / 2, y - w / 2, z, x + (s * w) / 2, y + w / 2, z, t, kind); }
         if (i === bays) break;
         const f = i % 2 ? 1 : -1;
         for (const s of [-1, 1]) {
-          tag(new THREE.BoxGeometry(t * 0.8, t * 0.8, diag).rotateX(ang * f * s).translate(x + (s * w) / 2, y, z + L / 2), kind, 0.85);
-          tag(new THREE.BoxGeometry(t * 0.8, t * 0.8, diag).rotateY(ang * f * s).translate(x, y + (s * w) / 2, z + L / 2), kind, 0.85);
+          k.strut(x + (s * w) / 2, y - (f * s * w) / 2, z, x + (s * w) / 2, y + (f * s * w) / 2, z + L, t * 0.8, kind, 0.85);
+          k.strut(x - (f * s * w) / 2, y + (s * w) / 2, z, x + (f * s * w) / 2, y + (s * w) / 2, z + L, t * 0.8, kind, 0.85);
         }
       }
     },
@@ -201,8 +269,10 @@ export function kit(seed) {
         for (const sx of sides) k.box(0.002, 0.006, 0.01, sx * x, y, z, WINDOW);
       }
     },
-    build(scaleXY = 1.35, D = 7) {
-      const out = [];
+    // `coarse` > 0 also builds a far-off version (geo.userData.coarse) with
+    // the same silhouette: parts smaller than that radius are left out.
+    build(scaleXY = 1.35, D = 7, coarse = 0) {
+      const out = [], few = [];
       for (const g of parts) {
         const n = g.index ? g.toNonIndexed() : g;
         n.deleteAttribute('uv');
@@ -224,11 +294,22 @@ export function kit(seed) {
         }
         n.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         out.push(n);
+        if (coarse) {
+          n.computeBoundingSphere();
+          const kd = g.userData.kind;
+          if (n.boundingSphere.radius >= coarse || (kd >= WINDOW && kd <= THROAT)) few.push(n);
+        }
       }
       const geo = mergeGeometries(out);
       geo.scale(scaleXY, scaleXY, 1);
       geo.computeBoundingSphere();
       geo.userData.nozzle = k.nozzle ?? 0;
+      if (coarse) {
+        const c = mergeGeometries(few);
+        c.scale(scaleXY, scaleXY, 1);
+        c.computeBoundingSphere();
+        geo.userData.coarse = c;
+      }
       return geo;
     },
   };
@@ -236,213 +317,219 @@ export function kit(seed) {
 }
 
 /**
- * The hulls: [cutter, frigate, freighter, cruiser, surveyor], plus
- * `.probes` (survey, relay, recon). All face +Z and burn along it.
+ * The hulls, plus `.probes` (survey, relay, recon). All face +Z and burn
+ * along it. There is one kind of ship in the game: these are art families
+ * (picked at random per ship), not classes, so none of them promises a
+ * role. Each is a different way of arranging the same systems:
  *
- * Function first: crew sits forward in small armoured sections (no bridges
- * or windows to speak of), the reactor sits aft behind a shadow shield with
- * the drive on the thrust axis, propellant rides in real tanks, and heat
- * goes out through radiators of different kinds (radial fins, folding
- * sheets, segmented ladders). Decks run across the hull, stacked along the
- * thrust axis. Each class has its own proportions: a stubby cutter, a long
- * lean frigate, an open-truss freighter, a broad armoured cruiser with a
- * drone bay, and a surveyor whose habitat ring turns on its own.
+ *  0. Long / skeletal: a pressure module on the end of a long triangular
+ *     truss, tanks slung along it, the drive far aft. Truss first.
+ *  1. Compact / packaged: a fat pressure drum over a ring of six strapped
+ *     tanks round the thrust axis, short and wide.
+ *  2. Modular / industrial: clusters of big tanks clamped to a box spine,
+ *     a small crew can off to one side. Tanks first.
+ *  3. Protected / military-industrial: an armoured core forward, a long
+ *     neck to the reactor, and four big radiator banks. Radiators first.
+ *  4. Experimental / ring: a slender spine with a habitat ring turning on
+ *     its own bearing (a separate part, `rotor`, so it can spin).
+ *
+ * Shared rules: crew forward of a shadow shield, reactor and drive aft on
+ * the thrust axis, real tanks with straps and feed lines, RCS clusters
+ * where the attitude jets fire, radiators sized and placed for the heat.
+ * The owner's paint goes on big surfaces (module faces, tank bands, ring
+ * segments) so it reads from far off.
  */
+/** Parts smaller than this (radius, hull units) are left off ships drawn far away. */
+const LOD = 0.04;
 export function shipGeometries() {
-  // Cutter (patrol, interception): short and dense, mostly drive. An
-  // armoured crew capsule, a spinal coilgun under the keel, two unequal
-  // tanks, and small radiator fins off the reactor.
+  // 0. Long / skeletal.
   const a = kit(11);
-  a.oct(0.064, 0.07, 0.11, 0.2, 0.74); // armoured crew capsule
-  a.oct(0.05, 0.054, 0.03, 0.27, 0.62); // nose armour
-  a.box(0.024, 0.008, 0.004, 0, -0.008, 0.286, DARK); // recessed sensor slot
-  a.box(0.05, 0.006, 0.08, 0.004, 0.037, 0.19, PAINT);
-  a.box(0.012, 0.012, 0.42, 0, -0.045, 0.1, DARK); // spinal coilgun
-  a.box(0.018, 0.018, 0.016, 0, -0.045, 0.31, DARK, 0.7);
-  a.tank(0.028, 0.06, -0.014, 0.006, 0.06);
-  a.tank(0.02, 0.05, 0.034, -0.012, 0.055, HULL, 0.9);
-  a.truss(0, 0, -0.055, 0.02, 0.032, 2);
-  a.shield(0.048, -0.062);
-  a.cyl(0.04, 0.046, 0.07, -0.105, DARK, 14); // reactor
-  a.cyl(0.049, 0.049, 0.01, -0.082, PAINT, 14);
-  a.bell(0.058, -0.142, 0.13);
-  a.radiator(0.03, 0.022, -0.105, 0.058, 0.062, 0.55, 2);
-  a.radiator(-0.03, -0.022, -0.1, 0.044, 0.05, Math.PI + 0.35, 2);
-  a.pdc(0.012, 0.042, 0.13);
-  for (const [x, y] of [[0.036, 0.03], [-0.036, -0.03]]) a.rcs(x, y, 0.24, Math.sign(x), 0);
-  for (const [x, y] of [[0.044, -0.03], [-0.044, 0.03]]) a.rcs(x, y, -0.08, Math.sign(x), 0);
-  a.light(-0.034, 0.0, 0.2, NAV_R); a.light(0.034, 0.0, 0.2, NAV_G); a.light(0.0, 0.046, 0.04, STROBE);
-  const cutter = a.build();
-
-  // Frigate (escort, line): long and lean. A sensor prow, a missile
-  // magazine with hatches, an armoured command citadel, then an open spine
-  // carrying tanks and two unlike radiators (a ladder to port, a folding
-  // sheet to starboard), and an armoured reactor housing at the drive.
-  const b = kit(23);
-  b.oct(0.07, 0.07, 0.06, 0.35, 0.74); // sensor prow
-  b.cyl(0.012, 0.012, 0.004, 0.381, DARK, 12, 0, 0.008);
-  b.box(0.08, 0.072, 0.14, 0, 0, 0.25); // magazine
-  b.cells(-0.012, 0.037, 0.25, 3, 8);
-  b.box(0.084, 0.076, 0.006, 0, 0, 0.18, DARK);
-  b.oct(0.076, 0.07, 0.1, 0.12, 1); // command citadel
-  b.box(0.05, 0.008, 0.07, 0.008, 0.038, 0.12, PAINT);
-  b.windows(0.038, 0.006, 0.09, 0.14, 2, [1]);
-  b.turret(-0.012, 0.042, 0.09);
-  b.pdc(0.042, 0.02, 0.3); b.pdc(-0.042, -0.02, 0.27, -1);
-  b.truss(0, 0, -0.2, 0.07, 0.034, 3);
-  b.tank(0.024, 0.12, 0.034, 0.012, -0.06);
-  b.tank(0.024, 0.12, -0.034, -0.008, -0.08);
-  b.tank(0.018, 0.07, 0, -0.036, -0.02, HULL, 0.85);
-  b.radiator(-0.02, 0, -0.06, 0.12, 0.2, Math.PI + 0.22, 4);
-  const [fx, fy] = b.radiator(0.02, 0, -0.075, 0.07, 0.16, -0.12, 3);
-  b.radiator(fx, fy, -0.075, 0.06, 0.16, 0.42, 3);
-  b.shield(0.055, -0.208);
-  b.oct(0.084, 0.084, 0.08, -0.255, 1); // armoured reactor housing
-  b.box(0.088, 0.016, 0.05, 0, 0.0, -0.255, PAINT);
-  b.cyl(0.05, 0.056, 0.03, -0.31, DARK, 14);
-  b.bell(0.066, -0.326, 0.14);
-  for (const [x, y] of [[0.038, 0.03], [-0.038, -0.03]]) b.rcs(x, y, 0.33, Math.sign(x), 0);
-  for (const [x, y] of [[0.046, 0.03], [-0.046, -0.03]]) b.rcs(x, y, -0.235, Math.sign(x), 0);
-  b.light(-0.142, -0.03, -0.06, NAV_R); b.light(0.13, 0.0, -0.075, NAV_G); b.light(0.0, 0.05, 0.12, STROBE);
-  const frigate = b.build();
-
-  // Freighter: a small crew pod on the end of a long open truss, cargo
-  // modules clamped round it (some slots empty, some in the owner's paint),
-  // a cluster of spherical propellant tanks aft and radial radiator fins
-  // round the reactor.
-  const c = kit(37);
-  c.oct(0.05, 0.046, 0.06, 0.31, 0.8); // crew pod
-  c.box(0.026, 0.008, 0.004, 0, 0.006, 0.341, WINDOW);
-  c.box(0.052, 0.008, 0.04, 0, 0.026, 0.3, PAINT);
-  c.truss(0, 0, -0.15, 0.28, 0.03, 5);
-  for (const [i, z] of [0.22, 0.14, 0.06, -0.02].entries()) {
-    for (const [j, [sx, sy]] of [[1, 0], [-1, 0], [0, 1], [0, -1]].entries()) {
-      if ((i * 4 + j) % 5 === 2) continue; // an empty slot
-      const paint = (i + j) % 3 === 0;
-      c.box(sx ? 0.036 : 0.044, sy ? 0.036 : 0.044, 0.07, sx * 0.034, sy * 0.034, z, paint ? PAINT : HULL, 0.8 + c.r() * 0.3);
-    }
+  a.tank(0.034, 0.07, 0, 0, 0.33, HULL, 1.05); // pressure module
+  a.cyl(0.036, 0.036, 0.034, 0.325, PAINT, 14);
+  a.collar(0.016, 0.39);
+  a.box(0.03, 0.006, 0.004, 0, 0.018, 0.372, WINDOW);
+  a.box(0.02, 0.003, 0.02, 0.0, 0.036, 0.31, DARK); // hatch
+  a.truss3(0, 0, -0.205, 0.29, 0.036, 7, 0.0045);
+  a.strapped(0.021, 0.08, 0.04, -0.012, 0.13, true);
+  a.strapped(0.021, 0.08, -0.038, -0.012, 0.06);
+  a.strapped(0.018, 0.06, 0.0, 0.05, -0.04, false, 0.95);
+  a.pipe(0.04, -0.012, 0.08, 0.012, -0.016, -0.2); a.pipe(-0.038, -0.012, 0.01, -0.012, -0.016, -0.2); a.pipe(0, 0.05, -0.08, 0, 0.02, -0.2);
+  a.shield(0.046, -0.21);
+  a.cyl(0.032, 0.038, 0.05, -0.24, DARK, 12); // reactor
+  a.engine(0.05, -0.27, 0.12, 0.036, -0.262);
+  a.radiator(0.03, 0.018, -0.07, 0.05, 0.24, 0.45, 6);
+  a.radiator(-0.03, 0.018, -0.07, 0.05, 0.24, Math.PI - 0.45, 6);
+  for (const s of [-1, 1]) {
+    a.boom(0, 0, 0.29, [s, 0, 0], 0.05, 0.004); a.rcs(s * 0.05, 0, 0.29, s, 0);
+    a.boom(0, 0, -0.2, [s, 0, 0], 0.05, 0.004); a.rcs(s * 0.05, 0, -0.2, s, 0);
   }
-  c.sphere(0.04, 0.03, 0.022, -0.1, HULL, 0.95, 12);
-  c.sphere(0.036, -0.034, 0.016, -0.11, HULL, 1, 12);
-  c.sphere(0.038, 0.002, -0.036, -0.095, HULL, 0.9, 12);
-  c.shield(0.05, -0.155);
-  c.cyl(0.036, 0.042, 0.05, -0.185, DARK, 12);
-  for (const ang of [0.4, 1.9, 3.4, 4.8]) c.radiator(Math.cos(ang) * 0.036, Math.sin(ang) * 0.036, -0.185, 0.045 + c.r() * 0.02, 0.05, ang, 2);
-  c.bell(0.05, -0.21, 0.12);
-  c.rcs(0.03, 0.02, 0.29, 1, 0); c.rcs(-0.03, -0.02, 0.29, -1, 0);
-  c.light(-0.03, 0.0, 0.31, NAV_R); c.light(0.03, 0.0, 0.31, NAV_G); c.light(0.0, 0.03, 0.27, STROBE);
-  const freighter = c.build();
+  a.light(-0.055, 0.0, 0.29, NAV_R); a.light(0.055, 0.0, 0.29, NAV_G); a.light(0.0, 0.04, -0.03, STROBE);
+  const skeletal = a.build(1.35, 7, LOD);
 
-  // Cruiser (heavy, carries drones): broad and armoured, its crew deep
-  // inside. Two dorsal gun mounts, a laser on a starboard sponson with its
-  // own radiator, missile cells to port and a drone bay under the hull. A
-  // short truss neck to a separate reactor section, big radiators, and a
-  // main drive flanked by two auxiliaries.
+  // 1. Compact / packaged.
+  const b = kit(23);
+  b.cyl(0.064, 0.064, 0.14, 0.2, HULL, 18); // pressure drum
+  b.cyl(0.05, 0.064, 0.03, 0.285, HULL, 18);
+  b.cyl(0.066, 0.066, 0.05, 0.19, PAINT, 18);
+  b.collar(0.022, 0.305);
+  for (let i = 0; i < 6; i++) { const t = (i / 6) * Math.PI * 2 + 0.5; b.box(0.012, 0.005, 0.005, Math.cos(t) * 0.064, Math.sin(t) * 0.064, 0.245, WINDOW); }
+  b.box(0.022, 0.003, 0.022, 0.0, 0.066, 0.15, DARK); b.box(0.003, 0.022, 0.022, 0.066, 0.0, 0.25, DARK); // hatches
+  b.oct(0.15, 0.15, 0.024, 0.118, 1, 0, 0, DARK, 0.8); // service ring
+  b.greeble(0.15, 0.15, 0.024, 0, 0, 0.118, 8, 'tb');
+  b.cyl(0.018, 0.018, 0.17, 0.02, DARK, 8); // thrust column
+  for (let i = 0; i < 6; i++) {
+    const t = (i / 6) * Math.PI * 2 + 0.26;
+    const x = Math.cos(t) * 0.056, y = Math.sin(t) * 0.056;
+    b.strapped(0.025, 0.065, x, y, 0.035, i % 3 === 0);
+    b.pipe(x * 0.6, y * 0.6, -0.01, Math.cos(t) * 0.02, Math.sin(t) * 0.02, -0.07);
+  }
+  b.shield(0.052, -0.075);
+  b.cyl(0.04, 0.044, 0.05, -0.105, DARK, 12);
+  b.engine(0.056, -0.135, 0.11, 0.046, -0.128);
+  for (const t of [0.6, 2.7, 4.6]) b.radiator(Math.cos(t) * 0.042, Math.sin(t) * 0.042, -0.105, 0.05, 0.05, t, 2, 0.003, DARK);
+  b.pdc(0.0, 0.066, 0.24); b.sphere(0.012, -0.045, 0.045, 0.272, DARK, 0.6, 10);
+  for (const t of [0.8, 2.35, 3.9, 5.5]) b.rcs(Math.cos(t) * 0.07, Math.sin(t) * 0.07, 0.26, Math.cos(t), Math.sin(t));
+  for (const t of [0.0, Math.PI]) b.rcs(Math.cos(t) * 0.085, Math.sin(t) * 0.085, 0.035, Math.cos(t), 0);
+  b.light(-0.066, 0.0, 0.2, NAV_R); b.light(0.066, 0.0, 0.2, NAV_G); b.light(0.0, 0.0, 0.316, STROBE);
+  const compact = b.build(1.35, 7, LOD);
+
+  // 2. Modular / industrial (tank clusters, kept at index 2: the derelict wreck uses it).
+  const c = kit(37);
+  c.truss(0, 0, -0.17, 0.3, 0.03, 6);
+  c.cyl(0.028, 0.028, 0.07, 0.31, HULL, 12, 0.032, 0.026); // crew can, off to one side
+  c.cyl(0.03, 0.03, 0.02, 0.3, PAINT, 12, 0.032, 0.026);
+  c.collar(0.014, 0.352, 0.032, 0.026);
+  c.box(0.02, 0.005, 0.004, 0.032, 0.04, 0.346, WINDOW);
+  c.strut(0.015, 0.015, 0.29, 0.032, 0.026, 0.29, 0.005);
+  const pods = [
+    [0.21, [[0.05, 0.0, 0.03, 0.08, true], [-0.045, 0.018, 0.027, 0.08], [0.0, 0.052, 0.024, 0.07]]],
+    [0.07, [[0.056, 0.016, 0.035, 0.1], [-0.052, -0.02, 0.035, 0.1, true], [0.0, -0.056, 0.03, 0.09], [0.004, 0.056, 0.03, 0.09]]],
+  ];
+  for (const [z, list] of pods) {
+    for (const [x, y, rad, len, p] of list) { c.strapped(rad, len, x, y, z, !!p); c.strut(x * 0.4, y * 0.4, z, x * 0.75, y * 0.75, z, 0.005); }
+    c.frame(0.15, 0.15, 0.012, 0, 0, z - 0.05, 0.004); // clamp
+  }
+  c.sphere(0.042, 0.044, 0.004, -0.075, HULL, 0.95, 10); c.sphere(0.036, -0.038, 0.03, -0.085, HULL, 1.02, 10);
+  c.cyl(0.044, 0.044, 0.012, -0.075, PAINT, 12, 0.044, 0.004);
+  c.frame(0.07, 0.06, 0.08, -0.04, -0.045, -0.06, 0.003); // empty cargo frame
+  c.pipe(0.044, 0.004, -0.115, 0.01, 0.0, -0.17); c.pipe(-0.038, 0.03, -0.12, -0.01, 0.01, -0.17);
+  c.shield(0.05, -0.175);
+  c.cyl(0.036, 0.042, 0.05, -0.205, DARK, 12);
+  c.engine(0.05, -0.235, 0.12, 0.04, -0.228);
+  c.radiator(0.022, 0.022, -0.205, 0.06, 0.07, 0.9, 2);
+  c.rcs(0.05, 0.0, 0.29, 1, 0); c.rcs(-0.025, -0.02, 0.29, -1, 0); c.rcs(0.03, 0.03, -0.19, 1, 0); c.rcs(-0.03, -0.03, -0.19, -1, 0);
+  c.light(-0.03, 0.0, 0.3, NAV_R); c.light(0.06, 0.026, 0.31, NAV_G); c.light(0.0, 0.03, -0.12, STROBE);
+  const industrial = c.build(1.35, 7, LOD);
+
+  // 3. Protected / military-industrial: radiator banks dominate.
   const d = kit(53);
-  d.oct(0.12, 0.08, 0.06, 0.31, 0.8); // armoured bow
-  d.box(0.07, 0.008, 0.004, 0, -0.012, 0.341, DARK);
-  d.oct(0.13, 0.086, 0.16, 0.2, 1);
-  d.oct(0.14, 0.09, 0.16, 0.03, 1);
-  for (const z of [0.12, -0.05]) d.box(0.144, 0.094, 0.006, 0, 0, z, DARK);
-  d.box(0.05, 0.01, 0.14, 0.03, 0.042, 0.2, PAINT);
-  d.box(0.07, 0.006, 0.09, 0.02, -0.046, 0.04, DARK, 0.35); // drone bay mouth
-  d.box(0.05, 0.002, 0.006, 0.02, -0.049, 0.004, WINDOW);
-  d.turret(-0.032, 0.049, 0.22, 1, 1.2); d.turret(0.028, 0.047, 0.05, 1, 1.2);
-  d.box(0.03, 0.03, 0.12, 0.08, 0.008, 0.16); // laser sponson
-  d.cyl(0.01, 0.013, 0.04, 0.235, DARK, 10, 0.08, 0.008);
-  d.radiator(0.095, 0.008, 0.12, 0.042, 0.06, 0.35, 2);
-  d.cells(-0.04, 0.047, 0.06, 2, 6);
-  d.pdc(-0.07, -0.02, 0.26, -1); d.pdc(0.05, -0.046, -0.02, -1); d.pdc(-0.06, 0.046, -0.03);
-  d.windows(0.07, 0.0, 0.16, 0.2, 2, [-1]);
-  d.truss(0, 0, -0.15, -0.05, 0.05, 2);
-  d.radiator(0.028, 0, -0.1, 0.13, 0.085, 0.15, 3);
-  d.radiator(-0.028, 0, -0.095, 0.11, 0.07, Math.PI - 0.4, 3);
-  d.radiator(0, -0.028, -0.1, 0.07, 0.06, -Math.PI / 2 - 0.2, 2);
-  d.shield(0.07, -0.153);
-  d.oct(0.1, 0.09, 0.08, -0.2, 1); // reactor section
-  d.cyl(0.055, 0.06, 0.03, -0.255, DARK, 14);
-  d.bell(0.064, -0.27, 0.14);
-  d.bell2(0.024, 0.055, 0.03, -0.245); d.bell2(0.024, -0.055, -0.03, -0.245);
-  for (const [x, y] of [[0.064, 0.03], [-0.064, -0.03]]) d.rcs(x, y, 0.3, Math.sign(x), 0);
-  for (const [x, y] of [[0.054, -0.036], [-0.054, 0.036]]) d.rcs(x, y, -0.2, Math.sign(x), 0);
-  d.light(-0.072, 0.0, 0.1, NAV_R); d.light(0.072, 0.0, 0.03, NAV_G); d.light(0.0, 0.05, -0.2, STROBE);
-  const cruiser = d.build();
+  d.oct(0.1, 0.086, 0.15, 0.27, 0.82); // armoured core
+  d.cyl(0.018, 0.018, 0.006, 0.346, DARK, 12, 0, 0.008); // sensor aperture
+  d.box(0.07, 0.008, 0.1, 0.0, 0.044, 0.26, PAINT);
+  d.box(0.008, 0.06, 0.1, 0.051, 0.0, 0.26, PAINT);
+  d.turret(0.0, 0.048, 0.205, 1, 1.1); d.turret(0.0, -0.045, 0.3, -1, 0.9);
+  d.box(0.036, 0.012, 0.08, -0.034, 0.048, 0.25); d.cells(-0.034, 0.055, 0.25, 3, 6, 0.011); // missile rack
+  d.cyl(0.011, 0.014, 0.05, 0.33, DARK, 10, -0.056, -0.02); // laser aperture
+  d.radiator(-0.06, -0.03, 0.27, 0.03, 0.05, Math.PI + 0.6, 2, 0.003, DARK);
+  d.windows(0.051, -0.02, 0.22, 0.25, 2, [-1]);
+  d.collar(0.016, 0.19, 0.0, -0.03, -1);
+  d.truss(0, 0, -0.15, 0.195, 0.034, 4);
+  d.strapped(0.02, 0.1, 0.036, 0.0, 0.08); d.strapped(0.02, 0.1, -0.036, 0.0, 0.03, true);
+  d.pipe(0.036, 0.0, 0.02, 0.01, 0.0, -0.15); d.pipe(-0.036, 0.0, -0.03, -0.01, 0.0, -0.15);
+  for (const t of [0.62, 2.5, 3.8, 5.6]) d.radiator(Math.cos(t) * 0.026, Math.sin(t) * 0.026, -0.03, 0.15, 0.24, t, 6);
+  d.shield(0.06, -0.158);
+  d.oct(0.08, 0.08, 0.07, -0.195, 1);
+  d.cyl(0.05, 0.055, 0.02, -0.24, DARK, 14);
+  d.engine(0.062, -0.255, 0.13, 0.05, -0.245);
+  for (const [x, y] of [[0.058, 0.03], [-0.058, -0.03]]) d.rcs(x, y, 0.31, Math.sign(x), 0);
+  for (const [x, y] of [[0.046, -0.036], [-0.046, 0.036]]) d.rcs(x, y, -0.2, Math.sign(x), 0);
+  d.light(-0.063, 0.0, 0.25, NAV_R); d.light(0.063, 0.0, 0.25, NAV_G); d.light(0.0, 0.0, -0.03, STROBE);
+  const protectedHull = d.build(1.35, 7, LOD);
 
-  // Surveyor (exploration, science): instruments forward on booms and an
-  // offset dish, a fixed hub with a habitat ring turning round it for
-  // gravity, then a light truss with tanks, one big folding radiator and a
-  // modest drive. The ring is a separate part (`rotor`) so it can spin.
+  // 4. Experimental / ring.
   const e = kit(67);
   e.cyl(0.024, 0.03, 0.05, 0.33, HULL, 12); // instrument bay
   e.boom(0, 0, 0.355, [0, 0, 1], 0.05, 0.004);
   e.box(0.01, 0.01, 0.01, 0, 0, 0.405, DARK);
-  e.boom(0.018, 0.018, 0.33, [1, 0.7, 0.3], 0.07);
+  e.box(0.008, 0.008, 0.008, 0.02, 0.02, 0.33, DARK); // boom hinge
+  e.boom(0.02, 0.02, 0.33, [1, 0.7, 0.3], 0.07);
   e.dish(0.04, -0.03, 0.03, 0.3, [-0.5, 0.6, 0.6]);
-  e.cyl(0.028, 0.028, 0.12, 0.22, HULL, 14); // hub
+  e.cyl(0.028, 0.028, 0.12, 0.22, HULL, 14); // fixed hub
   e.cyl(0.04, 0.04, 0.03, 0.2, DARK, 14); // ring bearing
-  e.cyl(0.032, 0.032, 0.012, 0.25, PAINT, 14);
-  e.truss(0, 0, -0.17, 0.16, 0.026, 4);
-  e.tank(0.02, 0.08, 0.028, 0.01, 0.04); e.tank(0.02, 0.08, -0.028, 0.0, 0.0); e.tank(0.016, 0.06, 0.0, -0.028, -0.07, HULL, 0.9);
-  const [gx, gy] = e.radiator(0.014, 0, -0.12, 0.1, 0.1, 0.1, 3);
-  e.radiator(gx, gy, -0.12, 0.08, 0.1, -0.25, 3);
+  e.cyl(0.03, 0.03, 0.03, 0.255, PAINT, 14);
+  e.collar(0.014, 0.16, 0, 0, -1);
+  e.truss3(0, 0, -0.17, 0.16, 0.026, 5, 0.004);
+  e.strapped(0.02, 0.08, 0.03, 0.01, 0.06); e.strapped(0.02, 0.08, -0.03, 0.0, 0.0, true); e.strapped(0.016, 0.06, 0.0, -0.032, -0.07);
+  e.pipe(0.03, 0.01, 0.01, 0.008, 0.0, -0.17); e.pipe(-0.03, 0.0, -0.05, -0.008, 0.0, -0.17);
+  e.radiator(0.016, 0.0, -0.11, 0.1, 0.12, 0.12, 4);
+  e.radiator(-0.016, 0.0, -0.11, 0.05, 0.12, Math.PI - 0.3, 4, 0.003, DARK);
   e.shield(0.045, -0.176);
-  e.cyl(0.034, 0.04, 0.05, -0.205, DARK, 12);
-  e.bell(0.046, -0.23, 0.11);
-  e.rcs(0.03, 0, 0.3, 1, 0); e.rcs(-0.03, 0, 0.3, -1, 0); e.rcs(0.02, 0.02, -0.18, 0, 1);
+  e.cyl(0.03, 0.036, 0.05, -0.205, DARK, 12);
+  e.engine(0.042, -0.232, 0.11, 0.032, -0.226);
+  e.rcs(0.03, 0, 0.3, 1, 0); e.rcs(-0.03, 0, 0.3, -1, 0); e.rcs(0.024, 0.02, -0.18, 1, 0); e.rcs(-0.024, -0.02, -0.18, -1, 0);
   e.light(-0.07, 0.07, 0.2, NAV_R); e.light(0.07, -0.07, 0.2, NAV_G); e.light(0.0, 0.0, 0.41, STROBE);
-  const surveyor = e.build();
+  const ringed = e.build(1.35, 7, LOD);
   const er = kit(71);
   er.hoop(0.085, 0.022, 0.03, 24, 0.2, 3, 0.04);
-  surveyor.userData.rotor = er.build();
-  surveyor.userData.rotorSpin = 0.6;
+  ringed.userData.rotor = er.build();
+  ringed.userData.rotorSpin = 0.6;
 
-  // Probes: no crew, so no windows or decks; small buses with instruments.
-  // Survey: a camera forward, a dish, a long magnetometer boom and an RTG
-  // on a strut for power.
+  // Probes: equipment first; no crew, so no windows or decks.
+  // Survey: an imager with a sunshade, a dish, a magnetometer on a long
+  // boom and an RTG on a strut (with hinge blocks where booms meet the bus).
   const p = kit(41);
   p.oct(0.05, 0.05, 0.06, 0, 1);
+  p.box(0.05, 0.003, 0.04, 0, 0.026, -0.005, PAINT);
   p.cyl(0.014, 0.016, 0.04, 0.05, DARK, 12); // imager
+  p.add(new THREE.CylinderGeometry(0.02, 0.018, 0.022, 12, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.08), HULL, 0.9); // sunshade
   p.dish(0.036, 0, 0.026, 0, [0, 1, 0.25]);
-  const [mx, my, mz] = p.boom(-0.02, 0, -0.01, [-1, 0.15, -0.1], 0.18, 0.003);
+  p.box(0.008, 0.008, 0.008, -0.025, 0, -0.01, DARK); p.box(0.008, 0.008, 0.008, 0.022, -0.022, -0.02, DARK);
+  const [mx, my, mz] = p.boom(-0.025, 0, -0.01, [-1, 0.15, -0.1], 0.18, 0.003);
   p.box(0.012, 0.012, 0.012, mx, my, mz, DARK, 0.7);
-  const [rx, ry, rz] = p.boom(0.02, -0.02, -0.02, [0.7, -0.7, -0.2], 0.05, 0.004);
+  const [rx, ry, rz] = p.boom(0.022, -0.022, -0.02, [0.7, -0.7, -0.2], 0.05, 0.004);
   p.cyl(0.01, 0.01, 0.04, rz, DARK, 8, rx, ry);
   for (const f of [0, 1, 2, 3]) p.box(f % 2 ? 0.004 : 0.03, f % 2 ? 0.03 : 0.004, 0.032, rx, ry, rz, DARK, 0.6);
-  p.box(0.05, 0.008, 0.012, 0, -0.027, 0, PAINT);
-  p.bell(0.02, -0.035, 0.03);
+  for (const s of [-1, 1]) p.rcs(s * 0.028, 0.02, -0.025, s, 0);
+  p.bell(0.018, -0.035, 0.028);
   p.light(0, 0.03, -0.02, STROBE, 0.006);
   const survey = p.build();
 
-  // Relay: almost all antenna; a big dish, a small bus, two unequal solar
-  // wings and a pair of whip antennae.
+  // Relay: almost all antenna; a big dish on the bus, two unequal solar
+  // arrays (cells, not radiators), a small radiator on the shaded side,
+  // whip antennae.
   const q = kit(43);
   q.box(0.04, 0.04, 0.05, 0, 0, 0);
+  q.box(0.042, 0.042, 0.012, 0, 0, -0.01, PAINT);
   q.dish(0.075, 0, 0, 0.026, [0, 0, 1]);
-  q.boom(0.02, 0, 0, [1, 0, 0], 0.03);
-  q.box(0.12, 0.003, 0.05, 0.11, 0, 0, DARK, 0.45);
-  q.boom(-0.02, 0, 0, [-1, 0, 0], 0.025);
-  q.add(new THREE.BoxGeometry(0.08, 0.003, 0.05).rotateX(0.5).translate(-0.085, 0, 0), DARK, 0.45);
+  q.boom(0.02, 0, 0, [1, 0, 0], 0.03); q.solar(0.05, 0, 0, 0.12, 0.05, 0);
+  q.boom(-0.02, 0, 0, [-1, 0, 0], 0.025); q.solar(-0.045, 0, 0, 0.08, 0.05, Math.PI + 0.4);
+  q.radiator(0.0, -0.02, -0.005, 0.03, 0.03, -Math.PI / 2, 1);
   q.boom(0.01, 0.02, -0.02, [0.3, 1, -0.4], 0.09, 0.002);
   q.boom(-0.01, -0.02, -0.02, [-0.2, -1, -0.5], 0.07, 0.002);
-  q.box(0.042, 0.008, 0.01, 0, 0.024, -0.01, PAINT);
-  q.bell(0.016, -0.025, 0.025);
+  for (const s of [-1, 1]) q.rcs(s * 0.022, 0.018, -0.022, s, 0);
+  q.bell(0.014, -0.025, 0.022);
   q.light(0, -0.024, 0, STROBE, 0.006);
   const relay = q.build();
 
-  // Recon drone: a low, faceted, dark armoured body, a sensor ball
-  // underneath, one small solar pane and a relatively big drive.
+  // Recon: a sensor package on a propellant sphere. A gimballed sensor
+  // ball on an arm, a compact engine on a thrust frame, RCS on four
+  // outriggers, one small solar pane and a whip antenna.
   const o = kit(47);
-  o.oct(0.07, 0.032, 0.1, 0.0, 0.7, 0, 0, HULL, 0.7);
-  o.oct(0.05, 0.026, 0.03, 0.065, 0.5, 0, 0, HULL, 0.7);
-  o.sphere(0.014, 0, -0.022, 0.04, DARK, 0.6, 12);
-  o.box(0.07, 0.004, 0.012, 0, 0.017, -0.01, PAINT);
-  o.add(new THREE.BoxGeometry(0.05, 0.003, 0.04).rotateZ(0.3).translate(0.045, 0.026, -0.03), DARK, 0.45);
-  o.cyl(0.018, 0.022, 0.02, -0.06, DARK, 12);
-  o.bell(0.026, -0.07, 0.04);
-  o.light(0, 0.02, 0.03, STROBE, 0.005);
+  o.sphere(0.03, 0, 0, 0, HULL, 1, 14); // propellant
+  o.cyl(0.031, 0.031, 0.014, 0, PAINT, 14);
+  o.box(0.04, 0.03, 0.03, 0, 0.03, 0.02, HULL, 0.9); // avionics bus
+  o.greeble(0.04, 0.03, 0.03, 0, 0.03, 0.02, 3, 't');
+  const [gx, gy, gz] = o.boom(0, 0.02, 0.035, [0, -0.3, 1], 0.045, 0.006);
+  o.sphere(0.013, gx, gy, gz, DARK, 0.6, 12);
+  o.cyl(0.005, 0.005, 0.004, gz + 0.012, WINDOW, 8, gx, gy); // aperture
+  for (const t of [0.785, 2.356, 3.927, 5.498]) { o.boom(0, 0, -0.012, [Math.cos(t), Math.sin(t), 0], 0.04, 0.003); o.rcs(Math.cos(t) * 0.04, Math.sin(t) * 0.04, -0.012, Math.cos(t), Math.sin(t)); }
+  o.solar(0.02, 0.045, 0.02, 0.05, 0.035, 0.35);
+  o.boom(-0.012, 0.045, 0.01, [-0.2, 1, -0.3], 0.06, 0.0018);
+  o.engine(0.022, -0.045, 0.04, 0.02, -0.03, 4);
+  o.light(0, 0.046, 0.0, STROBE, 0.005);
   const recon = o.build();
 
-  const ships = [cutter, frigate, freighter, cruiser, surveyor];
+  const ships = [skeletal, compact, industrial, protectedHull, ringed];
   ships.probes = [survey, relay, recon];
   return ships;
 }
@@ -473,11 +560,13 @@ export function hullMaterial(uT) {
         float dark = isK(1.0) + isK(7.0);
         float paint = isK(2.0);
         float rad = isK(8.0); // radiator panels: pale ceramic
-        vec3 base = mix(mix(vec3(vHull), vec3(0.24, 0.25, 0.28), dark), vec3(0.9, 0.88, 0.84), rad) * vTint;
+        float sol = isK(9.0); // solar cells: deep blue
+        vec3 base = mix(mix(mix(vec3(vHull), vec3(0.24, 0.25, 0.28), dark), vec3(0.9, 0.88, 0.84), rad), vec3(0.07, 0.1, 0.2), sol) * vTint;
         diffuseColor.rgb *= mix(base, vPaint * 0.9 + 0.04, paint);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = mix(roughnessFactor, 0.7, isK(1.0));
-        roughnessFactor = mix(roughnessFactor, 0.85, isK(8.0));`)
+        roughnessFactor = mix(roughnessFactor, 0.85, isK(8.0));
+        roughnessFactor = mix(roughnessFactor, 0.3, isK(9.0));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // Soft pulses, not on/off: a light switching on in one frame reads as a flash.
@@ -620,6 +709,8 @@ export function singleHull(geo, uT) {
 }
 let singleMat = null;
 
+/** Below this on-screen size (the view's px, about 1.8x the hull's length in pixels) ships draw coarse. */
+const FAR_PX = 90;
 export function createShipRenderer(scene, max) {
   const uT = { value: 0 };
   const geos = shipGeometries();
@@ -642,7 +733,9 @@ export function createShipRenderer(scene, max) {
   // Parts that turn on their own (a habitat ring): drawn as their own
   // instances, rotated about the hull axis.
   const rotors = types.map((g) => (g.userData.rotor ? instanced(g.userData.rotor) : null));
-  const all = [...meshes, ...rotors.filter(Boolean)];
+  // Far-off ships draw a coarse version (same silhouette, no small parts).
+  const coarse = types.map((g) => (g.userData.coarse ? instanced(g.userData.coarse) : null));
+  const all = [...meshes, ...rotors.filter(Boolean), ...coarse.filter(Boolean)];
   const rz = new THREE.Matrix4();
 
   // Plumes: one instanced quad pair per burning ship.
@@ -714,7 +807,7 @@ export function createShipRenderer(scene, max) {
       q.setFromRotationMatrix(m4);
       // Too small to see as a hull: just the glint.
       if (px > 1.5) {
-        const m = meshes[type];
+        const m = px < FAR_PX && coarse[type] ? coarse[type] : meshes[type];
         const i = m.userData.n++;
         m4.compose(p, q, sc.set(s[0], s[1], s[2]));
         m.setMatrixAt(i, m4);
