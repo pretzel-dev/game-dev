@@ -1,144 +1,195 @@
 import * as THREE from 'three';
-import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE } from './ships.js';
+import { kit, singleHull, HULL, DARK, PAINT, NAV_R, NAV_G, STROBE } from './ships.js';
 import { rng } from '../sim.js';
 
+/** How many station designs there are (a station's design is its id modulo this). */
+export const STATION_KINDS = 4;
+
 /**
- * Stations, three designs, built from the same parts kit and material as the
- * ships (so they share plating, paint and lights):
+ * Stations, built from the same parts kit and material as the ships (so they
+ * share plating, paint and lights). Built for zero g: nothing has an up, the
+ * hub holds still, and only the crew's quarters turn (a ring or drum on its
+ * own bearing, for spin gravity). Each looks added to over decades, with
+ * modules and arrays wherever there was room.
  *
- *  0. A heavy spin-gravity wheel on a docking spine: a ring of plated deck
- *     segments with window strips, spokes, a hub and docking arms.
- *  1. A long spine with twin habitat rings and copper solar wings.
- *  2. A blocky industrial hub with stacked decks, booms with pods, radiator
- *     fins and an antenna spike.
+ *  0. Habitat: a big spin ring round a fixed spine, a docking node at one
+ *     end, odd modules bolted on, solar arrays and radiators on a truss.
+ *  1. Shipyard: an open framework cradle with a hull half built inside it,
+ *     a gantry crane, a crew module and a small spin drum on a boom, and
+ *     fabrication blocks and tanks behind.
+ *  2. Refinery: stacked process blocks, an ore catcher on a long truss, a
+ *     tank farm on one boom and radiator arrays on another. No ring: few
+ *     crew.
+ *  3. Bastion: an armoured citadel with gun turrets, missile cells and
+ *     sensor masts, a crew ring round it, and the reactor aft behind a
+ *     shield with radiators.
  *
- * Built along z (the spin axis). Windows light up once someone holds it;
- * the hull's owner-coloured paint shows whose it is.
+ * Built along z (the station's axis). Windows light up once someone holds
+ * it; owner-coloured paint shows whose it is. Returns the hub mesh; its
+ * turning part, if any, is a child (`userData.rotor`, spun by the view).
  */
 export function stationMesh(size, variant, uT) {
   const k = kit(variant * 31 + 7);
   const r = rng(variant * 31 + 7);
   const S = size;
-  // A polygonal ring of deck segments.
-  const ring = (R, w, d, n, kind = HULL, win = true, z = 0) => {
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const seg = new THREE.BoxGeometry(w, (2 * Math.PI * R) / n * 1.02, d);
-      seg.rotateZ(a).translate(Math.cos(a) * R, Math.sin(a) * R, z);
-      k.add(seg, i % 7 === 3 ? PAINT : kind, 0.9 + r() * 0.2);
-      if (win && i % 2 === 0) {
-        const wg = new THREE.BoxGeometry(0.004 * S, (2 * Math.PI * R) / n * 0.6, 0.012 * S);
-        wg.rotateZ(a).translate(Math.cos(a) * (R + w / 2 + 0.001), Math.sin(a) * (R + w / 2 + 0.001), z + (r() - 0.5) * d * 0.6);
-        k.add(wg, WINDOW);
-      }
-    }
-  };
-  const spoke = (R, t, a, z = 0, kind = DARK) => {
-    const g = new THREE.BoxGeometry(t, R, t);
-    g.translate(0, R / 2, 0).rotateZ(a).translate(0, 0, z);
-    k.add(g, kind);
-  };
   const cylZ = (rad, len, z, kind = HULL, seg = 16, x = 0, y = 0) => k.cyl(rad, rad, len, z, kind, seg, x, y);
+  // A module standing out from the spine at angle a.
+  const module = (rad, len, z, a, hubR, kind = HULL) => k.add(new THREE.CylinderGeometry(rad, rad, len, 12).translate(0, hubR + len / 2, 0).rotateZ(a - Math.PI / 2).translate(0, 0, z), kind, 0.9 + r() * 0.2);
+  const rot = kit(variant * 31 + 9);
+  let rotorAt = null, rotorSpin = 0;
   if (variant === 0) {
-    ring(S, S * 0.2, S * 0.3, 40);
-    ring(S * 0.8, S * 0.03, S * 0.32, 40, DARK, false);
-    for (let i = 0; i < 6; i++) spoke(S * 0.8, S * 0.05, (i / 6) * Math.PI * 2 + 0.26);
-    cylZ(S * 0.12, S * 2.6, 0, HULL);
-    cylZ(S * 0.24, S * 0.45, S * 0.3, HULL);
-    cylZ(S * 0.26, S * 0.06, S * 0.55, PAINT);
-    cylZ(S * 0.2, S * 0.35, -S * 0.55, DARK);
-    for (const z of [0.95, 1.15, 1.3]) cylZ(S * 0.2, S * 0.06, S * z, DARK);
-    // Docking arms at the far end of the spine, with lights at their tips.
+    cylZ(S * 0.11, S * 2.2, 0, HULL); // spine
+    cylZ(S * 0.22, S * 0.34, 0, DARK); // ring bearing
+    k.sphere(S * 0.18, 0, 0, S * 1.15, HULL, 1, 14); // docking node
+    cylZ(S * 0.19, S * 0.05, S * 0.98, PAINT);
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2;
-      const g = new THREE.BoxGeometry(S * 0.05, S * 0.35, S * 0.05);
-      g.translate(0, S * 0.3, 0).rotateZ(a).translate(0, 0, S * 1.05);
-      k.add(g, DARK);
-      k.light(Math.cos(a + Math.PI / 2) * S * 0.48, Math.sin(a + Math.PI / 2) * S * 0.48, S * 1.05, i % 2 ? NAV_R : NAV_G, S * 0.04);
+      k.boom(0, 0, S * 1.15, [Math.cos(a), Math.sin(a), 0], S * 0.42, S * 0.08, HULL);
+      k.light(Math.cos(a) * S * 0.44, Math.sin(a) * S * 0.44, S * 1.15, i % 2 ? NAV_R : NAV_G, S * 0.04);
     }
-    for (let i = 0; i < 3; i++) {
-      const a = r() * Math.PI * 2;
-      k.box(S * 0.12, S * 0.12, S * 0.24, Math.cos(a) * S * 1.12, Math.sin(a) * S * 1.12, 0, HULL);
-    }
-    k.light(0, 0, S * 1.32, STROBE, S * 0.05);
-    k.light(0, 0, -S * 0.75, STROBE, S * 0.05);
+    // Modules added over the years, wherever there was room.
+    for (const [z, a, len, rad] of [[-0.42, 0.3, 0.5, 0.12], [-0.68, 2.4, 0.36, 0.1], [-0.52, 4.1, 0.6, 0.09], [0.55, 1.2, 0.3, 0.08]]) module(S * rad, S * len, S * z, a, S * 0.1);
+    module(S * 0.06, S * 0.2, S * 0.55, 1.2, S * 0.4, PAINT);
+    k.dish(S * 0.2, S * 0.24, S * 0.16, S * 0.85, [0.6, 0.5, 0.6]);
+    // Aft: a truss with unequal solar arrays and a radiator.
+    k.truss(0, 0, -S * 2.0, -S * 1.1, S * 0.14, 4, S * 0.016);
+    k.boom(0, 0, -S * 1.75, [1, 0, 0], S * 0.95, S * 0.025);
+    k.box(S * 0.6, S * 0.012, S * 0.38, S * 0.68, 0, -S * 1.75, DARK, 0.42);
+    k.boom(0, 0, -S * 1.6, [-1, 0, 0], S * 0.6, S * 0.025);
+    k.add(new THREE.BoxGeometry(S * 0.4, S * 0.012, S * 0.3).rotateX(0.6).translate(-S * 0.42, 0, -S * 1.6), DARK, 0.42);
+    k.radiator(0, S * 0.07, -S * 1.4, S * 0.7, S * 0.42, Math.PI / 2 + 0.25, 4, S * 0.012);
+    k.light(0, 0, S * 1.36, STROBE, S * 0.05);
+    k.light(0, 0, -S * 2.05, STROBE, S * 0.05);
+    rot.hoop(S * 0.95, S * 0.2, S * 0.3, 40, 0, 6, S * 0.22, S * 0.012);
+    rotorAt = [0, 0, 0]; rotorSpin = 0.22;
   } else if (variant === 1) {
-    cylZ(S * 0.07, S * 3.2, 0, DARK, 10);
+    // The cradle: an open framework of rails and frames.
+    const W = S * 0.5, H = S * 0.4, t = S * 0.035;
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) k.box(t, t, S * 2.4, sx * W, sy * H, 0, DARK);
+    for (let i = 0; i <= 6; i++) {
+      const z = -S * 1.2 + i * S * 0.4;
+      for (const s of [-1, 1]) { k.box(W * 2, t, t, 0, s * H, z, DARK); k.box(t, H * 2, t, s * W, 0, z, DARK); }
+      if (i < 6 && i % 2) k.add(new THREE.BoxGeometry(t * 0.7, t * 0.7, Math.hypot(H * 2, S * 0.4)).rotateX(Math.atan2(H * 2, S * 0.4)).translate(-W, 0, z + S * 0.2), DARK, 0.85);
+    }
+    // A hull half built: spine, ribs, some plating, its drive.
+    cylZ(S * 0.06, S * 1.6, 0, DARK, 10);
     for (let i = 0; i < 7; i++) {
-      const z = (i - 3) * S * 0.4 + (i > 2 ? S * 0.3 : -S * 0.3);
-      cylZ(S * (0.12 + r() * 0.05), S * 0.26, z, i === 3 ? PAINT : HULL, 14, (r() - 0.5) * S * 0.1, (r() - 0.5) * S * 0.1);
-      k.greeble(S * 0.2, S * 0.2, S * 0.26, 0, 0, z, 3);
+      const z = -S * 0.6 + i * S * 0.2;
+      k.add(new THREE.TorusGeometry(S * 0.24, S * 0.014, 4, 18, i < 4 ? Math.PI * 2 : Math.PI * 1.2).translate(0, 0, z), DARK, 0.9);
     }
-    for (const zz of [-0.13, 0.13]) {
-      ring(S * 0.8, S * 0.1, S * 0.12, 32, HULL, true, zz * S);
-      for (let i = 0; i < 4; i++) spoke(S * 0.8, S * 0.025, (i / 4) * Math.PI * 2 + (zz > 0 ? 0.4 : 0), zz * S);
-    }
-    // Solar wings: dark cells on a frame.
-    for (const zz of [-1.35, 1.35]) {
-      for (const sx of [-1, 1]) {
-        k.box(S * 0.7, S * 0.03, S * 0.03, sx * S * 0.45, 0, zz * S, DARK);
-        k.box(S * 0.02, S * 1.5, S * 0.3, sx * S * 0.95, 0, zz * S, DARK, 0.45);
-        k.box(S * 0.024, S * 1.52, S * 0.012, sx * S * 0.95, 0, zz * S, HULL, 0.8);
-      }
-    }
-    k.light(0, 0, S * 1.62, STROBE, S * 0.05);
-    k.light(S * 1.2, 0, S * 1.35, NAV_G, S * 0.04);
-    k.light(-S * 1.2, 0, S * 1.35, NAV_R, S * 0.04);
+    for (let i = 0; i < 3; i++) k.box(S * 0.02, S * 0.3, S * 0.18, S * 0.24, (r() - 0.5) * S * 0.1, S * (0.0 + i * 0.2), i === 1 ? PAINT : HULL);
+    k.box(S * 0.3, S * 0.02, S * 0.4, 0, -S * 0.24, -S * 0.3, HULL, 0.9);
+    k.cyl(S * 0.12, S * 0.2, S * 0.22, -S * 0.92, DARK, 16);
+    // A gantry crane across the top, its carriage partway along.
+    k.box(W * 2.2, S * 0.05, S * 0.07, 0, H + S * 0.05, S * 0.3, PAINT);
+    k.box(S * 0.1, S * 0.08, S * 0.12, -S * 0.15, H, S * 0.3, DARK);
+    k.box(S * 0.025, S * 0.3, S * 0.025, -S * 0.15, H - S * 0.18, S * 0.3, DARK);
+    // Crew module outside the frame.
+    k.cyl(S * 0.14, S * 0.14, S * 0.6, -S * 0.2, HULL, 14, -W - S * 0.2, H * 0.5);
+    k.cyl(S * 0.15, S * 0.15, S * 0.05, -S * 0.05, PAINT, 14, -W - S * 0.2, H * 0.5);
+    k.windows(W + S * 0.2 + S * 0.141, H * 0.5, -S * 0.4, S * 0.0, 5, [-1]);
+    // Fabrication blocks, tanks and a radiator behind.
+    k.box(S * 0.4, S * 0.35, S * 0.3, S * 0.1, -S * 0.1, -S * 1.45, HULL);
+    k.greeble(S * 0.4, S * 0.35, S * 0.3, S * 0.1, -S * 0.1, -S * 1.45, 6);
+    k.sphere(S * 0.16, -S * 0.32, S * 0.2, -S * 1.48, HULL, 0.95, 14);
+    k.sphere(S * 0.12, -S * 0.3, -S * 0.15, -S * 1.42, HULL, 1.05, 14);
+    k.radiator(S * 0.3, -S * 0.25, -S * 1.45, S * 0.6, S * 0.36, -0.5, 3, S * 0.012);
+    // A small spin drum for the yard crews, on an axle off one corner.
+    k.boom(W, H, -S * 0.6, [1, 1, 0], S * 0.45, S * 0.03);
+    cylZ(S * 0.05, S * 0.5, -S * 0.6, DARK, 10, W + S * 0.32, H + S * 0.32);
+    rot.hoop(S * 0.28, S * 0.1, S * 0.22, 20, 0, 3, S * 0.05, S * 0.008);
+    rotorAt = [W + S * 0.32, H + S * 0.32, -S * 0.6]; rotorSpin = 0.5;
+    k.light(W, H, S * 1.2, NAV_G, S * 0.04); k.light(-W, -H, S * 1.2, NAV_R, S * 0.04);
+    k.light(W, -H, -S * 1.2, STROBE, S * 0.05);
+  } else if (variant === 2) {
+    // Process blocks, stacked where they fitted.
+    k.box(S * 0.5, S * 0.45, S * 0.6, 0, 0, 0);
+    k.box(S * 0.35, S * 0.3, S * 0.4, S * 0.2, S * 0.3, S * 0.25, HULL, 0.9);
+    k.box(S * 0.3, S * 0.3, S * 0.3, -S * 0.25, -S * 0.2, -S * 0.35, PAINT);
+    k.greeble(S * 0.5, S * 0.45, S * 0.6, 0, 0, 0, 10);
+    // Ore catcher: a funnel on a long truss.
+    k.truss(0, 0, S * 0.3, S * 1.3, S * 0.13, 4, S * 0.016);
+    k.add(new THREE.CylinderGeometry(S * 0.34, S * 0.08, S * 0.3, 18, 1, true).rotateX(Math.PI / 2).translate(0, 0, S * 1.45), DARK, 0.8);
+    // Tank farm on one boom, radiator arrays on another.
+    k.boom(-S * 0.25, 0, 0, [-1, 0, 0], S * 1.0, S * 0.05);
+    for (const [x, y, rad] of [[-0.5, 0.18, 0.15], [-0.62, -0.2, 0.18], [-0.95, 0.15, 0.2], [-1.05, -0.2, 0.13]]) k.sphere(S * rad, S * x, S * y, 0, HULL, 0.85 + r() * 0.25, 14);
+    k.boom(S * 0.25, 0, -S * 0.1, [1, 0, 0], S * 1.25, S * 0.04);
+    k.radiator(S * 0.55, 0, -S * 0.1, S * 0.55, S * 0.5, Math.PI / 2 + 0.1, 4, S * 0.012);
+    k.radiator(S * 0.85, 0, -S * 0.1, S * 0.5, S * 0.5, -Math.PI / 2, 4, S * 0.012);
+    k.radiator(S * 1.15, 0, -S * 0.1, S * 0.45, S * 0.45, Math.PI / 2 - 0.25, 3, S * 0.012);
+    // A docking spine aft.
+    cylZ(S * 0.08, S * 0.9, -S * 0.75, DARK, 10);
+    k.sphere(S * 0.14, 0, 0, -S * 1.2, HULL, 1, 14);
+    k.dish(S * 0.14, -S * 0.2, S * 0.24, S * 0.2, [-0.3, 1, 0.3]);
+    k.light(0, S * 0.15, -S * 1.2, NAV_G, S * 0.04); k.light(0, -S * 0.15, -S * 1.2, NAV_R, S * 0.04);
+    k.light(-S * 1.2, 0, 0, STROBE, S * 0.05);
   } else {
-    // A spindle: a long central core with three habitat rings of different
-    // sizes stacked along it, a construction sphere frame at one end and a
-    // docking cluster at the other.
-    cylZ(S * 0.1, S * 3.0, 0, DARK, 12);
-    for (const [z, R, n] of [[-0.75, 0.62, 28], [0, 0.95, 40], [0.75, 0.62, 28]]) {
-      ring(S * R, S * 0.12, S * 0.16, n, HULL, true, z * S);
-      for (let i = 0; i < 4; i++) spoke(S * R, S * 0.03, (i / 4) * Math.PI * 2 + z, z * S);
-      cylZ(S * 0.18, S * 0.12, z * S, PAINT, 14);
-    }
-    // Construction frame: a lattice of hoops round the bow.
-    for (let i = 0; i < 3; i++) {
-      const g = new THREE.TorusGeometry(S * 0.32, S * 0.012, 4, 24).rotateY((i / 3) * Math.PI).translate(0, 0, S * 1.35);
-      k.add(g, DARK);
-    }
-    // Docking cluster at the stern.
-    cylZ(S * 0.2, S * 0.3, -S * 1.35, HULL, 14);
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + 0.4;
-      k.box(S * 0.08, S * 0.08, S * 0.3, Math.cos(a) * S * 0.26, Math.sin(a) * S * 0.26, -S * 1.4, HULL);
-      k.light(Math.cos(a) * S * 0.3, Math.sin(a) * S * 0.3, -S * 1.56, i % 2 ? NAV_R : NAV_G, S * 0.04);
-    }
-    k.light(0, 0, S * 1.6, STROBE, S * 0.05);
+    // The citadel: armour all round, gun turrets above and below.
+    k.oct(S * 0.7, S * 0.7, S * 1.0, 0, 0.85);
+    for (const z of [-0.3, 0.1]) k.oct(S * 0.74, S * 0.74, S * 0.04, S * z, 1, 0, 0, DARK);
+    k.box(S * 0.5, S * 0.05, S * 0.3, 0, S * 0.35, S * 0.3, PAINT);
+    for (const [y, z, up] of [[0.34, -0.35, 1], [-0.34, 0.3, -1], [-0.34, -0.4, -1]]) k.turret(0, S * y, S * z, up, S * 4.5);
+    k.cells(S * 0.12, S * 0.36, -S * 0.05, 3, 4, S * 0.06);
+    // Sensor masts with domes.
+    const [sx, sy, sz] = k.boom(S * 0.2, S * 0.3, S * 0.35, [0.4, 1, 0.2], S * 0.55, S * 0.03);
+    k.sphere(S * 0.07, sx, sy, sz, DARK, 0.7, 12);
+    const [tx, ty, tz] = k.boom(-S * 0.3, -S * 0.1, S * 0.2, [-1, -0.3, 0.1], S * 0.4, S * 0.025);
+    k.sphere(S * 0.05, tx, ty, tz, DARK, 0.7, 12);
+    // Forward: docking node; aft: shield, reactor, radiators.
+    cylZ(S * 0.2, S * 0.4, S * 0.7, HULL);
+    k.sphere(S * 0.16, 0, 0, S * 1.0, HULL, 1, 14);
+    k.add(new THREE.CylinderGeometry(S * 0.42, S * 0.26, S * 0.05, 18).rotateX(Math.PI / 2).translate(0, 0, -S * 0.6), DARK, 0.75);
+    cylZ(S * 0.24, S * 0.4, -S * 0.85, DARK);
+    k.radiator(S * 0.15, 0, -S * 0.85, S * 0.9, S * 0.5, 0.4, 4, S * 0.012);
+    k.radiator(-S * 0.15, 0, -S * 0.8, S * 0.7, S * 0.4, Math.PI + 0.6, 3, S * 0.012);
+    k.light(S * 0.3, 0, S * 1.0, NAV_G, S * 0.04); k.light(-S * 0.3, 0, S * 1.0, NAV_R, S * 0.04);
+    k.light(0, 0, -S * 1.1, STROBE, S * 0.05);
+    rot.hoop(S * 0.64, S * 0.14, S * 0.24, 32, 0, 4, S * 0.4, S * 0.01);
+    rotorAt = [0, 0, -S * 0.12]; rotorSpin = 0.32;
   }
-  const geo = k.build(1);
-  const mesh = singleHull(geo, uT);
-  // Only the wheel spins quickly; the long and blocky designs turn slowly.
-  mesh.userData.spin = variant === 0 ? 0.4 : 0.08;
+  const mesh = singleHull(k.build(1, 7 / Math.max(S * 2.5, 1)), uT);
+  mesh.userData.spin = 0.015; // a slow drift: nothing in zero g needs to hold still
+  if (rotorAt) {
+    const ring = singleHull(rot.build(1, 7 / Math.max(S * 2.5, 1)), uT);
+    ring.position.set(...rotorAt);
+    ring.userData.spin = rotorSpin;
+    mesh.add(ring);
+    mesh.userData.rotor = ring;
+    const set = mesh.userData.set;
+    mesh.userData.set = (color, sunV, on) => { set(color, sunV, on); ring.userData.set(color, sunV, on); };
+  }
   return mesh;
 }
 
 /**
  * Where ships can dock on each design, in units of the station's size: a
- * point on the hull and the direction a docked ship sits out along (in the
- * station's own frame, so docked ships turn with it).
+ * point on the (fixed) hub and the direction a docked ship sits out along
+ * (in the station's own frame, so docked ships turn with it).
  */
 export function stationPorts(variant) {
   const out = [];
   const port = (x, y, z, nx, ny, nz) => out.push({ p: [x, y, z], n: [nx, ny, nz] });
   if (variant === 0) {
-    // The tips of the docking arms at the end of the spine.
+    // The arms round the docking node.
     for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 2;
-      port(Math.cos(a) * 0.5, Math.sin(a) * 0.5, 1.05, Math.cos(a), Math.sin(a), 0);
+      const a = (i / 4) * Math.PI * 2;
+      port(Math.cos(a) * 0.46, Math.sin(a) * 0.46, 1.15, Math.cos(a), Math.sin(a), 0);
     }
   } else if (variant === 1) {
-    // Both ends of the long spine.
-    port(0, 0, 1.62, 0, 0, 1);
-    port(0, 0, -1.62, 0, 0, -1);
+    // Alongside the cradle.
+    port(0.56, 0, 0.9, 1, 0, 0);
+    port(-0.56, -0.2, 0.7, -1, 0, 0);
+    port(0, -0.46, 0.4, 0, -1, 0);
+  } else if (variant === 2) {
+    // Round the docking node aft.
+    port(0, 0.16, -1.2, 0, 1, 0);
+    port(0, -0.16, -1.2, 0, -1, 0);
+    port(0.16, 0, -1.2, 1, 0, 0);
   } else {
-    // The docking cluster at the stern.
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + 0.4;
-      port(Math.cos(a) * 0.34, Math.sin(a) * 0.34, -1.4, Math.cos(a), Math.sin(a), 0);
-    }
+    // Round the docking node forward.
+    port(0.18, 0, 1.0, 1, 0, 0);
+    port(-0.18, 0, 1.0, -1, 0, 0);
+    port(0, 0.18, 1.0, 0, 1, 0);
   }
   return out;
 }

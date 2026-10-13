@@ -342,7 +342,11 @@ Playwright (`npm run preview` first; Playwright isn't a dependency).
   - `sun.js`: the star (granulation, sunspots, corona, prominences)
   - `planets.js`: worlds painted on the GPU (continents, craters, gas
     bands, clouds, city lights), atmospheres, rings, eclipses
-  - `ships.js`: instanced hulls, drive plumes, glints; `stations.js`
+  - `ships.js`: instanced hulls (cutter, frigate, freighter, cruiser,
+    surveyor with a turning habitat ring; survey, relay and recon probes),
+    drive plumes, glints; `stations.js`: habitat, shipyard, refinery and
+    bastion, each with a fixed hub and (when crewed) a ring or drum that
+    turns on its own
   - `rocks.js`: asteroids and the belt; `fx.js`: weapons fire and explosions
 - `src/main.js`: touch input, UI, game loop
 
