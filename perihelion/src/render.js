@@ -725,7 +725,48 @@ export function createView(canvas, labelRoot, opts = {}) {
    * Draws a ship at p, nose along n. `id` picks its hull and small variations
    * (length, hull tone), stable for that ship. glintMul dims the far-away glint.
    */
-  function placeShip(p, n, color, burning, t, seed, id = seed, plume = 1, probe = false, glintMul = 1) {
+  /**
+   * Attitude jets. A ship turns the way a real one does: paired jets at nose
+   * and tail fire on opposite sides to start the turn, and the opposite pair
+   * fires to stop it. From each ship's heading over time we track its turn
+   * rate and how that rate is changing (the torque the jets must supply);
+   * when that's large enough, the pair that gives it fires.
+   */
+  const spin = new Map(); // ship id -> { n, w (turn rate), a (its change), t }
+  const jA = new THREE.Vector3(), jN = new THREE.Vector3(), jP = new THREE.Vector3(), jD = new THREE.Vector3();
+  function attitudeJets(id, p, n, s, gt, t, px) {
+    let st = spin.get(id);
+    if (!st) { spin.set(id, { n: n.clone(), w: new THREE.Vector3(), a: new THREE.Vector3(), t: gt, seen: t }); return; }
+    st.seen = t;
+    const dt = gt - st.t;
+    if (dt <= 1e-4) { if (dt < -1) st.t = gt; return; } // paused, or the clock jumped back
+    if (dt > 2) { st.n.copy(n); st.w.set(0, 0, 0); st.a.set(0, 0, 0); st.t = gt; return; }
+    // Turn rate: axis and speed from the change in heading (small-angle).
+    jA.crossVectors(st.n, n).divideScalar(dt);
+    const k = 1 - Math.exp(-dt * 6);
+    jN.copy(jA).sub(st.w).divideScalar(dt); // how the rate is changing
+    st.w.lerp(jA, k);
+    st.a.lerp(jN, k);
+    st.n.copy(n);
+    st.t = gt;
+    const alpha = st.a.length();
+    if (alpha < 0.04 || px < 2) return; // steady (or no turn), or too small to see
+    const pow = Math.min(1, (alpha - 0.04) * 3);
+    // Pulsed, as attitude jets are: short bursts, not a steady stream.
+    if (Math.sin(t * 23 + id * 1.3) < -0.2) return;
+    const L = s * 0.32;
+    // The nose must be pushed along a x n: its jet's exhaust points the other way; the tail's mirrors it.
+    jD.crossVectors(st.a, n);
+    if (jD.lengthSq() < 1e-10) return;
+    jD.normalize();
+    const len = s * (0.07 + 0.09 * pow), wid = s * 0.05;
+    jP.copy(p).addScaledVector(n, L).addScaledVector(jD, -s * 0.06);
+    shipR.jet(jP, jD.negate(), len, wid, 0.35 + 0.5 * pow, id);
+    jD.negate();
+    jP.copy(p).addScaledVector(n, -L * 0.85).addScaledVector(jD, s * 0.06);
+    shipR.jet(jP, jD, len, wid, 0.35 + 0.5 * pow, id + 0.5);
+  }
+  function placeShip(p, n, color, burning, t, seed, id = seed, plume = 1, probe = false, glintMul = 1, gt = null) {
     if (used >= MAX_SHIPS) return;
     used++;
     const type = probe ? 3 : Math.floor(hash(id, 3) * 3);
@@ -741,6 +782,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     const fade = 1 - THREE.MathUtils.smoothstep(hullPx, 3, 14);
     const glint = fade <= 0 ? null : [(burning ? 9 : 5) * (probe ? 0.8 : 1), (burning ? 1 : 0.7) * glintMul * fade];
     shipR.add(type, p, n, s, color, 0.82 + hash(id, 11) * 0.28, id, burning, plume * (0.8 + Math.sin(t * 40 + seed) * 0.05) * (probe ? 0.35 : 1), glint, 0.6 * ppu, sunlit(p));
+    if (gt !== null && !probe) attitudeJets(id, p, n, s[2], gt, t, hullPx);
   }
 
   // Events at a world get something you can see there: a probe beacon, a
@@ -1289,7 +1331,7 @@ export function createView(canvas, labelRoot, opts = {}) {
             plume = 0.12;
           } else plume *= THREE.MathUtils.smoothstep(kf, NEAR, 1) * 0.9 + 0.1;
         }
-        placeShip(tmp, tmp3, color, burning, t, j, f.id * 97 + j, plume, f.probe);
+        placeShip(tmp, tmp3, color, burning, t, j, f.id * 97 + j, plume, f.probe, 1, now);
       }
       if (routeN < 200 * SEGS && knowsDest(f)) {
         // The rest of the route, sampled along the (curved) path.
@@ -1316,6 +1358,8 @@ export function createView(canvas, labelRoot, opts = {}) {
       }
     }
     shipR.end();
+    // Forget ships not drawn for a while (landed, destroyed, off screen).
+    if (spin.size > 400 || Math.floor(t) % 5 === 0) for (const [k, v] of spin) if (t - v.seen > 3) spin.delete(k);
 
     // Ship counts on fleets in flight: a small tag beside each one.
     let fl = 0;

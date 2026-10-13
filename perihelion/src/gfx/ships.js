@@ -435,9 +435,11 @@ export function createShipRenderer(scene, max) {
   ], 3));
   pg.setAttribute('part', new THREE.Float32BufferAttribute([0, 0, 0, 0, 1, 1, 1, 1], 1));
   pg.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
-  const plumeAttr = (n, size) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(max * size), size); a.setUsage(THREE.DynamicDrawUsage); pg.setAttribute(n, a); return a; };
+  // Room for each ship's drive plus a pair of attitude jets.
+  const pMax = max * 3;
+  const plumeAttr = (n, size) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(pMax * size), size); a.setUsage(THREE.DynamicDrawUsage); pg.setAttribute(n, a); return a; };
   const pPow = plumeAttr('iPow', 1), pSeed = plumeAttr('iSeed', 1), pTint = plumeAttr('iTint', 3);
-  const plumes = new THREE.InstancedMesh(pg, plumeMaterial(uT), max);
+  const plumes = new THREE.InstancedMesh(pg, plumeMaterial(uT), pMax);
   plumes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   plumes.frustumCulled = false;
   plumes.count = 0;
@@ -464,6 +466,8 @@ export function createShipRenderer(scene, max) {
   const col = new THREE.Color();
   let nPlume = 0, nGlint = 0, total = 0;
   const PLUME_TINT = new THREE.Color(0.35, 0.6, 1.0);
+  const JET_TINT = new THREE.Color(0.85, 0.9, 1.0); // cold-gas / monoprop puffs: pale, not the torch's blue
+  const q2 = new THREE.Quaternion(), xAxis = new THREE.Vector3(1, 0, 0);
 
   return {
     geometries: geos,
@@ -498,7 +502,7 @@ export function createShipRenderer(scene, max) {
         m.userData.seed.setX(i, (seed * 0.137) % 1);
         m.userData.hull.setX(i, hull);
       }
-      if (burning) {
+      if (burning && nPlume < pMax) {
         const i = nPlume++;
         // Nozzle at the back of the drive bell; length along -Z.
         tgt.set(0, 0, type === 1 ? -0.43 : type === 3 ? -0.07 : -0.36).multiply(sc.set(s[0], s[1], s[2])).applyQuaternion(q).add(p);
@@ -517,6 +521,23 @@ export function createShipRenderer(scene, max) {
         gCol[i * 3] = col.r * b; gCol[i * 3 + 1] = col.g * b; gCol[i * 3 + 2] = col.b * b;
         gSize[i] = glint[0];
       }
+    },
+    /**
+     * An attitude jet: a short puff from point o, exhaust along unit d
+     * (the ship is pushed the other way). len and wid in world units, pow 0..1.
+     */
+    jet(o, d, len, wid, pow, seed) {
+      if (nPlume >= pMax) return;
+      const i = nPlume++;
+      // The plume runs along local -Z: point -Z along d.
+      tgt.copy(o).sub(d);
+      m4.lookAt(tgt, o, Math.abs(d.y) > 0.99 ? xAxis : up);
+      q2.setFromRotationMatrix(m4);
+      m4.compose(o, q2, sc.set(wid, 1, len));
+      plumes.setMatrixAt(i, m4);
+      pPow.setX(i, pow);
+      pSeed.setX(i, (seed * 0.613) % 1);
+      pTint.setXYZ(i, JET_TINT.r, JET_TINT.g, JET_TINT.b);
     },
     end() {
       for (const m of meshes) {
