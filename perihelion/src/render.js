@@ -791,7 +791,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   function placeShip(p, n, color, burning, t, seed, id = seed, plume = 1, probe = false, glintMul = 1, gt = null) {
     if (used >= MAX_SHIPS) return;
     used++;
-    const type = probe ? 3 : Math.floor(hash(id, 3) * 3);
+    const type = probe ? shipR.probeType : Math.floor(hash(id, 3) * shipR.hulls);
     const k = 0.9 + hash(id, 5) * 0.25;
     const s = probe ? [0.3, 0.3, 0.3] : [SHIP_SCALE, SHIP_SCALE, SHIP_SCALE * k];
     unclip(p);
