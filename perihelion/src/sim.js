@@ -28,6 +28,7 @@ export const RULES = {
     defence: { name: 'Guns', cost: 250, time: 50, maxLevel: 3, desc: '+2 guns per level' },
     bureau: { name: 'Security bureau', cost: 250, time: 50, maxLevel: 2, desc: 'Hunts enemy spies here and on nearby worlds' },
     lab: { name: 'Research station', cost: 300, time: 60, maxLevel: 3, desc: 'Research +50% per level' },
+    habitat: { name: 'Habitat', cost: 300, time: 60, maxLevel: 3, crewOnly: true, desc: 'Quarters for crews: +8 crew per level' },
   },
   baseGuns: 1, // guns any held world has
   gunsPerDefence: 2,
@@ -45,6 +46,9 @@ export const RULES = {
   labSpeed: 0.5, // research speed added per research-station level
   // Crews, fuel and refits: every ship beyond the first `free` costs credits per second.
   upkeep: { free: 40, cost: 0.05 },
+  // Crews (Vast only): ships need crews, and crews come from your worlds. The
+  // fleet (in service and on order) can't outgrow the crew you can field.
+  crew: { home: 16, planet: 8, giant: 6, station: 6, moon: 3, asteroid: 1, habitat: 8, industry: 0.1, convoy: 4 },
   drill: 0.004, // experience per second a garrison regains, up to the rank it once held
 };
 
@@ -538,7 +542,11 @@ function reward(game, h, b, owner) {
   let what = '';
   if (h.kind === 'derelict') { b.vet = mix(b.vet || 0, b.ships, 2.5, E.ships); b.ships += E.ships; what = `${E.ships} veteran ships`; }
   if (h.kind === 'wreck') { game.credits[owner] += E.credits; tally(game, owner, 'earned', E.credits); what = `${E.credits} credits`; }
-  if (h.kind === 'convoy') { b.bonus = (b.bonus || 0) + E.bonus; what = `+${E.bonus}/s here`; }
+  if (h.kind === 'convoy') {
+    b.bonus = (b.bonus || 0) + E.bonus;
+    if (game.crew) b.crewBonus = (b.crewBonus || 0) + RULES.crew.convoy; // the refugees sign on as crew
+    what = `+${E.bonus}/s here${game.crew ? ` and ${RULES.crew.convoy} crew` : ''}`;
+  }
   if (h.kind === 'comet') what = 'the comet mined';
   if (h.kind === 'signal') {
     // Never the branch being researched (it would overshoot its top level when that finishes).
@@ -568,7 +576,7 @@ export const SYSTEMS = {
   // commitment. Picked by hand only (never Random or the Daily).
   // Proportions closer to life: worlds small beside the gaps to their moons,
   // and a sun far wider than a planet and its moon together.
-  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, test: true },
+  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, crew: true, test: true },
 };
 /** Distances on this map relative to the usual (reaches, sensors and so on scale with it). */
 export const scaleOf = (game) => game.scale || 1;
@@ -745,7 +753,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // A bigger system: the same layout with the planets' orbits (and the belt)
   // spread out; moons and stations keep their distance from their planets.
   if (sys.sunR) stars[0].size = sys.sunR / SUN_RADIUS_SIM;
-  const game = { mp, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, crew: !!sys.crew, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -844,6 +852,21 @@ export const incomeOf = (b, game) => { const p = incomeParts(b, game); return p.
 export const income = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? incomeOf(b, game) : 0), 0);
 /** Ships an empire has, docked and in flight. */
 export const shipsOf = (game, owner) => game.bodies.reduce((n, b) => n + (b.owner === owner ? b.ships : 0), 0) + game.fleets.reduce((n, f) => n + (f.owner === owner && !f.probe ? f.n : 0), 0);
+/** Crew a world houses for its owner (Vast): by size and kind, plus habitats and lasting bonuses. */
+export function crewAt(b) {
+  if (b.owner === NEUTRAL || b.visitor) return 0;
+  const C = RULES.crew;
+  const base = b.home ? C.home : b.kind === 'planet' ? (b.giant ? C.giant : C.planet) : C[b.kind] || 0;
+  return base + C.habitat * count(b, 'habitat') + (b.crewBonus || 0);
+}
+/** The most ships an empire can crew (in service plus on order), or Infinity where crews don't apply. */
+export function crewCap(game, owner) {
+  if (!game.crew) return Infinity;
+  const n = game.bodies.reduce((t, b) => t + (b.owner === owner ? crewAt(b) : 0), 0);
+  return Math.floor(n * (1 + RULES.crew.industry * techLevel(game, owner, 'industry')));
+}
+/** Crew in use: ships in service and ships on order. */
+export const crewUsed = (game, owner) => shipsOf(game, owner) + game.bodies.reduce((t, b) => t + (b.owner === owner ? b.queue : 0), 0);
 /** Credits per second a fleet costs beyond the free ships. */
 export const upkeepOf = (game, owner) => Math.max(0, shipsOf(game, owner) - RULES.upkeep.free) * RULES.upkeep.cost;
 /** Working shipyards here: each builds one ship at a time. */
@@ -886,6 +909,7 @@ export function cantBuild(game, b, type) {
   if (def.only && !def.only.includes(b.kind)) return `${b.kind}s can't have one`;
   if (def.where === 'giant' && !b.giant) return 'gas giants only';
   if (def.where === 'home' && !b.home) return 'homeworlds only';
+  if (def.crewOnly && !game.crew) return 'not on this map';
   if (b.structures.length >= slotsOf(b)) return 'no free slots';
   if (game.credits[b.owner] < def.cost) return 'not enough credits';
   return null;
@@ -926,6 +950,7 @@ export function cantOrderShip(game, b) {
   if (b.owner === NEUTRAL) return 'not yours';
   if (!has(b, 'shipyard')) return 'needs a shipyard';
   if (game.credits[b.owner] < RULES.ship.cost) return 'not enough credits';
+  if (crewUsed(game, b.owner) >= crewCap(game, b.owner)) return 'no crew to spare';
   return null;
 }
 export function orderShip(game, b) {

@@ -602,3 +602,25 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.equal(S.travelOf(a), 1, 'other maps keep their timings');
   console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast; sun ${(sunD / moon.r).toFixed(1)} moon-gaps across`);
 }
+
+// Crews (Vast only): the fleet can't outgrow the crew your worlds field;
+// Habitats, Industry and a refugee convoy raise it. Other maps: no cap.
+{
+  const S = await import('../src/sim.js');
+  const a = createGame({ seed: 7 }), v = createGame({ seed: 7, system: 'vast' });
+  assert.equal(S.crewCap(a, 0), Infinity, 'no crew cap on the other maps');
+  assert.equal(S.cantBuild(a, a.bodies.find((b) => b.owner === 0), 'habitat'), 'not on this map');
+  const home = v.bodies.find((b) => b.owner === 0);
+  const cap = S.crewCap(v, 0);
+  assert.equal(cap, RULES.crew.home, 'a homeworld fields its crew');
+  v.credits[0] = 1e6;
+  while (!S.cantOrderShip(v, home)) orderShip(v, home);
+  assert.equal(S.cantOrderShip(v, home), 'no crew to spare');
+  assert.equal(S.crewUsed(v, 0), cap, 'ships plus orders stop at the cap');
+  assert.ok(buildStructure(v, home, 'habitat'));
+  home.structures.at(-1).left = 0;
+  assert.equal(S.crewCap(v, 0), cap + RULES.crew.habitat, 'a habitat adds crew');
+  v.tech[0].industry = 2;
+  assert.equal(S.crewCap(v, 0), Math.floor((cap + RULES.crew.habitat) * 1.2), 'industry adds crew');
+  console.log(`crews: start cap ${cap}, with a habitat and Industry II ${S.crewCap(v, 0)}`);
+}

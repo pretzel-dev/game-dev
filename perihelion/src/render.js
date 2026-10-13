@@ -1159,8 +1159,11 @@ export function createView(canvas, labelRoot, opts = {}) {
       // Markers stay a readable size on screen however far out we are.
       // Moons and stations get smaller rings than planets.
       const sat = b.parent !== null;
-      const markPx = Math.max(b.size * (sat ? 2.0 : 2.4) * ppu, sat ? 10 : 16);
+      // Zoomed out, the ring hugs the world (a small floor so it still
+      // shows its owner), not a big circle round a dot; and a finer line.
+      const markPx = Math.max(b.size * (sat ? 2.0 : 2.4) * ppu, selected || targeted ? 8 : sat ? 4 : 5.5);
       v.mark.scale.setScalar((markPx / ppu) * (1 + v.pulse * 0.6 + (selected ? Math.sin(t * 5) * 0.06 : 0)));
+      v.mark.material.uniforms.uWidth.value = THREE.MathUtils.clamp(markPx / 12, 1, 1.6);
       v.mark.material.uniforms.uOpacity.value = selected ? 1 : targeted ? 0.9 : b.owner === NEUTRAL ? 0.25 : 0.7;
       // Up close the world itself is the marker: fade the ring out of the way.
       if (b.size * ppu > 70) v.mark.material.uniforms.uOpacity.value *= 0.25;
