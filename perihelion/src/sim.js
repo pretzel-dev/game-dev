@@ -189,7 +189,7 @@ function sample(game) {
 }
 
 // Trip time goes with 1/sqrt(thrust), so a fleet that flies k times as fast needs k² the thrust.
-export const accelOf = (game, owner) => RULES.accel * (1 + 0.15 * techLevel(game, owner, 'drives')) * (hasJoint(game, owner, 'torch') ? 1.1 ** 2 : 1);
+export const accelOf = (game, owner) => RULES.accel * (game.thrust || 1) * (1 + 0.15 * techLevel(game, owner, 'drives')) * (hasJoint(game, owner, 'torch') ? 1.1 ** 2 : 1);
 export const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
 /** Firepower when attacking (targeting data helps here). */
 export const attackPowerOf = (game, owner) => firepowerOf(game, owner) * (hasJoint(game, owner, 'targeting') ? 1.2 : 1);
@@ -248,6 +248,10 @@ export function plantSpy(game, owner, t) {
   (game.spies ||= []).push(x);
   return x;
 }
+/** How far a security bureau on world w reaches (twice as far on a listening post). */
+export const bureauReach = (game, w) => SPY.bureauRange * (w.perk === 'post' ? 2 : 1) * scaleOf(game);
+/** A perk's reach on this map. */
+export const perkRange = (game, key) => PERKS[key].range * scaleOf(game);
 export const spyOn = (game, b) => (game.spies || []).filter((x) => x.body === b.id && x.owner !== b.owner && x.since <= game.time);
 /** Chance per second a spy on world b gets caught. */
 export function catchRate(game, b) {
@@ -258,7 +262,7 @@ export function catchRate(game, b) {
     if (w.owner !== b.owner) continue;
     const s = w.structures.find((y) => y.type === 'bureau' && y.left <= 0);
     // A bureau on a listening post reaches twice as far.
-    if (s && (w === b || dist(posAt(game, w, game.time), here) <= SPY.bureauRange * (w.perk === 'post' ? 2 : 1))) bureau = Math.max(bureau, s.level);
+    if (s && (w === b || dist(posAt(game, w, game.time), here) <= bureauReach(game, w))) bureau = Math.max(bureau, s.level);
   }
   return SPY.catch * (1 + SPY.intel * techLevel(game, b.owner, 'intel')) * (1 + SPY.bureau * bureau);
 }
@@ -285,16 +289,16 @@ function stepSpies(game, dt) {
 export const spiedBy = (game, owner) => (game.spies || []).filter((x) => x.owner !== owner && game.bodies[x.body].owner === owner).length;
 
 export function visibility(game, owner) {
-  const range = SENSOR_RANGE[techLevel(game, owner, 'sensors')];
+  const range = SENSOR_RANGE[techLevel(game, owner, 'sensors')] * scaleOf(game);
   const eyes = [];
   for (const b of game.bodies) if (b.owner === owner) eyes.push([posAt(game, b, game.time), range]);
-  for (const f of game.fleets) if (f.owner === owner) eyes.push([fleetState(f, game.time), 20]);
+  for (const f of game.fleets) if (f.owner === owner) eyes.push([fleetState(f, game.time), 20 * scaleOf(game)]);
   for (const b of game.bodies) if (b.sieges.some((g) => g.owner === owner)) eyes.push([posAt(game, b, game.time), 20]);
   for (const x of game.scans || []) if (x.owner === owner && x.until > game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 14]);
   for (const x of game.spies || []) if (x.owner === owner && x.since <= game.time) eyes.push([posAt(game, game.bodies[x.body], game.time), 30]);
   const sees = (p) => eyes.some(([e, r]) => dist(e, p) <= r);
   // An old relay you hold is a huge sensor dish: it sees everything in its ring.
-  for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), PERKS.relay.range]);
+  for (const b of game.bodies) if (b.perk === 'relay' && b.owner === owner) eyes.push([posAt(game, b, game.time), perkRange(game, 'relay')]);
   const bodies = new Set(game.bodies.filter((b) => b.owner === owner || sees(posAt(game, b, game.time))).map((b) => b.id));
   // Entangled signals read every fleet you see; an ansible array sees everything.
   const intel = Math.max(techLevel(game, owner, 'intel'), hasJoint(game, owner, 'ansible') || holdsWonder(game, owner, 'array') ? 3 : 0);
@@ -440,7 +444,7 @@ function startVisit(game, kind) {
   const q = V.q[0] + evRand(game) * (V.q[1] - V.q[0]);
   const outer = Math.max(...game.bodies.filter((b) => b.parent === null && !b.visitor).map((b) => b.r));
   const barker = (r) => { const D = Math.sqrt(Math.max(0, r / q - 1)); return D + (D ** 3) / 3; };
-  const tau = V.inside / 2 / barker(outer);
+  const tau = (V.inside * travelOf(game)) / 2 / barker(outer); // stays long enough to reach on a big map
   const T = 2 * tau * barker(outer + 60);
   game.visit = { kind, t0: game.time, T, q, w: evRand(game) * Math.PI * 2, tau };
   const b = game.bodies.find((x) => x.visitor);
@@ -489,7 +493,8 @@ function evRand(game) {
 }
 function events(game, dt) {
   const R = EVENT_RULES;
-  if (game.nextEvent === undefined) game.nextEvent = R.first + (evRand(game) - 0.5) * 2 * 60;
+  const tf = travelOf(game); // a bigger map gives more notice and time, as trips take longer
+  if (game.nextEvent === undefined) game.nextEvent = (R.first + (evRand(game) - 0.5) * 2 * 60) * tf;
   game.happenings ||= [];
   if (game.time >= game.nextEvent) {
     const keys = Object.keys(EVENTS).filter((k) => !VISITS[k] || !game.visit);
@@ -499,18 +504,18 @@ function events(game, dt) {
       // A visitor: it can be reached as soon as it's in, but only counts once
       // it's well inside the system; the pass ends with it leaving.
       const b = startVisit(game, kind);
-      h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.visit.t0 + game.visit.T - 20, holder: NEUTRAL, held: 0 };
+      h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice * tf, ends: game.visit.t0 + game.visit.T - 20, holder: NEUTRAL, held: 0 };
     } else {
       // Independent worlds first, so it's a race rather than a gift to whoever holds it.
       const open = game.bodies.filter((b) => !b.home && !b.visitor && !game.happenings.some((x) => x.at === b.id));
       const spots = open.some((b) => b.owner === NEUTRAL) ? open.filter((b) => b.owner === NEUTRAL) : open;
       const b = spots[Math.floor(evRand(game) * spots.length)];
-      h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice, ends: game.time + R.notice + EVENTS[kind].hold + R.grace, holder: NEUTRAL, held: 0 };
+      h = { id: game.nextId++, kind, at: b.id, starts: game.time + R.notice * tf, ends: game.time + (R.notice + R.grace) * tf + EVENTS[kind].hold, holder: NEUTRAL, held: 0 };
     }
     const b = game.bodies[h.at];
     game.happenings.push(h);
     note(game, { type: 'event', phase: 'soon', kind, at: b.id });
-    game.nextEvent = game.time + R.every + (evRand(game) - 0.5) * 2 * R.jitter;
+    game.nextEvent = game.time + (R.every + (evRand(game) - 0.5) * 2 * R.jitter) * tf;
   }
   for (const h of game.happenings) {
     if (game.time < h.starts) continue;
@@ -559,7 +564,14 @@ export const SYSTEMS = {
   crowded: { name: 'Crowded', text: 'Worlds packed close: short, sharp trips', gap: 8, stations: 3 },
   belt: { name: 'Rich belt', text: 'A thick asteroid belt worth mining', rocks: 8, beltW: 12 },
   binary: { name: 'Binary', text: 'A second sun and its worlds swing around the system; its worlds earn +50%', companion: true },
+  // Classic, at an almost absurd scale: every trip is a journey and a
+  // commitment. Picked by hand only (never Random or the Daily).
+  vast: { name: 'Vast', text: 'Classic at four times the scale: every voyage is a commitment', scale: 4, thrust: 0.5, test: true },
 };
+/** Distances on this map relative to the usual (reaches, sensors and so on scale with it). */
+export const scaleOf = (game) => game.scale || 1;
+/** How much longer trips take than usual (distance and drive together), for timings that must keep up. */
+export const travelOf = (game) => Math.sqrt(scaleOf(game) / (game.thrust || 1));
 const SUN_SIZE = 2.6;
 const SUN_RADIUS_SIM = 6; // matches the drawn sun (render.js SUN_RADIUS)
 export const SYSTEM_KEYS = Object.keys(SYSTEMS);
@@ -721,7 +733,10 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // The visitor: one body that events turn into a comet or a derelict, on a
   // pass in around the sun and out again. Absent (far away) the rest of the time.
   add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
-  const game = { mp, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * SUN_SIZE * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  // A bigger system: the same layout with the planets' orbits (and the belt)
+  // spread out; moons and stations keep their distance from their planets.
+  if (sys.scale) for (const b of bodies) if (b.parent === null && !b.star && !b.visitor) { b.r *= sys.scale; b.period = periodAt(b.r); }
+  const game = { mp, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * SUN_SIZE * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -793,7 +808,7 @@ const count = (b, type) => b.structures.reduce((n, x) => n + (x.type === type &&
 export function fortressGuns(game, b) {
   if (b.owner === NEUTRAL || b.perk === 'fortress') return 0;
   const p = posAt(game, b, game.time);
-  return game.bodies.some((f) => f.perk === 'fortress' && f.owner === b.owner && dist(posAt(game, f, game.time), p) <= PERKS.fortress.range) ? 1 : 0;
+  return game.bodies.some((f) => f.perk === 'fortress' && f.owner === b.owner && dist(posAt(game, f, game.time), p) <= perkRange(game, 'fortress')) ? 1 : 0;
 }
 /** Guns a held world rebuilds to: batteries, fortress cover, hardening, a fortress world. */
 export const topGuns = (game, b) => (maxGuns(b) + fortressGuns(game, b) + (hasJoint(game, b.owner, 'hardened') ? 1 : 0)) * (b.wonder === 'citadel' ? 2 : 1);
@@ -1041,7 +1056,7 @@ function assistBy(game, f, from, to, now) {
 export function depotBoost(game, from, now = game.time) {
   if (from.owner === NEUTRAL) return 1;
   const p = posAt(game, from, now);
-  return game.bodies.some((d) => d.perk === 'depot' && d.owner === from.owner && dist(posAt(game, d, now), p) <= PERKS.depot.range) ? PERKS.depot.boost : 1;
+  return game.bodies.some((d) => d.perk === 'depot' && d.owner === from.owner && dist(posAt(game, d, now), p) <= perkRange(game, 'depot')) ? PERKS.depot.boost : 1;
 }
 
 /**

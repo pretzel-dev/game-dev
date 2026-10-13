@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH, launchProbe, cantBuild as cantBuildAt, SYSTEM_KEYS, SYSTEMS, dailySeed, starPos } from '../src/sim.js';
+import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH, launchProbe, cantBuild as cantBuildAt, SYSTEM_KEYS, RANDOM_KEYS, SYSTEMS, dailySeed, starPos } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -246,7 +246,7 @@ let hardWins = 0;
 const lengths = [];
 for (let seed = 1; seed <= 20; seed++) {
   // Every system type gets matches (three or four each).
-  const g = createGame({ seed, opponents: 1 + (seed % 2), system: SYSTEM_KEYS[seed % SYSTEM_KEYS.length] });
+  const g = createGame({ seed, opponents: 1 + (seed % 2), system: RANDOM_KEYS[seed % RANDOM_KEYS.length] });
   const r = rng(seed);
   const ais = Array.from({ length: g.players }, (_, i) => createAI(i, i ? 'hard' : 'normal', r));
   let t = 0;
@@ -357,7 +357,7 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   let total = 0;
   const seen = new Set();
   for (let seed = 1; seed <= 40; seed++) {
-    const g = createGame({ seed, system: SYSTEM_KEYS[seed % SYSTEM_KEYS.length] });
+    const g = createGame({ seed, system: RANDOM_KEYS[seed % RANDOM_KEYS.length] });
     const ps = g.bodies.filter((b) => b.perk);
     assert.ok(ps.length >= 2 && ps.length <= 3, 'two or three special worlds');
     for (const b of ps) { assert.ok(!b.home && b.owner === NEUTRAL); seen.add(b.perk); }
@@ -580,4 +580,23 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   for (let t = 0; t < 700; t += 0.5) step(g, 0.5);
   assert.equal(S.vetLevel(home.vet), 2, 'drill brings the garrison back to its rank');
   console.log('upkeep and drill: ok');
+}
+
+// Vast: classic at four times the scale, hand-picked only. Same layout spread
+// out, reaches scaled with it, trips much longer; the other maps unchanged.
+{
+  const S = await import('../src/sim.js');
+  assert.ok(!RANDOM_KEYS.includes('vast') && SYSTEM_KEYS.includes('vast'), 'Vast is picked by hand only');
+  const a = createGame({ seed: 31, system: 'classic' }), v = createGame({ seed: 31, system: 'vast' });
+  const pa = a.bodies.filter((b) => b.parent === null && !b.visitor), pv = v.bodies.filter((b) => b.parent === null && !b.visitor);
+  assert.ok(pv.every((b, i) => Math.abs(b.r - pa[i].r * 4) < 1e-9), 'orbits four times as wide');
+  const moonA = a.bodies.find((b) => b.kind === 'moon'), moonV = v.bodies[moonA.id];
+  assert.equal(moonV.r, moonA.r, 'moons keep their distance from their planets');
+  assert.equal(S.perkRange(v, 'relay'), 4 * S.perkRange(a, 'relay'));
+  const ha = a.bodies.find((b) => b.owner === 0), hv = v.bodies[ha.id];
+  const far = pa.find((b) => b.giant) || pa[5];
+  const Ta = plan(a, ha, far).T, Tv = plan(v, hv, v.bodies[far.id]).T;
+  assert.ok(Tv > Ta * 2.2, `trips are a journey (${Math.round(Ta)}s -> ${Math.round(Tv)}s)`);
+  assert.equal(S.travelOf(a), 1, 'other maps keep their timings');
+  console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast`);
 }

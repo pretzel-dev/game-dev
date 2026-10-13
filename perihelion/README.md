@@ -24,6 +24,13 @@ rules don't change:
   that happens depends on the map. Its worlds earn 50% more. Routes steer
   clear of both suns.
 
+- **Vast** (test, picked by hand only): Classic at four times the scale, with
+  drives half as strong there, so trips take roughly three times as long
+  (minutes to a neighbour, ten or more to the far planets). Every voyage is a
+  commitment: research and fleet size matter. Sensor, relay, depot, fortress
+  and security reaches scale with the map; event warnings and visitor passes
+  stretch to match. Random and the Daily never pick it.
+
 **Daily system:** everyone gets the same map each day (seed and system from
 the date). The end screen and share image say which day it was.
 
@@ -187,7 +194,8 @@ preview server running).
   any megaproject there by a quarter. Every second there's a small chance the
   agent is caught (about five minutes on average); the owner's Intel level
   and a **Security bureau** (on the world or within reach of it) make that
-  much quicker. One agent per enemy world.
+  much quicker. Select a world with a bureau to see its reach as a
+  dashed green ring (twice as wide on a listening post). One agent per enemy world.
 - **Probes:** select a world with a shipyard and tap **Probe** (80 credits)
   next to **+ Ship**, then tap a destination and Confirm. A probe flies twice
   as fast as ships and is used up on a flyby: the target stays in view

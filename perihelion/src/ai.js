@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, income, upkeepOf, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, attackPowerOf, cantSpy, plantSpy, PERKS } from './sim.js';
+import { NEUTRAL, RULES, scaleOf, travelOf, income, upkeepOf, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, attackPowerOf, cantSpy, plantSpy, PERKS } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -78,7 +78,7 @@ export function tickAI(game, ai, dt) {
   const closing = (f) => {
     if (!vis.seesFleet(f)) return false;
     const t = game.bodies[f.to];
-    return t.owner === ai.owner && dist(fleetState(f, game.time), posAt(game, t, game.time)) < 60;
+    return t.owner === ai.owner && dist(fleetState(f, game.time), posAt(game, t, game.time)) < 60 * scaleOf(game);
   };
   const known = (f) => f.owner === ai.owner || (vis.intel >= 2 && vis.seesFleet(f)) || closing(f);
   const sizeOf = (f) => (f.owner === ai.owner || vis.intel >= 1 ? f.n : 5);
@@ -128,7 +128,7 @@ function attack(game, ai, { vis, coming, route }) {
     const yards = mine.filter((s) => has(s, 'shipyard'));
     const d = (t) => Math.min(...yards.map((s) => dist(posAt(game, s, game.time), posAt(game, t, game.time))));
     const blind = game.bodies.filter((t) => t.owner !== ai.owner && t.owner !== NEUTRAL && !t.visitor && !vis.bodies.has(t.id) && !scanned(t)).sort((a, b) => d(a) - d(b))[0];
-    if (blind && yards.length && d(blind) < 160 && ai.rand() < 0.5) {
+    if (blind && yards.length && d(blind) < 160 * scaleOf(game) && ai.rand() < 0.5) {
       const near = (s) => dist(posAt(game, s, game.time), posAt(game, blind, game.time));
       if (launchProbe(game, yards.sort((a, b) => near(a) - near(b))[0], blind)) return true;
     }
@@ -158,7 +158,7 @@ function attack(game, ai, { vis, coming, route }) {
       if (smart && t.owner !== NEUTRAL && game.time > 900) value *= t.home ? 1.6 : 1.25;
       if (t.perk) value *= 1.5;
       if ((game.happenings || []).some((h) => h.at === t.id)) value *= 2;
-      const score = value / (need + T / 25);
+      const score = value / (need + T / (25 * travelOf(game)));
       if (!best || score > best.score) best = { s, t, need, score };
     }
   }
@@ -200,7 +200,7 @@ function attack(game, ai, { vis, coming, route }) {
   }
   if (target && mine.length > 1) {
     const stage = mine.slice().sort((a, b) => route(a, target) - route(b, target))[0];
-    ai.plan = { target: target.id, stage: stage.id, need, until: game.time + 600 };
+    ai.plan = { target: target.id, stage: stage.id, need, until: game.time + 600 * travelOf(game) };
   }
   return false;
 }

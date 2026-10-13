@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
@@ -472,7 +472,7 @@ function systemView() {
   view.orbit.target.set(0, 0, 0);
   view.orbit.vaz = view.orbit.vpol = 0;
   view.orbit.pol = 0.9;
-  view.orbit.goalDist = 650;
+  view.orbit.goalDist = 650 * scaleOf(game);
 }
 $('system').addEventListener('click', systemView);
 
@@ -685,18 +685,18 @@ function chips(b, { income = true, seen = true } = {}) {
   }
   // Help from a special world nearby: say so on the world that gets it.
   if (b.owner !== NEUTRAL && b.perk !== 'fortress' && fortressGuns(game, b)) {
-    const f = game.bodies.find((x) => x.perk === 'fortress' && x.owner === b.owner && dist(posAt(game, x, game.time), posAt(game, b, game.time)) <= PERKS.fortress.range);
+    const f = game.bodies.find((x) => x.perk === 'fortress' && x.owner === b.owner && dist(posAt(game, x, game.time), posAt(game, b, game.time)) <= perkRange(game, "fortress"));
     out.push(tip(`${icon('fortress')} +1 gun`, `Covered by the ${PERKS.fortress.name}${f ? ` at ${f.name}` : ''}: +1 gun here while it's inside the ring`, 'gold'));
   }
   if (b.owner !== NEUTRAL && b.perk !== 'depot' && depotBoost(game, b) > 1) out.push(tip(`${icon('depot')} +20% speed`, `A ${PERKS.depot.name} nearby: fleets launched from here fly ${Math.round((PERKS.depot.boost - 1) * 100)}% faster`, 'gold'));
-  if (b.owner !== NEUTRAL && b.perk !== 'relay' && game.bodies.some((x) => x.perk === 'relay' && x.owner === b.owner && dist(posAt(game, x, game.time), posAt(game, b, game.time)) <= PERKS.relay.range)) out.push(tip(`${icon('relay')} watched`, `Inside your ${PERKS.relay.name}'s ring: everything around here is in view`, 'gold'));
+  if (b.owner !== NEUTRAL && b.perk !== 'relay' && game.bodies.some((x) => x.perk === 'relay' && x.owner === b.owner && dist(posAt(game, x, game.time), posAt(game, b, game.time)) <= perkRange(game, "relay"))) out.push(tip(`${icon('relay')} watched`, `Inside your ${PERKS.relay.name}'s ring: everything around here is in view`, 'gold'));
   if (b.perk) {
     const P = PERKS[b.perk];
     let inside = '';
     if (P.range && b.perk === 'relay') inside = ' (dashed ring)';
     else if (P.range) {
       const c = posAt(game, b, game.time);
-      const mine = game.bodies.filter((x) => x.owner === me && x !== b && dist(posAt(game, x, game.time), c) <= P.range).map((x) => x.name);
+      const mine = game.bodies.filter((x) => x.owner === me && x !== b && dist(posAt(game, x, game.time), c) <= perkRange(game, b.perk)).map((x) => x.name);
       inside = ` (dashed ring). ${mine.length ? `Yours inside now: ${mine.join(', ')}` : 'None of yours inside now'}`;
     }
     out.push(tip(`${icon(b.perk)} ${P.name}`, `${P.text}${inside}`, 'gold'));
