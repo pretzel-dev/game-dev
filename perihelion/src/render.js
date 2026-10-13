@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { icon } from './icons.js';
-import { NEUTRAL, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
+import { NEUTRAL, bureauReach, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
 import { createPost } from './gfx/post.js';
 import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
 import { createSky } from './gfx/sky.js';
@@ -260,6 +260,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   scene.add(world);
   let views = [];
 
+  let farClip = 6000;
   const orbit = { az: 0.4, pol: 0.9, dist: 380, minDist: 1.2, maxDist: 2200, target: new THREE.Vector3(), vaz: 0, vpol: 0, follow: null };
 
   let companionPath = null;
@@ -274,6 +275,10 @@ export function createView(canvas, labelRoot, opts = {}) {
     return sphereGeos.get(k);
   }
   function build(game) {
+    // A bigger map: let the camera pull back (and see) further.
+    const mapScale = game.scale || 1;
+    orbit.maxDist = 2200 * mapScale;
+    farClip = 6000 * mapScale;
     // Each homeworld gets its own character (no two alike in a game).
     {
       const r = rng((game.nameSeed || 1) + 77);
@@ -364,7 +369,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       // orbits showing it, shown while the world is selected or looked at.
       let reach = null;
       if (b.perk && PERKS[b.perk].range) {
-        const rr = PERKS[b.perk].range;
+        const rr = PERKS[b.perk].range * mapScale;
         const pts = [];
         for (let i = 0; i <= 96; i++) { const a = (i / 96) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr)); }
         reach = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
@@ -965,7 +970,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     // Near plane scaled to the zoom: close enough for a ship in your face,
     // far enough out that distant worlds keep their depth precision.
     const near = THREE.MathUtils.clamp(orbit.dist * 0.02, 0.01, 12);
-    if (Math.abs(near - camera.near) > camera.near * 0.05) { camera.near = near; camera.far = 6000; camera.updateProjectionMatrix(); }
+    if (Math.abs(near - camera.near) > camera.near * 0.05) { camera.near = near; camera.far = farClip; camera.updateProjectionMatrix(); }
     camera.updateMatrixWorld();
 
     const w = window.innerWidth;
@@ -1035,6 +1040,24 @@ export function createView(canvas, labelRoot, opts = {}) {
       if (v.reach) {
         v.reach.position.set(p.x, 0, p.z);
         v.reach.visible = ui.selected === b.id || ui.peek === b.id || ui.target === b.id;
+      }
+      // A security bureau's reach: agents on worlds inside it are hunted (a
+      // bigger ring on a listening post). Shown while the world is looked at.
+      {
+        const looked = ui.selected === b.id || ui.peek === b.id || ui.target === b.id;
+        const hasBureau = looked && knowsWorld(b) && b.structures.some((x) => x.type === 'bureau' && (x.left <= 0 || x.next) && !x.scrap);
+        if (hasBureau && !v.bureau) {
+          const pts = [];
+          for (let i = 0; i <= 96; i++) { const a = (i / 96) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a))); }
+          v.bureau = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+            new THREE.LineDashedMaterial({ color: '#7fd1c8', transparent: true, opacity: 0.6, dashSize: 0.03, gapSize: 0.025 }));
+          v.bureau.computeLineDistances();
+          world.add(v.bureau);
+        }
+        if (v.bureau) {
+          v.bureau.visible = hasBureau;
+          if (hasBureau) { v.bureau.position.set(p.x, 0, p.z); v.bureau.scale.setScalar(bureauReach(game, b)); }
+        }
       }
       if (b.visitor) {
         const here = present(game, b, now);
