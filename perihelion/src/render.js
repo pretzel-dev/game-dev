@@ -1233,6 +1233,8 @@ export function createView(canvas, labelRoot, opts = {}) {
       // Where ship j sits in the formation (into tmp) with the fleet at state
       // `fs`, `el` seconds after launch; then eased to or from its parking slot.
       const formation = (j, fs, el, when) => {
+        // A probe flies alone: it's drawn right on its track, where its tag and route are.
+        if (f.probe) { tmp.set(fs.x, fs.y, fs.z); return 1; }
         const row = Math.floor(j / cols);
         const col = (j % cols) - (cols - 1) / 2;
         const open = (THREE.MathUtils.smoothstep(Math.min(el, f.T - el), 0, 12) * 0.5 + 0.5) * FORMATION;
