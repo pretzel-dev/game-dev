@@ -3,6 +3,8 @@ import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE } from
 
 /** How many core layouts there are (a station's core is its id modulo this). */
 export const STATION_CORES = 3;
+/** Docking collars sit on the diagonals, clear of the module slots on the axes. */
+const PORT_ANGLES = [0.785, 2.356, 3.927, 5.498];
 
 /**
  * Stations: a core hub plus modules for what has actually been built there.
@@ -33,26 +35,47 @@ export function stationMesh(size, core, uT) {
   const k = kit(core * 31 + 7);
   const r = k.r;
   const cylZ = (rad, len, z, kind = HULL, seg = 16, x = 0, y = 0) => k.cyl(rad, rad, len, z, kind, seg, x, y);
-  // The pressurised core.
+  // The pressurised core: three layouts, each its own silhouette.
   if (core === 0) {
-    cylZ(S * 0.2, S * 0.6, 0);
-    k.cyl(S * 0.12, S * 0.2, S * 0.12, S * 0.36, HULL, 16);
-    cylZ(S * 0.21, S * 0.16, -S * 0.05, PAINT);
+    // Compact cylindrical hub: one fat drum with domed ends.
+    cylZ(S * 0.27, S * 0.44, 0);
+    k.cyl(S * 0.15, S * 0.27, S * 0.1, S * 0.27, HULL, 18);
+    k.cyl(S * 0.27, S * 0.2, S * 0.1, -S * 0.27, HULL, 18);
+    cylZ(S * 0.28, S * 0.14, S * 0.02, PAINT);
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 + 0.3; k.box(S * 0.03, S * 0.03, S * 0.06, Math.cos(a) * S * 0.272, Math.sin(a) * S * 0.272, -S * 0.12, WINDOW); }
   } else if (core === 1) {
-    k.sphere(S * 0.26, 0, 0, S * 0.08, HULL, 1, 16);
-    cylZ(S * 0.17, S * 0.36, -S * 0.22);
-    cylZ(S * 0.18, S * 0.1, -S * 0.22, PAINT);
+    // Open radial docking hub: a small node and four open arms, each
+    // ending in a docking node.
+    k.sphere(S * 0.19, 0, 0, 0, HULL, 1, 16);
+    cylZ(S * 0.12, S * 0.5, -S * 0.1);
+    cylZ(S * 0.2, S * 0.08, 0, PAINT);
+    for (const a of PORT_ANGLES) {
+      const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+      const r0 = S * 0.15, r1 = S * 0.68, w = S * 0.055;
+      const rails = [[vx * w, vy * w, w], [-vx * w, -vy * w, w], [0, 0, -w]];
+      for (const [ox, oy, oz] of rails) k.strut(ux * r0 + ox, uy * r0 + oy, oz, ux * r1 + ox, uy * r1 + oy, oz, S * 0.018);
+      for (let q = 0; q <= 4; q++) {
+        const rr = r0 + ((r1 - r0) * q) / 4;
+        for (let m = 0; m < 3; m++) { const A = rails[m], B = rails[(m + 1) % 3]; k.strut(ux * rr + A[0], uy * rr + A[1], A[2], ux * rr + B[0], uy * rr + B[1], B[2], S * 0.012); }
+      }
+      k.pipe(ux * r0, uy * r0, 0, ux * r1, uy * r1, 0, S * 0.025, HULL); // pressurised tunnel
+      k.sphere(S * 0.075, ux * S * 0.72, uy * S * 0.72, 0, HULL, 1, 12);
+    }
   } else {
-    cylZ(S * 0.18, S * 0.5, S * 0.05);
-    k.add(new THREE.CylinderGeometry(S * 0.12, S * 0.12, S * 0.42, 14).rotateZ(Math.PI / 2 - 0.5).translate(S * 0.05, -S * 0.12, -S * 0.2), HULL, 0.9); // an older module, bolted on askew
-    cylZ(S * 0.19, S * 0.14, S * 0.12, PAINT);
+    // Long modular spine: cans of different sizes and ages along a spine.
+    cylZ(S * 0.07, S * 1.2, -S * 0.15, DARK, 10);
+    for (const [z, rad, len, x, y, kind] of [[0.28, 0.17, 0.26, 0, 0, HULL], [0.0, 0.2, 0.22, 0.02, -0.01, PAINT], [-0.24, 0.15, 0.24, -0.02, 0.02, HULL], [-0.5, 0.12, 0.18, 0, 0, HULL]]) {
+      k.cyl(S * rad, S * rad, S * len, S * z, kind === PAINT ? HULL : kind, 16, S * x, S * y, 0.85 + r() * 0.25);
+      for (const e of [-0.5, 0.5]) k.cyl(S * rad * 1.04, S * rad * 1.04, S * 0.02, S * (z + e * len), DARK, 16, S * x, S * y);
+    }
+    cylZ(S * 0.205, S * 0.1, 0, PAINT);
   }
-  cylZ(S * 0.1, S * 0.12, S * 0.42, DARK, 12); // forward hard point
-  k.greeble(S * 0.36, S * 0.36, S * 0.5, 0, 0, 0, 8);
-  // Docking collars on the diagonals.
+  cylZ(S * 0.1, S * 0.12, S * 0.42, DARK, 12); // forward hard point (where a yard attaches)
+  k.greeble(S * 0.36, S * 0.36, S * 0.5, 0, 0, 0, 6);
+  // Docking collars (clear of the module slots).
   for (const p of stationPorts(core)) {
     const [x, y, z] = p.p, [nx, ny] = p.n;
-    k.boom(x * S - nx * S * 0.12, y * S - ny * S * 0.12, z * S, [nx, ny, 0], S * 0.12, S * 0.09, HULL, 0.95);
+    k.boom(x * S - nx * S * 0.1, y * S - ny * S * 0.1, z * S, [nx, ny, 0], S * 0.1, S * 0.09, HULL, 0.95);
     k.boom(x * S - nx * S * 0.01, y * S - ny * S * 0.01, z * S, [nx, ny, 0], S * 0.02, S * 0.13, DARK);
   }
   // Aft: an expansion truss with the power pod, its shield and radiators.
@@ -115,6 +138,25 @@ export function setStationModules(mesh, mods, ghost) {
       mesh.userData.rotor = rot;
     }
     part.userData.set?.(...st.last);
+  }
+  // The more that's built, the more power and heat: extra radiator panels
+  // (and from four levels up, a second power pod) on the aft truss, so a
+  // developed station is visibly bigger and busier than a new one.
+  const L = mods.reduce((n, m) => n + (m.done ? (m.type === 'shipyard' ? 1 : m.level) : 0), 0);
+  if (L >= 2) {
+    const k = kit(400 + L);
+    for (let i = 0; i < Math.min(5, L - 1); i++) {
+      const a = 0.3 + i * 1.27;
+      k.radiator(Math.cos(a) * S * 0.08, Math.sin(a) * S * 0.08, -S * (0.4 + (i % 2) * 0.22), S * (0.3 + i * 0.04), S * 0.16, a, 2, S * 0.01);
+    }
+    if (L >= 4) {
+      k.cyl(S * 0.07, S * 0.07, S * 0.16, -S * 0.5, DARK, 12, S * 0.15, -S * 0.12);
+      k.strut(0, 0, -S * 0.5, S * 0.15, -S * 0.12, -S * 0.5, S * 0.03);
+    }
+    const part = singleHull(k.build(1, uvD(S)), st.uT);
+    mesh.add(part);
+    st.parts.push(part);
+    part.userData.set(...st.last);
   }
 }
 
@@ -234,7 +276,10 @@ function habitat(k, S, level, done) {
  */
 export function stationPorts(core) {
   const out = [];
-  const R = core === 1 ? 0.36 : 0.32, z = core === 1 ? 0.05 : 0.12;
-  for (const a of [0.785, 2.356, 3.927, 5.498]) out.push({ p: [Math.cos(a) * R, Math.sin(a) * R, z], n: [Math.cos(a), Math.sin(a), 0] });
+  for (const [i, a] of PORT_ANGLES.entries()) {
+    const R = core === 1 ? 0.8 : core === 0 ? 0.36 : [0.26, 0.29, 0.26, 0.24][i];
+    const z = core === 1 ? 0 : core === 0 ? -0.12 : [0.28, 0.0, -0.24, 0.0][i];
+    out.push({ p: [Math.cos(a) * R, Math.sin(a) * R, z], n: [Math.cos(a), Math.sin(a), 0] });
+  }
   return out;
 }
