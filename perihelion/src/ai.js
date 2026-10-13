@@ -1,4 +1,4 @@
-import { NEUTRAL, RULES, scaleOf, travelOf, income, upkeepOf, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, attackPowerOf, cantSpy, plantSpy, PERKS } from './sim.js';
+import { NEUTRAL, RULES, scaleOf, travelOf, income, upkeepOf, crewCap, crewUsed, launch as launchAny, plan, has, buildStructure, cantBuild, orderShip, cantOrderShip, upgrade, cantUpgrade, upgradeCost, coverOf, visibility, fleetState, research, cantResearch, nextTech, TECH, VET_BONUS, vetLevel, cancelShip, cantDemolish, demolish, launchProbe, cantProbe, dist, posAt, readyShips, present, staysFor, firepowerOf, damageTaken, maxGuns, fortressGuns, cantProject, startProject, attackPowerOf, cantSpy, plantSpy, PERKS } from './sim.js';
 
 // The AI plays like a player with the same information: it sees only what its
 // sensors show (plus what anyone can read off the map: neutral worlds keep no
@@ -256,6 +256,13 @@ function economy(game, ai, mine, coming, will) {
   if (rock) {
     if (free(rock, 'mine')) return buildStructure(game, rock, 'mine');
     if (!threatened(rock) && will()) return 'save';
+  }
+  // 1b. Crews (Vast): short of crew, build or upgrade a Habitat rather than ships.
+  if (game.crew && crewUsed(game, ai.owner) >= crewCap(game, ai.owner) - 2) {
+    const hab = mine.flatMap((b) => b.structures.filter((x) => x.type === 'habitat' && !cantUpgrade(game, b, x)).map((x) => [b, x]))[0];
+    if (hab) return upgrade(game, hab[0], hab[1]);
+    const site = mine.filter((b) => free(b, 'habitat') && !threatened(b)).sort((a, c) => (c.kind === 'planet') - (a.kind === 'planet'))[0];
+    if (site) return buildStructure(game, site, 'habitat');
   }
   // 2'. Ships first: every yard keeps at least one in the queue (unless the fleet's upkeep already bites).
   const idle = mine.filter((b) => !cantOrderShip(game, b) && b.queue < 1)[0];

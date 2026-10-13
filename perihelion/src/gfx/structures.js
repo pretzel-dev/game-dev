@@ -72,6 +72,17 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
     }
     K.add(new THREE.CylinderGeometry(s * 0.14, s * 0.14, s * 0.25, 8).translate(0, s * 4.6, 0), HULL);
     K.box(s * 0.05, s * 0.05, s * 0.05, 0, s * 4.8 + level * s * 0.18, 0, STROBE);
+  } else if (type === 'habitat') {
+    // Habitat: crew quarters. A pressurised drum on a hub, one more drum per
+    // level, with a lit window band and a docking spine.
+    K.box(s * 0.7, s * 0.08, s * 0.7, 0, s * 0.04, 0, DARK);
+    K.add(new THREE.CylinderGeometry(s * 0.06, s * 0.06, s * (0.5 + level * 0.3), 8).translate(0, s * (0.3 + level * 0.15), 0), DARK);
+    for (let i = 0; i < level; i++) {
+      const y = s * (0.35 + i * 0.3);
+      K.add(new THREE.TorusGeometry(s * 0.32, s * 0.07, 6, 18).rotateX(Math.PI / 2).translate(0, y, 0), i % 2 ? PAINT : HULL);
+      for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; K.box(s * 0.04, s * 0.03, s * 0.02, Math.cos(a) * s * 0.39, y, Math.sin(a) * s * 0.39, WINDOW); }
+    }
+    K.box(s * 0.04, s * 0.04, s * 0.04, 0, s * (0.6 + level * 0.3), 0, STROBE);
   } else if (type === 'lab') {
     // Research station: a low block with a window band, a mast with one
     // dish per level, and an antenna.

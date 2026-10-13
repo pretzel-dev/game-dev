@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
@@ -390,7 +390,7 @@ function onHostMessage(m) {
 }
 
 // Snapshots: bodies are updated in place (the renderer holds on to them).
-const BODY_KEYS = ['owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus', 'name', 'project', 'wonder'];
+const BODY_KEYS = ['crewBonus', 'owner', 'ships', 'guns', 'structures', 'sieges', 'queue', 'build', 'slips', 'vet', 'tf', 'fighting', 'totDef', 'totAtk', 'resting', 'restUntil', 'bonus', 'name', 'project', 'wonder'];
 /** Is this seat still in the game (worlds, fleets or ships in a fight)? Knocked-out players watch everything. */
 const seatAlive = (seat) => game.bodies.some((b) => b.owner === seat || b.sieges.some((g) => g.owner === seat)) || game.fleets.some((f) => f.owner === seat && !f.probe);
 // What a world shows everyone: who holds it and any megaproject there. The rest needs sensors.
@@ -723,9 +723,10 @@ function levelEffect(type, level, b) {
   if (type === 'defence') return `${Math.round(RULES.gunsPerDefence * level * (fit ? 1.5 : 1))} guns`;
   if (type === 'bureau') return `${level === 1 ? '2.5' : '4'}× catch`;
   if (type === 'lab') return `+${Math.round(RULES.labSpeed * level * (fit ? 2 : 1) * 100)}% research`;
+  if (type === 'habitat') return `+${RULES.crew.habitat * level} crew`;
   return '';
 }
-const ABBR = { bureau: 'Security', shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Gas rig', exchange: 'Exchange' };
+const ABBR = { bureau: 'Security', shipyard: 'Yard', mine: 'Mine', defence: 'Guns', lab: 'Lab', skimmer: 'Gas rig', exchange: 'Exchange', habitat: 'Habitat' };
 const pct = (v) => `${Math.max(0, Math.min(100, Math.floor(v * 100)))}%`;
 function progressOf(x) {
   if (x.scrap) return 1 - x.scrap / RULES.scrapTime;
@@ -757,7 +758,7 @@ function renderBuildRow(s) {
     const x = s.structures[ui.slot];
     let row = '';
     if (!x) {
-      row = ['shipyard', 'mine', 'skimmer', 'exchange', 'defence', 'lab', 'bureau'].map((k) => {
+      row = ['shipyard', 'mine', 'skimmer', 'exchange', 'defence', 'lab', 'bureau', 'habitat'].map((k) => {
         const why = cantBuild(game, s, k);
         if (why && why !== 'not enough credits') return '';
         const def = RULES.structures[k];
@@ -804,7 +805,7 @@ function renderBuildRow(s) {
     const bars = slips.map((p) => `<i class="meter"><i style="width:${pct(p)}"></i></i>`).join('');
     const next = s.queue && s.slips && s.slips.length ? fmt((1 - Math.max(...s.slips)) * shipTime(game, s)) : '';
     html += `<div class="ctx ships"><span class="what">${s.queue ? `Queue <b class="num">${s.queue}</b>` : `${yards} yard${yards === 1 ? '' : 's'} idle`}<span class="bars">${bars}</span><span class="dim">${next}</span></span></div>`
-      + `<div class="ctx shipbtns"><button data-b="ship" title="Order a ship (${RULES.ship.time}s per yard)" ${why ? 'disabled' : ''}>+ Ship<small>${RULES.ship.cost} · ${fmt(shipTime(game, s))}</small></button>`
+      + `<div class="ctx shipbtns"><button data-b="ship" title="${why === 'no crew to spare' ? 'No crew to spare: take more worlds or build a Habitat' : `Order a ship (${RULES.ship.time}s per yard)`}" ${why ? 'disabled' : ''}>+ Ship<small>${why === 'no crew to spare' ? 'no crew' : `${RULES.ship.cost} · ${fmt(shipTime(game, s))}`}</small></button>`
       + `<button data-cancel="1" class="danger" title="Cancel the last queued ship" ${s.queue ? '' : 'disabled'}>${icon('close')}<small>+${Math.round(RULES.ship.cost * RULES.cancelRefund)}</small></button>`
       + `<button class="mini" data-probe="1" ${game.credits[me] < RULES.probe.cost ? 'disabled' : ''} title="Probe: fast one-way flyby that reveals a world">Probe<small>${RULES.probe.cost}</small></button></div>`;
   }
@@ -1711,7 +1712,12 @@ function frame(now) {
         if (prefs.dev && !net) renderDev();
         updateActions();
         renderResearch();
-        { const net_ = income(game, me) - upkeepOf(game, me); setHTML($('clock'), `<b>₵ ${Math.floor(game.credits[me])}</b> ${tip(`${net_ < 0 ? '−' : '+'}${Math.abs(net_).toFixed(1)}/s`, incomeBreakdown(), 'inc')} · T+${fmt(game.time)}`); }
+        {
+          const net_ = income(game, me) - upkeepOf(game, me);
+          // Vast: crew in use against what your worlds can field.
+          const crew = game.crew ? ` · ${tip(`Crew ${crewUsed(game, me)}/${crewCap(game, me)}`, 'Ships in service and on order, against the crews your worlds can field. More worlds, Habitats and Industry research raise it.', crewUsed(game, me) >= crewCap(game, me) ? 'warn' : 'inc')}` : '';
+          setHTML($('clock'), `<b>₵ ${Math.floor(game.credits[me])}</b> ${tip(`${net_ < 0 ? '−' : '+'}${Math.abs(net_).toFixed(1)}/s`, incomeBreakdown(), 'inc')}${crew} · T+${fmt(game.time)}`);
+        }
       }
       if (game.winner !== null) finish();
     }
