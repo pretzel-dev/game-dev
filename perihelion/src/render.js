@@ -7,7 +7,7 @@ import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
 import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
-import { stationMesh, stationPorts } from './gfx/stations.js';
+import { stationMesh, stationPorts, STATION_KINDS } from './gfx/stations.js';
 import { structureMesh } from './gfx/structures.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
@@ -302,7 +302,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       let ring = null;
       let atmo = null;
       // Stations: a little smaller than their size (a real one is tiny beside a world).
-      if (b.kind === 'station') body = stationMesh(b.size * STATION_SCALE, b.id % 3, shipR.uT);
+      if (b.kind === 'station') body = stationMesh(b.size * STATION_SCALE, b.id % STATION_KINDS, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else if (b.visitor) {
         // Comet: an icy nucleus with a tail streaming away from the sun.
@@ -378,7 +378,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % 3) : null };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_KINDS) : null };
     });
     // The asteroid belt: a lane of small rocks round the named asteroids.
     if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
@@ -796,7 +796,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   function placeShip(p, n, color, burning, t, seed, id = seed, plume = 1, probe = false, glintMul = 1, gt = null) {
     if (used >= MAX_SHIPS) return;
     used++;
-    const type = probe ? shipR.probeType : Math.floor(hash(id, 3) * shipR.hulls);
+    const type = probe ? shipR.probeType + Math.floor(hash(id, 29) * shipR.probes) : Math.floor(hash(id, 3) * shipR.hulls);
     const k = 0.9 + hash(id, 5) * 0.25;
     const s = probe ? [0.3, 0.3, 0.3] : [SHIP_SCALE, SHIP_SCALE, SHIP_SCALE * k];
     unclip(p);
@@ -1096,6 +1096,8 @@ export function createView(canvas, labelRoot, opts = {}) {
       // Slow spin; stations turn faster, asteroids tumble.
       if (b.kind === 'station') {
         v.body.rotation.z += dt * (v.body.userData.spin ?? 0.5);
+        const rotor = v.body.userData.rotor; // the crew ring turns on its own bearing
+        if (rotor) rotor.rotation.z += dt * rotor.userData.spin;
         // Owner's paint, lit windows once held, and dark in a world's shadow.
         v.body.userData.set(b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner), sunlit(p), b.owner !== NEUTRAL);
       }
