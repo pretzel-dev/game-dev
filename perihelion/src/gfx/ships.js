@@ -113,7 +113,10 @@ export function kit(seed) {
         // A coolant header along the outer edge of each panel.
         k.strut(x + Math.cos(a) * reach, y + Math.sin(a) * reach, zz - sl / 2, x + Math.cos(a) * reach, y + Math.sin(a) * reach, zz + sl / 2, t * 1.8, DARK, 0.7);
       }
-      tag(new THREE.BoxGeometry(t * 2, t * 2, len).translate(x, y, z), DARK, 0.8);
+      // The root manifold, and coolant lines from it into the hull at both ends.
+      k.cyl(t * 1.5, t * 1.5, len * 1.04, z, HULL, 6, x, y, 0.75);
+      const rr = Math.hypot(x, y);
+      if (rr > 1e-4) for (const e of [-0.42, 0.42]) k.pipe(x, y, z + e * len, x * 0.55, y * 0.55, z + e * len * 1.1, t * 0.9, DARK);
       return [x + Math.cos(a) * reach, y + Math.sin(a) * reach];
     },
     // A straight member between two points.
@@ -545,8 +548,9 @@ export function hullMaterial(uT) {
       .replace('#include <common>', `#include <common>
         attribute float kind; attribute float tint; attribute vec3 iPaint; attribute float iSun; attribute float iSeed; attribute float iHull; attribute float iLit;
         varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit;
-        uniform float uPxK; varying float vPx;`)
+        uniform float uPxK; varying float vPx; varying vec3 vLocal;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vLocal = position;
         vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit;`)
       .replace('#include <project_vertex>', `#include <project_vertex>
         // How big the whole vessel is on screen, in pixels.
@@ -554,19 +558,36 @@ export function hullMaterial(uT) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uT;
-        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx;
+        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx; varying vec3 vLocal;
         float isK(float k) { return 1.0 - step(0.5, abs(vKind - k)); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        // Radiators and solar cells aren't armour plate: no plating pattern.
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, isK(8.0) + isK(9.0));`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float dark = isK(1.0) + isK(7.0);
         float paint = isK(2.0);
         float rad = isK(8.0); // radiator panels: pale ceramic
         float sol = isK(9.0); // solar cells: deep blue
-        vec3 base = mix(mix(mix(vec3(vHull), vec3(0.24, 0.25, 0.28), dark), vec3(0.9, 0.88, 0.84), rad), vec3(0.07, 0.1, 0.2), sol) * vTint;
+        vec3 base = mix(mix(mix(vec3(vHull), vec3(0.26, 0.27, 0.3), dark), vec3(0.9, 0.88, 0.84), rad), vec3(0.06, 0.09, 0.2), sol) * vTint;
+        // Close up, radiators show their coolant ribs (across the panel) and
+        // solar arrays their cell grid and bus bars; both fade out far off.
+        float fine = smoothstep(40.0, 140.0, vPx);
+        float rib = smoothstep(0.55, 0.85, abs(fract(vLocal.z * 150.0) - 0.5) * 2.0);
+        base *= 1.0 - rad * rib * 0.3 * fine;
+        vec2 cg = abs(fract(vec2(vLocal.x + vLocal.y, vLocal.z) * 90.0) - 0.5) * 2.0;
+        float cell = max(smoothstep(0.8, 0.95, cg.x), smoothstep(0.8, 0.95, cg.y));
+        base = mix(base, vec3(0.55, 0.58, 0.62), sol * cell * 0.6 * fine);
         diffuseColor.rgb *= mix(base, vPaint * 0.9 + 0.04, paint);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.7, isK(1.0));
-        roughnessFactor = mix(roughnessFactor, 0.85, isK(8.0));
-        roughnessFactor = mix(roughnessFactor, 0.3, isK(9.0));`)
+        // Bare structure is worked metal (it catches the sun), radiators are
+        // matte ceramic, solar cells glassy.
+        roughnessFactor = mix(roughnessFactor, 0.45, isK(1.0));
+        roughnessFactor = mix(roughnessFactor, 0.9, isK(8.0));
+        roughnessFactor = mix(roughnessFactor, 0.22, isK(9.0));`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+        metalnessFactor = mix(metalnessFactor, 0.7, isK(1.0));
+        metalnessFactor = mix(metalnessFactor, 0.05, isK(8.0));
+        metalnessFactor = mix(metalnessFactor, 0.5, isK(9.0));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // Soft pulses, not on/off: a light switching on in one frame reads as a flash.
@@ -587,7 +608,15 @@ export function hullMaterial(uT) {
         }`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         reflectedLight.directDiffuse *= vSun;
-        reflectedLight.directSpecular *= vSun;`);
+        reflectedLight.directSpecular *= vSun;
+        {
+          // Fill: a faint cool skylight and an edge rim, so the side away from
+          // the sun keeps its outline against space instead of vanishing. The
+          // sun stays the one strong, directional light.
+          float ndv = abs(dot(normal, normalize(vViewPosition)));
+          float rim = pow(1.0 - ndv, 3.0);
+          reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.5, 0.58, 0.78) * (0.05 + rim * 0.3);
+        }`);
   };
   return mat;
 }
@@ -709,8 +738,8 @@ export function singleHull(geo, uT) {
 }
 let singleMat = null;
 
-/** Below this on-screen size (the view's px, about 1.8x the hull's length in pixels) ships draw coarse. */
-const FAR_PX = 90;
+/** Below this on-screen size (the view's px, about 1.8x the hull's length in pixels) ships draw coarse: the parts it drops are then under a pixel or two, so the switch doesn't pop. */
+const FAR_PX = 40;
 export function createShipRenderer(scene, max) {
   const uT = { value: 0 };
   const geos = shipGeometries();
@@ -833,7 +862,9 @@ export function createShipRenderer(scene, max) {
         const len = 1.9 * plume * Math.max(s[2], 0.62); // long torches even on small hulls
         m4.compose(tgt, q, sc.set(0.06 * s[0] * (type >= PROBE ? 0.5 : 1), 1, len));
         plumes.setMatrixAt(i, m4);
-        pPow.setX(i, 1);
+        // Up close the torch is toned down a little so it doesn't outshine
+        // the hull; far off it stays at full strength (it shows the heading).
+        pPow.setX(i, 1 - 0.35 * THREE.MathUtils.smoothstep(px, 120, 500));
         pSeed.setX(i, (seed * 0.371) % 1);
         pTint.setXYZ(i, PLUME_TINT.r, PLUME_TINT.g, PLUME_TINT.b);
       }
