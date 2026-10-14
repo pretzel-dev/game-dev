@@ -8,7 +8,7 @@ import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
 import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
 import { stationMesh, stationPorts, setStationModules, STATION_CORES } from './gfx/stations.js';
-import { structureMesh } from './gfx/structures.js';
+import { structureMesh, buildingScale } from './gfx/structures.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
 import { BIOMES, createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
@@ -1170,7 +1170,7 @@ export function createView(canvas, labelRoot, opts = {}) {
           const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner));
           if (m.userData.wip) v.wips.push(m.userData.wip);
           // A clearing in the clouds over each surface building.
-          if (x.type !== 'shipyard' && x.type !== 'skimmer') v.holes.push({ dir: m.position.clone().normalize(), cos: Math.cos(Math.min(0.6, (Math.max(0.25, b.size * 0.14) * (x.type === 'lab' || x.type === 'mine' ? 1.5 : 1.15)) / b.size)) });
+          if (x.type !== 'shipyard' && x.type !== 'skimmer') v.holes.push({ dir: m.position.clone().normalize(), cos: Math.cos(Math.min(0.6, (buildingScale(b) * (x.type === 'lab' || x.type === 'mine' ? 1.5 : 1.15)) / b.size)) });
           if (m.userData.spin) v.spins.push(...m.userData.spin);
           // Surface structures turn with the world; yards and skimmers orbit on their own.
           (x.type === 'shipyard' || x.type === 'skimmer' ? v.structs : v.surface).add(m);
