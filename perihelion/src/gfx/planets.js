@@ -597,11 +597,14 @@ export function surfaceMaterial(b, look, maps, ring) {
 /** The cloud deck: a thin shell that drifts over the surface. */
 export function cloudMaterial(maps) {
   return new THREE.ShaderMaterial({
-    uniforms: { tAux: { value: maps.aux }, uStarPos: starLights.pos, uStarCol: starLights.col, uOcc: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, 0, 0)) } },
+    // uHoles: clear sky over the buildings on this world (xyz: direction in
+    // the cloud shell's own frame, w: cos of the clearing's radius; w > 1 off).
+    uniforms: { tAux: { value: maps.aux }, uStarPos: starLights.pos, uStarCol: starLights.col, uOcc: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, 0, 0)) }, uHoles: { value: Array.from({ length: 6 }, () => new THREE.Vector4(0, 1, 0, 2)) } },
     vertexShader: /* glsl */ `${LD_VERT_PARS}
-      varying vec2 vUv; varying vec3 vWorld; varying vec3 vWN;
+      varying vec2 vUv; varying vec3 vWorld; varying vec3 vWN; varying vec3 vDir;
       void main() {
         vUv = uv;
+        vDir = normalize(position);
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorld = wp.xyz;
         vWN = normalize(mat3(modelMatrix) * normal);
@@ -610,11 +613,13 @@ export function cloudMaterial(maps) {
       }`,
     fragmentShader: /* glsl */ `${LD_FRAG_PARS}
       ${ECLIPSE}
-      uniform sampler2D tAux; uniform vec3 uStarPos[2], uStarCol[2];
-      varying vec2 vUv; varying vec3 vWorld; varying vec3 vWN;
+      uniform sampler2D tAux; uniform vec3 uStarPos[2], uStarCol[2]; uniform vec4 uHoles[6];
+      varying vec2 vUv; varying vec3 vWorld; varying vec3 vWN; varying vec3 vDir;
       void main() {
         ${LD_FRAG}
         float a = texture2D(tAux, vUv).a;
+        // The sky clears over buildings, so they aren't lost under the clouds.
+        for (int i = 0; i < 6; i++) a *= 1.0 - 0.92 * smoothstep(uHoles[i].w - 0.004, uHoles[i].w + 0.002, dot(vDir, uHoles[i].xyz));
         if (a < 0.01) discard;
         vec3 N = normalize(vWN);
         vec3 V = normalize(cameraPosition - vWorld);
