@@ -587,7 +587,7 @@ export const SYSTEMS = {
   // commitment. Picked by hand only (never Random or the Daily).
   // Proportions closer to life: worlds small beside the gaps to their moons,
   // and a sun far wider than a planet and its moon together.
-  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, crew: true, research: 0.6, test: true },
+  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, research: 0.6, test: true },
 };
 /** Distances on this map relative to the usual (reaches, sensors and so on scale with it). */
 export const scaleOf = (game) => game.scale || 1;
@@ -764,7 +764,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // A bigger system: the same layout with the planets' orbits (and the belt)
   // spread out; moons and stations keep their distance from their planets.
   if (sys.sunR) stars[0].size = sys.sunR / SUN_RADIUS_SIM;
-  const game = { mp, crew: !!sys.crew, research: sys.research || 1, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, crew: sys.crew !== false, research: sys.research || 1, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');

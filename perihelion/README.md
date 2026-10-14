@@ -34,13 +34,6 @@ rules don't change:
   and visitor passes stretch to match; build slots are as usual. Research
   runs at 60% of the usual speed (the game is longer). Random and the Daily
   never pick it.
-  **Crews:** on Vast, every ship needs a crew, and crews come from your
-  worlds (a homeworld 16, planets 8, gas giants and stations 6, moons 3,
-  asteroids 1). Ships in flight or garrisoned and ships on order all count;
-  when they reach the cap, yards stop taking orders. A **Habitat** (Vast
-  only) adds 4 crew per level, each Industry level adds 10%, and taking in
-  a refugee convoy adds 4. The top bar shows crew in use beside credits, and each world's info shows
-  the crew it fields.
 
 **Daily system:** everyone gets the same map each day (seed and system from
 the date). The end screen and share image say which day it was.
@@ -121,7 +114,7 @@ tap it to see what it needs, Build, then tap one of your worlds. One per world, 
 stations speed it up (half as much as they speed research). Each kind can be finished only once per game; several
 empires can race for the same one, and the first to finish wins it; the rest
 get half their money back. Only research stations speed one up. Building asks you to confirm, like a
-launch. A violet ring round the world shows how far along it is, to everyone. Everyone is told when a project
+launch. A violet ring round the world shows how far along it is, to everyone, and the structure itself goes up in stages (a hologram until each stage is done); the ring goes once it's finished. Everyone is told when a project
 starts, and a captured world's project or wonder goes to the captor.
 
 | Megaproject | Unlocked by | Where | Effect |
@@ -165,6 +158,13 @@ preview server running).
   minutes. Drive plumes are visible from far away. Ships can't be recalled.
 - **Credits:** every world you hold earns credits (planets 1/s, stations
   0.6, moons 0.5, asteroids 0.3), homeworlds +0.4, plus 1.5/s per mine. They show top left.
+- **Crews:** every ship needs a crew, and crews come from your worlds (a
+  homeworld 16, planets 8, gas giants and stations 6, moons 3, asteroids 1).
+  Ships in flight or garrisoned and ships on order all count; when they
+  reach the cap, yards stop taking orders. A **Habitat** adds 4 crew per
+  level, each Industry level adds 10%, and taking in a refugee convoy adds
+  4. The top bar shows crew in use beside credits, and each world's info
+  shows the crew it fields.
 - **Upkeep:** the first 40 ships are free; each one beyond that costs
   0.05/s (crews, fuel, refits). The income tooltip shows it.
 - **Drill:** a garrison that has held a rank trains new arrivals back up to
@@ -348,7 +348,8 @@ Playwright (`npm run preview` first; Playwright isn't a dependency).
     surveyor with a turning habitat ring; survey, relay and recon probes),
     drive plumes, glints; `stations.js`: habitat, shipyard, refinery and
     bastion, each with a fixed hub and (when crewed) a ring or drum that
-    turns on its own
+    turns on its own; `structures.js`: buildings on worlds;
+    `megastructures.js`: the six megaprojects, built in stages
   - `rocks.js`: asteroids and the belt; `fx.js`: weapons fire and explosions
 - `src/main.js`: touch input, UI, game loop
 
