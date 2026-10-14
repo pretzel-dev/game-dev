@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#e9b07a" />
+  <meta name="description" content="A toy rally car loose in a red-rock canyon full of ramps, loops and jumps. No goal, no timer, just go." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Dustline" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <title>Dustline</title>
+  <style>
+    :root {
+      --ink: #3a1d14;
+      --cream: #fff3e2;
+      --glass: rgba(255, 243, 226, .78);
+      --glass-dim: rgba(255, 243, 226, .3);
+      --edge: rgba(255, 255, 255, .55);
+      --shadow: 0 8px 24px rgba(80, 30, 10, .18);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body, #ui, button, canvas { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    html, body {
+      margin: 0; width: 100%; height: 100%; overflow: hidden;
+      background: #e9b07a;
+      font-family: ui-rounded, "SF Pro Rounded", "Avenir Next", system-ui, sans-serif;
+      color: var(--ink);
+      overscroll-behavior: none;
+    }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    #ui { position: fixed; inset: 0; pointer-events: none; }
+
+    /* ---------------------------------------------------- trick words --- */
+    #trick {
+      position: absolute; left: 50%; top: 22%;
+      transform: translate(-50%, -50%) scale(.7);
+      text-align: center; opacity: 0;
+      transition: opacity .35s ease, transform .35s cubic-bezier(.2, 1.6, .4, 1);
+      color: #fff8ec;
+      text-shadow: 0 2px 0 #b8441e, 0 4px 14px rgba(90, 30, 10, .45);
+      white-space: nowrap;
+    }
+    #trick b { display: block; font-size: clamp(26px, 6vw, 46px); font-weight: 900; letter-spacing: -.02em; text-transform: uppercase; font-style: italic; }
+    #trick small { display: block; font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; opacity: .9; margin-top: 2px; }
+    #trick.pop { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+    #hint {
+      position: absolute; left: 50%; bottom: max(26px, calc(env(safe-area-inset-bottom) + 18px));
+      transform: translateX(-50%);
+      background: rgba(70, 28, 14, .62); color: #fff4e4;
+      padding: 9px 14px; border-radius: 13px; font-size: 12px; font-weight: 650;
+      opacity: 0; transition: opacity .45s ease; text-align: center; max-width: min(84vw, 420px);
+    }
+
+    #speed {
+      position: absolute; left: max(16px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top));
+      font-size: 22px; font-weight: 900; font-style: italic; font-variant-numeric: tabular-nums;
+      color: #fff8ec; text-shadow: 0 2px 8px rgba(90, 30, 10, .4);
+    }
+    #speed::after { content: " km/h"; font-size: 10px; font-weight: 800; letter-spacing: .1em; opacity: .8; }
+
+    #keyhints {
+      position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
+      text-align: right; font-size: 11px; line-height: 1.45; color: #fff4e4;
+      text-shadow: 0 1px 5px rgba(80, 30, 10, .6); opacity: .75;
+    }
+
+    #tools {
+      position: absolute; right: max(14px, env(safe-area-inset-right)); top: max(12px, env(safe-area-inset-top));
+      display: flex; gap: 8px; pointer-events: auto;
+    }
+    .tool {
+      width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+      border: 1px solid var(--edge); background: var(--glass-dim); color: var(--ink);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      font-size: 16px; padding: 0; cursor: pointer; box-shadow: var(--shadow);
+    }
+    .tool.off { opacity: .45; }
+    .tool:active { transform: scale(.93); }
+
+    /* --------------------------------------------------- touch driving --- */
+    #touch { display: none; position: absolute; inset: 0; pointer-events: none; }
+    #steerPad { position: absolute; left: 0; top: 64px; bottom: 0; width: 50%; pointer-events: auto; touch-action: none; }
+    #steerBase {
+      position: absolute; width: 124px; height: 124px; margin: -62px 0 0 -62px; border-radius: 50%;
+      background: rgba(255, 243, 226, .16); border: 1px solid rgba(255, 255, 255, .45);
+      opacity: 0; transition: opacity .2s ease; pointer-events: none;
+      left: 22%; top: 72%;
+    }
+    #steerBase.on { opacity: 1; }
+    #steerBase::before {
+      content: ""; position: absolute; left: 50%; top: 50%; width: 92px; height: 2px; margin: -1px 0 0 -46px;
+      background: rgba(255, 255, 255, .35); border-radius: 2px;
+    }
+    #steerKnob {
+      position: absolute; left: 34px; top: 34px; width: 56px; height: 56px; border-radius: 50%;
+      background: rgba(255, 243, 226, .75); box-shadow: 0 5px 16px rgba(80, 30, 10, .25);
+    }
+    #pedals {
+      position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(18px, calc(env(safe-area-inset-bottom) + 12px));
+      display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; gap: 12px; align-items: end;
+      pointer-events: auto;
+    }
+    .pedal {
+      border: 1px solid var(--edge); color: var(--ink); font: inherit; font-weight: 900; letter-spacing: .08em;
+      font-size: 11px; text-transform: uppercase; touch-action: none;
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: var(--shadow);
+      transition: transform .08s ease, background .12s ease;
+    }
+    .pedal.down { transform: scale(.94); }
+    #gasBtn { grid-column: 2; grid-row: 2; width: 92px; height: 92px; border-radius: 50%; background: rgba(255, 243, 226, .62); }
+    #gasBtn.down { background: rgba(255, 220, 160, .92); }
+    #brakeBtn { grid-column: 1; grid-row: 2; width: 66px; height: 66px; border-radius: 50%; background: rgba(255, 243, 226, .4); }
+    #brakeBtn.down { background: rgba(255, 190, 160, .85); }
+    #boostBtn { grid-column: 2; grid-row: 1; justify-self: center; width: 62px; height: 62px; border-radius: 50%; background: rgba(170, 255, 190, .45); font-size: 20px; }
+    #boostBtn.down { background: rgba(140, 255, 170, .9); }
+
+    /* ---------------------------------------------------------- intro --- */
+    #intro {
+      position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto; padding: 16px;
+      background: linear-gradient(180deg, rgba(60, 120, 200, .12), rgba(230, 140, 80, .22));
+      transition: opacity .5s ease;
+    }
+    #intro.gone { opacity: 0; pointer-events: none; }
+    #card {
+      width: min(500px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto;
+      padding: 26px 24px 22px; border-radius: 26px; text-align: center;
+      background: rgba(255, 243, 226, .9); border: 1px solid rgba(255, 255, 255, .8);
+      box-shadow: 0 24px 70px rgba(90, 40, 20, .25); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    }
+    #card h1 { margin: 0; font-size: clamp(38px, 9vw, 64px); line-height: .9; letter-spacing: -.05em; font-weight: 900; font-style: italic; }
+    #card .sub { margin: 10px 0 18px; font-size: 13px; opacity: .75; line-height: 1.5; }
+    #start {
+      appearance: none; border: 0; background: #c2461f; color: #fff6e8; padding: 13px 30px; border-radius: 999px;
+      font: inherit; font-weight: 900; font-size: 16px; letter-spacing: .02em; cursor: pointer;
+      box-shadow: 0 8px 20px rgba(150, 50, 20, .3);
+    }
+    .row { display: flex; gap: 7px; justify-content: center; margin: 18px 0 4px; flex-wrap: wrap; }
+    .row .label { width: 100%; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .55; margin-bottom: 2px; }
+    .chip {
+      appearance: none; font: inherit; font-size: 12px; font-weight: 750; cursor: pointer;
+      border: 1px solid rgba(90, 40, 20, .2); background: rgba(255, 255, 255, .5); color: var(--ink);
+      padding: 8px 14px; border-radius: 999px;
+    }
+    .chip[aria-pressed="true"] { background: #3a1d14; color: #fff3e2; border-color: transparent; }
+    .swatch { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .9); }
+    .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px #3a1d14; }
+    #card .keys { margin-top: 16px; font-size: 11px; opacity: .65; line-height: 1.7; }
+
+    #error { display: none; position: absolute; inset: 0; place-items: center; background: #f0c79c; padding: 30px; pointer-events: auto; text-align: center; }
+
+    body.nohud #speed, body.nohud #keyhints, body.nohud #tools { opacity: 0; }
+
+    @media (max-height: 520px) {
+      #card { padding: 16px 18px 14px; }
+      #card h1 { font-size: 40px; }
+      #card .sub { margin: 6px 0 10px; font-size: 12px; }
+      .row { margin: 10px 0 2px; }
+      #card .keys { display: none; }
+    }
+    @media (hover: none), (pointer: coarse) {
+      #touch { display: block; }
+      #keyhints { display: none; }
+      #hint { bottom: auto; top: calc(max(12px, env(safe-area-inset-top)) + 52px); }
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div id="speed">0</div>
+    <div id="trick"></div>
+    <div id="hint" role="status" aria-live="polite"></div>
+    <div id="keyhints">
+      W/S gas, brake · A/D steer · SHIFT boost · SPACE handbrake<br />
+      In the air: A/D spin · W/S flip · Q/E roll<br />
+      R back on wheels · C camera · L light · M sound · H hide
+    </div>
+    <div id="tools">
+      <button class="tool" id="cameraBtn" aria-label="Change camera">◉</button>
+      <button class="tool" id="lightBtn" aria-label="Change light">☀</button>
+      <button class="tool" id="resetBtn" aria-label="Back on your wheels">↺</button>
+      <button class="tool" id="soundBtn" aria-label="Sound">♪</button>
+    </div>
+    <div id="touch">
+      <div id="steerPad"><div id="steerBase"><div id="steerKnob"></div></div></div>
+      <div id="pedals">
+        <button class="pedal" id="boostBtn" aria-label="Boost">»</button>
+        <button class="pedal" id="brakeBtn" aria-label="Brake">Brake</button>
+        <button class="pedal" id="gasBtn" aria-label="Gas">Gas</button>
+      </div>
+    </div>
+    <div id="intro">
+      <div id="card">
+        <h1>DUSTLINE</h1>
+        <div class="sub">
+          A toy rally car loose in a red-rock canyon.<br />
+          Loops, ramps, a drum to ride the wall of, a road up a mesa and a jump off the top.<br />
+          No goal. No timer. Nothing to stop you. Just go.
+        </div>
+        <button id="start">Drive</button>
+        <div class="row" id="liveryRow">
+          <div class="label">Paint</div>
+          <button class="chip swatch" data-livery="blue" style="background:#2f59c9" aria-label="Blue"></button>
+          <button class="chip swatch" data-livery="red" style="background:#d13a2c" aria-label="Red"></button>
+          <button class="chip swatch" data-livery="yellow" style="background:#f2b51d" aria-label="Yellow"></button>
+          <button class="chip swatch" data-livery="green" style="background:#2f9a58" aria-label="Green"></button>
+        </div>
+        <div class="row" id="lightRow">
+          <div class="label">Light</div>
+          <button class="chip" data-light="morning">Morning</button>
+          <button class="chip" data-light="afternoon">Afternoon</button>
+          <button class="chip" data-light="sunset">Sunset</button>
+        </div>
+        <div class="keys">
+          Phone: drag on the left to steer · Gas and Brake on the right · » boosts<br />
+          In the air, drag up or down to flip and sideways to spin. Brake hard while turning to slide.<br />
+          Keyboard: W/S, A/D, Shift boost, Space handbrake · Gamepad works too
+        </div>
+      </div>
+    </div>
+    <div id="error">
+      <div>
+        <h2>Dustline couldn't start</h2>
+        <p>This canyon needs WebGL. Try another browser, or turn hardware acceleration back on.</p>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

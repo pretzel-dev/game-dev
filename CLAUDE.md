@@ -8,6 +8,7 @@ Small browser games, each in its own folder with its own `package.json`
 | `perihelion/` | Hard-sci-fi strategy in one solar system, solo vs AI or host-in-browser multiplayer | Active |
 | `starfall/` | 3D space strategy across star systems | Finished |
 | `covewind/` | Free-flight toy | Finished |
+| `dustline/` | Toy rally car in a stunt canyon (no goal) | Active |
 | `site/` | Landing page linking the games | Static |
 
 Live site: https://pretzel-dev.github.io/game-dev/ (each game in its own path).
