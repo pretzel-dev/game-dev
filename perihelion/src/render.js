@@ -8,6 +8,7 @@ import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
 import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
 import { stationMesh, stationPorts, setStationModules, STATION_CORES } from './gfx/stations.js';
+import { megaMesh, megaProgress } from './gfx/megastructures.js';
 import { structureMesh, buildingScale } from './gfx/structures.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
@@ -1120,7 +1121,7 @@ export function createView(canvas, labelRoot, opts = {}) {
           cl.rotation.y += dt * 0.012;
           const H = cl.material.uniforms.uHoles.value;
           for (let i = 0; i < H.length; i++) {
-            const hole = v.holes?.[i];
+            const hole = i < (v.holes?.length || 0) ? v.holes[i] : v.megaHole && i === (v.holes?.length || 0) ? v.megaHole : null;
             if (!hole || !(v.surface.visible)) { H[i].w = 2; continue; }
             // The building's direction, in the cloud shell's own (turning) frame.
             tmp.copy(hole.dir).applyAxisAngle(yAxis, -cl.rotation.y);
@@ -1286,17 +1287,42 @@ export function createView(canvas, labelRoot, opts = {}) {
       b.lostDef = b.lostAtk = 0;
       if (b.captured) { v.pulse = 1; b.captured = false; fx.ring(tmp.set(p.x, p.y, p.z), ownerColor(b.owner), b.size * 3.5, 1.4); }
 
-      // A megaproject: a gold ring round the world, drawn as far round as the
-      // work has got; a full, brighter ring once it's finished.
+      // A megaproject: while it's being built, a ring round the world drawn as
+      // far round as the work has got; the structure itself goes up in stages
+      // (gfx/megastructures.js) and stays once it's finished.
       const prog = b.wonder ? 1 : b.project ? Math.max(0.02, Math.min(1, 1 - b.project.left / PROJECTS[b.project.key].time)) : 0;
-      const step = Math.round(prog * 60);
+      const mkey = b.wonder || (b.project && b.project.key) || null;
+      if (v.megaKey !== mkey) {
+        v.megaKey = mkey;
+        if (v.megaObj) { v.megaObj.removeFromParent(); v.megaObj = null; v.megaHole = null; }
+        if (mkey) {
+          const m = megaMesh(mkey, b, shipR.uT, ghostMat);
+          if (m.userData.surface) {
+            // Surface works stand on the world and turn with it.
+            const rr = rng(b.id * 31 + 7);
+            const dir = new THREE.Vector3(rr() - 0.5, (rr() - 0.5) * 0.5, rr() - 0.5).normalize();
+            m.position.copy(dir).multiplyScalar(b.size * 0.995);
+            m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+            v.body.add(m); // (not the surface group: that's rebuilt with the buildings)
+            v.megaHole = { dir, cos: Math.cos(Math.min(0.8, 1.0 / b.size)) };
+          } else v.g.add(m);
+          v.megaObj = m;
+        }
+      }
+      if (v.megaObj) {
+        megaProgress(v.megaObj, prog, !!b.wonder);
+        v.megaObj.userData.set(b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner), sunlit(p));
+        if (v.megaObj.userData.faceSun) v.megaObj.lookAt(0, 0, 0);
+        v.megaObj.userData.spinner?.rotateZ(dt * 0.25);
+      }
+      const step = b.wonder ? 0 : Math.round(prog * 60);
       if (v.megaStep !== step) {
         v.megaStep = step;
         if (v.mega) { v.g.remove(v.mega); v.mega.geometry.dispose(); v.mega = null; }
         if (step) {
           const R = b.size * 2.1 + 0.6;
           v.mega = new THREE.Mesh(new THREE.TorusGeometry(R, Math.max(0.05, b.size * 0.04), 6, 96, (step / 60) * Math.PI * 2),
-            new THREE.MeshBasicMaterial({ color: '#c7a6ff', transparent: true, opacity: b.wonder ? 0.9 : 0.55, depthWrite: false }));
+            new THREE.MeshBasicMaterial({ color: '#c7a6ff', transparent: true, opacity: 0.55, depthWrite: false }));
           v.mega.rotation.x = Math.PI / 2;
           v.g.add(v.mega);
         }

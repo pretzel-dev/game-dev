@@ -143,11 +143,11 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
     vc(s * 0.16, s * 0.22, s * 0.5, 0, s * 0.3, 0, HULL, 10); // climber terminal
     for (const a of [0.5, 2.6, 4.4]) K.radiator(Math.cos(a) * s * 0.55, s * 0.14, Math.sin(a) * s * 0.55, s * 0.28, s * 0.22, Math.PI / 2, 2, s * 0.015);
     winBand(s * 0.8, 0, s * 0.2, s * 0.6, 8);
-    const top = s * 7.2, port = s * 4.6;
+    const top = s * 3.6, port = s * 2.5; // about a station's height in all
     for (const sx of [-1, 1]) K.add(new THREE.CylinderGeometry(s * 0.018, s * 0.018, top - s * 0.8, 5).translate(sx * s * 0.05, s * 0.8 + (top - s * 0.8) / 2, 0), DARK);
-    for (const y of [1.8, 3.3, 5.7]) { K.box(s * 0.16, s * 0.2, s * 0.12, 0, s * y, 0, HULL, 0.9); K.box(s * 0.12, s * 0.03, s * 0.004, 0, s * y, s * 0.062, WINDOW); }
+    for (const y of [1.25, 1.9, 3.1]) { K.box(s * 0.16, s * 0.2, s * 0.12, 0, s * y, 0, HULL, 0.9); K.box(s * 0.12, s * 0.03, s * 0.004, 0, s * y, s * 0.062, WINDOW); }
     // The port (drawn larger than the base: it's what the player should see).
-    const P = s * 1.5;
+    const P = s * 0.95;
     vc(P * 0.32, P * 0.32, P * 0.4, 0, port - P * 0.2, 0, HULL, 16);
     vc(P * 0.33, P * 0.33, P * 0.1, 0, port - P * 0.05, 0, PAINT, 16);
     for (const sx of [-1, 1]) {

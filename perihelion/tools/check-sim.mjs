@@ -603,13 +603,12 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast; sun ${(sunD / moon.r).toFixed(1)} moon-gaps across`);
 }
 
-// Crews (Vast only): the fleet can't outgrow the crew your worlds field;
-// Habitats, Industry and a refugee convoy raise it. Other maps: no cap.
+// Crews (every map): the fleet can't outgrow the crew your worlds field;
+// Habitats, Industry and a refugee convoy raise it.
 {
   const S = await import('../src/sim.js');
   const a = createGame({ seed: 7 }), v = createGame({ seed: 7, system: 'vast' });
-  assert.equal(S.crewCap(a, 0), Infinity, 'no crew cap on the other maps');
-  assert.equal(S.cantBuild(a, a.bodies.find((b) => b.owner === 0), 'habitat'), 'not on this map');
+  assert.equal(S.crewCap(a, 0), S.crewCap(v, 0), 'the same crew cap on every map');
   const home = v.bodies.find((b) => b.owner === 0);
   const cap = S.crewCap(v, 0);
   assert.equal(cap, RULES.crew.home, 'a homeworld fields its crew');
@@ -623,6 +622,6 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   v.tech[0].industry = 2;
   assert.equal(S.crewCap(v, 0), Math.floor((cap + RULES.crew.habitat) * 1.2), 'industry adds crew');
   assert.ok(Math.abs(S.researchSpeed(v, 0) - 0.6 * S.researchSpeed(a, 0)) < 1e-9, 'research runs slower on Vast');
-  assert.match(S.techText(v, 'industry', 0), /crews/); assert.doesNotMatch(S.techText(a, 'industry', 0), /crews/);
+  assert.match(S.techText(a, 'industry', 0), /crews/);
   console.log(`crews: start cap ${cap}, with a habitat and Industry II ${S.crewCap(v, 0)}`);
 }
