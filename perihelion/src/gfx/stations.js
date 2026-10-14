@@ -116,10 +116,11 @@ export function setStationModules(mesh, mods, ghost) {
   st.wip.length = 0;
   mesh.userData.rotor = null;
   const S = st.S;
+  let yards = 0;
   for (const [i, mod] of mods.entries()) {
     const k = kit(mod.type.length * 13 + i * 7 + mod.level);
     let ring = null, hull = null;
-    if (mod.type === 'shipyard') hull = shipyard(k, S);
+    if (mod.type === 'shipyard') hull = shipyard(k, S, yards++);
     else if (mod.type === 'lab') lab(k, S, mod.level);
     else if (mod.type === 'bureau') bureau(k, S, mod.level);
     else if (mod.type === 'defence') guns(k, S, mod.level);
@@ -172,41 +173,47 @@ export function setStationModules(mesh, mods, ghost) {
 
 // ---- Modules (built in the station's frame, in units of its size S) -------
 
-function shipyard(k, S) {
-  // The cradle: an open framework off the bow, its mouth facing out.
-  const W = S * 0.45, H = S * 0.36, t = S * 0.03, z0 = S * 0.55, z1 = S * 2.25;
-  k.truss(0, 0, S * 0.42, z0, S * 0.16, 1, S * 0.02);
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) k.box(t, t, z1 - z0, sx * W, sy * H, (z0 + z1) / 2, DARK);
-  const n = 5;
-  for (let i = 0; i <= n; i++) {
-    const z = z0 + ((z1 - z0) * i) / n;
-    for (const s of [-1, 1]) { k.box(W * 2, t, t, 0, s * H, z, DARK); if (i < n) k.box(t, H * 2, t, s * W, 0, z, DARK); }
-    if (i < n && i % 2) k.strut(-W, -H, z, -W, H, z + (z1 - z0) / n, t * 0.8);
+function shipyard(k, S, n = 0) {
+  // The cradle: an open framework off the bow, its mouth facing out, sized to
+  // the ship it builds (the hull inside is as long as a finished ship, on any
+  // map). A second yard sits alongside the first.
+  const u = YARD_UNIT;
+  const W = u * 0.45, H = u * 0.36, t = u * 0.03, z0 = S * 0.42 + u * 0.13, z1 = z0 + u * 1.7;
+  const ox = n * (W * 2 + u * 0.2);
+  if (n === 0) k.truss(0, 0, S * 0.42, z0, u * 0.16, 1, u * 0.02);
+  else k.box(ox - W, t * 1.5, t * 1.5, (ox - W) / 2, -H, z0 + u * 0.2, DARK); // a beam across to the next cradle
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) k.box(t, t, z1 - z0, ox + sx * W, sy * H, (z0 + z1) / 2, DARK);
+  const m = 5;
+  for (let i = 0; i <= m; i++) {
+    const z = z0 + ((z1 - z0) * i) / m;
+    for (const s of [-1, 1]) { k.box(W * 2, t, t, ox, s * H, z, DARK); if (i < m) k.box(t, H * 2, t, ox + s * W, 0, z, DARK); }
+    if (i < m && i % 2) k.strut(ox - W, -H, z, ox - W, H, z + (z1 - z0) / m, t * 0.8);
   }
-  k.box(W * 2, S * 0.04, S * 0.18, 0, H, z0 + S * 0.05, PAINT); // yard office beam
-  // One hull at a time, half built: spine, ribs, some plating, its drive
-  // near the back. Returned as its own kit (shown only while building).
-  // In three stages, shown as the build progresses: frame, plating, drive.
-  const w = kit(77), w1 = kit(78), w2 = kit(79);
-  const zs = z0 + S * 0.2, ze = z1 - S * 0.15;
-  w.cyl(S * 0.05, S * 0.05, ze - zs, (zs + ze) / 2, DARK, 10);
-  for (const [x, z] of [[0.3, 0.9], [-0.3, 1.4], [0.3, 1.8]]) w.light(S * x, H * 0.5, S * z, STROBE, S * 0.035); // work lights
+  k.box(W * 2, u * 0.04, u * 0.18, ox, H, z0 + u * 0.05, PAINT); // yard office beam
+  // One hull at a time, in three stages shown as the build progresses
+  // (frame and work lights, plating, drive). Returned as their own kits.
+  const w = kit(77 + n * 5), w1 = kit(78 + n * 5), w2 = kit(79 + n * 5);
+  const zs = z0 + u * 0.2, ze = z1 - u * 0.15;
+  w.cyl(u * 0.05, u * 0.05, ze - zs, (zs + ze) / 2, DARK, 10, ox, 0);
+  for (const [x, z] of [[0.3, 0.35], [-0.3, 0.85], [0.3, 1.25]]) w.light(ox + u * x, H * 0.5, z0 + u * z, STROBE, u * 0.035); // work lights
   for (let i = 0; i < 7; i++) {
     const z = zs + ((ze - zs) * (i + 0.5)) / 7;
-    w.add(new THREE.TorusGeometry(S * 0.2, S * 0.012, 4, 16, i > 3 ? Math.PI * 2 : Math.PI * 1.1).translate(0, 0, z), DARK, 0.9);
+    w.add(new THREE.TorusGeometry(u * 0.2, u * 0.012, 4, 16, i > 3 ? Math.PI * 2 : Math.PI * 1.1).translate(ox, 0, z), DARK, 0.9);
   }
-  for (let i = 0; i < 3; i++) w1.box(S * 0.016, S * 0.26, S * 0.18, S * 0.2, 0, ze - S * (0.15 + i * 0.2), i === 1 ? PAINT : HULL);
-  for (let i = 0; i < 3; i++) w1.box(S * 0.016, S * 0.26, S * 0.18, -S * 0.2, 0, ze - S * (0.15 + i * 0.2), HULL);
-  w2.cyl(S * 0.1, S * 0.17, S * 0.2, zs - S * 0.02, DARK, 14);
-  for (let i = 0; i < 3; i++) w2.box(S * 0.26, S * 0.016, S * 0.18, 0, S * 0.2, ze - S * (0.75 + i * 0.2), i === 0 ? PAINT : HULL);
+  for (let i = 0; i < 3; i++) w1.box(u * 0.016, u * 0.26, u * 0.18, ox + u * 0.2, 0, ze - u * (0.15 + i * 0.2), i === 1 ? PAINT : HULL);
+  for (let i = 0; i < 3; i++) w1.box(u * 0.016, u * 0.26, u * 0.18, ox - u * 0.2, 0, ze - u * (0.15 + i * 0.2), HULL);
+  w2.cyl(u * 0.1, u * 0.17, u * 0.2, zs - u * 0.02, DARK, 14, ox, 0);
+  for (let i = 0; i < 3; i++) w2.box(u * 0.26, u * 0.016, u * 0.18, ox, u * 0.2, ze - u * (0.75 + i * 0.2), i === 0 ? PAINT : HULL);
   // Gantry crane riding the top rails.
-  k.box(W * 2.1, S * 0.05, S * 0.07, 0, H + S * 0.05, S * 1.5, HULL);
-  k.box(S * 0.1, S * 0.08, S * 0.12, -S * 0.12, H, S * 1.5, DARK);
-  k.box(S * 0.025, S * 0.26, S * 0.025, -S * 0.12, H - S * 0.16, S * 1.5, DARK);
-  k.light(W, H, z1, NAV_G, S * 0.04); k.light(-W, -H, z1, NAV_R, S * 0.04);
-  k.light(-W, H, z1, STROBE, S * 0.045);
+  k.box(W * 2.1, u * 0.05, u * 0.07, ox, H + u * 0.05, z0 + u * 0.95, HULL);
+  k.box(u * 0.1, u * 0.08, u * 0.12, ox - u * 0.12, H, z0 + u * 0.95, DARK);
+  k.box(u * 0.025, u * 0.26, u * 0.025, ox - u * 0.12, H - u * 0.16, z0 + u * 0.95, DARK);
+  k.light(ox + W, H, z1, NAV_G, u * 0.04); k.light(ox - W, -H, z1, NAV_R, u * 0.04);
+  k.light(ox - W, H, z1, STROBE, u * 0.045);
   return [w, w1, w2];
 }
+/** A station yard's scale: its hull is as long as a finished ship (about 0.38). */
+const YARD_UNIT = 0.28;
 
 function lab(k, S, level) {
   // Off to +x on a short truss: a laboratory drum with instruments.

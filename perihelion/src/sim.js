@@ -207,12 +207,23 @@ export function nextTech(game, owner, key) {
     return lvl ? null : { level: 1, cost: J.cost, time: J.time, text: J.text, title: J.name };
   }
   const d = TECH[key];
-  return lvl < d.cost.length ? { level: lvl + 1, cost: d.cost[lvl], time: d.time[lvl], text: d.text[lvl], title: d.levels[lvl] } : null;
+  return lvl < d.cost.length ? { level: lvl + 1, cost: d.cost[lvl], time: d.time[lvl], text: techText(game, key, lvl), title: d.levels[lvl] } : null;
+}
+/** What a branch's level (0-based) does, with the extras this map adds (crews on Vast). */
+export function techText(game, key, i) {
+  const t = TECH[key].text[i];
+  return game.crew && key === 'industry' ? `${t}, crews +${Math.round(RULES.crew.industry * 100 * (i + 1))}%` : t;
+}
+/** What holding an event's world wins, with the extras this map adds. */
+export function eventText(game, kind) {
+  const t = EVENTS[kind].text;
+  return game.crew && kind === 'convoy' ? `${t}, and ${RULES.crew.convoy} crew sign on` : t;
 }
 export function researchSpeed(game, owner) {
   // Research stations on an archive world count double.
   const labs = game.bodies.reduce((n, b) => n + (b.owner === owner ? count(b, 'lab') * (b.perk === 'archive' ? 2 : 1) : 0), 0);
-  return (1 + RULES.labSpeed * labs) * (holds(game, owner, 'archive') ? PERKS.archive.boost : 1);
+  // Some maps research slower (Vast: the bigger game runs longer).
+  return (1 + RULES.labSpeed * labs) * (holds(game, owner, 'archive') ? PERKS.archive.boost : 1) * (game.research || 1);
 }
 export function cantResearch(game, owner, key) {
   const next = nextTech(game, owner, key);
@@ -576,7 +587,7 @@ export const SYSTEMS = {
   // commitment. Picked by hand only (never Random or the Daily).
   // Proportions closer to life: worlds small beside the gaps to their moons,
   // and a sun far wider than a planet and its moon together.
-  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, crew: true, test: true },
+  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, crew: true, research: 0.6, test: true },
 };
 /** Distances on this map relative to the usual (reaches, sensors and so on scale with it). */
 export const scaleOf = (game) => game.scale || 1;
@@ -753,7 +764,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // A bigger system: the same layout with the planets' orbits (and the belt)
   // spread out; moons and stations keep their distance from their planets.
   if (sys.sunR) stars[0].size = sys.sunR / SUN_RADIUS_SIM;
-  const game = { mp, crew: !!sys.crew, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, crew: !!sys.crew, research: sys.research || 1, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');

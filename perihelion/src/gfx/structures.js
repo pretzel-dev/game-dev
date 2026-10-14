@@ -42,8 +42,8 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
     // One orbital drydock: a big open cradle (one hull at a time), a
     // control and power hub at one end, a gantry, solar and radiators.
     // Local frame: +x along the orbit, +y away from the world, +z across.
-    const c = F * 0.3; // the cradle about the size of a station's yard
-    place = orbitFrame(b.size * 1.5, 0.4);
+    const c = 0.078; // the hull in the cradle as long as a finished ship (any map)
+    place = orbitFrame(b.size * 1.5, 0.4 + k * 1.6); // each yard its own spot in orbit
     const L = 7 * c, Wd = 1.2 * c, Hh = 1.0 * c, t = c * 0.1;
     for (const sy of [-1, 1]) for (const sz of [-1, 1]) K.box(L, t, t, 0, sy * Hh, sz * Wd, DARK);
     for (let i = 0; i <= 7; i++) {
@@ -362,13 +362,12 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
 }
 
 /**
- * Buildings are sized from the map, not the world they're on, so they're
- * in proportion to stations and ships everywhere (Vast draws everything
- * twice as big, stations included): `stationUnit` is how big a station is
- * drawn on this map. Surface buildings are a little smaller than a station,
- * and smaller again on small moons and asteroids so they don't swamp them.
+ * Buildings are the same size on every map (ships are, so a yard's hull
+ * always matches a finished ship): `stationUnit` is a Classic station's
+ * drawn size. Surface buildings are a little smaller than that, and smaller
+ * again on small moons and asteroids so they don't swamp them.
  */
-export const stationUnit = (b) => 0.36 * (b.size / (b.baseSize ?? b.size));
+export const stationUnit = () => 0.36;
 export const buildingScale = (b) => Math.min(0.86 * stationUnit(b), 0.45 * b.size);
 
 /**

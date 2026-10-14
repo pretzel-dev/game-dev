@@ -1,11 +1,30 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, crewAt, techText, eventText, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
 
 const $ = (id) => document.getElementById(id);
-const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
+// Panels redraw often (countdowns, progress bars). Swapping a button out from
+// under a finger between press and release loses the tap, so while a pointer
+// is down inside a panel its redraw waits until just after the click.
+let pressed = null;
+const heldPanels = new Set();
+const setHTML = (el, html) => {
+  if (pressed && el.contains(pressed)) { el._pending = html; heldPanels.add(el); return; }
+  el._pending = undefined;
+  if (el._html !== html) { el._html = html; el.innerHTML = html; }
+};
+const flushHeld = () => {
+  pressed = null;
+  for (const el of heldPanels) { heldPanels.delete(el); if (el._pending !== undefined) setHTML(el, el._pending); }
+};
+window.addEventListener('pointerdown', (e) => { pressed = e.target; }, true);
+// After the click has been handled (it follows pointerup), or soon after if it never comes.
+let flushTimer = 0;
+window.addEventListener('pointerup', () => { clearTimeout(flushTimer); flushTimer = setTimeout(flushHeld, 350); }, true);
+window.addEventListener('pointercancel', () => { clearTimeout(flushTimer); flushHeld(); }, true);
+window.addEventListener('click', () => { clearTimeout(flushTimer); setTimeout(flushHeld, 0); });
 
 const prefs = (() => {
   const d = { rivals: 1, difficulty: 'normal', system: 'random', pct: 100, dev: false, gfx: 'auto' };
@@ -683,6 +702,14 @@ function chips(b, { income = true, seen = true } = {}) {
     if (gives.length) detail.push(`these guns also help defend ${gives.map((x) => x.name).join(', ')} (${b.parent === null ? 'half' : 'quarter'} strength)`);
     if (b.owner !== NEUTRAL || own) out.push(tip(`${icon('guns')} ${own}${cover ? ` <span class="pos">+${cover.toFixed(1)}</span>` : ''}`, detail.join(' · ')));
   }
+  // Vast: the crew this world fields toward the fleet's crew cap.
+  if (game.crew && seen && b.owner !== NEUTRAL && crewAt(b)) out.push(tip(`Crew ${crewAt(b)}`, `Crew: this world fields ${crewAt(b)} toward its owner's crew cap (Habitats and a refugee convoy add more)`));
+  // Security on your own worlds: how quickly enemy agents here get caught.
+  if (b.owner === me && !b.visitor) {
+    const risk = catchRate(game, b) * 60;
+    const lvl = risk < 0.25 ? 'low' : risk < 0.5 ? 'medium' : 'high';
+    out.push(tip(`Security ${lvl}`, `Security ${lvl}: an enemy agent here has about a ${Math.round(Math.min(1, risk) * 100)}% chance a minute of being caught. A security bureau here or nearby, and Intel research, raise it`, lvl === 'high' ? 'pos' : 'dim'));
+  }
   // Help from a special world nearby: say so on the world that gets it.
   if (b.owner !== NEUTRAL && b.perk !== 'fortress' && fortressGuns(game, b)) {
     const f = game.bodies.find((x) => x.perk === 'fortress' && x.owner === b.owner && dist(posAt(game, x, game.time), posAt(game, b, game.time)) <= perkRange(game, "fortress"));
@@ -709,7 +736,7 @@ function chips(b, { income = true, seen = true } = {}) {
     const soon = game.time < h.starts;
     const holding = !soon && h.holder !== NEUTRAL;
     const state = soon ? `starts in ${fmt(h.starts - game.time)}` : holding ? `${h.holder === me ? 'you hold it' : `${nameOf(h.holder)} holds it`}: ${fmt(Math.max(0, E.hold - h.held))} to go` : `gone in ${fmt(Math.max(0, h.ends - game.time))}`;
-    out.push(tip(`${icon(h.kind)} ${E.name}`, `${E.text}. Hold it for ${fmt(E.hold)} without a fight. Now: ${state}`, 'gold'));
+    out.push(tip(`${icon(h.kind)} ${E.name}`, `${eventText(game, h.kind)}. Hold it for ${fmt(E.hold)} without a fight. Now: ${state}`, 'gold'));
   }
   return out.length ? `<div class="chips">${out.join('')}</div>` : '';
 }
@@ -912,7 +939,7 @@ function techDetail(key) {
   const why = cantResearch(game, me, key);
   const lvl = t[key] || 0;
   const name = joint ? joint.name : TECH[key].name;
-  const done = joint ? (lvl ? [joint.text] : []) : TECH[key].levels.slice(0, lvl).map((n, i) => `${n}: ${TECH[key].text[i]}`);
+  const done = joint ? (lvl ? [joint.text] : []) : TECH[key].levels.slice(0, lvl).map((n, i) => `${n}: ${techText(game, key, i)}`);
   let body = done.length ? `<div class="have">${done.map((d) => `<div>${icon('star')} ${d}</div>`).join('')}</div>` : '';
   if (!next) body += '<small class="dim">Complete</small>';
   else if (p && p.key === key) body += `<small>Researching ${next.title} · ${Math.floor((1 - p.left / p.total) * 100)}%</small>`;

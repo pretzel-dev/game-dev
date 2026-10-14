@@ -31,14 +31,16 @@ rules don't change:
   trip to a neighbour takes minutes and to the far planets ten or more. Every
   voyage is a commitment: research and fleet size matter. Sensor, relay,
   depot, fortress and security reaches scale with the map; event warnings
-  and visitor passes stretch to match; build slots are as usual. Random and
-  the Daily never pick it.
+  and visitor passes stretch to match; build slots are as usual. Research
+  runs at 60% of the usual speed (the game is longer). Random and the Daily
+  never pick it.
   **Crews:** on Vast, every ship needs a crew, and crews come from your
   worlds (a homeworld 16, planets 8, gas giants and stations 6, moons 3,
   asteroids 1). Ships in flight or garrisoned and ships on order all count;
   when they reach the cap, yards stop taking orders. A **Habitat** (Vast
   only) adds 4 crew per level, each Industry level adds 10%, and taking in
-  a refugee convoy adds 4. The top bar shows crew in use beside credits.
+  a refugee convoy adds 4. The top bar shows crew in use beside credits, and each world's info shows
+  the crew it fields.
 
 **Daily system:** everyone gets the same map each day (seed and system from
 the date). The end screen and share image say which day it was.
