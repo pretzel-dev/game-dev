@@ -20,7 +20,8 @@ import { rng } from '../sim.js';
  * turn, like a habitat drum on an asteroid).
  */
 export function structureMesh(type, b, k, done, level, uT, ghost, color) {
-  const s = Math.max(0.25, b.size * 0.14);
+  const s = buildingScale(b);
+  const F = stationUnit(b);
   const K = kit(b.id * 17 + k * 101 + level);
   const r = K.r;
   const orbital = type === 'shipyard' || type === 'skimmer';
@@ -41,7 +42,7 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
     // One orbital drydock: a big open cradle (one hull at a time), a
     // control and power hub at one end, a gantry, solar and radiators.
     // Local frame: +x along the orbit, +y away from the world, +z across.
-    const c = b.size * 0.1;
+    const c = F * 0.3; // the cradle about the size of a station's yard
     place = orbitFrame(b.size * 1.5, 0.4);
     const L = 7 * c, Wd = 1.2 * c, Hh = 1.0 * c, t = c * 0.1;
     for (const sy of [-1, 1]) for (const sz of [-1, 1]) K.box(L, t, t, 0, sy * Hh, sz * Wd, DARK);
@@ -83,7 +84,7 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
     // per level), an orbital storage and transfer platform above them
     // (more tankage per level), and a transfer craft between. Nothing
     // hangs down into the atmosphere.
-    const c = b.size * 0.075;
+    const c = F * 0.22; // the whole installation about a station's size
     const r0 = b.size * 1.03;
     place = orbitFrame(r0, 0.3 + k * 1.1);
     for (let i = 0; i < level; i++) {
@@ -359,6 +360,16 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
   g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
   return g;
 }
+
+/**
+ * Buildings are sized from the map, not the world they're on, so they're
+ * in proportion to stations and ships everywhere (Vast draws everything
+ * twice as big, stations included): `stationUnit` is how big a station is
+ * drawn on this map. Surface buildings are a little smaller than a station,
+ * and smaller again on small moons and asteroids so they don't swamp them.
+ */
+export const stationUnit = (b) => 0.36 * (b.size / (b.baseSize ?? b.size));
+export const buildingScale = (b) => Math.min(0.86 * stationUnit(b), 0.45 * b.size);
 
 /**
  * A spot in orbit, as a matrix: radius R in the XY plane at angle a, with
