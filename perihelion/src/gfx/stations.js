@@ -139,12 +139,13 @@ export function setStationModules(mesh, mods, ghost) {
       mesh.userData.rotor = rot;
     }
     if (hull && part.userData.set) {
-      // The hull in the cradle: the view shows it only while a ship is being built.
-      const h = singleHull(hull.build(1, uvD(S)), st.uT);
-      part.add(h);
+      // The hull in the cradle, in build stages: the view shows them only
+      // while a ship is being built, more as it nears completion.
+      const hs = hull.map((x) => singleHull(x.build(1, uvD(S)), st.uT));
+      for (const h of hs) part.add(h);
       const set = part.userData.set;
-      part.userData.set = (c, s, on) => { set(c, s, on); h.userData.set(c, s, on); };
-      st.wip.push(h);
+      part.userData.set = (c, s, on) => { set(c, s, on); for (const h of hs) h.userData.set(c, s, on); };
+      st.wip.push(hs);
     }
     part.userData.set?.(...st.last);
   }
@@ -185,22 +186,26 @@ function shipyard(k, S) {
   k.box(W * 2, S * 0.04, S * 0.18, 0, H, z0 + S * 0.05, PAINT); // yard office beam
   // One hull at a time, half built: spine, ribs, some plating, its drive
   // near the back. Returned as its own kit (shown only while building).
-  const w = kit(77);
+  // In three stages, shown as the build progresses: frame, plating, drive.
+  const w = kit(77), w1 = kit(78), w2 = kit(79);
   const zs = z0 + S * 0.2, ze = z1 - S * 0.15;
   w.cyl(S * 0.05, S * 0.05, ze - zs, (zs + ze) / 2, DARK, 10);
+  for (const [x, z] of [[0.3, 0.9], [-0.3, 1.4], [0.3, 1.8]]) w.light(S * x, H * 0.5, S * z, STROBE, S * 0.035); // work lights
   for (let i = 0; i < 7; i++) {
     const z = zs + ((ze - zs) * (i + 0.5)) / 7;
     w.add(new THREE.TorusGeometry(S * 0.2, S * 0.012, 4, 16, i > 3 ? Math.PI * 2 : Math.PI * 1.1).translate(0, 0, z), DARK, 0.9);
   }
-  for (let i = 0; i < 3; i++) w.box(S * 0.016, S * 0.26, S * 0.18, S * 0.2, 0, ze - S * (0.15 + i * 0.2), i === 1 ? PAINT : HULL);
-  w.cyl(S * 0.1, S * 0.17, S * 0.2, zs - S * 0.02, DARK, 14);
+  for (let i = 0; i < 3; i++) w1.box(S * 0.016, S * 0.26, S * 0.18, S * 0.2, 0, ze - S * (0.15 + i * 0.2), i === 1 ? PAINT : HULL);
+  for (let i = 0; i < 3; i++) w1.box(S * 0.016, S * 0.26, S * 0.18, -S * 0.2, 0, ze - S * (0.15 + i * 0.2), HULL);
+  w2.cyl(S * 0.1, S * 0.17, S * 0.2, zs - S * 0.02, DARK, 14);
+  for (let i = 0; i < 3; i++) w2.box(S * 0.26, S * 0.016, S * 0.18, 0, S * 0.2, ze - S * (0.75 + i * 0.2), i === 0 ? PAINT : HULL);
   // Gantry crane riding the top rails.
   k.box(W * 2.1, S * 0.05, S * 0.07, 0, H + S * 0.05, S * 1.5, HULL);
   k.box(S * 0.1, S * 0.08, S * 0.12, -S * 0.12, H, S * 1.5, DARK);
   k.box(S * 0.025, S * 0.26, S * 0.025, -S * 0.12, H - S * 0.16, S * 1.5, DARK);
   k.light(W, H, z1, NAV_G, S * 0.04); k.light(-W, -H, z1, NAV_R, S * 0.04);
   k.light(-W, H, z1, STROBE, S * 0.045);
-  return w;
+  return [w, w1, w2];
 }
 
 function lab(k, S, level) {
