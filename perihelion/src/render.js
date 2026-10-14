@@ -1159,7 +1159,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         if (v.structs) v.structs.removeFromParent();
         v.surface.clear();
         v.structs = new THREE.Group();
-        v.wips = []; // hulls in a yard: shown only while a ship is being built
+        v.wips = []; // per yard, the hull's build stages: shown as that yard's ship comes together
         v.holes = [];
         v.spins = []; // parts that turn on their own (a habitat drum)
         // A station shows what's built on it as modules on its hub.
@@ -1178,8 +1178,10 @@ export function createView(canvas, labelRoot, opts = {}) {
         v.g.add(v.structs);
       }
       if (v.wips) {
-        const building = (b.queue || 0) > 0;
-        for (const m of v.wips) m.visible = building;
+        // Each working yard shows its hull: the frame as soon as work starts,
+        // plating from a third of the way, the drive from two thirds.
+        const slips = b.slips || [];
+        v.wips.forEach((stages, i) => stages.forEach((m, j) => { m.visible = i < slips.length && slips[i] >= j / 3; }));
         for (const sp of v.spins) sp.mesh.rotation[sp.axis] += dt * sp.rate;
       }
       const selected = ui.selected === b.id;

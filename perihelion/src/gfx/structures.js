@@ -15,8 +15,8 @@ import { rng } from '../sim.js';
  *
  * Finished buildings use the hull material; ones being built or scrapped
  * show as a hologram (`ghost`). The returned group may carry
- * `userData.wip` (a hull in the yard: the view shows it only while a ship
- * is being built) and `userData.spin` ([{ mesh, axis, rate }]: parts that
+ * `userData.wip` (the hull in the yard, in build stages: the view shows
+ * them only while a ship is being built, more as it nears completion) and `userData.spin` ([{ mesh, axis, rate }]: parts that
  * turn, like a habitat drum on an asteroid).
  */
 export function structureMesh(type, b, k, done, level, uT, ghost, color) {
@@ -68,12 +68,15 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
     K.dish(c * 0.45, hx - c * 0.5, 0, c * 0.9, [-0.4, 0.3, 1]);
     K.light(L / 2, Hh, Wd, NAV_G, c * 0.12); K.light(L / 2, -Hh, -Wd, NAV_R, c * 0.12); K.light(hx, c * 0.7, 0, STROBE, c * 0.14);
     // The hull in the cradle: shown only while a ship is being built.
-    const W = kit(b.id * 7 + 3);
+    // In three stages, shown as the build progresses: frame, plating, drive.
+    const W = kit(b.id * 7 + 3), W1 = kit(b.id * 7 + 4), W2 = kit(b.id * 7 + 5);
     W.add(new THREE.CylinderGeometry(c * 0.18, c * 0.18, L * 0.7, 10).rotateZ(Math.PI / 2), DARK);
+    for (const [x, z] of [[-0.2, 1], [0.05, -1], [0.25, 1]]) W.light(L * x, Hh * 0.6, Wd * 0.5 * z, STROBE, c * 0.1); // work lights
     for (let i = 0; i < 7; i++) W.add(new THREE.TorusGeometry(c * 0.62, c * 0.05, 4, 18, i < 4 ? Math.PI * 2 : Math.PI * 1.1).rotateY(Math.PI / 2).translate(-L * 0.3 + i * L * 0.09, 0, 0), DARK, 0.9);
-    for (let i = 0; i < 4; i++) W.add(new THREE.CylinderGeometry(c * 0.66, c * 0.66, L * 0.08, 16, 1, true, 0, Math.PI * 1.3).rotateZ(Math.PI / 2).translate(-L * 0.28 + i * L * 0.09, 0, 0), i === 1 ? PAINT : HULL);
-    W.add(new THREE.CylinderGeometry(c * 0.3, c * 0.55, c * 0.7, 16, 1, true).rotateZ(Math.PI / 2).translate(-L * 0.4, 0, 0), DARK, 0.7);
-    extra.push([W, 'wip']);
+    for (let i = 0; i < 4; i++) W1.add(new THREE.CylinderGeometry(c * 0.66, c * 0.66, L * 0.08, 16, 1, true, 0, Math.PI * 1.3).rotateZ(Math.PI / 2).translate(-L * 0.28 + i * L * 0.09, 0, 0), i === 1 ? PAINT : HULL);
+    for (let i = 4; i < 7; i++) W2.add(new THREE.CylinderGeometry(c * 0.66, c * 0.66, L * 0.08, 16, 1, true, 0, Math.PI * 2).rotateZ(Math.PI / 2).translate(-L * 0.28 + i * L * 0.09, 0, 0), i === 5 ? PAINT : HULL);
+    W2.add(new THREE.CylinderGeometry(c * 0.3, c * 0.55, c * 0.7, 16, 1, true).rotateZ(Math.PI / 2).translate(-L * 0.4, 0, 0), DARK, 0.7);
+    extra.push([W, 'wip'], [W1, 'wip'], [W2, 'wip']);
   } else if (type === 'skimmer') {
     // A gas-harvesting system, all on one side so it reads as one
     // installation: aerostat collectors riding the cloud tops (one group
@@ -342,7 +345,7 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color) {
       m.position.set(...at);
       (g.userData.spin ||= []).push({ mesh: m, axis: 'x', rate: 0.5 });
     }
-    if (role === 'wip') g.userData.wip = m;
+    if (role === 'wip') (g.userData.wip ||= []).push(m); // build stages, in order
     g.add(m);
   }
   if (orbital) {
