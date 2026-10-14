@@ -622,5 +622,7 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.equal(S.crewCap(v, 0), cap + RULES.crew.habitat, 'a habitat adds crew');
   v.tech[0].industry = 2;
   assert.equal(S.crewCap(v, 0), Math.floor((cap + RULES.crew.habitat) * 1.2), 'industry adds crew');
+  assert.ok(Math.abs(S.researchSpeed(v, 0) - 0.6 * S.researchSpeed(a, 0)) < 1e-9, 'research runs slower on Vast');
+  assert.match(S.techText(v, 'industry', 0), /crews/); assert.doesNotMatch(S.techText(a, 'industry', 0), /crews/);
   console.log(`crews: start cap ${cap}, with a habitat and Industry II ${S.crewCap(v, 0)}`);
 }

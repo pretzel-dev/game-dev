@@ -280,11 +280,20 @@ export function createView(canvas, labelRoot, opts = {}) {
     const mapScale = game.scale || 1;
     orbit.maxDist = 2200 * mapScale;
     farClip = 6000 * mapScale;
-    // Each homeworld gets its own character (no two alike in a game).
+    // Each homeworld's climate follows its distance from the sun (as a share
+    // of the system's width): deserts close in, temperate worlds in the
+    // habitable band, cold steppe beyond and ice far out. No two alike.
     {
       const r = rng((game.nameSeed || 1) + 77);
-      const pool = [...BIOMES];
-      for (const h of game.bodies.filter((b) => b.home)) h.biome = pool.splice(Math.floor(r() * pool.length), 1)[0] || 'temperate';
+      const outer = Math.max(...game.bodies.filter((b) => b.kind === 'planet' && b.parent === null && !b.star).map((b) => b.r));
+      const band = (x) => (x < 0.3 ? ['desert', 'steppe'] : x < 0.55 ? ['temperate', 'ocean', 'jungle'] : x < 0.68 ? ['steppe', 'temperate'] : ['ice', 'steppe']);
+      const used = new Set();
+      for (const h of game.bodies.filter((b) => b.home)) {
+        const opts = band(h.r / outer).filter((k) => !used.has(k));
+        const pick = opts.length ? opts[Math.floor(r() * (h.r / outer >= 0.3 && h.r / outer < 0.55 ? opts.length : 1))] : BIOMES.find((k) => !used.has(k)) || 'temperate';
+        used.add(pick);
+        h.biome = pick;
+      }
     }
     // A sky of its own for each system.
     sky.bake((game.nameSeed || 1) + 1);
@@ -1434,7 +1443,12 @@ export function createView(canvas, labelRoot, opts = {}) {
         const hostile = f.owner !== (ui.me ?? 0);
         const pulse = hostile ? 1 + 0.35 * Math.sin(t * 6) : 1;
         gh.material.uniforms.uOpacity.value = hostile ? 0.9 : 0.5;
-        gh.scale.setScalar((hostile ? 22 : 14) * pulse / ppuAt(gh.position));
+        // Like the owner rings: hug the world it's landing on when zoomed out
+        // (with a small floor), and never bigger than before up close.
+        const gp = ppuAt(gh.position), tb = game_.bodies[f.to];
+        const px = Math.min(hostile ? 22 : 14, Math.max((tb ? tb.size * 2.6 * gp : 0), hostile ? 7 : 5));
+        gh.scale.setScalar(px * pulse / gp);
+        gh.material.uniforms.uWidth.value = THREE.MathUtils.clamp(px / 12, 1, 1.6);
       }
     }
     shipR.end();
@@ -1499,7 +1513,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       gh.position.set(p1.x, p1.y, p1.z);
       gh.material.uniforms.uColor.value.set('#ffffff');
       gh.material.uniforms.uOpacity.value = 0.6;
-      gh.scale.setScalar(22 / ppuAt(gh.position));
+      { const gp = ppuAt(gh.position), tb = game_.bodies[ui.target]; const px = Math.min(22, Math.max(tb ? tb.size * 2.6 * gp : 0, 8)); gh.scale.setScalar(px / gp); gh.material.uniforms.uWidth.value = THREE.MathUtils.clamp(px / 12, 1, 1.6); }
     } else {
       preview.visible = false;
     }
