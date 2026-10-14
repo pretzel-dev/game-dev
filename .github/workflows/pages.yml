@@ -5,7 +5,7 @@ name: Deploy games to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ['covewind/**', 'starfall/**', 'perihelion/**', 'site/**', '.github/workflows/pages.yml']
+    paths: ['covewind/**', 'starfall/**', 'perihelion/**', 'dustline/**', 'site/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -34,6 +34,9 @@ jobs:
       - name: Build Perihelion
         working-directory: perihelion
         run: npm ci && npm run check && npm run build
+      - name: Build Dustline
+        working-directory: dustline
+        run: npm ci && npm run check && npm run build
       - name: Assemble site
         run: |
           mkdir -p _site
@@ -41,6 +44,7 @@ jobs:
           cp -r covewind/dist _site/covewind
           cp -r starfall/dist _site/starfall
           cp -r perihelion/dist _site/perihelion
+          cp -r dustline/dist _site/dustline
       - name: Publish to gh-pages
         working-directory: _site
         run: |
