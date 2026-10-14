@@ -24,6 +24,7 @@ const FORMATION = 0.55;
 // Parking orbits turn slowly (radians per second of game time), as big orbits do.
 const DOCK_SPEED = 0.03;
 const STATION_SCALE = 0.8;
+const yAxis = new THREE.Vector3(0, 1, 0);
 const SIEGE_SPEED = -0.045;
 const MAX_SHIPS = 400;
 
@@ -1106,7 +1107,17 @@ export function createView(canvas, labelRoot, opts = {}) {
       else {
         v.body.rotation.y += dt * 0.05;
         const cl = v.body.getObjectByName('clouds');
-        if (cl) cl.rotation.y += dt * 0.012;
+        if (cl) {
+          cl.rotation.y += dt * 0.012;
+          const H = cl.material.uniforms.uHoles.value;
+          for (let i = 0; i < H.length; i++) {
+            const hole = v.holes?.[i];
+            if (!hole || !(v.surface.visible)) { H[i].w = 2; continue; }
+            // The building's direction, in the cloud shell's own (turning) frame.
+            tmp.copy(hole.dir).applyAxisAngle(yAxis, -cl.rotation.y);
+            H[i].set(tmp.x, tmp.y, tmp.z, hole.cos);
+          }
+        }
         const u = v.body.material.uniforms;
         if (u) {
           u.uT.value = t;
@@ -1148,14 +1159,28 @@ export function createView(canvas, labelRoot, opts = {}) {
         if (v.structs) v.structs.removeFromParent();
         v.surface.clear();
         v.structs = new THREE.Group();
+        v.wips = []; // hulls in a yard: shown only while a ship is being built
+        v.holes = [];
+        v.spins = []; // parts that turn on their own (a habitat drum)
         // A station shows what's built on it as modules on its hub.
-        if (b.kind === 'station') setStationModules(v.body, b.structures.map((x) => ({ type: x.type, level: x.level, done: !x.scrap && (x.left <= 0 || !!x.next) })), ghostMat);
-        else b.structures.forEach((x, k) => {
+        if (b.kind === 'station') {
+          setStationModules(v.body, b.structures.map((x) => ({ type: x.type, level: x.level, done: !x.scrap && (x.left <= 0 || !!x.next) })), ghostMat);
+          v.wips.push(...v.body.userData.station.wip);
+        } else b.structures.forEach((x, k) => {
           const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner));
+          if (m.userData.wip) v.wips.push(m.userData.wip);
+          // A clearing in the clouds over each surface building.
+          if (x.type !== 'shipyard' && x.type !== 'skimmer') v.holes.push({ dir: m.position.clone().normalize(), cos: Math.cos(Math.min(0.6, (Math.max(0.25, b.size * 0.14) * (x.type === 'lab' || x.type === 'mine' ? 1.5 : 1.15)) / b.size)) });
+          if (m.userData.spin) v.spins.push(...m.userData.spin);
           // Surface structures turn with the world; yards and skimmers orbit on their own.
           (x.type === 'shipyard' || x.type === 'skimmer' ? v.structs : v.surface).add(m);
         });
         v.g.add(v.structs);
+      }
+      if (v.wips) {
+        const building = (b.queue || 0) > 0;
+        for (const m of v.wips) m.visible = building;
+        for (const sp of v.spins) sp.mesh.rotation[sp.axis] += dt * sp.rate;
       }
       const selected = ui.selected === b.id;
       const targeted = ui.target === b.id;

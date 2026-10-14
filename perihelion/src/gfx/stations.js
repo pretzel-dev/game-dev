@@ -93,7 +93,7 @@ export function stationMesh(size, core, uT) {
   const mesh = singleHull(k.build(1, uvD(S)), uT);
   mesh.userData.spin = 0.015; // a slow drift: nothing in zero g needs to hold still
   const base = mesh.userData.set;
-  const st = { S, uT, parts: [], last: ['#6a7080', 1, false] };
+  const st = { S, uT, parts: [], wip: [], last: ['#6a7080', 1, false] };
   mesh.userData.station = st;
   mesh.userData.set = (color, sunV, on) => {
     st.last = [color, sunV, on];
@@ -113,12 +113,13 @@ export function setStationModules(mesh, mods, ghost) {
   const st = mesh.userData.station;
   for (const m of st.parts) m.removeFromParent();
   st.parts.length = 0;
+  st.wip.length = 0;
   mesh.userData.rotor = null;
   const S = st.S;
   for (const [i, mod] of mods.entries()) {
     const k = kit(mod.type.length * 13 + i * 7 + mod.level);
-    let ring = null;
-    if (mod.type === 'shipyard') shipyard(k, S);
+    let ring = null, hull = null;
+    if (mod.type === 'shipyard') hull = shipyard(k, S);
     else if (mod.type === 'lab') lab(k, S, mod.level);
     else if (mod.type === 'bureau') bureau(k, S, mod.level);
     else if (mod.type === 'defence') guns(k, S, mod.level);
@@ -136,6 +137,14 @@ export function setStationModules(mesh, mods, ghost) {
       const set = part.userData.set;
       part.userData.set = (c, s, on) => { set(c, s, on); rot.userData.set(c, s, on); };
       mesh.userData.rotor = rot;
+    }
+    if (hull && part.userData.set) {
+      // The hull in the cradle: the view shows it only while a ship is being built.
+      const h = singleHull(hull.build(1, uvD(S)), st.uT);
+      part.add(h);
+      const set = part.userData.set;
+      part.userData.set = (c, s, on) => { set(c, s, on); h.userData.set(c, s, on); };
+      st.wip.push(h);
     }
     part.userData.set?.(...st.last);
   }
@@ -174,21 +183,24 @@ function shipyard(k, S) {
     if (i < n && i % 2) k.strut(-W, -H, z, -W, H, z + (z1 - z0) / n, t * 0.8);
   }
   k.box(W * 2, S * 0.04, S * 0.18, 0, H, z0 + S * 0.05, PAINT); // yard office beam
-  // A hull half built: spine, ribs, some plating, its drive near the back.
+  // One hull at a time, half built: spine, ribs, some plating, its drive
+  // near the back. Returned as its own kit (shown only while building).
+  const w = kit(77);
   const zs = z0 + S * 0.2, ze = z1 - S * 0.15;
-  k.cyl(S * 0.05, S * 0.05, ze - zs, (zs + ze) / 2, DARK, 10);
+  w.cyl(S * 0.05, S * 0.05, ze - zs, (zs + ze) / 2, DARK, 10);
   for (let i = 0; i < 7; i++) {
     const z = zs + ((ze - zs) * (i + 0.5)) / 7;
-    k.add(new THREE.TorusGeometry(S * 0.2, S * 0.012, 4, 16, i > 3 ? Math.PI * 2 : Math.PI * 1.1).translate(0, 0, z), DARK, 0.9);
+    w.add(new THREE.TorusGeometry(S * 0.2, S * 0.012, 4, 16, i > 3 ? Math.PI * 2 : Math.PI * 1.1).translate(0, 0, z), DARK, 0.9);
   }
-  for (let i = 0; i < 3; i++) k.box(S * 0.016, S * 0.26, S * 0.18, S * 0.2, 0, ze - S * (0.15 + i * 0.2), HULL);
-  k.cyl(S * 0.1, S * 0.17, S * 0.2, zs - S * 0.02, DARK, 14);
+  for (let i = 0; i < 3; i++) w.box(S * 0.016, S * 0.26, S * 0.18, S * 0.2, 0, ze - S * (0.15 + i * 0.2), i === 1 ? PAINT : HULL);
+  w.cyl(S * 0.1, S * 0.17, S * 0.2, zs - S * 0.02, DARK, 14);
   // Gantry crane riding the top rails.
   k.box(W * 2.1, S * 0.05, S * 0.07, 0, H + S * 0.05, S * 1.5, HULL);
   k.box(S * 0.1, S * 0.08, S * 0.12, -S * 0.12, H, S * 1.5, DARK);
   k.box(S * 0.025, S * 0.26, S * 0.025, -S * 0.12, H - S * 0.16, S * 1.5, DARK);
   k.light(W, H, z1, NAV_G, S * 0.04); k.light(-W, -H, z1, NAV_R, S * 0.04);
   k.light(-W, H, z1, STROBE, S * 0.045);
+  return w;
 }
 
 function lab(k, S, level) {
@@ -203,11 +215,20 @@ function lab(k, S, level) {
   const [ax, ay, az] = k.boom(x + S * 0.12, S * 0.1, S * 0.2, [1, 0.6, 0.4], S * 0.5, S * 0.025);
   k.box(S * 0.07, S * 0.07, S * 0.07, ax, ay, az, DARK, 0.7);
   k.sphere(S * 0.04, ax, ay + S * 0.06, az, HULL, 1, 10);
-  if (level >= 2) k.dish(S * 0.16, x + S * 0.1, -S * 0.18, -S * 0.12, [0.5, -0.7, 0.3]);
+  if (level >= 2) {
+    // A second lab drum alongside, and an optical telescope.
+    k.cyl(S * 0.12, S * 0.12, S * 0.36, -S * 0.02, HULL, 14, x, -S * 0.32);
+    k.cyl(S * 0.125, S * 0.125, S * 0.08, -S * 0.02, PAINT, 14, x, -S * 0.32);
+    k.strut(x, -S * 0.17, -S * 0.02, x, -S * 0.2, -S * 0.02, S * 0.08, HULL, 0.9);
+    k.cyl(S * 0.06, S * 0.07, S * 0.34, S * 0.3, HULL, 14, x, -S * 0.32);
+    k.cyl(S * 0.05, S * 0.05, S * 0.01, S * 0.475, DARK, 14, x, -S * 0.32);
+  }
   if (level >= 3) {
     const [bx, by, bz] = k.boom(x + S * 0.17, -S * 0.02, -S * 0.1, [1, -0.15, -0.2], S * 0.8, S * 0.022);
-    k.box(S * 0.14, S * 0.12, S * 0.16, bx, by, bz, HULL, 0.9); // an isolated equipment pod
-    k.radiator(bx, by + S * 0.06, bz, S * 0.2, S * 0.12, Math.PI / 2, 2, S * 0.008);
+    k.frame(S * 0.24, S * 0.06, S * 0.24, bx, by, bz, S * 0.012); // an isolated experiment platform
+    k.box(S * 0.12, S * 0.1, S * 0.12, bx, by + S * 0.08, bz, HULL, 0.9);
+    k.radiator(bx, by + S * 0.03, bz - S * 0.1, S * 0.2, S * 0.12, -Math.PI / 2, 2, S * 0.008);
+    for (const dz of [-0.12, 0.16]) k.dish(S * 0.13, x + S * 0.12, S * 0.16, S * dz, [0.4, 1, 0.2]); // a dish pair
   }
   k.light(x, S * 0.18, S * 0.33, STROBE, S * 0.04);
 }
@@ -227,18 +248,24 @@ function bureau(k, S, level) {
   const [mx, my, mz] = k.boom(x - S * 0.1, -S * 0.12, -S * 0.15, [-0.6, -1, -0.2], S * 0.32, S * 0.02);
   k.sphere(S * 0.05, mx, my, mz, DARK, 0.7, 10);
   if (level >= 2) {
-    k.dish(S * 0.11, x - S * 0.19, S * 0.06, -S * 0.15, [-1, 0.3, -0.3]);
-    k.oct(S * 0.38, S * 0.06, S * 0.36, -S * 0.05, 1, x, -S * 0.18, DARK); // added armour
+    // A second operations annex on a covered link, a phased-array panel and a second sensor dome.
+    k.strut(x, 0, -S * 0.27, x, 0, -S * 0.4, S * 0.1, HULL, 0.9);
+    k.oct(S * 0.26, S * 0.24, S * 0.26, -S * 0.52, 0.9, x, 0);
+    k.box(S * 0.27, S * 0.025, S * 0.18, x, S * 0.13, -S * 0.52, PAINT);
+    k.add(new THREE.BoxGeometry(S * 0.03, S * 0.26, S * 0.3).rotateZ(-0.35).translate(x - S * 0.2, S * 0.08, -S * 0.52), DARK, 0.6);
+    k.sphere(S * 0.06, x + S * 0.05, S * 0.15, -S * 0.62, HULL, 1.12, 12);
   }
   k.light(x - S * 0.17, S * 0.15, -S * 0.27, NAV_R, S * 0.035);
 }
 
 function guns(k, S, level) {
-  // One mount per level, each facing outward on its own pylon.
-  const dirs = [[0, 1], [0, -1], [-0.7, -0.7]];
+  // One twin mount per level (two guns, matching +2 guns a level), each
+  // facing outward on its own pylon, clear of the docking collars on the
+  // diagonals and of the lab and bureau on the sides.
+  const dirs = [[0, 1], [0, -1], [0, 1]];
   for (let i = 0; i < Math.min(level, 3); i++) {
     const [ux, uy] = dirs[i];
-    const z = i === 2 ? -S * 0.2 : S * 0.1;
+    const z = i === 2 ? -S * 0.3 : S * 0.1;
     const at = (d) => [ux * d, uy * d];
     k.boom(...at(S * 0.16), z, [ux, uy, 0], S * 0.32, S * 0.06, DARK, 0.85);
     const [x1, y1] = at(S * 0.36);
