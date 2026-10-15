@@ -27,9 +27,17 @@ export function createHud() {
       hint.style.opacity = '1';
       hintTimer = seconds;
     },
+    showIntro() {
+      if (!intro) return;
+      intro.style.display = '';
+      void intro.offsetWidth;
+      intro.classList.remove('gone');
+    },
     hideIntro() {
       intro?.classList.add('gone');
-      setTimeout(() => intro && (intro.style.display = 'none'), 600);
+      setTimeout(() => {
+        if (intro?.classList.contains('gone')) intro.style.display = 'none';
+      }, 600);
     },
     toggle() {
       hidden = !hidden;

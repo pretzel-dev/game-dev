@@ -20,6 +20,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { TUNING as T } from './tuning.js';
 import { FLAG_STICK } from '../world/collide.js';
+import { balloonAt, ENVELOPE, BASKET_DROP } from '../world/balloons.js';
 
 const STEP = 1 / 120;
 
@@ -161,6 +162,7 @@ export function updateCar(car, input, world, dt) {
 }
 
 function step(car, input, world, h) {
+  car.input = input;
   const { collision, boosts } = world;
   car.time += h;
   localToWorldVec(car, tmp.set(0, 0, 1), fwd);
@@ -299,6 +301,25 @@ function step(car, input, world, h) {
   }
   car.wasOnPad = car.onPad;
 
+  /* -- water: wading through the plunge pool ---------------------------- */
+  car.inWater = 0;
+  for (const w of world.water || []) {
+    const dx = car.pos.x - w.x;
+    const dz = car.pos.z - w.z;
+    if (dx * dx + dz * dz > w.r * w.r) continue;
+    const depth = w.level - (car.pos.y - 0.7);
+    if (depth <= 0) continue;
+    const d = Math.min(1.6, depth);
+    car.inWater = d;
+    force.addScaledVector(car.vel, -T.mass * 3.5 * d);
+    force.y += T.mass * T.gravity * 0.3 * d;
+  }
+  if (car.inWater && !car.wasInWater && car.speed > 4) {
+    car.events.push({ type: 'splash', strength: Math.min(1, car.speed / 25) });
+    car.vel.multiplyScalar(0.7);
+  }
+  car.wasInWater = car.inWater > 0;
+
   /* -- gravity, pinned to loops at speed ------------------------------- */
   gEff.set(0, -T.gravity, 0);
   car.onStick = stick >= 2;
@@ -397,6 +418,7 @@ function step(car, input, world, h) {
 
   /* -- body against the world ------------------------------------------ */
   collideBody(car, collision);
+  bounceOffBalloons(car, world.balloons);
 
   /* -- tricks and feats -------------------------------------------------- */
   bookkeeping(car, h);
@@ -415,6 +437,7 @@ function collideBody(car, collision) {
   nSum.set(0, 0, 0);
   hitPoint.set(0, 0, 0);
   let weight = 0;
+  let ledge = 0;
   for (const [x, y, z, rad] of T.body) {
     localToWorldVec(car, tmp.set(x, y, z), mount).add(car.pos);
     const n = collision.sphereContacts(mount.x, mount.y, mount.z, rad, contacts);
@@ -434,11 +457,27 @@ function collideBody(car, collision) {
       weight += c.depth;
       // A wall is something across the car's path, not the floor of a loop
       // the car is bottoming out on.
-      if (Math.abs(up.dot(nrm)) < 0.5 || c.kind === 'post' || c.kind === 'rock') wall = true;
+      const isWall = Math.abs(up.dot(nrm)) < 0.5 || c.kind === 'post' || c.kind === 'rock';
+      // A low edge in front (the end of a strip of road, the lip of a
+      // ramp at ground level): something to climb over, not a wall to stop
+      // against. Lift the car onto it.
+      if (!isWall && c.kind === 'piece' && car.vel.dot(nrm) < -0.5) {
+        const contactY = tmp.copy(mount).addScaledVector(nrm, -rad).sub(car.pos).dot(up);
+        const across = 1 - Math.abs(up.dot(nrm));
+        if (contactY < -0.15 && across > 0.08) ledge = Math.max(ledge, Math.min(0.35, c.depth + 0.12));
+      }
+      if (isWall) wall = true;
       if (up.dot(nrm) < -0.2) roofDown = true;
     }
   }
 
+  if (ledge > 0 && !wall) {
+    // Hop up and keep going: only stop sinking, never stop forward.
+    car.pos.addScaledVector(up, ledge);
+    const vu = car.vel.dot(up);
+    if (vu < 0) car.vel.addScaledVector(up, -vu);
+    any = false;
+  }
   if (any && weight > 0) {
     const nrm = nSum.normalize();
     hitPoint.multiplyScalar(1 / weight);
@@ -509,17 +548,54 @@ function collideBody(car, collision) {
     car.events.push({ type: 'flipback' });
   }
 
-  // Wedged somewhere and not moving: lift it out.
+  // Wedged somewhere and not moving: lift it out. Either hung up with no
+  // wheels down, or pushing against something (gas or brake held) and
+  // going nowhere.
+  const pushing = (car.input?.throttle || 0) > 0.3 || (car.input?.brake || 0) > 0.3;
+  const against = car.contactKinds.has('piece') || car.contactKinds.has('post') || car.contactKinds.has('rock');
   if (car.speed < 0.6 && car.grounded < 2) car.stuckTime += STEP;
-  else car.stuckTime = 0;
-  if (car.stuckTime > 2.5) {
+  else if (car.speed < 1.5 && pushing && (against || car.grounded < 3)) car.stuckTime += STEP * 2;
+  else car.stuckTime = Math.max(0, car.stuckTime - STEP);
+  if (car.stuckTime > 2.4) {
     car.stuckTime = 0;
-    placeCar(car, car.pos.x, car.pos.y + 2.5, car.pos.z, Math.atan2(fwd.x, -fwd.z));
+    // Put it on top of whatever it is stuck on or under.
+    const heading = Math.atan2(fwd.x, -fwd.z);
+    const look = collision.raycast(car.pos.x, car.pos.y + 14, car.pos.z, 0, -1, 0, 30);
+    const y = look ? car.pos.y + 14 - look.t + 1.6 : car.pos.y + 2.5;
+    placeCar(car, car.pos.x, Math.max(y, car.pos.y + 0.5), car.pos.z, heading);
     car.events.push({ type: 'unstuck' });
   }
 }
 
 const TAU = Math.PI * 2;
+const bp = { x: 0, y: 0, z: 0 };
+const bn = new Vector3();
+
+/** Balloons are trampolines: hit the envelope (or the basket) and bounce. */
+function bounceOffBalloons(car, balloons) {
+  if (!balloons) return;
+  for (const b of balloons) {
+    balloonAt(b, car.time, bp);
+    for (const [cy, rad, spring] of [
+      [0, ENVELOPE + 1.3, 1.9],
+      [-BASKET_DROP, 2.4, 1.4],
+    ]) {
+      bn.set(car.pos.x - bp.x, car.pos.y - (bp.y + cy), car.pos.z - bp.z);
+      const d = bn.length();
+      if (d >= rad || d < 1e-3) continue;
+      bn.multiplyScalar(1 / d);
+      car.pos.set(bp.x, bp.y + cy, bp.z).addScaledVector(bn, rad);
+      const vn = car.vel.dot(bn);
+      if (vn < 0) {
+        car.vel.addScaledVector(bn, -vn * spring);
+        car.vel.y += 4;
+        car.angVel.multiplyScalar(0.5);
+        b.hit = car.time;
+        car.events.push({ type: 'balloon', strength: Math.min(1, -vn / 20) });
+      }
+    }
+  }
+}
 
 function bookkeeping(car, h) {
   const upY = up.y;
