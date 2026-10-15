@@ -79,6 +79,7 @@ export function createDust(scene) {
   let next = 0;
   const sand = new Color(0xe0a06a);
   const pale = new Color(0xead2b4);
+  const foam = new Color(0xf2f8fb);
   const tmp = new Color();
 
   function emit(x, y, z, vx, vy, vz, s, l, c = sand) {
@@ -109,6 +110,21 @@ export function createDust(scene) {
     setPixelScale(heightPx, fov) {
       material.uniforms.pixelScale.value = heightPx / (2 * Math.tan((fov * Math.PI) / 360));
     },
+    /** White water thrown up round the car. */
+    splash(x, y, z, strength, vx = 0, vz = 0) {
+      const k = Math.floor(6 + strength * 26);
+      for (let i = 0; i < k; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 1.5 + Math.random() * 4 * strength;
+        emit(x, y + 0.4, z, Math.cos(a) * sp + vx * 0.3, 3 + Math.random() * 5 * strength, Math.sin(a) * sp + vz * 0.3, 1.2 + strength * 1.6, 0.8 + Math.random() * 0.6, foam);
+      }
+    },
+    /** Mist rolling up off the bottom of the falls. */
+    mist(x, y, z) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * 4;
+      emit(x + Math.cos(a) * r, y, z + Math.sin(a) * r, Math.cos(a) * 2, 1.5 + Math.random() * 2, Math.sin(a) * 2, 4 + Math.random() * 3, 2.5 + Math.random() * 1.5, foam);
+    },
     /** A ring of dust where the car comes down. */
     landing(x, y, z, strength) {
       const k = Math.floor(10 + strength * 30);
@@ -122,7 +138,7 @@ export function createDust(scene) {
       // Wheels on sand or dirt kick dust, more when sliding or fast.
       const speed = car.speed;
       for (const w of car.wheels) {
-        if (!w.contact || w.surface !== 'ground') continue;
+        if (!w.contact || w.surface !== 'ground' || car.inWater) continue;
         const rate = Math.min(50, Math.max(0, speed - 3) * 0.8 + w.slip * 60) * (w.front ? 0.4 : 1);
         carry += rate * dt;
         while (carry >= 1) {

@@ -90,6 +90,21 @@ function joshua() {
   return merge(parts);
 }
 
+function cottonwood() {
+  const bark = 0x8a7a66;
+  const parts = [part(new CylinderGeometry(0.35, 0.55, 4.5, 7), bark, { at: [0, 2.25, 0] })];
+  const greens = [0x6f9a3e, 0x82ad48, 0x5f8a36];
+  const lumps = [
+    [0, 6.4, 0, 2.6],
+    [1.6, 5.6, 0.6, 1.9],
+    [-1.5, 5.8, -0.4, 2],
+    [0.3, 5.4, -1.7, 1.8],
+    [-0.4, 7.6, 0.6, 1.7],
+  ];
+  lumps.forEach(([x, y, z, r], i) => parts.push(part(new IcosahedronGeometry(r, 1), greens[i % 3], { at: [x, y, z] })));
+  return merge(parts);
+}
+
 function bush() {
   return merge([
     part(new IcosahedronGeometry(0.9, 0), 0x8f8a52, { at: [0, 0.35, 0], scale: [1.2, 0.6, 1] }),
@@ -178,6 +193,7 @@ export function createProps(scene, layout) {
     instanced(saguaro(arms), toonFlat, props.cactus.filter((c) => c.arms === arms), (c, m) => standing(c, m), scene);
   }
   instanced(joshua(), toonFlat, props.joshua, (c, m) => standing(c, m), scene);
+  instanced(cottonwood(), toonFlat, props.tree, (c, m) => standing(c, m, 0.3), scene);
   const bushes = props.bush.filter((_, i) => (i * 0.618) % 1 < QUALITY.bushes);
   instanced(bush(), toonFlat, bushes, (c, m) => standing(c, m, 0.1), scene, { shadow: false });
   instanced(rockGeo(), toonFlat, props.rock, (r, m) => {

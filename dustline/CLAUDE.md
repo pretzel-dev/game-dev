@@ -27,6 +27,11 @@ Prioritise, in order:
   (a path of frames swept by a cross-section). Use `addPiece` so they are
   both drawn and collided with. Sweeps are wound so face normals are
   (across) × (along); keep that, or shadows go wrong on the piece.
+- **No hard stops.** Every piece must be climbable or deflecting from any
+  side: kickers get a back slope, low undersides use `dropBelow`, extrusions
+  can `taper` their ends. `tools/stuck-probe.mjs` (also run by the checks)
+  drives at every piece from eight directions and fails if the car gets
+  pinned.
 - Anything elevated needs `holdUp(frames)` for pillars (which are also
   collision cylinders).
 - Feel numbers go in `car/tuning.js`, not in the model.

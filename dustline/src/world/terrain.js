@@ -89,7 +89,21 @@ export const MESAS = [
   { name: 'cone4', x: -720, z: -440, r: 0, h: 50, skirt: 80, k: 2, kind: 'cone' },
   { name: 'cone5', x: 80, z: 520, r: 0, h: 26, skirt: 52, k: 2, kind: 'cone' },
   { name: 'cone6', x: 720, z: 560, r: 0, h: 36, skirt: 64, k: 2, kind: 'cone' },
+  // The falls: a sheer red butte with water pouring off the top into a
+  // plunge pool, and a pair of thin spires beside it, Sedona-style.
+  { name: 'falls', x: -560, z: 520, r: 38, h: 58, skirt: 14, k: 0.8, wob: 0.04, kind: 'mesa' },
+  { name: 'spire1', x: -625, z: 445, r: 0, h: 46, skirt: 17, k: 1.3, wob: 0.05, kind: 'cone' },
+  { name: 'spire2', x: -480, z: 600, r: 0, h: 34, skirt: 14, k: 1.3, wob: 0.05, kind: 'cone' },
 ];
+
+/** Where the falls pour off the butte, and the pool they land in. */
+export const FALLS = (() => {
+  const m = { x: -560, z: 520, r: 38, h: 58 };
+  const l = Math.hypot(m.x, m.z);
+  const dir = [-m.x / l, -m.z / l];
+  const pool = { x: m.x + dir[0] * (m.r + 23), z: m.z + dir[1] * (m.r + 23), r: 17, depth: 1.5 };
+  return { mesa: m, dir, lip: { x: m.x + dir[0] * (m.r * 0.97), z: m.z + dir[1] * (m.r * 0.97), y: m.h }, pool };
+})();
 
 function mesaHeight(m, x, z) {
   const dx = x - m.x;
@@ -219,6 +233,13 @@ export const ROADS = [
     crests: [],
   },
   {
+    name: 'falls road',
+    closed: false,
+    width: 11,
+    points: [[-392, 505], [-430, 488], [-470, 476], [-494, 472]],
+    crests: [],
+  },
+  {
     name: 'south spur',
     closed: false,
     width: 12,
@@ -280,6 +301,17 @@ function build() {
     forCells(pad.x, pad.z, reach, (idx, x, z) => {
       const w = 1 - smooth(pad.r, reach, Math.hypot(x - pad.x, z - pad.z));
       field[idx] += (pad.h - field[idx]) * w;
+    });
+  }
+  // 2b. The plunge pool under the falls: a bowl scooped out of the ground.
+  {
+    const p = FALLS.pool;
+    p.level = sampleRaw(p.x, p.z) - 0.5;
+    forCells(p.x, p.z, p.r + 6, (idx, x, z) => {
+      const d = Math.hypot(x - p.x, z - p.z) / p.r;
+      if (d >= 1.3) return;
+      const bowl = p.level + 0.5 - p.depth * Math.max(0, 1 - d * d) - (d < 1 ? 0.3 : 0.3 * (1.3 - d) / 0.3);
+      field[idx] = Math.min(field[idx], bowl);
     });
   }
   // 3. The wash.

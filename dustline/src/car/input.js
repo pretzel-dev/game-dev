@@ -64,6 +64,31 @@ export function createInput({ actions = {}, onFirstInput = () => {} } = {}) {
   });
   addEventListener('blur', () => keys.clear());
 
+  // Never let the page zoom: Safari ignores user-scalable=no, so stop its
+  // pinch gestures, two-finger moves and double-tap zoom by hand.
+  const stop = (e) => e.preventDefault();
+  document.addEventListener('gesturestart', stop, { passive: false });
+  document.addEventListener('gesturechange', stop, { passive: false });
+  document.addEventListener('gestureend', stop, { passive: false });
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches.length > 1) e.preventDefault();
+    },
+    { passive: false }
+  );
+  let lastTouchEnd = 0;
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = performance.now();
+      if (now - lastTouchEnd < 320 && !e.target.closest?.('button')) e.preventDefault();
+      lastTouchEnd = now;
+    },
+    { passive: false }
+  );
+  document.addEventListener('dblclick', stop, { passive: false });
+
   /* -------------------------------------------------------------- touch --- */
   const pad = document.querySelector('#steerPad');
   const knob = document.querySelector('#steerKnob');

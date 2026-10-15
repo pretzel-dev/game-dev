@@ -3,6 +3,8 @@
  * through its gears, tyres scrabbling on sand and squealing on tarmac, the
  * wind, and the thumps of landing. No audio files.
  */
+import { ENGINE_WORKLET } from './engine-worklet.js';
+
 const MASTER = 0.16;
 const GEARS = [0, 9, 17, 25, 34, 44, 70]; // m/s where each gear starts
 
@@ -100,7 +102,28 @@ export function createAudio() {
     hissGain.gain.value = 0;
     loopNoise(1.3).connect(hiss).connect(hissGain).connect(master);
 
-    nodes = { master, engine, tone, oscs, gravelGain, gravel, squealGain, windGain, wind, hissGain };
+    nodes = { master, engine, tone, oscs, gravelGain, gravel, squealGain, windGain, wind, hissGain, worklet: null };
+
+    // The proper engine: a pulse-train model in an AudioWorklet. The
+    // oscillators above stay as a fallback for browsers without worklets,
+    // and are muted once it is running.
+    if (ctx.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+      const url = URL.createObjectURL(new Blob([ENGINE_WORKLET], { type: 'application/javascript' }));
+      ctx.audioWorklet
+        .addModule(url)
+        .then(() => {
+          const node = new AudioWorkletNode(ctx, 'dustline-engine', { outputChannelCount: [1] });
+          const gain = ctx.createGain();
+          gain.gain.value = 0.9;
+          node.connect(gain).connect(master);
+          nodes.worklet = node;
+          nodes.workletGain = gain;
+          engine.disconnect();
+        })
+        .catch(() => {
+          /* keep the oscillator engine */
+        });
+    }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   }
 
@@ -123,6 +146,12 @@ export function createAudio() {
     if (car.grounded && car.slip > 0.4 && input.throttle > 0) target = Math.min(1, target + 0.25);
     rpm += (target - rpm) * Math.min(1, dt * (target > rpm ? 6 : 9));
     const base = 46 + rpm * 150;
+    if (nodes.worklet) {
+      const p = nodes.worklet.parameters;
+      p.get('rpm').setTargetAtTime(900 + rpm * 6600, now, 0.03);
+      p.get('load').setTargetAtTime(Math.min(1, input.throttle * (car.grounded ? 1 : 0.7) + (input.boost ? 0.2 : 0)), now, 0.04);
+      nodes.workletGain.gain.setTargetAtTime(0.75 + input.throttle * 0.25, now, 0.08);
+    }
     for (const { o, mul } of nodes.oscs) o.frequency.setTargetAtTime(base * mul, now, 0.03);
     nodes.tone.frequency.setTargetAtTime(500 + rpm * 1400 + input.throttle * 700, now, 0.05);
     nodes.engine.gain.setTargetAtTime(0.1 + input.throttle * 0.12 + rpm * 0.05, now, 0.06);
@@ -165,6 +194,35 @@ export function createAudio() {
     n.stop(now + 0.3);
   }
 
+  /** Hitting water: a hiss of spray with a low gulp under it. */
+  function splash(strength = 0.5) {
+    if (!ctx || !nodes) return;
+    const now = ctx.currentTime;
+    const n = ctx.createBufferSource();
+    n.buffer = noise;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.setValueAtTime(2500, now);
+    f.frequency.exponentialRampToValueAtTime(700, now + 0.6);
+    f.Q.value = 0.7;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.5 * strength + 0.1, now + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+    n.connect(f).connect(g).connect(nodes.master);
+    n.start(now);
+    n.stop(now + 1);
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(160, now);
+    o.frequency.exponentialRampToValueAtTime(60, now + 0.2);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.3 * strength, now);
+    og.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    o.connect(og).connect(nodes.master);
+    o.start(now);
+    o.stop(now + 0.3);
+  }
+
   /** A bright rising blip for boost pads and tricks. */
   function chime(pitch = 1) {
     if (!ctx || !nodes) return;
@@ -202,6 +260,7 @@ export function createAudio() {
     update,
     thump,
     chime,
+    splash,
     setEnabled,
     toggle: () => setEnabled(!enabled),
     setPaused(p) {
