@@ -41,6 +41,9 @@ import { createProps } from './render/props.js';
 import { createLoose } from './render/loose.js';
 import { createDust } from './render/dust.js';
 import { createPost } from './render/post.js';
+import { createFalls } from './render/water.js';
+import { createBalloons } from './render/balloons.js';
+import { throughHoop } from './world/balloons.js';
 import { createAudio } from './audio/audio.js';
 import { createHud } from './ui/hud.js';
 
@@ -115,13 +118,15 @@ function boot() {
 
   /* -------------------------------------------------------------- world --- */
   const layout = buildLayout();
-  const world = { collision: layout.collision, boosts: layout.boosts };
+  const world = { collision: layout.collision, boosts: layout.boosts, water: layout.water, balloons: layout.balloons };
   const sky = createSky(scene);
   createTerrainMesh(scene);
   const track = createTrackMesh(scene, layout);
   const props = createProps(scene, layout);
   const loose = createLoose(scene, layout);
   const dust = createDust(scene);
+  const falls = createFalls(scene, layout.falls);
+  const balloons = createBalloons(scene, layout);
   const post = createPost(renderer);
   addMountains(scene);
 
@@ -227,7 +232,13 @@ function boot() {
   if (settings.get('sound') === false) audio.setEnabled(false);
   hud.setSound(audio.enabled);
 
+  // The title card doubles as the menu: ☰ (or Esc) brings it back and
+  // pauses the car, so you can change the paint or the light mid-drive.
+  let menuOpen = false;
+  const startBtn = document.querySelector('#start');
+  const restartBtn = document.querySelector('#restart');
   function go() {
+    if (menuOpen) return closeMenu();
     if (started) return;
     started = true;
     hud.hideIntro();
@@ -236,9 +247,29 @@ function boot() {
     rig.reset(car);
     hud.hint(matchMedia('(pointer: coarse)').matches ? 'Hold Gas. The loop is straight ahead.' : 'Hold W. The loop is straight ahead.', 4);
   }
-  document.querySelector('#start')?.addEventListener('click', go);
+  function openMenu() {
+    if (!started || menuOpen) return;
+    menuOpen = true;
+    if (startBtn) startBtn.textContent = 'Keep driving';
+    if (restartBtn) restartBtn.hidden = false;
+    hud.showIntro();
+  }
+  function closeMenu() {
+    menuOpen = false;
+    hud.hideIntro();
+    timer.update(); // don't count the time spent in the menu
+  }
+  startBtn?.addEventListener('click', go);
+  restartBtn?.addEventListener('click', () => {
+    closeMenu();
+    placeCar(car, layout.spawn.x, layout.spawn.y, layout.spawn.z, layout.spawn.heading);
+    rig.reset(car);
+  });
+  document.querySelector('#menuBtn')?.addEventListener('click', () => (menuOpen ? closeMenu() : openMenu()));
   addEventListener('keydown', (e) => {
-    if (!started && (e.code === 'Enter' || e.code === 'Space')) go();
+    if ((!started || menuOpen) && e.code === 'Enter') go();
+    else if (!started && e.code === 'Space') go();
+    else if (e.code === 'Escape') menuOpen ? closeMenu() : openMenu();
   });
 
   /* -------------------------------------------------------- the notes --- */
@@ -289,6 +320,14 @@ function boot() {
       } else if (e.type === 'bump' || e.type === 'thud') {
         audio.thump(e.strength * 0.7);
         rig.kick(e.strength * 0.5);
+      } else if (e.type === 'splash') {
+        dust.splash(car.pos.x, car.pos.y - 0.6, car.pos.z, e.strength, car.vel.x, car.vel.z);
+        audio.splash(e.strength);
+        rig.kick(0.2 * e.strength);
+      } else if (e.type === 'balloon') {
+        hud.trick('Boing!', 'off a balloon');
+        audio.chime(1.6);
+        rig.kick(0.3);
       } else if (e.type === 'flipback') {
         sayOnce('flipback', 'Back on your wheels', 1.6);
       } else if (e.type === 'unstuck') {
@@ -320,6 +359,9 @@ function boot() {
   let slowFrames = 0;
   let fps = 60;
   let attract = 0;
+  let mistCarry = 0;
+  let underFalls = false;
+  const prevPos = new Vector3().copy(car.pos);
   const idle = { throttle: 0, brake: 0, steer: 0, boost: false, handbrake: false, pitch: 0, roll: 0 };
 
   window.__dustline = {
@@ -349,13 +391,13 @@ function boot() {
     const t = timer.getElapsed();
     if (dt > 0) fps = fps * 0.95 + (1 / dt) * 0.05;
 
-    const input = started ? controls.sample(dt, car.grounded === 0) : idle;
+    const input = started && !menuOpen ? controls.sample(dt, car.grounded === 0) : idle;
     // Touch: brake while steering hard at speed is a handbrake slide.
     if (input.touchBrake && Math.abs(input.steer) > 0.35 && car.forwardSpeed > 12) {
       input.handbrake = true;
       input.brake = 0;
     }
-    updateCar(car, input, world, dt);
+    if (!menuOpen) updateCar(car, input, world, dt);
     if (started) {
       handleEvents();
       checkPlaces();
@@ -363,6 +405,39 @@ function boot() {
     car.events.length = 0;
 
     poseCar(model, car, dt, t);
+    falls.update(t);
+    balloons.update(dt, car.time);
+    // Hoops: fly through one and it spins.
+    if (started && !menuOpen) {
+      layout.hoops.forEach((h, i) => {
+        if (throughHoop(h, prevPos, car.pos)) {
+          hud.trick('Through the hoop!');
+          audio.chime(1.8);
+          balloons.flashHoop(i);
+        }
+      });
+    }
+    prevPos.copy(car.pos);
+    // Mist off the bottom of the falls, when it's near enough to see.
+    if (camera.position.distanceTo(falls.mistAt) < 600) {
+      mistCarry += dt * 14;
+      while (mistCarry > 1) {
+        mistCarry--;
+        dust.mist(falls.mistAt.x, falls.mistAt.y, falls.mistAt.z);
+      }
+    }
+    // Wading: spray off the wheels. Under the falls: a drenching.
+    if (car.inWater && car.speed > 3 && Math.random() < dt * 20) {
+      dust.splash(car.pos.x, car.pos.y - 0.6, car.pos.z, Math.min(0.5, car.speed / 30), car.vel.x, car.vel.z);
+    }
+    if (started && falls.under(car.pos)) {
+      if (Math.random() < dt * 25) dust.splash(car.pos.x, car.pos.y + 0.8, car.pos.z, 0.4);
+      if (!underFalls) {
+        underFalls = true;
+        sayOnce('underFalls', 'Under the falls!', 1.8);
+        audio.splash(0.6);
+      }
+    } else underFalls = false;
     dust.update(dt, car);
     loose.update(dt, car, t);
     track.update(t);

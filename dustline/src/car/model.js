@@ -7,6 +7,7 @@
  */
 import {
   BoxGeometry,
+  ConeGeometry,
   CylinderGeometry,
   ExtrudeGeometry,
   Group,
@@ -27,6 +28,7 @@ export const LIVERIES = {
   red: { body: 0xd13a2c, accent: 0x1f2f6b, trim: 0xf2efe8, flag: 0xffd23a },
   yellow: { body: 0xf2b51d, accent: 0x222326, trim: 0xf2efe8, flag: 0xe8402d },
   green: { body: 0x2f9a58, accent: 0xf1e6c8, trim: 0x1d2a22, flag: 0xff5a8a },
+  pink: { body: 0xf06aa8, accent: 0xfff4f8, trim: 0xffffff, flag: 0x7a3cff },
 };
 
 function tube(a, b, r, material) {
@@ -171,6 +173,16 @@ export function createCarModel(liveryName = 'blue') {
   for (const side of [-1, 1]) {
     body.add(tube([side * 0.25, 0.35, -1.3], [side * 0.3, 0.45, -1.85], 0.07, mat(0x8b8780)));
   }
+  // Boost flames out of the exhausts (shown while boosting).
+  const flames = [];
+  for (const side of [-1, 1]) {
+    const f = new Mesh(new ConeGeometry(0.13, 0.9, 8), mat(0xffb347, { emissive: 0xff6a10 }));
+    f.rotation.x = -Math.PI / 2;
+    f.position.set(side * 0.31, 0.46, -2.25);
+    f.visible = false;
+    body.add(f);
+    flames.push(f);
+  }
   // Rear wing.
   body.add(box(1.7, 0.05, 0.42, accent, [0, 1.15, -1.55], [0.12, 0, 0]));
   for (const side of [-1, 1]) {
@@ -208,7 +220,7 @@ export function createCarModel(liveryName = 'blue') {
     shocks.push({ mesh: shock, top: new Vector3(x * 0.55, 0.15, z * 0.92) });
   }
 
-  root.userData = { body, wheels, shocks, flags };
+  root.userData = { body, wheels, shocks, flags, flames };
   return root;
 }
 
@@ -220,7 +232,12 @@ const hub = new Vector3();
 export function poseCar(model, car, dt, t) {
   model.position.copy(car.pos);
   model.quaternion.copy(car.quat);
-  const { body, wheels, shocks, flags } = model.userData;
+  const { body, wheels, shocks, flags, flames } = model.userData;
+  const boosting = car.boosting || car.onPad;
+  for (const f of flames) {
+    f.visible = boosting;
+    if (boosting) f.scale.set(1, 0.7 + Math.random() * 0.8, 1);
+  }
   car.wheels.forEach((w, i) => {
     const wm = wheels[i];
     const y = T.mountHeight - w.length;

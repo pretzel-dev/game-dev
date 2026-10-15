@@ -15,6 +15,7 @@ import {
   roadDistanceAt,
   washDepth,
   MESAS,
+  FALLS,
   HALF,
   RIM_START,
   fbm,
@@ -63,6 +64,14 @@ export function buildLayout() {
   const places = []; // named spots, for the one-off notes
   const collision = createCollision();
   const jumps = {}; // start points for the tests
+  const balloons = []; // { x, y, z, drift, speed, phase, colour }
+  const hoops = []; // { x, y, z, nx, nz, r }
+  const balloon = (x, y, z, { drift = 3, speed = 0.05, colour = balloons.length } = {}) =>
+    balloons.push({ x, y, z, drift, speed, phase: balloons.length * 1.7, colour });
+  const hoop = (x, y, z, dir, r = 6) => {
+    const d = norm([dir[0], 0, dir[2]]);
+    hoops.push({ x, y, z, nx: d[0], nz: d[2], r });
+  };
 
   const ground = (x, z) => heightAt(x, z);
   const dirOf = (deg) => [Math.sin((deg * Math.PI) / 180), 0, -Math.cos((deg * Math.PI) / 180)];
@@ -100,6 +109,10 @@ export function buildLayout() {
       for (const o of offsets) {
         const p = madd(below, f.r, o);
         const gg = ground(p[0], p[2]);
+        // Never a pillar in a road or through another piece below.
+        if (roadDistanceAt(p[0], p[2]) < 9) continue;
+        const under = collision.raycast(p[0], p[1] - 0.2, p[2], 0, -1, 0, Math.max(0.5, p[1] - gg));
+        if (under && !under.terrain) continue;
         pillars.push({ x: p[0], z: p[2], r: width ? 0.7 : 1.1, y0: gg - 1, y1: p[1] });
       }
     }
@@ -129,15 +142,18 @@ export function buildLayout() {
     const dir = dirOf(180);
     const L = 22;
     const H = 4.5;
+    const back = 8;
     const frames = framesFrom(
       (s) => {
-        const t = s / L;
-        const p = madd([foot[0], py + H * t * t, foot[2]], dir, s);
+        const t = Math.min(1, s / L);
+        // Behind the lip, a slope back down (and the twist unwinds).
+        const fall = s > L ? (s - L) / back : 0;
+        const p = madd([foot[0], py + H * t * t * (1 - fall) - 0.04 * fall, foot[2]], dir, s);
         const side = norm(cross(dir, [0, 1, 0]));
-        const up = norm(add([0, 1, 0], scale(side, Math.tan(0.55 * t * t))));
+        const up = norm(add([0, 1, 0], scale(side, Math.tan(0.55 * t * t * (1 - fall)))));
         return { p, up };
       },
-      L,
+      L + back,
       1
     );
     addPiece(sweep(frames, wedge(8), { name: 'twist' }));
@@ -176,7 +192,7 @@ export function buildLayout() {
     // the floor, then up the right side.
     const lrev = left.slice().reverse().map((q, i, arr) => ({ ...q, paint: arr[i + 1]?.paint ?? 'concrete' }));
     const section = [...lrev.slice(0, -1), { x: -floor / 2, y: 0, paint: 'concrete' }, ...right];
-    addPiece(extrude([-120, py, 80], dirOf(90), 70, section, { name: 'halfpipe' }));
+    addPiece(extrude([-120, py, 80], dirOf(90), 70, section, { name: 'halfpipe', taper: 8 }));
     places.push({ key: 'pipe', x: -85, z: 80, r: 14, text: 'The half-pipe' });
   }
 
@@ -188,14 +204,22 @@ export function buildLayout() {
     addPiece(lathe([110, py, -40], prof, -TAU * 0.3, TAU * 0.3, { paint: 'concrete', name: 'bowl' }));
   }
 
-  // A spine: two quarter-pipes back to back, to launch off either way.
+  // A spine: two curved faces rising to a peak, to launch off either way.
   {
-    const R = 5;
-    const half = quarterSection(R, { run: 0, top: 0.3, back: false, angle: Math.PI * 0.36 });
-    const a = half.map((q) => ({ ...q, x: -q.x - 2 }));
-    const b = half.map((q) => ({ ...q, x: q.x + 2 }));
-    const section = [...a.slice().reverse().map((q, i, arr) => ({ ...q, paint: arr[i + 1]?.paint ?? 'concrete' })), ...b];
-    addPiece(extrude([-40, py, -90], dirOf(90), 26, section, { name: 'spine' }));
+    const L = 7;
+    const H = 2.8;
+    const section = [];
+    for (let i = 0; i <= 10; i++) {
+      const t = i / 10;
+      section.push({ x: -L + t * L, y: H * t * t - 0.05, paint: 'concrete' });
+    }
+    section[section.length - 1].paint = 'railtop';
+    section.push({ x: 0.3, y: H - 0.05, paint: 'concrete' });
+    for (let i = 0; i <= 10; i++) {
+      const t = 1 - i / 10;
+      section.push({ x: 0.3 + (1 - t) * L, y: H * t * t - 0.05, paint: 'concrete' });
+    }
+    addPiece(extrude([-40, py, -90], dirOf(90), 26, section, { name: 'spine', taper: 4 }));
   }
 
   // Cones and barrels in a slalom across the yard, and a stack of crates.
@@ -222,7 +246,8 @@ export function buildLayout() {
         return { r: R0 + 6 - 2.4 * (1 - Math.cos(a)), y: 13 + 2.4 * Math.sin(a), paint: i === 5 ? 'railtop' : 'wood' };
       }),
       { r: R0 + 7.2, y: 15.4, paint: 'side' },
-      { r: R0 + 7.2, y: -0.6 },
+      // The outside slopes, so you can drive up it and drop in over the top.
+      { r: R0 + 7.2 + 24, y: -0.6 },
     ];
     // The doorway faces the road from the yard.
     const door = Math.atan2(250 - pad.z, 170 - pad.x);
@@ -230,6 +255,8 @@ export function buildLayout() {
     addPiece(lathe([pad.x, pad.h, pad.z], prof, door + gap / 2, door + TAU - gap / 2, { flags: 1, name: 'drum' }));
     boost(pad.x + Math.cos(door) * 34, pad.z + Math.sin(door) * 34, [-Math.cos(door), 0, -Math.sin(door)], { length: 10 });
     places.push({ key: 'drum', x: pad.x, z: pad.z, r: 22, text: 'The drum — keep it pinned and ride the wall' });
+    // Fly out of the top of the drum and there's something up there.
+    balloon(pad.x, pad.h + 31, pad.z, { drift: 4 });
   }
 
   /* ----------------------------------------------------- road pieces --- */
@@ -283,6 +310,19 @@ export function buildLayout() {
     const ts = [S[run.b + lead - 1].x - S[run.b + lead + 4].x, 0, S[run.b + lead - 1].z - S[run.b + lead + 4].z];
     boost(S[run.a - lead - 10].x, S[run.a - lead - 10].z, tn, { length: 12, width: 8 });
     boost(S[run.b + lead + 10].x, S[run.b + lead + 10].z, ts, { length: 12, width: 8 });
+    {
+      // On the line the car actually flies: straight on from the lip, at
+      // the height a boosted car passes halfway across.
+      const lip = S[run.a + reach];
+      const back = S[run.a + reach - 3];
+      const far = S[run.b - reach];
+      const dir = norm([lip.x - back.x, 0, lip.z - back.z]);
+      const half = ((far.x - lip.x) * dir[0] + (far.z - lip.z) * dir[2]) / 2;
+      const slope = (2 * H) / ((lead + reach) * 2);
+      const v = 55;
+      const rise = half * slope - (12 * half * half) / (2 * v * v);
+      hoop(lip.x + dir[0] * half, n.y + H + rise + 1, lip.z + dir[2] * half, dir, 8);
+    }
     places.push({ key: 'gap', x: (n.x + s.x) / 2, z: (n.z + s.z) / 2, r: Math.hypot(s.x - n.x, s.z - n.z) / 2, text: 'Over the canyon!', above: 4 });
   }
 
@@ -345,13 +385,17 @@ export function buildLayout() {
   /* ---------------------------------------------------- spiral mesa --- */
   {
     const m = mesaNamed('spiral');
-    const R = 86;
+    // The radius shrinks as it climbs, so the top lap passes inside the
+    // bottom one rather than over it, and no pillar stands in the road.
+    const R0 = 104;
+    const R1 = 84;
+    const R = (R0 + R1) / 2;
     const a0 = Math.atan2(-0.63, -0.77);
     const turns = 1.25;
     const climb = R * TAU * turns;
     const inward = 0.32 * TAU;
     const top = m.h + 0.8;
-    const startY = ground(m.x + Math.cos(a0) * R, m.z + Math.sin(a0) * R) + 0.05;
+    const startY = ground(m.x + Math.cos(a0) * R0, m.z + Math.sin(a0) * R0) + 0.05;
     // Arc length is not exactly radius × angle once the radius shrinks; the
     // frames are re-measured anyway, this only spaces them.
     const total = climb + inward * 55;
@@ -361,14 +405,14 @@ export function buildLayout() {
         let r;
         let y;
         if (s <= climb) {
-          a = a0 + s / R;
-          r = R;
           const t = s / climb;
+          a = a0 + t * turns * TAU;
+          r = R0 + (R1 - R0) * t;
           y = startY + (top - startY) * (t * t * (3 - 2 * t) * 0.3 + t * 0.7);
         } else {
           const t = Math.min(1, (s - climb) / (total - climb));
-          a = a0 + climb / R + inward * t;
-          r = R - (R - 22) * (t * t * (3 - 2 * t));
+          a = a0 + turns * TAU + inward * t;
+          r = R1 - (R1 - 22) * (t * t * (3 - 2 * t));
           y = top;
         }
         const p = [m.x + Math.cos(a) * r, y, m.z + Math.sin(a) * r];
@@ -396,6 +440,14 @@ export function buildLayout() {
     boost(...xz(madd(foot, out, -5)), out, { length: 8, y: m.h + 0.2 });
     addPiece(kicker(foot, out, { length: 24, height: 4.5, width: 10, foot: m.h }));
     jumps.spiral = { x: last[0], z: last[2], heading: Math.atan2(out[0], -out[2]), y: top };
+    // A balloon right in the path of the jump: aim for it and bounce.
+    {
+      const ang = Math.atan2(2 * 4.5, 24);
+      const v = 33;
+      const t = 1.05;
+      const p = madd(lipAt, out, v * Math.cos(ang) * t);
+      balloon(p[0], m.h + 4.5 + v * Math.sin(ang) * t - 6 * t * t + 2.5, p[2], { drift: 2.5, speed: 0.08 });
+    }
     places.push({ key: 'spiral', x: m.x, z: m.z, r: 40, text: 'The top of the spiral — now jump' });
     places.push({ key: 'spiralFoot', x: frames[3].p[0], z: frames[3].p[2], r: 18, text: 'Up and round', above: 6 });
   }
@@ -451,6 +503,11 @@ export function buildLayout() {
     const bf = before[Math.max(0, before.length - 22)];
     boost(bf.p[0], bf.p[2], bf.t, { length: 10, width: 6, y: bf.p[1] });
     places.push({ key: 'skyway', x: -300, z: 4, r: 30, text: 'The skyway', above: 10 });
+    {
+      const lip = madd(madd(end.p, dir, 12), end.n, 3);
+      const p = madd(lip, dir, 30);
+      balloon(p[0], lip[1] + 6, p[2], { drift: 3 });
+    }
     places.push({ key: 'skygap', x: before[before.length - 1].p[0], z: before[before.length - 1].p[2], r: 18, text: 'Mind the gap!', above: 10 });
   }
 
@@ -484,8 +541,42 @@ export function buildLayout() {
   arch(-650, -15, 16, 19, 4.5);
   arch(560, -125, 15, 17, 4);
 
+  // A hoop at the top of the big kicker's arc in the yard.
+  hoop(-171, py + 13, -2, dirOf(-90), 6);
+  // Balloons drifting high over the canyon: up the rim wall at full tilt
+  // and you might just reach the low one.
+  for (const [x, y, z, drift] of [
+    [200, 95, -320, 40],
+    [-220, 120, 360, 50],
+    [520, 75, 300, 30],
+    [-640, 130, -220, 45],
+    [40, 85, 720, 35],
+    [690, 150, -430, 60],
+    [-40, 70, -880, 20],
+  ]) {
+    balloon(x, ground(x, z) + y, z, { drift, speed: 0.02 });
+  }
+
   /* ----------------------------------------------------------- props --- */
-  const props = { cactus: [], joshua: [], bush: [], rock: [], pole: [], turbine: [], sign: [] };
+  const props = { cactus: [], joshua: [], bush: [], rock: [], pole: [], turbine: [], sign: [], tree: [] };
+
+  // The falls: an oasis of cottonwoods round the plunge pool.
+  {
+    const p = FALLS.pool;
+    places.push({ key: 'falls', x: p.x, z: p.z, r: p.r + 30, text: 'The falls' });
+    places.push({ key: 'pool', x: p.x, z: p.z, r: p.r * 0.7, text: 'Splash!' });
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU + rand() * 0.3;
+      // Leave the cliff side and the road clear.
+      const toCliff = Math.cos(a) * -FALLS.dir[0] + Math.sin(a) * -FALLS.dir[1];
+      if (toCliff > 0.55) continue;
+      const d = p.r + 4 + rand() * 12;
+      const x = p.x + Math.cos(a) * d;
+      const z = p.z + Math.sin(a) * d;
+      if (roadDistanceAt(x, z) < 9) continue;
+      props.tree.push({ x, y: ground(x, z), z, s: 0.8 + rand() * 0.5, yaw: rand() * TAU });
+    }
+  }
 
   // Wind turbines along the shelf mesa and up on the north rim.
   {
@@ -526,6 +617,7 @@ export function buildLayout() {
     if (roadDistanceAt(x, z) < 14 + pad) return false;
     if (Math.hypot(x, z) < 160 + pad) return false;
     if (Math.hypot(x - 250, z - 120) < 50 + pad) return false;
+    if (Math.hypot(x - FALLS.pool.x, z - FALLS.pool.z) < FALLS.pool.r + 8 + pad) return false;
     if (Math.hypot(x, z) > RIM_START - 20) return false;
     const n = normalAt(x, z);
     if (n.y < 0.9) return false;
@@ -580,7 +672,8 @@ export function buildLayout() {
   places.push({ key: 'rim', ring: RIM_START + 70, text: 'The canyon wall — it always sends you back' });
   places.push({ key: 'dunes', x: 470, z: -260, r: 160, text: 'The dunes' });
 
-  return { pieces, boosts, pillars, rocks, props, loose, places, spawn, collision, jumps, half: HALF };
+  const water = [{ ...FALLS.pool }];
+  return { pieces, boosts, pillars, rocks, props, loose, places, spawn, collision, jumps, balloons, hoops, water, falls: FALLS, half: HALF };
 }
 
 function xz(p) {

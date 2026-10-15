@@ -215,15 +215,15 @@ export const railed = (w, rail = 0.9, paint = 'asphalt') => [
 
 /** A road deck in the air: kerbs, steel sides and an underside. */
 export const deck = (w, rail = 0.9, depth = 1.3, paint = 'asphalt') => [
-  { x: -w / 2 - 0.35, y: -depth, paint: 'side' },
+  { x: -w / 2 - 0.35, y: -depth, paint: 'side', dropBelow: 3.2 },
   { x: -w / 2 - 0.35, y: rail, paint: 'railtop' },
   { x: -w / 2, y: rail, paint: 'rail' },
   { x: -w / 2, y: 0, paint },
   { x: w / 2, y: 0, paint: 'rail' },
   { x: w / 2, y: rail, paint: 'railtop' },
   { x: w / 2 + 0.35, y: rail, paint: 'side' },
-  { x: w / 2 + 0.35, y: -depth, paint: 'under' },
-  { x: -w / 2 - 0.35, y: -depth },
+  { x: w / 2 + 0.35, y: -depth, paint: 'under', dropBelow: 3.2 },
+  { x: -w / 2 - 0.35, y: -depth, dropBelow: 3.2 },
 ];
 
 /** A wedge: the surface plus sides that drop to the ground. */
@@ -251,6 +251,9 @@ export function sweep(frames, profile, opts = {}) {
     profile.map((q) => {
       let p = add(add(f.p, scale(f.r, q.x)), scale(f.n, q.y));
       if (q.drop) p = [p[0], Math.min(p[1], heightAt(p[0], p[2]) - 0.6), p[2]];
+      // Low over the ground, an underside becomes an embankment: nothing
+      // to wedge the car under.
+      if (q.dropBelow && p[1] - heightAt(p[0], p[2]) < q.dropBelow) p = [p[0], heightAt(p[0], p[2]) - 0.6, p[2]];
       return p;
     })
   );
@@ -293,23 +296,49 @@ export function sweep(frames, profile, opts = {}) {
   return { positions, paints, collide, flags: opts.flags || 0, name: opts.name || '', path: frames.map((f) => f.p) };
 }
 
+/** One slice of a sweep whose cross-section differs at each end. */
+function sweepPair(a, b, pa, pb, opts) {
+  // Sweep a two-frame path once per end and splice: the near ring from pa,
+  // the far ring from pb.
+  const near = sweep([a, b], pa, opts);
+  const far = sweep([a, b], pb, opts);
+  // Vertices alternate per quad as [a, b, c, b, d, c]: a, b (indices 0, 1,
+  // 3) are on the near frame; c, d (2, 4, 5) on the far one.
+  for (let q = 0; q < near.positions.length / 18; q++) {
+    for (const v of [2, 4, 5]) {
+      for (let c = 0; c < 3; c++) near.positions[q * 18 + v * 3 + c] = far.positions[q * 18 + v * 3 + c];
+    }
+  }
+  near.collide = opts.collide === false ? [] : near.positions.slice();
+  return near;
+}
+
 /* ------------------------------------------------------ piece shapes --- */
 
 /**
  * A kicker: a wedge whose surface curves up to `height` over `length`,
  * leaving at `angle` (radians). Placed at `pos` (the foot), facing `dir`.
  */
-export function kicker(pos, dir, { length = 14, height = 3, width = 8, paint = 'kicker', foot = null } = {}) {
+export function kicker(pos, dir, { length = 14, height = 3, width = 8, paint = 'kicker', foot = null, back = true } = {}) {
   dir = norm([dir[0], 0, dir[2]]);
   const y0 = foot ?? heightAt(pos[0], pos[2]);
-  // Height ∝ (s/L)^2: tangent to the ground at the foot.
+  // Height ∝ (s/L)^2: tangent to the ground at the foot. Behind the lip a
+  // straight slope back down, so coming at it from behind is a ramp too,
+  // never a wall.
+  const backLen = back ? Math.max(2, height * 1.6) : 0;
   const frames = framesFrom(
     (s) => {
-      const t = s / length;
-      const p = madd([pos[0], y0 + height * t * t, pos[2]], dir, s);
+      let y;
+      if (s <= length) {
+        const t = s / length;
+        y = height * t * t;
+      } else {
+        y = height * (1 - (s - length) / backLen) - 0.05;
+      }
+      const p = madd([pos[0], y0 + y, pos[2]], dir, s);
       return { p, up: [0, 1, 0] };
     },
-    length,
+    length + backLen,
     1
   );
   return sweep(frames, wedge(width, paint), { name: 'kicker' });
@@ -353,7 +382,9 @@ export function loop(pos, dir, { radius = 13, width = 9, offset = 11, ease = 12 
   };
   const y0 = heightAt(pos[0], pos[2]) + 0.02;
   const frames = curvatureFrames([pos[0], y0, pos[2]], dir, total, curvature, drift, 1);
-  return sweep(frames, railed(width, 1.1), { name: 'loop', flags: 1 });
+  // A solid underside that drops to the ground where the loop is low, so
+  // coming at it from behind is a ramp, not a slot to wedge under.
+  return sweep(frames, deck(width, 1.1, 0.5), { name: 'loop', flags: 1 });
 }
 
 /**
@@ -389,7 +420,31 @@ export function extrude(pos, dir, length, section, opts = {}) {
     const s = (length * i) / n;
     frames.push({ p: madd(pos, dir, s), t: dir, r: side, n: [0, 1, 0], s });
   }
-  return sweep(frames, section, opts);
+  if (!opts.taper) return sweep(frames, section, opts);
+  // Taper the ends down to the ground, so the ends are ramps, not cut edges.
+  // Each frame gets its own squashed copy of the section.
+  const pieces = [];
+  for (let i = 0; i < n; i++) {
+    const k = (s) => {
+      const e = Math.min(s, length - s) / opts.taper;
+      const t = Math.max(0, Math.min(1, e));
+      return t * t * (3 - 2 * t);
+    };
+    const a = frames[i];
+    const b = frames[i + 1];
+    const ka = k(a.s);
+    const kb = k(b.s);
+    const pa = section.map((q) => ({ ...q, y: q.y < 0 ? q.y : q.y * ka - 0.04 * (1 - ka) }));
+    const pb = section.map((q) => ({ ...q, y: q.y < 0 ? q.y : q.y * kb - 0.04 * (1 - kb) }));
+    pieces.push(sweepPair(a, b, pa, pb, opts));
+  }
+  const out = { positions: [], paints: [], collide: [], flags: opts.flags || 0, name: opts.name || '', path: frames.map((f) => f.p) };
+  for (const q of pieces) {
+    out.positions.push(...q.positions);
+    out.paints.push(...q.paints);
+    out.collide.push(...q.collide);
+  }
+  return out;
 }
 
 /** Quarter-pipe cross-section: flat run-in then a curve up to vertical-ish. */
@@ -401,9 +456,10 @@ export function quarterSection(radius, { run = 3, top = 1.6, angle = Math.PI * 0
     pts.push({ x: Math.sin(a) * radius, y: radius - Math.cos(a) * radius, paint });
   }
   const last = pts[pts.length - 1];
-  // A deck on top and a back wall down to the ground.
+  // A deck on top and a sloping back down to the ground: ride up the back
+  // and drop in, rather than hitting a wall.
   pts[pts.length - 1].paint = 'railtop';
-  pts.push({ x: last.x + top, y: last.y, paint: 'side' });
-  if (back) pts.push({ x: last.x + top, y: -0.6 });
+  pts.push({ x: last.x + top, y: last.y, paint: 'kicker' });
+  if (back) pts.push({ x: last.x + top + (last.y + 0.6) * 1.5, y: -0.6 });
   return pts;
 }

@@ -10,10 +10,12 @@ import { Vector3 } from 'three';
 import { buildLayout } from '../src/world/layout.js';
 import { heightAt, ROADS, roadSamples, RIM_START, HALF, MESAS, washDepth } from '../src/world/terrain.js';
 import { createCar, updateCar, placeCar } from '../src/car/physics.js';
+import { probe } from './stuck-probe.mjs';
+import { throughHoop } from '../src/world/balloons.js';
 
 const t0 = performance.now();
 const layout = buildLayout();
-const world = { collision: layout.collision, boosts: layout.boosts };
+const world = { collision: layout.collision, boosts: layout.boosts, water: layout.water, balloons: layout.balloons };
 console.log(`built canyon in ${Math.round(performance.now() - t0)} ms: ${layout.collision.triangleCount} triangles, ${layout.pieces.length} pieces`);
 
 let failures = 0;
@@ -115,7 +117,8 @@ const names = (log, type) => log.events.filter((e) => e.type === type);
     for (let i = 1; i < r.length; i++) if (r[i].inWash && !r[i - 1].inWash) runs++;
     return runs;
   });
-  check('the main loop crosses the wash twice, the south spur once', crossings[0] === 2 && crossings[2] === 1, crossings.join(','));
+  const byName = Object.fromEntries(ROADS.map((r, i) => [r.name, crossings[i]]));
+  check('the main loop crosses the wash twice, the south spur once, nothing else', byName.loop === 2 && byName['south spur'] === 1 && crossings.reduce((a, b) => a + b, 0) === 3, crossings.join(','));
   let buried = 0;
   for (const p of layout.boosts) if (Math.abs(p.y - heightAt(p.x, p.z)) > 0.5 && p.y < heightAt(p.x, p.z)) buried++;
   check('no boost pad is buried', buried === 0);
@@ -221,6 +224,7 @@ const names = (log, type) => log.events.filter((e) => e.type === type);
     return after > 2.5 ? null : { throttle: 1, steer: 0 };
   });
   const air = names(jump, 'landed').reduce((a, e) => Math.max(a, e.airTime), 0);
+  check('…and the balloon in its path gets a bounce', names(jump, 'balloon').length >= 1, `${names(jump, 'balloon').length} bounce(s)`);
   check('the jump off the top is a long one, and you land it', air > 2.5 && jump.flipbacks === 0 && upOf(car).y > 0.8, `${air.toFixed(1)} s in the air`);
 }
 
@@ -256,8 +260,17 @@ const names = (log, type) => log.events.filter((e) => e.type === type);
   const follow = follower(path, 20);
   const far = loop[j];
   let airborne = 0;
+  let hooped = 0;
+  const prev = new Vector3().copy(car.pos);
   const log = run(car, 10, (c) => {
     const f = follow(c);
+    for (const h of layout.hoops) {
+      if (throughHoop(h, prev, c.pos)) hooped++;
+      const da = (prev.x - h.x) * h.nx + (prev.z - h.z) * h.nz;
+      const db = (c.pos.x - h.x) * h.nx + (c.pos.z - h.z) * h.nz;
+      if (process.env.HOOP && (da > 0) !== (db > 0)) console.log('plane', h.y.toFixed(1), c.pos.y.toFixed(1), Math.hypot(c.pos.x - h.x, c.pos.z - h.z).toFixed(1));
+    }
+    prev.copy(c.pos);
     if (c.grounded === 0) airborne += DT;
     return { throttle: 1, boost: true, steer: c.grounded ? f.steer : 0 };
   });
@@ -265,6 +278,7 @@ const names = (log, type) => log.events.filter((e) => e.type === type);
   const past = (car.pos.x - far.x) * across.x + (car.pos.z - far.z) * across.z;
   check('the canyon jump clears the wash at full chat', past > 0 && washDepth(car.pos.x, car.pos.z) < 3, `${log.airTime.toFixed(1)} s airborne, ${past.toFixed(0)} m past the far lip`);
   check('…and lands upright', log.flipbacks === 0 && upOf(car).y > 0.8);
+  check('…through the hoop over the middle', hooped >= 1, `${hooped} hoop(s)`);
 }
 
 /* ------------------------------------------------------- hard knocks --- */
@@ -285,6 +299,33 @@ const names = (log, type) => log.events.filter((e) => e.type === type);
   const log = run(car, 25, (c, t) => ({ throttle: t < 8 ? 1 : 0, boost: t < 8, steer: 0 }));
   check('the rim sends you back', log.maxR < HALF - 20 && Math.hypot(car.pos.x, car.pos.z) < RIM_START + 60, `furthest ${log.maxR.toFixed(0)} m, highest ${log.maxY.toFixed(0)} m`);
   check('…and never through the ground', log.below === 0 && !log.nan);
+}
+
+/* ---------------------------------------------------------- the falls --- */
+{
+  const road = roadSamples.filter((r) => r.road === 'falls road');
+  const path = road.map((r) => [r.x, r.y, r.z]);
+  const pool = layout.water[0];
+  path.push([pool.x, pool.level, pool.z], [pool.x + (pool.x - road[0].x) * 0.3, pool.level, pool.z + (pool.z - road[0].z) * 0.3]);
+  const car = createCar(layout.spawn);
+  placeCar(car, path[0][0], path[0][1] + 1.4, path[0][2], headingTo(path[0][0], path[0][2], path[3][0], path[3][2]));
+  const follow = follower(path, 12);
+  let slowest = Infinity;
+  const log = run(car, 14, (c) => {
+    if (c.inWater) slowest = Math.min(slowest, c.speed);
+    return { throttle: 1, steer: follow(c).steer };
+  });
+  check('the falls road runs into the pool, and you splash', names(log, 'splash').length >= 1, `${names(log, 'splash').length} splash(es)`);
+  check('…wading slows you but you drive out the far side', slowest < 15 && Math.hypot(car.pos.x - pool.x, car.pos.z - pool.z) > pool.r, `slowest ${slowest.toFixed(1)} m/s in the water`);
+}
+
+/* ------------------------------------------------ no hard stops --- */
+{
+  // Flat out at every piece from eight directions: the car should never
+  // need lifting out (rolling back down a slope too steep to climb is fine).
+  const { runs, pinned } = probe(layout);
+  const rescued = pinned.filter((p) => p.unstuck);
+  check('driving into any piece from any side never pins the car', rescued.length <= 2, `${rescued.length} of ${runs} runs needed lifting out${rescued.length ? ': ' + rescued.slice(0, 3).map((p) => `${p.piece} from ${p.from}°`).join(', ') : ''}`);
 }
 
 /* -------------------------------------------------------- mash it --- */

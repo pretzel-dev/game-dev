@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#e9b07a" />
   <meta name="description" content="A toy rally car loose in a red-rock canyon full of ramps, loops and jumps. No goal, no timer, just go." />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -28,7 +28,12 @@
       font-family: ui-rounded, "SF Pro Rounded", "Avenir Next", system-ui, sans-serif;
       color: var(--ink);
       overscroll-behavior: none;
+      /* No pinch-zoom or double-tap zoom anywhere: a stray pinch used to
+         zoom the page and leave it stuck. */
+      touch-action: none;
+      -webkit-text-size-adjust: 100%;
     }
+    #card { touch-action: pan-y; }
     canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     #ui { position: fixed; inset: 0; pointer-events: none; }
 
@@ -178,6 +183,7 @@
       R back on wheels · C camera · L light · M sound · H hide
     </div>
     <div id="tools">
+      <button class="tool" id="menuBtn" aria-label="Menu">☰</button>
       <button class="tool" id="cameraBtn" aria-label="Change camera">◉</button>
       <button class="tool" id="lightBtn" aria-label="Change light">☀</button>
       <button class="tool" id="resetBtn" aria-label="Back on your wheels">↺</button>
@@ -200,12 +206,14 @@
           No goal. No timer. Nothing to stop you. Just go.
         </div>
         <button id="start">Drive</button>
+        <button id="restart" class="chip" hidden>Back to the start</button>
         <div class="row" id="liveryRow">
           <div class="label">Paint</div>
           <button class="chip swatch" data-livery="blue" style="background:#2f59c9" aria-label="Blue"></button>
           <button class="chip swatch" data-livery="red" style="background:#d13a2c" aria-label="Red"></button>
           <button class="chip swatch" data-livery="yellow" style="background:#f2b51d" aria-label="Yellow"></button>
           <button class="chip swatch" data-livery="green" style="background:#2f9a58" aria-label="Green"></button>
+          <button class="chip swatch" data-livery="pink" style="background:#f06aa8" aria-label="Pink"></button>
         </div>
         <div class="row" id="lightRow">
           <div class="label">Light</div>
