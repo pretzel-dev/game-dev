@@ -625,3 +625,32 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.match(S.techText(a, 'industry', 0), /crews/);
   console.log(`crews: start cap ${cap}, with a habitat and Industry II ${S.crewCap(v, 0)}`);
 }
+
+// Tutorial: every map has a first world to take, and every step reads on
+// touch and mouse at each stage (it judges progress from the game, so a
+// change to the rules or the map shouldn't strand it).
+{
+  const { STEPS, firstTarget } = await import('../src/tutorial.js');
+  for (const key of SYSTEM_KEYS) {
+    const g = createGame({ seed: 7, opponents: 1, system: key });
+    const t = firstTarget(g, 0);
+    assert.ok(t && t.owner === NEUTRAL && !t.giant, `a first target on ${key}`);
+  }
+  const g = createGame({ seed: 7, opponents: 1, system: 'classic' });
+  const home = g.bodies.find((b) => b.owner === 0 && b.home);
+  const cheapest = Math.min(...Object.values(TECH).map((x) => x.cost[0]));
+  assert.ok(g.credits[0] + 800 >= RULES.ship.cost + RULES.structures.lab.cost + cheapest, 'the training grant covers a ship, a lab and research');
+  for (const touch of [true, false]) {
+    for (const ui of [{ selected: null, slot: null, mode: null, target: null }, { selected: home.id, slot: 2, mode: 'launch', target: null }, { selected: home.id, slot: null, mode: 'launch', target: 3 }]) {
+      const c = { game: g, ui, me: 0, home, touch, target: firstTarget(g, 0), sentTo: null, moved: 0, warp: 1, gained: 0, inFlight: false, researchOpen: false };
+      for (const st of STEPS) {
+        assert.ok(st.title && st.text(c).length > 20, `step ${st.title} reads`);
+        if (typeof st.point === 'function') st.point(c);
+        if (st.world) st.world(c);
+        if (st.done) st.done(c);
+      }
+    }
+  }
+  assert.ok(STEPS.at(-1).last, 'the tour ends on a last card');
+  console.log(`tutorial: ${STEPS.length} steps, first target on every map`);
+}

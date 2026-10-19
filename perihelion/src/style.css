@@ -568,3 +568,26 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 #pct { border: none; padding: 0; box-shadow: none; outline: none; }
 #actions.launching #launch { flex: 1 1 auto; }
 #actions.launching .stepper[hidden] { display: none; }
+
+/* Tutorial: a coach card at the top, and a gold glow on whatever to tap next. */
+#coach { position: fixed; top: calc(var(--safe-t) + 52px); left: 16px; width: min(360px, calc(100% - 32px)); z-index: 6;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: rgba(6, 10, 18, 0.94); border: 1px solid rgba(255, 211, 106, 0.55);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); font-size: 14px; }
+#coach[hidden] { display: none; }
+#coachText small { display: block; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: #ffd36a; }
+#coachText b { display: block; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; margin: 1px 0 3px; }
+#coachText span { color: var(--fg); line-height: 1.3; }
+#coachText span b { display: inline; font-size: inherit; letter-spacing: 0.04em; text-transform: none; margin: 0; color: #ffd36a; }
+.coach-btns { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+#coachShow { flex: 1; }
+#coach button { height: 34px; padding: 0 14px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; }
+#coach .show { border: 1px solid var(--line); color: var(--dim); }
+#coachNext.primary { margin: 0; min-width: 0; background: #ffd36a; color: #1a1300; }
+#coachNext.primary.ghost { background: none; border: 1px solid var(--line); color: var(--dim); }
+#coachClose { width: 34px; padding: 0 !important; display: grid; place-items: center; color: var(--dim); border: 1px solid var(--line); }
+#coachClose .ic { width: 14px; height: 14px; }
+@keyframes tutglow { from { box-shadow: inset 0 0 0 2px rgba(255, 211, 106, 0.95), 0 0 14px rgba(255, 211, 106, 0.5); } to { box-shadow: inset 0 0 0 2px rgba(255, 211, 106, 0.35), 0 0 4px rgba(255, 211, 106, 0.15); } }
+/* Centred on the world: the label hangs half a marker (--mk) plus 2px below its centre. */
+.lbl.tut::before { content: ''; position: absolute; left: 50%; top: calc(-1.35 * var(--mk, 30px) - 8px); width: calc(1.7 * var(--mk, 30px) + 12px); height: calc(1.7 * var(--mk, 30px) + 12px); margin-left: calc(-0.85 * var(--mk, 30px) - 6px); box-sizing: border-box; border: 2px solid #ffd36a; border-radius: 50%; animation: blink 0.7s ease-in-out infinite alternate; pointer-events: none; }
+/* On a phone the card takes the top; event notes wait until the tour is over. */
+@media (max-width: 759px) { body.tut-on #feed { display: none; } #coach { font-size: 13px; } }
