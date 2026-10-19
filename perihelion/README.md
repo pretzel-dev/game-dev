@@ -47,6 +47,20 @@ rules don't change:
   runs at 60% of the usual speed (the game is longer). Random and the Daily
   never pick it.
 
+- **Reaction mass** (test, picked by hand only): Classic's layout with fuel
+  rationed. Each trip gets one tank (every world you hold refuels you), and a
+  tank buys only a small speed change, a fraction of what a torch run burns.
+  So fleets burn briefly and coast most of the way on curving, gravity-bent
+  paths, often arcing round the sun the way the worlds go, as real transfer
+  orbits do. The planner picks the fastest route that fits the tank, trying
+  straight runs, arcs round the sun and swings past heavy worlds; a passing
+  world's pull often speeds a route (an assist, marked in the panel). Some
+  targets are out of reach until the worlds line up: the panel says when the
+  next launch window opens. A thin gauge shows how much of the tank a route
+  burns. Drives research enlarges the tank as well as the thrust; a fuel
+  depot adds a fifth. Ships can't run dark (they coast anyway). Games run
+  long (often well over an hour).
+
 **Daily system:** everyone gets the same map each day (seed and system from
 the date). The end screen and share image say which day it was.
 

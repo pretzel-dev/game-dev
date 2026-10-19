@@ -83,6 +83,7 @@ import { rng } from '../src/sim.js';
     for (const a of g.bodies) for (const b of g.bodies) {
       if (a === b || a.kind !== 'planet' || b.kind !== 'planet') continue;
       const f = plan(g, a, b);
+      if (f.out) continue; // (out of reach for now, on a fuel map)
       total++;
       assert.ok(f.need <= accelOf(g, a.owner) + 1e-9 && (f.grav || f.legs), `${sys}: ${a.name} -> ${b.name} flies with gravity`);
       if (f.assist !== undefined) { assisted++; assert.ok(g.bodies[f.assist].kind === 'planet' && ![a.id, b.id].includes(f.assist)); }
@@ -622,6 +623,39 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.ok(Tv > Ta * 2.2, `trips are a journey (${Math.round(Ta)}s -> ${Math.round(Tv)}s)`);
   assert.equal(S.travelOf(a), 1, 'other maps keep their timings');
   console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast; nearest world ${(v.bodies[0].r / sunR).toFixed(0)} sun radii out`);
+}
+
+// Reaction mass (fuel, hand-picked only): every route fits one tank, coasts
+// most of the way and takes longer than a torch run; some targets are out of
+// reach until a launch window opens; no running dark (routes coast anyway).
+{
+  const S = await import('../src/sim.js');
+  assert.ok(!RANDOM_KEYS.includes('fuel') && SYSTEM_KEYS.includes('fuel'), 'Reaction mass is picked by hand only');
+  let routes = 0, out = 0, windows = 0, slower = 0, arcs = 0;
+  for (let seed = 1; seed <= 3; seed++) {
+    const g = createGame({ seed, system: 'fuel' }), c = createGame({ seed, system: 'classic' });
+    const home = g.bodies.find((b) => b.owner === 0);
+    assert.equal(S.tankOf(c, 0), Infinity, 'other maps have no fuel limit');
+    for (const t of g.bodies) {
+      if (t === home || t.visitor) continue;
+      const f = plan(g, home, t);
+      routes++;
+      if (f.out) {
+        out++;
+        if (f.window !== null) windows++;
+        assert.equal(launch(g, home, t, 1), null, 'no launch out of reach');
+        continue;
+      }
+      assert.ok(f.fuel > 0 && f.fuel <= 1 + 1e-9, `${t.name}: fits the tank`);
+      assert.ok(f.need <= accelOf(g, 0) + 1e-9 && f.grav, `${t.name}: within the drive, with gravity`);
+      if (f.arc) arcs++;
+      if (f.T > plan(c, c.bodies[home.id], c.bodies[t.id]).T) slower++;
+    }
+    const f = launch(g, home, g.bodies.find((b) => b.parent === home.id) || g.bodies.find((b) => b !== home && !b.visitor && !plan(g, home, b).out), 1);
+    assert.ok(f && !S.setDark(g, f, true), 'no running dark on a fuel map');
+  }
+  assert.ok(slower > (routes - out) * 0.7, 'fuel routes are mostly slower than torch runs');
+  console.log(`reaction mass: ${routes - out}/${routes} routes in reach now (${arcs} arc round the sun), ${out} wait for a window (${windows} found)`);
 }
 
 // Crews (every map): the fleet can't outgrow the crew your worlds field;

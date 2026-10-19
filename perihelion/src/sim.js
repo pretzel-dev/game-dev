@@ -50,6 +50,9 @@ export const RULES = {
   // fleet (in service and on order) can't outgrow the crew you can field.
   crew: { home: 16, planet: 8, giant: 6, station: 6, moon: 3, asteroid: 1, habitat: 4, industry: 0.1, convoy: 4 },
   drill: 0.004, // experience per second a garrison regains, up to the rank it once held
+  // Fuel (Reaction mass only): the speed change one tank buys, per trip (each
+  // world you hold refuels you); probes carry twice as much for their size.
+  fuel: { tank: 1.2, probe: 2 },
 };
 
 // ---- Research -----------------------------------------------------------------
@@ -193,6 +196,8 @@ function sample(game) {
 }
 
 // Trip time goes with 1/sqrt(thrust), so a fleet that flies k times as fast needs k² the thrust.
+/** The speed change (units/s) a fleet's tank buys for one trip: Infinity unless the map rations fuel. Drives research stretches it too. */
+export const tankOf = (game, owner) => (game.fuel ? RULES.fuel.tank * (1 + 0.15 * techLevel(game, owner, 'drives')) : Infinity);
 export const accelOf = (game, owner) => RULES.accel * (game.thrust || 1) * (1 + 0.15 * techLevel(game, owner, 'drives')) * (hasJoint(game, owner, 'torch') ? 1.1 ** 2 : 1);
 export const firepowerOf = (game, owner) => 1 + 0.15 * techLevel(game, owner, 'weapons');
 /** Firepower when attacking (targeting data helps here). */
@@ -621,6 +626,10 @@ export const SYSTEMS = {
   // commitment. Picked by hand only (never Random or the Daily).
   // Proportions closer to life: worlds small beside the gaps to their moons,
   // and a sun far wider than a planet and its moon together.
+  // Classic's layout with fuel rationed: a tank per trip buys only a small
+  // speed change, so ships burn briefly and coast on curving, gravity-bent
+  // paths, wait for launch windows, and gain from swinging past worlds.
+  fuel: { name: 'Reaction mass', text: 'Ships carry little fuel: they coast, wait for launch windows and swing past worlds', fuel: true, test: true },
   // True to life where it can be: a small, distant sun; worlds with real
   // masses next to it (gas giants a thousandth of the sun, rocky worlds far
   // less), so their pull on passing ships is slight; moons tucked in close.
@@ -825,7 +834,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // The visitor: one body that events turn into a comet or a derelict, on a
   // pass in around the sun and out again. Absent (far away) the rest of the time.
   add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
-  const game = { mp, crew: sys.crew !== false, research: sys.research || 1, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: sys.sunClear || SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, fuel: !!sys.fuel, crew: sys.crew !== false, research: sys.research || 1, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: sys.sunClear || SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -1164,13 +1173,34 @@ export function depotBoost(game, from, now = game.time) {
  * The route a fleet will fly (with gravity). `quick` skips the gravity
  * solve: a close estimate of the flight time, for AI planning.
  */
-export function plan(game, from, to, now = game.time, speed = 1, quick = false, bf = 0.5) {
-  // `speed` multiplies thrust; a depot or mass driver makes the trip that much faster (thrust squared).
+export function plan(game, from, to, now = game.time, speed = 1, quick = false, bf = 0.5, tank = tankOf(game, from.owner)) {
+  // `speed` multiplies thrust; a depot or mass driver makes the trip that much faster (thrust squared),
+  // and on a fuel map gives that much more speed change to spend.
   const boost = depotBoost(game, from, now) * (from.wonder === 'massdriver' ? 1.5 : 1);
   speed *= boost * boost;
-  const f = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick, bf);
-  const g = quick ? null : assistOf(game, f);
+  tank *= boost;
+  const accel = accelOf(game, from.owner) * speed;
+  const f = planWith(game, from, to, now, accel, null, quick, bf, false, null, tank);
+  // Out of reach on this fuel: when's the next launch window?
+  if (f.out) return quick ? f : { ...f, window: windowFor(game, from, to, now, accel, tank) };
+  // A deliberate flyby is an assist by design; otherwise, any pull that sped it along.
+  const g = quick ? null : f.flyby !== undefined ? game.bodies[f.flyby] : assistOf(game, f);
   return g ? { ...f, assist: g.id } : f;
+}
+
+/** The longest trip a fuel route may take: about a third of a middle world's year. */
+const horizonOf = (game) => 2400 * travelOf(game);
+/**
+ * Seconds until a route fits the tank (a launch window), roughly: checked
+ * every half minute ahead, without gravity's help. Null if none soon.
+ */
+function windowFor(game, from, to, now, accel, tank) {
+  const step = 30 * travelOf(game);
+  for (let d = step; d <= horizonOf(game) / 2; d += step) {
+    if (!present(game, to, now + d)) return null;
+    if (!planWith(game, from, to, now + d, accel, null, true, 0.5, true, null, tank).out) return d;
+  }
+  return null;
 }
 
 // ---- Gravity ----------------------------------------------------------------
@@ -1356,7 +1386,8 @@ export function regrav(game, f) {
   return f;
 }
 
-function planWith(game, from, to, now, accel, start = null, quick = false, bf = 0.5, noDetour = false, skip = null) {
+function planWith(game, from, to, now, accel, start = null, quick = false, bf = 0.5, noDetour = false, skip = null, tank = Infinity) {
+  const bf0 = bf;
   skip = skip || homesOf(from, to);
   const p0 = start ? start.p : posAt(game, from, now);
   const v0 = start ? start.v : velAt(game, from, now);
@@ -1364,11 +1395,11 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
   // If the straight line would cross the sun, a torch ship doesn't wait for
   // the planets to move: it steers round, and that route is used if faster.
   const done = (f, blocked) => {
-    if (noDetour || !blocked || to.fixed) return f;
+    if (noDetour || !blocked || to.fixed || tank < Infinity) return f;
     const d = planDetour(game, from, to, now, accel, p0, v0, quick, bf, skip);
     return d && d.T < f.T ? d : f;
   };
-  const make = (T) => {
+  const make = (T, bf = bf0) => {
     // Aim for a parking orbit beside the target, on the side we come in from,
     // moving round it at orbital speed (a fixed waypoint is hit exactly).
     const c = to.fixed ? to.fixed.p : posAt(game, to, now + T);
@@ -1382,8 +1413,91 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
     return { p0, v0, p1, v1, T, ...(bf < 0.5 ? { bf } : {}), ...burns(p0, v0, p1, v1, T, burnLen(T, bf)) };
   };
   // With gravity: correct the burns so they still land once the pull is added.
-  const makeG = (T) => ({ ...settle(make(T), field(game, skip, now, T)), grav: true, tp: now, skip });
+  const makeG = (T, b = bf0) => ({ ...settle(make(T, b), field(game, skip, now, T)), grav: true, tp: now, skip });
   const fits = (f) => f.need <= accel && clear(f);
+  if (tank < Infinity) {
+    // Fuel: the fastest route whose burns fit in the tank. At each flight
+    // time the burns are as short as the drive allows (the least fuel), the
+    // rest a coast; a longer flight coasts more and needs less, until the
+    // worlds have moved on. If nothing fits, it's out of reach (for now).
+    const dvOf = (f) => burnLen(f.T, f.bf) * (len(f.a1) + len(f.a2));
+    const leanest = (T) => {
+      if (make(T, 0.5).need > accel) return null;
+      let lo = 0.01, hi = 0.5;
+      if (make(T, lo).need <= accel) return lo;
+      for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (make(T, m).need <= accel) hi = m; else lo = m; }
+      return hi;
+    };
+    const mul = (v, k) => ({ x: v.x * k, y: v.y * k, z: v.z * k });
+    // A first guess for the solver that heads for a waypoint w, reached tw
+    // seconds in, then on to the target: burns sized to suit.
+    const via = (T, w, tw) => {
+      const f0 = make(T, 0.5);
+      const d1 = sub(mul(sub(w, p0), 1 / tw), v0), d2 = sub(f0.v1, mul(sub(f0.p1, w), 1 / (T - tw)));
+      const b = Math.min(0.5, Math.max(0.01, ((Math.max(len(d1), len(d2)) / accel) / T) * 1.15));
+      const tb = burnLen(T, b);
+      return { ...make(T, b), a1: mul(d1, 1 / tb), a2: mul(d2, 1 / tb), guess: len(d1) + len(d2) };
+    };
+    const heavy = game.bodies.filter((x) => x.kind === 'planet' && x.gm >= 0.4 && !skip.includes(x.id));
+    const tryT = (T) => {
+      const b = leanest(T);
+      if (quick || !game.gravity) {
+        if (b === null) return null;
+        const f = make(T, b);
+        return dvOf(f) <= tank && clear(f) ? f : null;
+      }
+      let fd = null;
+      const settleG = (c) => ({ ...settle(c, (fd ||= field(game, skip, now, T))), grav: true, tp: now, skip });
+      const ok = (g) => g.need <= accel && dvOf(g) <= tank && clear(g);
+      // Straight there, coasting most of the way: a little longer burns if
+      // gravity means the shortest no longer fit the drive.
+      if (b !== null && dvOf(make(T, b)) <= tank * 1.5) {
+        for (const k of [1, 1.5, 2.5]) {
+          const g = settleG(make(T, Math.min(0.5, b * k)));
+          if (g.need <= accel) { if (ok(g)) return g; break; }
+        }
+      }
+      // An arc round the sun the way the worlds go (a real transfer orbit
+      // swings round, where a straight line would cross the sun).
+      const c = posAt(game, to, now + T);
+      const th0 = Math.atan2(p0.z, p0.x), sweep = (((Math.atan2(c.z, c.x) - th0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      if (sweep > 0.3) {
+        const th = th0 + sweep / 2, r = (len(p0) + len(c)) / 2;
+        const arc = via(T, { x: Math.cos(th) * r, y: 0, z: Math.sin(th) * r }, T / 2);
+        if (arc.guess <= tank * 1.5) { const { guess, ...g } = settleG(arc); if (ok(g)) return { ...g, arc: true }; }
+      }
+      // A swing past a heavy world on the way (a deliberate flyby): aim just
+      // beside it, either side, and let its pull do the rest.
+      const line = sub(c, p0), lh = Math.hypot(line.x, line.z) || 1;
+      const side = { x: -line.z / lh, y: 0, z: line.x / lh };
+      const tries = [];
+      for (const P of heavy) for (const u of [0.35, 0.5, 0.65]) {
+        const q = posAt(game, P, now + T * u);
+        for (const sgn of [1, -1]) {
+          const w = { x: q.x + side.x * sgn * (P.size * 2.5 + 1), y: q.y, z: q.z + side.z * sgn * (P.size * 2.5 + 1) };
+          const v = via(T, w, T * u);
+          if (v.guess <= tank * 2) tries.push({ ...v, flyby: P.id });
+        }
+      }
+      tries.sort((x, y) => x.guess - y.guess);
+      // (Only a flyby if it really passes close: the solver may settle on another path.)
+      const close = (g, P) => { for (let k = 0; k <= 64; k++) if (dist(along(g, (k / 64) * T), posAt(game, P, now + (k / 64) * T)) < P.size * 8) return true; return false; };
+      for (const v of tries.slice(0, 2)) {
+        const { flyby, guess, ...g } = settleG(v);
+        if (ok(g)) return close(g, game.bodies[flyby]) ? { ...g, flyby } : g;
+      }
+      return null;
+    };
+    const grow = quick ? 1.1 : 1.07;
+    let last = null;
+    for (let T = Math.max(4, burnTime(dist(p0, posAt(game, to, now))) * Math.sqrt(RULES.accel / accel) * 0.6); T < horizonOf(game); T *= grow) {
+      let f = tryT(T);
+      if (!f) { last = T; continue; }
+      if (last !== null) for (let i = 0; i < 3; i++) { const m = (last + f.T) / 2; const g = tryT(m); if (g) f = g; else last = m; }
+      return { ...f, fuel: Math.min(1, dvOf(f) / tank) };
+    }
+    return { p0, v0, T: Infinity, need: Infinity, out: true };
+  }
   // Scan forward for the first flight time the drive can manage (moons move
   // fast, so the answer isn't monotonic), bisect it down, then make sure the
   // path misses the sun; if not, keep looking at longer transfers.
@@ -1491,7 +1605,7 @@ export function launch(game, from, to, n, dark = false) {
   n = Math.min(Math.floor(n), readyShips(game, from));
   if (n < 1 || from === to || game.winner !== null) return null;
   const p = plan(game, from, to, game.time, 1, false, dark ? DARK.burn : 0.5);
-  if (p.T > staysFor(game, to) - 5 || !present(game, to)) return null;
+  if (p.out || p.T > staysFor(game, to) - 5 || !present(game, to)) return null;
   from.ships -= n;
   // Breaking out of a world under attack: the attackers get a free shot at
   // ships leaving orbit, and half of them never make it out.
@@ -1519,6 +1633,7 @@ export function launch(game, from, to, n, dark = false) {
  * it is now, at the new thrust, if that gets it there sooner.
  */
 function refit(game, owner) {
+  if (game.fuel) return; // the fuel's already spent on the route they're flying
   for (const f of game.fleets) {
     if (f.owner !== owner) continue;
     const left = f.T - (game.time - f.t0);
@@ -1537,7 +1652,7 @@ function refit(game, owner) {
  * it is now, so arrival time changes.
  */
 export function setDark(game, f, on) {
-  if (!f || f.probe || !!f.dark === on || game.winner !== null) return false;
+  if (!f || f.probe || game.fuel || !!f.dark === on || game.winner !== null) return false;
   const left = f.T - (game.time - f.t0);
   if (left < 10) return false;
   const s = fleetState(f, game.time);
@@ -1557,9 +1672,11 @@ export function cantProbe(game, b, t) {
 }
 export function launchProbe(game, from, to) {
   if (cantProbe(game, from, to) || game.winner !== null || !present(game, to)) return null;
+  const p = plan(game, from, to, game.time, RULES.probe.speed, false, 0.5, tankOf(game, from.owner) * RULES.fuel.probe);
+  if (p.out) return null;
   game.credits[from.owner] -= RULES.probe.cost;
   tally(game, from.owner, 'spent', RULES.probe.cost);
-  const f = { id: game.nextId++, owner: from.owner, n: 0, probe: true, from: from.id, to: to.id, ...plan(game, from, to, game.time, RULES.probe.speed), t0: game.time, vet: 0, name: 'Probe' };
+  const f = { id: game.nextId++, owner: from.owner, n: 0, probe: true, from: from.id, to: to.id, ...p, t0: game.time, vet: 0, name: 'Probe' };
   game.fleets.push(f);
   return f;
 }

@@ -394,6 +394,10 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .opt.fit { color: #c7a6ff; border-color: rgba(199, 166, 255, 0.45); }
 .chip.dim { border: none; padding: 0 2px; }
 .chip.assist { border: none; padding: 0 2px; color: var(--accent); }
+/* Fuel a route burns (Reaction mass): a hairline gauge, no numbers. */
+.fuel { display: inline-block; width: 28px; height: 4px; border: 1px solid var(--line); vertical-align: middle; }
+.fuel i { display: block; height: 100%; background: var(--accent); }
+.fuel.low i { background: #ff9a6a; }
 #info .chip { margin: 0 2px; }
 #tipbox { white-space: pre-line; position: fixed; z-index: 30; padding: 8px 10px; background: rgba(6, 10, 18, 0.96); border: 1px solid var(--line); color: var(--fg); font-size: 12px; line-height: 1.4; pointer-events: none; text-align: left; }
 #tipbox[hidden] { display: none; }
