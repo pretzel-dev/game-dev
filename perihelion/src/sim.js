@@ -406,6 +406,24 @@ const mix = (vA, nA, vB, nB) => (nA + nB > 0 ? (vA * nA + vB * nB) / (nA + nB) :
 
 /** Kepler: period grows with radius^1.5. */
 const periodAt = (r) => RULES.outerPeriod * (r / RULES.outerRadius) ** 1.5;
+/** The sun's pull (G times its mass), from the outermost planet's year: GM = 4π² r³ / P². */
+export const GM_SUN = (4 * Math.PI * Math.PI * RULES.outerRadius ** 3) / RULES.outerPeriod ** 2;
+/** The period of an orbit of radius r round a body pulling with gm (Kepler's third law). */
+export const kepler = (r, gm) => 2 * Math.PI * Math.sqrt((r * r * r) / gm);
+/**
+ * Masses (as G times mass). Worlds on the usual maps are dense, as in most
+ * space games, so their moons can sit close enough to be worth a short hop;
+ * gas giants are lighter for their size. On realistic maps (Vast) worlds have
+ * true-to-life masses next to the sun: a gas giant about a thousandth of it.
+ */
+const DENSITY = { rock: 0.06, gas: 0.035 };
+const REAL_MASS = { rock: 3e-5, gas: 1e-3 };
+/**
+ * A moon only stays bound well inside its planet's Hill sphere (where the
+ * planet's pull beats the sun's tides): about half of it at most.
+ */
+const HILL = 0.5;
+const hillRadius = (a, gm, gmStar) => a * Math.cbrt(gm / (3 * gmStar));
 
 // Special worlds: a few neutrals carry a perk for whoever holds them.
 export const PERKS = {
@@ -421,7 +439,7 @@ export const PERKS = {
 // Events: announced a minute ahead at a world; whoever holds that world for
 // the hold time (without losing it) gets the reward.
 export const EVENTS = {
-  comet: { name: 'Comet pass', text: 'Catch it on its pass round the sun and hold it to mine it', hold: 60, pay: 12 },
+  comet: { name: 'Comet pass', text: 'Catch it on its pass round the sun and hold it to mine it', hold: 60, pay: 9 },
   derelict: { name: 'Derelict warship', text: 'Catch the drifting hulk and hold it to salvage veteran ships', hold: 45, ships: 4 },
   signal: { name: 'Lost probe signal', text: 'Hold to recover a research level', hold: 40 },
   wreck: { name: 'Ice-hauler wreck', text: 'Hold to salvage its cargo', hold: 45, credits: 450 },
@@ -430,14 +448,17 @@ export const EVENTS = {
 };
 // First one at 4-6 minutes, then every 7-10 minutes (never quite regular).
 // Comets and derelicts arrive as visitors: they fly in, whip round the sun on a
-// parabolic (Kepler) pass and leave. Hold one while it's here.
+// hyperbolic (Kepler) pass and leave for good, like the real interstellar
+// visitors. Hold one while it's here.
 const VISITS = {
   // Slow enough to catch: ships must match a visitor's speed to board it.
-  comet: { inside: 420, q: [70, 120], guns: 0 },
-  derelict: { inside: 480, q: [100, 160], guns: 2 },
+  comet: { inside: 600, q: [70, 120], guns: 0 },
+  derelict: { inside: 540, q: [100, 160], guns: 2 },
 };
 // A pass starts and ends a little beyond the outermost planet; `inside` is
-// how long it spends within the planets' orbits (about 4 minutes).
+// how long it spends within the planets' orbits (9 or 10 minutes). The
+// orbit's eccentricity is whatever the sun's gravity needs for that (about 2:
+// the sun bends its path through 50-60 degrees).
 /** Is this body on the map right now? (Only the visitor ever isn't.) */
 export const present = (game, b, t = game.time) => !b.visitor || (!!game.visit && t >= game.visit.t0 && t <= game.visit.t0 + game.visit.T);
 /** Seconds until the visitor leaves (Infinity for anything else). */
@@ -445,23 +466,37 @@ export const staysFor = (game, b) => (b.visitor ? (game.visit ? game.visit.t0 + 
 function visitPos(game, t) {
   const v = game.visit;
   if (!v || t < v.t0 || t > v.t0 + v.T) return { x: 4000, y: 0, z: 4000 };
-  // Barker's equation: D + D³/3 grows steadily with time; D = tan(ν/2).
-  const sT = (t - v.t0 - v.T / 2) / v.tau;
-  let D = sT;
-  for (let k = 0; k < 8; k++) D -= (D + (D * D * D) / 3 - sT) / (1 + D * D);
-  const nu = 2 * Math.atan(D);
-  const rr = v.q * (1 + D * D);
-  const x = rr * Math.cos(nu), z = rr * Math.sin(nu);
-  return { x: x * Math.cos(v.w) - z * Math.sin(v.w), y: rr * 0.04 * Math.sin(nu), z: x * Math.sin(v.w) + z * Math.cos(v.w) };
+  // Kepler's equation for a hyperbola: e sinh F - F grows steadily with time.
+  const M = v.n * (t - v.t0 - v.T / 2);
+  let F = Math.asinh(M / v.e);
+  for (let k = 0; k < 30; k++) {
+    const d = (v.e * Math.sinh(F) - F - M) / (v.e * Math.cosh(F) - 1);
+    F -= d;
+    if (Math.abs(d) < 1e-12) break;
+  }
+  const x = v.a * (v.e - Math.cosh(F)), z0 = v.a * Math.sqrt(v.e * v.e - 1) * Math.sinh(F);
+  const y = z0 * 0.04, z = z0 * Math.sqrt(1 - 0.0016); // a slight tilt to the planets
+  return { x: x * Math.cos(v.w) - z * Math.sin(v.w), y, z: x * Math.sin(v.w) + z * Math.cos(v.w) };
+}
+/** Seconds a hyperbolic pass (closest approach q, eccentricity e) spends inside radius R. */
+function hyperTime(q, e, R) {
+  const a = q / (e - 1);
+  const F = Math.acosh(Math.max(1, (R / a + 1) / e));
+  return (2 * (e * Math.sinh(F) - F)) / Math.sqrt(GM_SUN / (a * a * a));
 }
 function startVisit(game, kind) {
   const V = VISITS[kind];
   const q = V.q[0] + evRand(game) * (V.q[1] - V.q[0]);
   const outer = Math.max(...game.bodies.filter((b) => b.parent === null && !b.visitor).map((b) => b.r));
-  const barker = (r) => { const D = Math.sqrt(Math.max(0, r / q - 1)); return D + (D ** 3) / 3; };
-  const tau = (V.inside * travelOf(game)) / 2 / barker(outer); // stays long enough to reach on a big map
-  const T = 2 * tau * barker(outer + 60);
-  game.visit = { kind, t0: game.time, T, q, w: evRand(game) * Math.PI * 2, tau };
+  // As fast as it must be to spend about `inside` among the planets (longer
+  // on a big map): the eccentricity that gives that, found by bisection. Barely
+  // over 1 is nearly a parabola, the slowest a visitor from outside can be.
+  const want = V.inside * travelOf(game);
+  let lo = 1 + 1e-6, hi = 1e4;
+  for (let k = 0; k < 80; k++) { const m = Math.sqrt(lo * hi); if (hyperTime(q, m, outer) > want) lo = m; else hi = m; }
+  const e = lo, a = q / (e - 1);
+  const T = hyperTime(q, e, outer + 60 * scaleOf(game));
+  game.visit = { kind, t0: game.time, T, q, e, a, n: Math.sqrt(GM_SUN / (a * a * a)), w: evRand(game) * Math.PI * 2 };
   const b = game.bodies.find((x) => x.visitor);
   b.owner = NEUTRAL; b.ships = 0; b.guns = b.guns0 = V.guns; b.sieges = []; b.vet = 0; b.tf = null;
   b.name = kind === 'comet' ? `Comet ${String.fromCharCode(65 + Math.floor(evRand(game) * 26))}/${10 + Math.floor(evRand(game) * 90)}` : `Derelict ${fleetName(game)}`;
@@ -489,9 +524,8 @@ function endVisit(game) {
     const s = fleetState(f, game.time);
     const home = nearest(f.owner, s);
     if (!home) { tally(game, f.owner, 'lost', f.n); f.n = 0; continue; }
-    const p = planWith(game, null, home, game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
-    delete f.assist; delete f.gs; delete f.legs; delete f.detour;
-    Object.assign(f, p, { t0: game.time, to: home.id });
+    const p = planWith(game, b, home, game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } });
+    replan(f, p, { t0: game.time, to: home.id });
   }
   game.fleets = game.fleets.filter((f) => f.n > 0 || f.probe);
   b.owner = NEUTRAL; b.ships = 0; b.guns = 0;
@@ -587,7 +621,11 @@ export const SYSTEMS = {
   // commitment. Picked by hand only (never Random or the Daily).
   // Proportions closer to life: worlds small beside the gaps to their moons,
   // and a sun far wider than a planet and its moon together.
-  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 2, orbits: 7, sunR: 160, research: 0.6, test: true },
+  // True to life where it can be: a small, distant sun; worlds with real
+  // masses next to it (gas giants a thousandth of the sun, rocky worlds far
+  // less), so their pull on passing ships is slight; moons tucked in close.
+  // (Worlds are still drawn far bigger than life, or they'd be invisible.)
+  vast: { name: 'Vast', text: 'A system at true-to-life proportions: every voyage is a commitment', scale: 4, thrust: 0.5, worlds: 0.6, real: true, inner: 360, sunR: 5, sunClear: 60, research: 0.6, test: true },
 };
 /** Distances on this map relative to the usual (reaches, sensors and so on scale with it). */
 export const scaleOf = (game) => game.scale || 1;
@@ -652,6 +690,8 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     // Neutral defences; gas giants are rich, so they start well defended.
     b.guns = b.kind === 'planet' ? (b.giant ? 5 : 2) : 1 + Math.floor(rand() * 2);
     b.sieges = [];
+    // Each orbit tilts about its own line (the golden angle spreads them evenly).
+    b.node = (b.id * 2.39996) % (Math.PI * 2);
     bodies.push(b);
     return b;
   };
@@ -659,9 +699,8 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // Plan each planet's family first (its moons and any station), so orbits can
   // be spaced to give every family room: neighbours never come close.
   const specs = [];
-  // Map proportions (all 1 except on Vast): world sizes, moon and station
-  // distances from their planet, and the spacing between families.
-  const W = sys.worlds || 1, O = sys.orbits || 1, L = sys.scale || 1;
+  // Map proportions (all 1 except on Vast): world sizes and the spacing between families.
+  const W = sys.worlds || 1, L = sys.scale || 1;
   // Home planets are picked up front from the middle orbits: each is a plain
   // rocky world with exactly one companion (a moon or a station).
   const players = opponents + 1;
@@ -674,9 +713,7 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
     let count = i === 0 ? 0 : homeIdx.includes(i) ? 1 : court ? 5 : giant ? 1 + Math.floor(rand() * 3) : Math.floor(rand() * 2);
     if (sys.moons && !homeIdx.includes(i)) count = Math.floor(count * sys.moons);
     const moons = [];
-    for (let m = 0; m < count; m++) {
-      moons.push({ r: (size * 3.4 + 6 + m * 7 + rand() * 0.8) * O, size: (0.5 + rand() * 0.5) * W, period: 300 + m * 150 + rand() * 120 });
-    }
+    for (let m = 0; m < count; m++) moons.push({ r: size * 3.4 + 6 + m * 7 + rand() * 0.8, size: (0.5 + rand() * 0.5) * W });
     specs.push({ giant, size: size * W, base: size, moons, station: false });
   }
   const hostIdx = shuffle([1, 2, 3, 4, 5]).slice(0, sys.stations || 2);
@@ -684,24 +721,40 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
   // A home's one companion is its station if it has one, otherwise its moon.
   for (const i of homeIdx) if (specs[i].station) specs[i].moons = [];
   for (const sp of specs) {
-    sp.reach = Math.max(sp.size * 1.6, sp.station ? (sp.base * 2.4 + 2.5) * O : 0, ...sp.moons.map((m) => m.r + m.size));
+    // (On a realistic map moons sit close in: the gaps dwarf them.)
+    sp.reach = sys.real ? sp.size * 1.6 + 2 : Math.max(sp.size * 1.6, sp.station ? sp.base * 2.4 + 2.5 : 0, ...sp.moons.map((m) => m.r + m.size));
   }
 
   // Orbits outward from the sun, each at least both families' reach plus a gap
   // apart; the asteroid belt gets its own lane after the fourth planet.
   const GAP = (sys.gap || 16) * L;
-  // A big sun: the innermost planet starts clear of it.
-  const SUN_R = sys.sunR || SUN_RADIUS_SIM * SUN_SIZE;
   let beltR = 0;
   let prev = null;
   for (const [i, sp] of specs.entries()) {
-    if (!prev) sp.r = sys.sunR ? SUN_R * 1.8 + sp.reach + GAP : sys.inner || 56;
+    if (!prev) sp.r = sys.inner || 56;
     else sp.r = prev.r + prev.reach + sp.reach + GAP + rand() * 10 * L;
     if (i === 4) {
       beltR = prev.r + prev.reach + GAP;
       sp.r = beltR + (sys.beltW || 6) * L + GAP + sp.reach + rand() * 10 * L;
     }
     prev = sp;
+  }
+
+  // Each world's mass, then its moons' and station's orbits from it.
+  for (const sp of specs) {
+    const kind = sp.giant ? 'gas' : 'rock';
+    sp.gm = sys.real ? REAL_MASS[kind] * (sp.base / (sp.giant ? 3.8 : 2.1)) ** 3 * GM_SUN : DENSITY[kind] * sp.size ** 3;
+    const park = parkRadius(sp);
+    if (sys.real) {
+      // Close in, each clear of the last: the inner ones a few planet widths out.
+      const rh = hillRadius(sp.r, sp.gm, GM_SUN);
+      let r = park + 1;
+      sp.moons.forEach((m, k) => { m.r = Math.max(r + m.size * 2, rh * (0.12 + 0.1 * k)); r = m.r + m.size * 2 + 0.5; });
+    }
+    sp.stationR = sys.real ? park + 1.2 : sp.base * 2.4 + 1.5;
+    // Too light to hold them against the sun's tides? Then it's heavier than that.
+    const out = Math.max(0, ...sp.moons.map((m) => m.r), sp.station ? sp.stationR : 0);
+    if (out) sp.gm = Math.max(sp.gm, 3 * GM_SUN * (out / (HILL * sp.r)) ** 3);
   }
 
   for (const sp of specs) {
@@ -716,18 +769,19 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
       size: sp.size,
       baseSize: sp.base, // build slots go by this
       giant: sp.giant,
+      gm: sp.gm,
       hue: rand(),
     });
     for (const m of sp.moons) {
       add({
-        kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: m.r, period: m.period,
-        phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.3, size: m.size, baseSize: m.size / W, hue: rand(),
+        kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: m.r, period: kepler(m.r, sp.gm),
+        phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.3, size: m.size, baseSize: m.size / W, gm: DENSITY.rock * m.size ** 3, hue: rand(),
       });
     }
     if (sp.station) {
       add({
-        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: (sp.base * 2.4 + 1.5) * O,
-        period: 200 + rand() * 60, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45 * W, baseSize: 0.45, hue: 0,
+        kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.stationR,
+        period: kepler(sp.stationR, sp.gm), phase: rand() * Math.PI * 2, incl: 0.2, size: 0.45 * W, baseSize: 0.45, hue: 0,
       });
     }
   }
@@ -740,31 +794,38 @@ export function createGame({ seed = Date.now(), opponents = 1, mp = false, syste
       phase: (k / rocks) * Math.PI * 2 + rand() * 0.8, incl: (rand() - 0.5) * 0.1, size: 0.5 + rand() * 0.4, hue: rand(),
     });
     a.baseSize = a.size; a.size *= W;
+    a.gm = 0.7 * DENSITY.rock * a.size ** 3;
   }
 
   // Homes: planets in the middle orbits, spread around the sun as far apart as possible now.
   // The sun is big (2.6× the old size) on every map; planets start further out.
-  const stars = [{ r: 0, period: 1, phase: 0, size: SUN_SIZE }];
+  const stars = [{ r: 0, period: 1, phase: 0, size: sys.sunR ? sys.sunR / SUN_RADIUS_SIM : SUN_SIZE, gm: GM_SUN }];
   if (sys.companion) {
-    // A smaller companion sun on an eccentric orbit, with two worlds of its
-    // own: most of the time it hangs far out, then once a game or so it swings
-    // in fast through the outer system and away again. When depends on the map.
+    // A smaller companion sun (a quarter of the sun's mass) on an eccentric
+    // orbit, with two worlds of its own: most of the time it hangs far out,
+    // then it swings in fast through the outer system and away again. Its year
+    // follows from its orbit (Kepler, with both suns' masses), far longer than
+    // a game, so it's timed to make its close pass some time in the middle of one.
+    const gm = GM_SUN * 0.25;
     const outer = Math.max(...bodies.filter((b) => b.parent === null).map((b) => b.r));
-    const q = outer + 22; // closest approach: its worlds sweep the outer orbits
+    const q = outer + 40; // closest approach: its worlds sweep the outer orbits
     const e = 0.35;
-    stars.push({ a: q / (1 - e), e, w: rand() * Math.PI * 2, period: 2800, phase: rand() * Math.PI * 2, size: 0.5, clear: 9 });
-    [[16, 1.9], [30, 2.4]].forEach(([r, size], k) => {
-      const planet = add({ kind: 'planet', name: pick(PLANET_NAMES, names), parent: null, star: 1, r, period: 140 + k * 160, phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.06, size, giant: false, hue: rand() });
-      if (k === 1) add({ kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: size * 3.4 + 6, period: 260, phase: rand() * Math.PI * 2, incl: 0.2, size: 0.7, hue: rand() });
+    const a = q / (1 - e);
+    const period = kepler(a, GM_SUN + gm);
+    const passAt = 600 + rand() * 1800; // 10 to 40 minutes in
+    stars.push({ a, e, w: rand() * Math.PI * 2, period, phase: (-2 * Math.PI * passAt) / period, size: 0.5, clear: 9, gm });
+    [[20, 1.9], [45, 2.4]].forEach(([r, size], k) => {
+      // Its moon stays inside its Hill sphere (against the companion's tides).
+      const mr = 7.5;
+      const pgm = Math.max(DENSITY.rock * size ** 3, k === 1 ? 3 * gm * (mr / (HILL * r)) ** 3 : 0);
+      const planet = add({ kind: 'planet', name: pick(PLANET_NAMES, names), parent: null, star: 1, r, period: kepler(r, gm), phase: rand() * Math.PI * 2, incl: (rand() - 0.5) * 0.06, size, giant: false, gm: pgm, hue: rand() });
+      if (k === 1) add({ kind: 'moon', name: pick(MOON_NAMES, names), parent: planet.id, r: mr, period: kepler(mr, pgm), phase: rand() * Math.PI * 2, incl: 0.2, size: 0.7, gm: DENSITY.rock * 0.7 ** 3, hue: rand() });
     });
   }
   // The visitor: one body that events turn into a comet or a derelict, on a
   // pass in around the sun and out again. Absent (far away) the rest of the time.
   add({ kind: 'visitor', name: 'Visitor', parent: null, r: 0, period: 1, phase: 0, incl: 0, size: 0.8, hue: 0.55, visitor: true }).guns = 0;
-  // A bigger system: the same layout with the planets' orbits (and the belt)
-  // spread out; moons and stations keep their distance from their planets.
-  if (sys.sunR) stars[0].size = sys.sunR / SUN_RADIUS_SIM;
-  const game = { mp, crew: sys.crew !== false, research: sys.research || 1, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
+  const game = { mp, crew: sys.crew !== false, research: sys.research || 1, scale: sys.scale || 1, thrust: sys.thrust || 1, system: sys === SYSTEMS[system] ? system : 'classic', stars, gravity: true, sunClear: sys.sunClear || SUN_RADIUS_SIM * stars[0].size * 1.8,  bodies, fleets: [], players, time: 0, winner: null, nextId: 1, events: [], nameSeed: Math.floor(rand() * 100000) };
   // Homes start evenly spaced around the sun: opposite sides for two
   // players, a third of the way round each for three.
   const planets = bodies.filter((b) => b.kind === 'planet');
@@ -972,11 +1033,21 @@ export function orderShip(game, b) {
   return true;
 }
 
+/**
+ * A point on a body's orbit, `th` radians round, relative to what it circles:
+ * a circle tilted by `incl` about its own line of nodes.
+ */
+export function orbitOffset(b, th) {
+  const u = th - (b.node || 0);
+  const a = Math.cos(u) * b.r, c = Math.sin(u) * b.r; // along the node line, and across it in the orbit's plane
+  const cn = Math.cos(b.node || 0), sn = Math.sin(b.node || 0), ci = Math.cos(b.incl), si = Math.sin(b.incl);
+  return { x: a * cn - c * sn * ci, y: c * si, z: a * sn + c * cn * ci };
+}
+
 /** A body's position at time t (moons ride along with their planet). */
 export function posAt(game, b, t) {
   if (b.visitor) return visitPos(game, t);
-  const th = b.phase + (2 * Math.PI * t) / b.period;
-  const p = { x: Math.cos(th) * b.r, y: Math.sin(th) * b.r * b.incl, z: Math.sin(th) * b.r };
+  const p = orbitOffset(b, b.phase + (2 * Math.PI * t) / b.period);
   if (b.star) {
     // Worlds of the companion star ride along with it.
     const q = starPos(game, b.star, t);
@@ -1004,27 +1075,30 @@ export function velAt(game, b, t) {
 
 // ---- Transfers --------------------------------------------------------------
 //
-// A torch-ship rendezvous: burn with one constant thrust vector for the first
-// half, flip, burn with a second for the rest, so the ship arrives exactly at
-// the target's position AND velocity. For a flight time T, with start state
-// (p0, v0) and arrival state (p1, v1):
-//   dp = p1 - p0 - v0*T,  dv = v1 - v0
-//   a1 = 4*dp/T^2 - dv/T,  a2 = 3*dv/T - 4*dp/T^2
+// A torch-ship rendezvous: burn with one constant thrust vector, flip (a few
+// seconds with the drive off), burn with a second, so the ship arrives exactly
+// at its parking orbit's position AND velocity. Without gravity, for a flight
+// time T with burns of length tb, start state (p0, v0) and arrival (p1, v1),
+// the burns have a closed form (see burns()). Gravity is then added on top and
+// the burns corrected until the ship still lands (see Gravity below).
 // The planner picks the shortest T whose larger burn fits the drive and whose
-// path stays clear of the sun. (Gravity is ignored while burning: at these
-// thrusts it's small next to the drive.)
+// path stays clear of the sun and of the worlds it passes.
 
 const SUN_CLEAR = 14;
 /** Where ships hold station around a body (matches what the renderer draws). */
 export const parkRadius = (b) => b.size * 1.8 + 0.4;
+/** Speed of a circular parking orbit round b (0 at a station: ships hold beside it). */
+export const parkSpeed = (b) => (b.gm ? Math.sqrt(b.gm / parkRadius(b)) : 0);
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const len = (a) => Math.hypot(a.x, a.y, a.z);
+/** How long each burn lasts: `bf` of the flight, with the flip (drive off) between them. */
+const burnLen = (T, bf = 0.5) => Math.min(T * bf, Math.max(T * 0.35, T / 2 - RULES.flipTime / 2));
 
 /**
  * The two burns of a transfer: a1 for the first tb seconds, a coast, then a2
- * for the last tb (tb = T/2 is the usual burn-flip-burn with no coast).
+ * for the last tb.
  */
-function burns(p0, v0, p1, v1, T, tb = T / 2) {
+function burns(p0, v0, p1, v1, T, tb) {
   const dp = { x: p1.x - p0.x - v0.x * T, y: p1.y - p0.y - v0.y * T, z: p1.z - p0.z - v0.z * T };
   const dv = sub(v1, v0);
   const B = (tb * tb) / 2;
@@ -1043,7 +1117,7 @@ function along(f, tau) {
   return { x: p.x + d[0], y: p.y + d[1], z: p.z + d[2], vx: p.vx + d[3], vy: p.vy + d[4], vz: p.vz + d[5] };
 }
 function pureAlong(f, tau) {
-  const h = f.bf ? f.bf * f.T : f.T / 2; // length of each burn
+  const h = burnLen(f.T, f.bf); // length of each burn
   const t1 = Math.min(tau, h);
   let x = f.p0.x + f.v0.x * t1 + 0.5 * f.a1.x * t1 * t1;
   let y = f.p0.y + f.v0.y * t1 + 0.5 * f.a1.y * t1 * t1;
@@ -1065,37 +1139,18 @@ function pureAlong(f, tau) {
   return { x, y, z, vx, vy, vz };
 }
 
-function clearOfSun(f, game, now) {
+/** Is the path clear of the sun, any companion sun, and the worlds it passes (not those in `skip`)? */
+function clearOfSun(f, game, now, skip = []) {
+  const worlds = game.bodies.filter((b) => b.kind === 'planet' && !skip.includes(b.id));
   for (let k = 1; k < 128; k++) {
     const tau = (k / 128) * f.T;
     const p = along(f, tau);
     if (len(p) < (game.sunClear || SUN_CLEAR)) return false;
     // A companion sun: keep clear of it too, wherever it will be.
     for (let i = 1; i < (game.stars || []).length; i++) if (dist(p, starPos(game, i, now + tau)) < game.stars[i].clear) return false;
+    for (const w of worlds) if (dist(p, posAt(game, w, now + tau)) < w.size * 1.3 + 0.3) return false;
   }
   return true;
-}
-
-/** Plans a transfer from `from` (now) to meet `to`. Returns { p0, v0, p1, v1, a1, a2, T }. */
-/**
- * Gravity assist, kept simple: a transfer that passes close to a gas giant can
- * use its pull, so the drive's effective thrust on that route is 20% higher.
- * (Real assists bend and speed a path; this gives the same payoff: giants
- * become fast lanes worth routing past, and holding.)
- */
-export const ASSIST = { boost: 1.25, range: 16 }; // range in giant radii
-function assistBy(game, f, from, to, now) {
-  const skip = new Set([from.id, to.id, from.parent, to.parent]);
-  let best = null;
-  for (const g of game.bodies) {
-    if (!g.giant || skip.has(g.id)) continue;
-    for (let k = 1; k < 24; k++) {
-      const t = (k / 24) * f.T;
-      const d = dist(along(f, t), posAt(game, g, now + t));
-      if (d < g.size * ASSIST.range && (!best || d < best.d)) best = { g, d };
-    }
-  }
-  return best && best.g;
 }
 
 /** A held fuel depot near the launch world speeds the flight. */
@@ -1106,42 +1161,88 @@ export function depotBoost(game, from, now = game.time) {
 }
 
 /**
- * The route a fleet will fly (with the sun's gravity). `quick` skips the
- * gravity solve: a close estimate of the flight time, for AI planning.
+ * The route a fleet will fly (with gravity). `quick` skips the gravity
+ * solve: a close estimate of the flight time, for AI planning.
  */
 export function plan(game, from, to, now = game.time, speed = 1, quick = false, bf = 0.5) {
   // `speed` multiplies thrust; a depot or mass driver makes the trip that much faster (thrust squared).
   const boost = depotBoost(game, from, now) * (from.wonder === 'massdriver' ? 1.5 : 1);
   speed *= boost * boost;
-  const direct = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick, bf);
-  const g = assistBy(game, direct, from, to, now);
-  if (!g) return direct;
-  const fast = planWith(game, from, to, now, accelOf(game, from.owner) * speed * ASSIST.boost, null, quick, bf);
-  // Only if the faster path still swings past the same giant.
-  return fast.T < direct.T && assistBy(game, fast, from, to, now) === g ? { ...fast, assist: g.id } : direct;
+  const f = planWith(game, from, to, now, accelOf(game, from.owner) * speed, null, quick, bf);
+  const g = quick ? null : assistOf(game, f);
+  return g ? { ...f, assist: g.id } : f;
 }
 
-// Gravity: the sun's pull, consistent with the planets'
-// orbits (GM = 4π² r³ / P²), acts on ships all through a flight. The drive
-// still flies two straight burns; the pull adds a drift the plan corrects for.
-export const GRAVITY = { share: 1 }; // 1 = the full pull that holds the planets in orbit
-const GM0 = (4 * Math.PI * Math.PI * RULES.outerRadius ** 3) / RULES.outerPeriod ** 2;
-const GSTEPS = 48;
-/** Drift from gravity along a path (position and velocity offsets at GSTEPS+1 points). */
-function drift(f, gs0) {
+// ---- Gravity ----------------------------------------------------------------
+//
+// Everything with mass pulls on ships all through a flight: the sun, a
+// companion sun, and every planet the ship passes. Worlds stay on their fixed
+// orbits (as in most orbital games: on rails). The worlds a fleet leaves and
+// arrives at are the one exception: climbing out of and settling into their
+// parking orbits is the close-in manoeuvring ships do on thrusters, so their
+// own pull (and their moons', or a companion sun's for its worlds) is left to that.
+//
+// The planner works out the drift gravity adds to the plain two-burn path,
+// then corrects the burns (Newton's method) until the ship still lands on its
+// parking orbit, speed matched. A pass close by a heavy world bends the route:
+// a gravity assist, where it speeds the ship along.
+export const GRAVITY = { share: 1 }; // 1 = the full pull that holds the worlds in their orbits
+const GSTEPS = 64;
+/** A gravity assist worth mentioning: speed the pull of one world added along the way. */
+export const ASSIST = { min: 0.06 };
+
+/** The planets whose families a flight between these leaves alone (their ids). */
+function homesOf(...bs) {
+  return [...new Set(bs.filter((b) => b && b.id !== undefined).map((b) => (b.parent === null ? b.id : b.parent)))];
+}
+
+/** Where everything that pulls will be at each step of a flight of length T from `now`. */
+function field(game, skip, now, T) {
+  const dt = T / GSTEPS;
+  const list = [];
+  const stars = game.stars || [];
+  // A companion sun and its worlds are a family too: a flight to or from one
+  // of them leaves the companion's own pull to the close-in manoeuvring.
+  const near = new Set(skip.map((id) => game.bodies[id].star).filter(Boolean));
+  for (let i = 1; i < stars.length; i++) if (stars[i].gm && !near.has(i)) list.push({ gm: stars[i].gm, s2: (stars[i].clear * 0.15) ** 2, at: (t) => starPos(game, i, t) });
+  for (const b of game.bodies) if (b.kind === 'planet' && b.gm && !skip.includes(b.id)) list.push({ b, gm: b.gm, s2: (b.size * 0.5) ** 2, at: (t) => posAt(game, b, t) });
+  for (const a of list) {
+    a.gm *= GRAVITY.share;
+    a.P = new Float64Array(3 * (GSTEPS + 1));
+    for (let k = 0; k <= GSTEPS; k++) { const q = a.at(now + k * dt); a.P[3 * k] = q.x; a.P[3 * k + 1] = q.y; a.P[3 * k + 2] = q.z; }
+  }
+  return { list, sun: GM_SUN * GRAVITY.share, s2: ((game.sunClear || SUN_CLEAR) * 0.15) ** 2 };
+}
+/** The pull at step k on a ship at (x, y, z), into out. Positions are from the sun, so a world also tugs the sun (the frame) its way. */
+function pull(fd, k, x, y, z, out) {
+  const r2 = x * x + y * y + z * z + fd.s2;
+  const c = -fd.sun / (r2 * Math.sqrt(r2));
+  let ax = c * x, ay = c * y, az = c * z;
+  for (const a of fd.list) {
+    const px = a.P[3 * k], py = a.P[3 * k + 1], pz = a.P[3 * k + 2];
+    const dx = x - px, dy = y - py, dz = z - pz;
+    const d2 = dx * dx + dy * dy + dz * dz + a.s2;
+    const c1 = -a.gm / (d2 * Math.sqrt(d2));
+    const p2 = px * px + py * py + pz * pz;
+    const c2 = -a.gm / (p2 * Math.sqrt(p2));
+    ax += c1 * dx + c2 * px; ay += c1 * dy + c2 * py; az += c1 * dz + c2 * pz;
+  }
+  out[0] = ax; out[1] = ay; out[2] = az;
+}
+/** Drift from gravity along a path: position and velocity offsets at GSTEPS+1 points (leapfrog). */
+function drift(f, fd) {
   const dt = f.T / GSTEPS;
+  const g = [0, 0, 0];
   const gs = [[0, 0, 0, 0, 0, 0]];
   let x = 0, y = 0, z = 0, vx = 0, vy = 0, vz = 0;
+  let b = pureAlong(f, 0);
+  pull(fd, 0, b.x, b.y, b.z, g);
   for (let k = 0; k < GSTEPS; k++) {
-    // Pull at the midpoint of the step, on the path including the drift so far.
-    const tm = (k + 0.5) * dt;
-    const b = pureAlong(f, tm);
-    const prev = gs0 ? lerpDrift(gs0, (k + 0.5) / GSTEPS) : [x + vx * dt * 0.5, y + vy * dt * 0.5, z + vz * dt * 0.5];
-    const px = b.x + prev[0], py = b.y + prev[1], pz = b.z + prev[2];
-    const r2 = px * px + py * py + pz * pz;
-    const k3 = (-GM0 * GRAVITY.share) / (r2 * Math.sqrt(r2));
-    vx += k3 * px * dt; vy += k3 * py * dt; vz += k3 * pz * dt;
+    vx += g[0] * dt * 0.5; vy += g[1] * dt * 0.5; vz += g[2] * dt * 0.5;
     x += vx * dt; y += vy * dt; z += vz * dt;
+    b = pureAlong(f, (k + 1) * dt);
+    pull(fd, k + 1, b.x + x, b.y + y, b.z + z, g);
+    vx += g[0] * dt * 0.5; vy += g[1] * dt * 0.5; vz += g[2] * dt * 0.5;
     gs.push([x, y, z, vx, vy, vz]);
   }
   return gs;
@@ -1152,53 +1253,137 @@ function lerpDrift(gs, u) {
   const a = gs[i], b = gs[i + 1];
   return a.map((v, j) => v + (b[j] - v) * k);
 }
+/** Solves J x = r (6×6, Gaussian elimination with pivoting); r becomes x. */
+function solve6(J, r) {
+  for (let c = 0; c < 6; c++) {
+    let p = c;
+    for (let i = c + 1; i < 6; i++) if (Math.abs(J[i][c]) > Math.abs(J[p][c])) p = i;
+    [J[c], J[p]] = [J[p], J[c]]; [r[c], r[p]] = [r[p], r[c]];
+    if (Math.abs(J[c][c]) < 1e-14) return false;
+    for (let i = c + 1; i < 6; i++) {
+      const m = J[i][c] / J[c][c];
+      for (let j = c; j < 6; j++) J[i][j] -= m * J[c][j];
+      r[i] -= m * r[c];
+    }
+  }
+  for (let c = 5; c >= 0; c--) {
+    for (let j = c + 1; j < 6; j++) r[c] -= J[c][j] * r[j];
+    r[c] /= J[c][c];
+  }
+  return true;
+}
+/**
+ * Burns that land the ship on (f.p1, f.v1) with gravity added, starting from
+ * the gravity-free ones: Newton's method on the six burn components.
+ */
+function settle(f, fd) {
+  const vec = (a) => [{ x: a[0], y: a[1], z: a[2] }, { x: a[3], y: a[4], z: a[5] }];
+  const run = (a) => {
+    const [a1, a2] = vec(a);
+    const g = { ...f, a1, a2 };
+    const gs = drift(g, fd);
+    const e = pureAlong(g, f.T), d = gs[GSTEPS];
+    const r = [e.x + d[0] - f.p1.x, e.y + d[1] - f.p1.y, e.z + d[2] - f.p1.z, e.vx + d[3] - f.v1.x, e.vy + d[4] - f.v1.y, e.vz + d[5] - f.v1.z];
+    return { a, gs, r, miss: Math.hypot(r[0], r[1], r[2]), slip: Math.hypot(r[3], r[4], r[5]) };
+  };
+  const bad = (s) => s.miss + s.slip * 20;
+  let s = run([f.a1.x, f.a1.y, f.a1.z, f.a2.x, f.a2.y, f.a2.z]);
+  // How the landing shifts with each burn component (by finite differences).
+  // It barely changes from one step to the next, so it's reused until a step
+  // stops helping (or helps too little), then worked out afresh.
+  const jacobian = () => {
+    const eps = 1e-5;
+    const cols = [0, 1, 2, 3, 4, 5].map((j) => { const a = s.a.slice(); a[j] += eps; return run(a).r; });
+    return [0, 1, 2, 3, 4, 5].map((i) => cols.map((c) => (c[i] - s.r[i]) / eps));
+  };
+  // Start from the gravity-free one, which is exact for the drive's part.
+  const h = burnLen(f.T, f.bf), c1 = h * f.T - (h * h) / 2, c2 = (h * h) / 2;
+  let J = [0, 1, 2, 3, 4, 5].map((i) => [0, 1, 2, 3, 4, 5].map((j) => (i % 3 !== j % 3 ? 0 : i < 3 ? (j < 3 ? c1 : c2) : h)));
+  let fresh = false;
+  for (let it = 0; it < 16 && (s.miss > 0.02 || s.slip > 0.001); it++) {
+    if (!J) { J = jacobian(); fresh = true; }
+    const dx = s.r.map((v) => -v);
+    if (!solve6(J.map((row) => row.slice()), dx)) break;
+    // Take the full step if it helps, else a shorter one.
+    let next = null;
+    for (let k = 1; k >= 1 / 16; k /= 2) {
+      const n = run(s.a.map((v, j) => v + dx[j] * k));
+      if (bad(n) < bad(s)) { next = n; break; }
+      if (!fresh) break; // try again with an up-to-date J first
+    }
+    if (!next) { if (fresh) break; J = null; continue; }
+    // Slow progress with an old J: refresh it.
+    if (!fresh && bad(next) > bad(s) * 0.3) J = null;
+    fresh = false;
+    s = next;
+  }
+  const [a1, a2] = vec(s.a);
+  const ok = s.miss < 0.3 && s.slip < 0.005;
+  return { ...f, a1, a2, gs: s.gs, need: ok ? Math.max(len(a1), len(a2)) : Infinity };
+}
 
-function planWith(game, from, to, now, accel, start = null, quick = false, bf = 0.5, noDetour = false) {
+/**
+ * The world whose pull sped this route up the most, if that's worth a
+ * mention: a gravity assist.
+ */
+function assistOf(game, f) {
+  if (!f.gs || f.legs) return null;
+  const fd = field(game, f.skip, f.tp, f.T);
+  const dt = f.T / GSTEPS;
+  const g = [0, 0, 0];
+  let best = null;
+  for (const a of fd.list) {
+    if (!a.b) continue;
+    const one = { list: [a], sun: 0, s2: 1 };
+    let kick = 0;
+    for (let k = 0; k <= GSTEPS; k++) {
+      const p = along(f, k * dt);
+      const v = Math.hypot(p.vx, p.vy, p.vz) || 1;
+      pull(one, k, p.x, p.y, p.z, g);
+      kick += ((g[0] * p.vx + g[1] * p.vy + g[2] * p.vz) / v) * dt * (k === 0 || k === GSTEPS ? 0.5 : 1);
+    }
+    if (kick > ASSIST.min * Math.sqrt(scaleOf(game)) && (!best || kick > best.kick)) best = { b: a.b, kick };
+  }
+  return best && best.b;
+}
+/**
+ * Rebuilds a fleet's gravity drift from its plan (guests are sent plans
+ * without it: it's a lot of numbers, and the same everywhere).
+ */
+export function regrav(game, f) {
+  if (f.legs) { for (const l of f.legs) regrav(game, l); return f; }
+  if (f.grav && !f.gs) f.gs = drift(f, field(game, f.skip, f.tp, f.T));
+  return f;
+}
+
+function planWith(game, from, to, now, accel, start = null, quick = false, bf = 0.5, noDetour = false, skip = null) {
+  skip = skip || homesOf(from, to);
   const p0 = start ? start.p : posAt(game, from, now);
   const v0 = start ? start.v : velAt(game, from, now);
+  const clear = (f) => clearOfSun(f, game, now, skip);
   // If the straight line would cross the sun, a torch ship doesn't wait for
   // the planets to move: it steers round, and that route is used if faster.
   const done = (f, blocked) => {
     if (noDetour || !blocked || to.fixed) return f;
-    const d = planDetour(game, to, now, accel, p0, v0, quick, bf);
+    const d = planDetour(game, from, to, now, accel, p0, v0, quick, bf, skip);
     return d && d.T < f.T ? d : f;
   };
-  const make0 = (T) => {
-    // Aim for a parking orbit beside the target, on the side we come in from
-    // (a fixed waypoint is hit exactly).
+  const make = (T) => {
+    // Aim for a parking orbit beside the target, on the side we come in from,
+    // moving round it at orbital speed (a fixed waypoint is hit exactly).
     const c = to.fixed ? to.fixed.p : posAt(game, to, now + T);
     const away = sub(p0, c);
     const l = len(away) || 1;
     const park = to.fixed ? 0 : parkRadius(to);
     const p1 = { x: c.x + (away.x / l) * park, y: c.y + (away.y / l) * park, z: c.z + (away.z / l) * park };
     const v1 = to.fixed ? to.fixed.v : velAt(game, to, now + T);
-    return { p0, v0, p1, v1, T, ...(bf < 0.5 ? { bf } : {}), ...burns(p0, v0, p1, v1, T, T * bf) };
+    const orb = to.fixed ? 0 : parkSpeed(to), lh = Math.hypot(away.x, away.z);
+    if (orb && lh > 1e-9) { v1.x -= (away.z / lh) * orb; v1.z += (away.x / lh) * orb; }
+    return { p0, v0, p1, v1, T, ...(bf < 0.5 ? { bf } : {}), ...burns(p0, v0, p1, v1, T, burnLen(T, bf)) };
   };
-  // With gravity: solve for burns that land on target once the pull is added
-  // (a few rounds: guess burns, work out the drift, correct the burns).
-  const makeG = (T) => {
-    let f = make0(T);
-    let gs = null;
-    for (let i = 0; i < 12; i++) {
-      gs = drift(f, gs);
-      const g = gs[GSTEPS];
-      const p1 = { x: f.p1.x - g[0], y: f.p1.y - g[1], z: f.p1.z - g[2] };
-      const v1 = { x: f.v1.x - g[3], y: f.v1.y - g[4], z: f.v1.z - g[5] };
-      const nb = burns(p0, v0, p1, v1, T, T * bf);
-      // Damped: move most of the way to the new burns (steadier near the sun).
-      const k = i < 2 ? 1 : 0.7;
-      const mixv = (a, c) => ({ x: a.x + (c.x - a.x) * k, y: a.y + (c.y - a.y) * k, z: a.z + (c.z - a.z) * k });
-      const a1 = mixv(f.a1, nb.a1), a2 = mixv(f.a2, nb.a2);
-      f = { ...f, a1, a2, need: Math.max(len(a1), len(a2)) };
-    }
-    const check = drift(f, gs);
-    const end = pureAlong(f, T);
-    const miss = Math.hypot(end.x + check[GSTEPS][0] - f.p1.x, end.y + check[GSTEPS][1] - f.p1.y, end.z + check[GSTEPS][2] - f.p1.z);
-    f.gs = check;
-    if (miss > 0.5) f.need = Infinity; // didn't settle: treat as out of reach
-    return f;
-  };
-  const make = make0;
+  // With gravity: correct the burns so they still land once the pull is added.
+  const makeG = (T) => ({ ...settle(make(T), field(game, skip, now, T)), grav: true, tp: now, skip });
+  const fits = (f) => f.need <= accel && clear(f);
   // Scan forward for the first flight time the drive can manage (moons move
   // fast, so the answer isn't monotonic), bisect it down, then make sure the
   // path misses the sun; if not, keep looking at longer transfers.
@@ -1215,20 +1400,38 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
       else hi = mid;
     }
     f = make(hi);
-    if (game.gravity && !quick && clearOfSun(f, game, now)) {
-      // Now with the sun's pull: from the gravity-free time upward. If no
-      // flight settles, fall back to the plain path (rare, very long hauls).
-      for (let T2 = hi; T2 < hi * 2.5 + 40; T2 *= 1.06) {
-        const g = makeG(T2);
-        if (g.need <= accel && clearOfSun(g, game, now)) return done(g, blocked);
-      }
-      return done(f, blocked);
+    if (!clear(f)) { blocked = true; prev = T; continue; }
+    if (!game.gravity || quick) return done(f, blocked);
+    // Now with gravity, from the gravity-free time: shorter if gravity helps
+    // (a dive toward the sun, an assist), longer if it hinders.
+    let best = null, fail = null, nearest = null;
+    const look = (T2) => {
+      const g = makeG(T2);
+      if (g.need < Infinity && (!nearest || g.need / accel < nearest.need / accel)) nearest = g;
+      return fits(g) ? g : null;
+    };
+    best = look(hi);
+    if (best) {
+      for (let T2 = hi / 1.08; T2 > hi * 0.4; T2 /= 1.08) { const g = look(T2); if (!g) { fail = T2; break; } best = g; }
+    } else {
+      fail = hi;
+      for (let T2 = hi * 1.06; T2 < hi * 8 + 40; T2 *= 1.06) { best = look(T2); if (best) break; fail = T2; }
     }
-    if (clearOfSun(f, game, now)) return done(f, blocked);
-    blocked = true;
-    prev = T;
+    if (best && fail !== null) {
+      // Tighten to within a percent or so.
+      let a = Math.min(fail, best.T), b = Math.max(fail, best.T);
+      if (fail > best.T) [a, b] = [best.T, fail];
+      for (let i = 0; i < 3; i++) {
+        const m = (a + b) / 2;
+        const g = look(m);
+        if (g && g.T < best.T) best = g;
+        if (fail < best.T) { if (g) b = m; else a = m; } else { if (g) a = m; else b = m; }
+      }
+    }
+    // (In the rare case nothing fits, the closest gravity-true route.)
+    return done(best || nearest || f, blocked);
   }
-  return done(game.gravity && !quick ? makeG(20000) : make(20000), blocked);
+  return done(make(20000), blocked);
 }
 
 /**
@@ -1237,7 +1440,7 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
  * fastest pair of legs wins. The result reads like one plan: T is the total,
  * legs hold the two transfers.
  */
-function planDetour(game, to, now, accel, p0, v0, quick, bf) {
+function planDetour(game, from, to, now, accel, p0, v0, quick, bf, skip) {
   const clear = game.sunClear || SUN_CLEAR;
   // Where the target will be, roughly: pick the side of the sun from that.
   const guess = burnTime(dist(p0, posAt(game, to, now))) * Math.sqrt(RULES.accel / accel);
@@ -1259,15 +1462,21 @@ function planDetour(game, to, now, accel, p0, v0, quick, bf) {
     const d1 = dist(p0, w), d2 = dist(w, c);
     const speed = 0.8 * Math.sqrt(2 * accel * Math.min(d1, d2));
     const vw = { x: (t.x / lt) * speed, y: 0, z: (t.z / lt) * speed };
-    const a = planWith(game, null, { fixed: { p: w, v: vw } }, now, accel, { p: p0, v: v0 }, quick, bf, true);
+    const a = planWith(game, from, { fixed: { p: w, v: vw } }, now, accel, { p: p0, v: v0 }, quick, bf, true, skip);
     if (a.need > accel || best && a.T >= best.T) continue;
     const e = along(a, a.T);
-    const b = planWith(game, null, to, now + a.T, accel, { p: { x: e.x, y: e.y, z: e.z }, v: { x: e.vx, y: e.vy, z: e.vz } }, quick, bf, true);
+    const b = planWith(game, from, to, now + a.T, accel, { p: { x: e.x, y: e.y, z: e.z }, v: { x: e.vx, y: e.vy, z: e.vz } }, quick, bf, true, skip);
     if (b.need > accel) continue;
     const T = a.T + b.T;
     if (!best || T < best.T) best = { legs: [a, b], T, p0, v0, p1: b.p1, v1: b.v1, a1: a.a1, a2: b.a2, need: Math.max(a.need, b.need), detour: true, ...(bf < 0.5 ? { bf } : {}) };
   }
   return best;
+}
+
+/** Swaps a fleet's route for a new plan (dropping everything the old one brought). */
+function replan(f, p, extra = {}) {
+  for (const k of ['assist', 'bf', 'gs', 'legs', 'detour', 'grav', 'tp', 'skip']) delete f[k];
+  return Object.assign(f, p, extra);
 }
 
 /** Ships that just arrived need a short turnaround before they can leave. */
@@ -1316,11 +1525,9 @@ function refit(game, owner) {
     if (left < 10) continue;
     const s = fleetState(f, game.time);
     const accel = accelOf(game, owner) * (f.probe ? RULES.probe.speed : 1);
-    const p = planWith(game, null, game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, f.bf || 0.5);
+    const p = planWith(game, game.bodies[f.from], game.bodies[f.to], game.time, accel, { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, f.bf || 0.5);
     if (p.T >= left) continue;
-    delete f.assist;
-    delete f.gs; delete f.legs; delete f.detour; // the new plan brings its own drift and route
-    Object.assign(f, p, { t0: game.time });
+    replan(f, p, { t0: game.time }); // the new plan brings its own drift and route
   }
 }
 
@@ -1334,9 +1541,8 @@ export function setDark(game, f, on) {
   const left = f.T - (game.time - f.t0);
   if (left < 10) return false;
   const s = fleetState(f, game.time);
-  const p = planWith(game, null, game.bodies[f.to], game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, on ? DARK.burn : 0.5);
-  delete f.assist; delete f.bf; delete f.gs; delete f.legs; delete f.detour;
-  Object.assign(f, p, { t0: game.time });
+  const p = planWith(game, game.bodies[f.from], game.bodies[f.to], game.time, accelOf(game, f.owner), { p: { x: s.x, y: s.y, z: s.z }, v: { x: s.vx, y: s.vy, z: s.vz } }, false, on ? DARK.burn : 0.5);
+  replan(f, p, { t0: game.time });
   if (on) f.dark = true; else delete f.dark;
   return true;
 }
@@ -1400,7 +1606,7 @@ export function fleetState(f, t) {
     vx: s.vx, vy: s.vy, vz: s.vz,
     nx: n.x, ny: n.y, nz: n.z,
     progress: tau / f.T,
-    burning: !flipping && tau < f.T && (!f.bf || tau < f.bf * f.T || tau > f.T - f.bf * f.T),
+    burning: !flipping && tau < f.T && (tau < burnLen(f.T, f.bf) || tau > f.T - burnLen(f.T, f.bf)),
     flipping,
     phase: tau < h ? 1 : 2,
   };

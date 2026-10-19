@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, crewAt, techText, eventText, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, regrav, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, crewAt, techText, eventText, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
@@ -523,7 +523,8 @@ function snapshot(seat = null) {
     winner: game.winner,
     credits: game.credits,
     tech: game.tech,
-    fleets: vis ? game.fleets.filter((f) => vis.seesFleet(f)) : game.fleets,
+    // Routes go without their gravity drift: guests work it out themselves (it's a lot of numbers).
+    fleets: (vis ? game.fleets.filter((f) => vis.seesFleet(f)) : game.fleets).map((f) => ({ ...f, gs: null, legs: f.legs && f.legs.map((l) => ({ ...l, gs: null })) })),
     scans: vis ? (game.scans || []).filter((x) => x.owner === seat) : game.scans,
     spies: vis ? (game.spies || []).filter((x) => x.owner === seat) : game.spies,
     happenings: game.happenings,
@@ -544,7 +545,16 @@ function applySnapshot(s) {
   game.time = paused || Math.abs(d) > 1.5 ? s.time : game.time + d * 0.5;
   game.credits = s.credits;
   game.tech = s.tech;
-  game.fleets = s.fleets;
+  // Keep the drift already worked out for a route that hasn't changed.
+  const had = new Map(game.fleets.map((f) => [f.id, f]));
+  game.fleets = s.fleets.map((f) => {
+    const o = had.get(f.id);
+    if (o && o.t0 === f.t0 && o.T === f.T) {
+      f.gs = o.gs;
+      if (f.legs && o.legs) f.legs.forEach((l, i) => { l.gs = o.legs[i] && o.legs[i].gs; });
+    }
+    return regrav(game, f);
+  });
   game.scans = s.scans;
   game.spies = s.spies;
   game.happenings = s.happenings;
@@ -744,12 +754,18 @@ function updateActions() {
     $('launch').disabled = true;
   } else {
     const t = game.bodies[ui.target];
-    ui.preview = plan(game, s, t, game.time, probing ? RULES.probe.speed : 1, false, !probing && ui.dark ? DARK.burn : 0.5);
+    // Re-planned about once a game second (the route barely changes faster than that).
+    const key = `${s.id}:${t.id}:${probing}:${ui.dark}:${s.owner}`;
+    if (!ui.preview || ui.previewKey !== key || Math.abs(game.time - ui.previewAt) > 1) {
+      ui.preview = plan(game, s, t, game.time, probing ? RULES.probe.speed : 1, false, !probing && ui.dark ? DARK.burn : 0.5);
+      ui.previewKey = key;
+      ui.previewAt = game.time;
+    }
     const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
     const defenceText = !seen ? 'unknown' : cover ? `${defence} ${tip(`+${cover.toFixed(1)}`, `Cover from ${coverFrom(game, t).map((c) => c.from.name).join(', ')}`)}` : defence;
-    const assist = (ui.preview.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[ui.preview.assist].name}: a faster route`, 'assist')}` : '')
+    const assist = (ui.preview.assist !== undefined ? ` ${tip(icon('assist'), `Gravity assist via ${game.bodies[ui.preview.assist].name}: its pull speeds the route`, 'assist')}` : '')
       + (ui.preview.detour ? ` ${tip('round the sun', 'The straight line would cross the sun: the fleet steers round it under full thrust', 'dim')}` : '');
     if (probing) {
       const why = cantProbe(game, s, t);
