@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # (to see which files a push changed)
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -34,6 +36,17 @@ jobs:
       - name: Build Perihelion
         working-directory: perihelion
         run: npm ci && npm run check && npm run build
+      # The 20 AI-only matches take a while, so they run only when the
+      # sim or the AI changed (and on a manual run). `npm run check:matches` by hand.
+      - name: Perihelion balance (when the sim or AI changed)
+        working-directory: perihelion
+        run: |
+          if [ "${{ github.event_name }}" != "push" ] || ! git cat-file -e "${{ github.event.before }}" 2>/dev/null \
+            || git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- src/sim.js src/ai.js tools/check-matches.mjs | grep -q .; then
+            npm run check:matches
+          else
+            echo "sim and AI unchanged: matches skipped"
+          fi
       - name: Build Dustline
         working-directory: dustline
         run: npm ci && npm run check && npm run build

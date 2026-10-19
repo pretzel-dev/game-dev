@@ -20,6 +20,9 @@ Live site: https://pretzel-dev.github.io/game-dev/ (each game in its own path).
 - Merging to `main` deploys automatically: `.github/workflows/pages.yml` runs
   `npm ci && npm run check && npm run build` for every game and publishes all
   of them to the `gh-pages` branch. **A failing `npm run check` blocks the deploy.**
+  Perihelion's 20 AI-only matches (`npm run check:matches`, slow) run in the
+  deploy only when `src/sim.js` or `src/ai.js` changed; run them by hand before
+  merging a balance change.
 - Keep changes small and focused; the owner tests on a phone and a desktop.
 
 ## Perihelion
@@ -58,14 +61,15 @@ Rules that keep things working:
   (see `applySnapshot`), never replace `game.bodies`.
 - Guests don't run the sim: they advance `game.time` and apply host snapshots
   four times a second. Anything a guest must see has to be in `snapshot()`.
-- Balance changes must keep all 20 AI-only matches finishing in `npm run check`.
+- Balance changes must keep all 20 AI-only matches finishing in `npm run check:matches`.
 
 Testing:
 
 ```sh
 cd perihelion
 npm ci
-npm run check        # headless sim tests + 20 AI matches (about 2-3 min)
+npm run check        # headless sim tests (seconds)
+npm run check:matches  # 20 AI-only matches, every map (minutes; run before balance changes)
 npm run build && npm run preview   # serves on :4173
 node tools/smoke.mjs out/          # phone-sized touch test (needs Playwright + Chromium)
 node tools/mp-smoke.mjs out/       # two-browser multiplayer test (needs a local PeerJS server)
