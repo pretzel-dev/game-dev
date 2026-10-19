@@ -1332,7 +1332,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       // Label: ship count big, name small. Moons and stations hide their label
       // while they're crowded against their planet on screen (unless busy).
       tmp.copy(v.g.position).project(camera);
-      const hide = tmp.z > 1 || crowded.has(b.id);
+      const hide = tmp.z > 1 || (crowded.has(b.id) && ui.tutWorld !== b.id);
       if (hide) { v.label.style.visibility = 'hidden'; continue; }
       const attackers = (known ? b.sieges : []).map((g) => `<span class="atk" style="color:${ownerColor(g.owner)}">${icon('attack')}${g.n}</span>`).join('');
       const count = !known ? '<b class="unk">?</b>' : b.owner === NEUTRAL ? `<i class="guns">${icon('guns')}${Math.ceil(b.guns)}</i>` : b.ships ? `<b>${b.ships}</b>` : '';
@@ -1359,6 +1359,8 @@ export function createView(canvas, labelRoot, opts = {}) {
       const text = `<span class="row1">${count}${kids}</span>${attackers}${warn}${evs}<small>${perk}${b.name}</small>`;
       if (text !== v.shown) { v.label.innerHTML = text; v.shown = text; }
       v.label.classList.toggle('can', ui.mode === 'project' && b.owner === (ui.me ?? 0) && !cantProject(game, b, ui.projKey));
+      v.label.classList.toggle('tut', ui.tutWorld === b.id);
+      if (ui.tutWorld === b.id) v.label.style.setProperty('--mk', `${Math.round(markPx)}px`);
       v.label.style.visibility = 'visible';
       const x = (tmp.x * 0.5 + 0.5) * w;
       const y = (-tmp.y * 0.5 + 0.5) * h;

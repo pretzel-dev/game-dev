@@ -3,6 +3,7 @@ import { createGame, step, launch, plan, fleetState, rng, NEUTRAL, RULES, slotsO
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
+import { STEPS, firstTarget } from './tutorial.js';
 
 const $ = (id) => document.getElementById(id);
 // Panels redraw often (countdowns, progress bars). Swapping a button out from
@@ -95,7 +96,9 @@ function applyCmd(owner, c) {
 function act(c) {
   if (paused) return false; // nothing moves while the host holds the game
   if (net?.role === 'client') { net.room.send({ t: 'cmd', cmd: c }); return true; }
-  return applyCmd(me, c);
+  const ok = applyCmd(me, c);
+  if (ok) tutOrder(c);
+  return ok;
 }
 
 // ---- Menu -----------------------------------------------------------------
@@ -122,9 +125,10 @@ let aiSeatDiffs = [];
 let daily = null; // the day's key when playing the daily system
 /** The chosen system type, with Random resolved from the seed. */
 const systemFor = (seed) => (prefs.system !== 'random' && SYSTEMS[prefs.system] ? prefs.system : RANDOM_KEYS[(seed >>> 0) % RANDOM_KEYS.length]);
-function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, aiDiffs = null, mp = false, system = systemFor(seed), day = null } = {}) {
+function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rivals + 1, seat = 0, names = null, aiSeats = null, aiDiffs = null, mp = false, system = systemFor(seed), day = null, training = false } = {}) {
   daily = day;
   game = createGame({ seed, opponents: players - 1, mp, system });
+  tut = null;
   if (names) game.names = names;
   me = seat;
   const r = rng(seed ^ 0xabc);
@@ -169,7 +173,9 @@ function startGame({ seed = (Math.random() * 2 ** 31) | 0, players = prefs.rival
   $('menu').classList.remove('paused');
   updateActions();
   const sys = SYSTEMS[game.system];
-  toast(`${daily ? 'Daily · ' : ''}${sys.name}`, '#aab1c8');
+  if (training) startTutorial();
+  else toast(`${daily ? 'Daily · ' : ''}${sys.name}`, '#aab1c8');
+  syncTutorial();
 }
 // A game in progress (paused behind the menu): check before throwing it away.
 const okToLeave = () => $('resume').hidden || confirm('Leave the game in progress? It will be lost.');
@@ -233,6 +239,83 @@ function showPaused() {
   $('banner').hidden = !paused;
   $('banner').textContent = me === 0 ? 'Paused · tap play to resume' : 'Paused by host';
 }
+
+// ---- Tutorial -----------------------------------------------------------------
+// A guided first game (the steps are in tutorial.js): a card at the top says
+// what to do next and the thing to tap glows. The rival waits until the tour
+// is over (or closed).
+
+let tut = null;
+function startTutorial() {
+  game.credits[me] += 800; // a training grant: a ship, a building and research at once
+  tut = { i: 0, free: false, did: new Set(), sentTo: null, target: firstTarget(game, me), held0: game.bodies.filter((b) => b.owner === me).length };
+  tutCamera();
+}
+/** Where the camera is when a step starts (the camera step waits for a change). */
+function tutCamera() { const o = view.orbit; tut.cam = { az: o.az, pol: o.pol, dist: o.dist, x: o.target.x, y: o.target.y, z: o.target.z }; }
+function tutContext() {
+  const o = view.orbit, c0 = tut.cam;
+  const moved = 2 * (Math.abs(o.az - c0.az) + Math.abs(o.pol - c0.pol) + Math.abs(Math.log(o.dist / c0.dist)))
+    + (3 * Math.hypot(o.target.x - c0.x, o.target.y - c0.y, o.target.z - c0.z)) / c0.dist;
+  const mine = game.bodies.filter((b) => b.owner === me);
+  if (!tut.target || tut.target.owner !== NEUTRAL) tut.target = firstTarget(game, me);
+  return {
+    game, ui, me, warp, moved, touch: touchInput, target: tut.target, sentTo: tut.sentTo,
+    home: mine.find((b) => b.home) || mine[0], gained: mine.length - tut.held0,
+    inFlight: game.fleets.some((f) => f.owner === me && !f.probe), researchOpen: !$('research').hidden,
+  };
+}
+function tutOrder(c) {
+  if (!tut || tut.free) return;
+  tut.did.add(c.type);
+  if (c.type === 'launch') tut.sentTo = c.to;
+  syncTutorial();
+}
+function endTutorial() {
+  if (!tut) return;
+  tut.free = true;
+  prefs.tutorialDone = true;
+  savePrefs();
+  syncLearn();
+  syncTutorial();
+}
+function syncTutorial() {
+  const on = !!tut && !tut.free && running && !!game;
+  document.body.classList.toggle('tut-on', on);
+  $('coach').hidden = !on;
+  ui.tutWorld = null;
+  if (!on) { $('tut-glow').textContent = ''; return; }
+  let c = tutContext();
+  if (!c.home) { endTutorial(); return; }
+  // Done already (or done ahead of time): on to the next step.
+  for (let st = STEPS[tut.i]; !st.last && ((st.on && tut.did.has(st.on)) || (st.done && st.done(c))); st = STEPS[tut.i]) {
+    tut.i += 1;
+    tutCamera();
+    c = tutContext();
+  }
+  const st = STEPS[tut.i];
+  const point = typeof st.point === 'function' ? st.point(c) : st.point;
+  // A style rule rather than a class: panels redraw, and the rule still applies.
+  $('tut-glow').textContent = point ? `${point} { animation: tutglow 0.9s ease-in-out infinite alternate; }` : '';
+  ui.tutWorld = st.world ? st.world(c) : null;
+  const where = ui.tutWorld !== null && ui.tutWorld !== undefined ? `<button class="show" data-go="${ui.tutWorld}">Show</button>` : '';
+  setHTML($('coachText'), `<small>Training · ${tut.i + 1}/${STEPS.length}</small><b>${st.title}</b><span>${st.text(c)}</span>`);
+  setHTML($('coachShow'), where);
+  $('coachNext').textContent = st.last ? 'Play on' : st.on || st.done ? 'Skip' : 'Next';
+  $('coachNext').classList.toggle('ghost', !!(st.on || st.done));
+}
+$('coachNext').addEventListener('click', () => {
+  if (!tut) return;
+  if (STEPS[tut.i].last) { endTutorial(); toast('Your rival is on the move', '#aab1c8'); return; }
+  tut.i += 1;
+  tutCamera();
+  syncTutorial();
+});
+$('coachClose').addEventListener('click', () => { endTutorial(); toast('Tutorial closed · your rival is on the move', '#aab1c8'); });
+$('coachShow').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-go]');
+  if (b) view.focus(game, Number(b.dataset.go));
+});
 
 // ---- Multiplayer ------------------------------------------------------------
 
@@ -349,6 +432,9 @@ $('devbar').addEventListener('click', (e) => {
   ui.vis = ui.devAs === 'all' ? null : visibility(game, ui.devAs);
   renderDev();
 });
+$('learn').addEventListener('click', () => { if (!okToLeave()) return; leaveNet(); startGame({ seed: 7, players: 2, aiSeats: [[1, 'cadet']], system: 'classic', training: true }); });
+const syncLearn = () => { $('learn').className = prefs.tutorialDone ? 'link' : 'primary ghost'; };
+syncLearn();
 $('howto').addEventListener('click', () => { $('menu').hidden = true; $('tutorial').hidden = false; });
 $('tut-close').addEventListener('click', () => { $('tutorial').hidden = true; $('menu').hidden = false; });
 // Tap the room code to copy it.
@@ -1700,7 +1786,8 @@ function frame(now) {
         let left = dt * warp;
         while (left > 0) {
           const h = Math.min(0.25, left);
-          for (const ai of ais) tickAI(game, ai, h);
+          // In the tutorial the rival waits until you've had the tour.
+          if (!tut || tut.free) for (const ai of ais) tickAI(game, ai, h);
           step(game, h);
           left -= h;
         }
@@ -1739,6 +1826,7 @@ function frame(now) {
         if (prefs.dev && !net) renderDev();
         updateActions();
         renderResearch();
+        syncTutorial();
         {
           const net_ = income(game, me) - upkeepOf(game, me);
           // Vast: crew in use against what your worlds can field.
