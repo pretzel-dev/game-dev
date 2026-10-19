@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { icon } from './icons.js';
-import { NEUTRAL, bureauReach, posAt, fleetState, rng, vetLevel, starPos, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
+import { NEUTRAL, bureauReach, posAt, fleetState, rng, vetLevel, starPos, orbitOffset, PERKS, EVENTS, PROJECTS, present, cantProject } from './sim.js';
 import { createPost } from './gfx/post.js';
 import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './gfx/glsl.js';
 import { createSky } from './gfx/sky.js';
@@ -109,7 +109,7 @@ const screenRes = { value: new THREE.Vector2(1, 1) };
 function orbitLine(b) {
   const N = b.parent !== null ? 192 : 512;
   const pos = [], next = [], ang = [], side = [], idx = [];
-  const at = (a) => [Math.cos(a) * b.r, Math.sin(a) * b.r * b.incl, Math.sin(a) * b.r];
+  const at = (a) => { const q = orbitOffset(b, a); return [q.x, q.y, q.z]; };
   for (let i = 0; i <= N; i++) {
     const a = (i / N) * Math.PI * 2;
     for (const sd of [-1, 1]) { pos.push(...at(a)); next.push(...at(a + 0.01)); ang.push(a); side.push(sd); }
@@ -587,8 +587,11 @@ export function createView(canvas, labelRoot, opts = {}) {
   function parkPos(b, j, radius, speed, seed, t, out, tan) {
     const p = bodyPos[b.id];
     const r1 = hash(seed, j);
-    const a = r1 * Math.PI * 2 + t * speed * (0.8 + r1 * 0.4);
     const rr = radius * (1 + hash(j, seed) * 0.15);
+    // A real orbit round anything with mass (Kepler: slower further out;
+    // attackers circle the other way); ships beside a station hold station.
+    const w = b.gm ? Math.sign(speed) * Math.sqrt(b.gm / (rr * rr * rr)) : speed * (0.8 + r1 * 0.4);
+    const a = r1 * Math.PI * 2 + t * w;
     if (tan) tan.set(-Math.sin(a), 0, Math.cos(a)).multiplyScalar(Math.sign(speed) || 1);
     out.set(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 0.7 + r1) * rr * 0.15, p.z + Math.sin(a) * rr);
     if (b.kind === 'station' && speed > 0) dock(b, j, t, out, tan);

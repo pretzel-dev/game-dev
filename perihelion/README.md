@@ -7,8 +7,15 @@ asteroids, and very few ships. Take the system from one or two AI rivals.
 ## Systems
 
 Every map has a big sun (about 16 units across); the nearest planet orbits at
-52 and ships keep a few units clear of its surface. Every map has at least one
+56 and ships keep a few units clear of its surface. Every map has at least one
 gas giant.
+
+**Orbits follow gravity.** Planets keep Kepler's law (a year grows with
+distance^1.5). Every world has a mass, and its moons and station circle it
+at the speed that mass gives (heavier worlds have faster moons), well inside
+its Hill sphere, where its pull beats the sun's tides. On the usual maps the
+worlds are dense (1–9% of the sun's mass), as in most space games, so moons can
+sit close enough for a short hop. Each orbit tilts slightly about its own line.
 
 Pick a **System** on the menu (or Random). Each is a different layout; the
 rules don't change:
@@ -18,15 +25,20 @@ rules don't change:
 - **Wide and cold:** few worlds, far apart; long trips, probes matter.
 - **Crowded:** worlds packed close; short, sharp trips.
 - **Rich belt:** eight asteroids in a thick belt.
-- **Binary:** a smaller companion sun with two worlds (and a moon) of its own
-  on an eccentric orbit (dashed orange line): most of the game it hangs far
-  out, then it swings in fast past the outer planets and away again. When
-  that happens depends on the map. Its worlds earn 50% more. Routes steer
-  clear of both suns.
+- **Binary:** a smaller companion sun (a quarter of the sun's mass) with two
+  worlds (and a moon) of its own on an eccentric orbit (dashed orange line).
+  Its year follows from that orbit and both suns' masses, far longer than a
+  game: most of the game it hangs far out, then once, 10 to 40 minutes in, it
+  swings in fast past the outer planets and away again. Its worlds earn 50%
+  more. Its pull acts on ships too; routes steer clear of both suns.
 
-- **Vast** (test, picked by hand only): a system at proportions closer to
-  life. Worlds are small beside the gaps to their moons, and the sun is about
-  three and a half times as wide as the gap between a planet and its moon.
+- **Vast** (test, picked by hand only): a system as true to life as the game
+  allows. The sun is small and far away (the nearest world orbits about 70
+  sun radii out, as Mercury does); worlds have real masses next to it (a gas
+  giant about a thousandth of the sun, rocky worlds a few hundred-thousandths),
+  so their pull on passing ships is slight and gravity assists are rare, as for
+  real torch ships; moons sit close in, a few planet widths out, and circle
+  slowly. Worlds are still drawn far bigger than life, or they'd be invisible.
   Distances are several times Classic's and drives are half as strong, so a
   trip to a neighbour takes minutes and to the far planets ten or more. Every
   voyage is a commitment: research and fleet size matter. Sensor, relay,
@@ -67,10 +79,10 @@ From about 4–6 minutes in, then every 7–10 minutes, something turns up.
 The label on the map counts down: **in m:ss** until it starts, **gone m:ss**
 while nobody holds it, and **hold m:ss** (in the holder's colour) for the
 time still needed to claim it.
-Comets and derelicts are visitors: they fall in from the edge of the system,
-whip round the sun and fly back out (about 7–8 minutes inside the planets'
-orbits; slow enough to catch, since ships must match a visitor's speed to
-board it), so you have to
+Comets and derelicts are visitors from outside the system, on true hyperbolic
+(Kepler) paths: they fall in from the edge, whip round the sun and fly back
+out for good (about 9–10 minutes inside the planets' orbits; slow enough to
+catch, since ships must match a visitor's speed to board it), so you have to
 catch them on the way; the launch panel warns if they'll be gone before your
 ships arrive, and anyone still aboard when one leaves heads for home. The
 other events happen at a world: an independent one while any are left (never a
@@ -81,7 +93,7 @@ Losing the world resets the clock. The label shows the icon and countdown.
 
 | Event | Hold | Reward |
 |---|---|---|
-| Comet pass | 60 s | 12 credits/s while you hold it |
+| Comet pass | 60 s | 9 credits/s while you hold it |
 | Derelict warship | 45 s | 4 veteran ships |
 | Lost probe signal | 40 s | A random research level |
 | Ice-hauler wreck | 45 s | 450 credits |
@@ -155,17 +167,24 @@ preview server running).
   curve shows the route to where the target *will be* when the ships arrive,
   and the panel shows what's defending it and the flight time.
 - **Flight:** a torch-ship rendezvous. Ships start with their launch world's
-  orbital velocity, burn with one thrust vector for the first half, flip, and
-  burn with a second, arriving in a parking orbit beside the target at its
-  speed (they don't overshoot or fly into it). The planner picks the fastest transfer the drive allows
-  that stays clear of the sun; when the straight line would cross it, the
-  fleet steers round under full thrust (a burn to a turning point beside
-  the sun, then on to the target; the panel says "round the sun"), so a
-  better drive always shortens the trip. The sun's gravity pulls on ships all through
-  the flight (at the strength that holds the planets in orbit), so routes
-  bend round it: dives inward are quick, climbs outward cost more. The
-  planner solves for burns that still land on target (about 1 route in 20
-  is too awkward and flies the plain path).
+  orbital velocity, burn with one thrust vector for the first half, cut the
+  drive and flip, and burn with a second, arriving in a parking orbit beside
+  the target, matched to its speed and moving round it at orbital speed (they
+  don't overshoot or fly into it). The planner picks the fastest transfer the
+  drive allows that stays clear of the sun and of the worlds on the way; when
+  the straight line would cross the sun, the fleet steers round under full
+  thrust (a burn to a turning point beside it, then on to the target; the
+  panel says "round the sun"), so a better drive always shortens the trip.
+- **Gravity:** the sun, a companion sun and every planet a fleet passes pull
+  on it all through the flight (the worlds themselves stay on fixed orbits:
+  "on rails"). Routes bend: dives toward the sun are quick, climbs outward
+  cost more, and a pass close by a heavy world can speed a route along (a
+  **gravity assist**, marked in the panel). Torch ships move far faster than
+  the worlds, so an assist is worth a few percent, not a free ride. The
+  worlds a fleet leaves and arrives at (and their moons) are left out:
+  climbing out of and settling into their parking orbits is the close-in
+  manoeuvring ships do on thrusters. The planner solves for burns that still
+  land on target with all of that included (Newton's method on the two burns).
   A hop to your own moon takes under a minute; crossing the system takes
   minutes. Drive plumes are visible from far away. Ships can't be recalled.
 - **Credits:** every world you hold earns credits (planets 1/s, stations

@@ -1,6 +1,6 @@
 // Headless checks: intercepts land on target, battles resolve, AI matches finish.
 import assert from 'node:assert/strict';
-import { createGame, step, launch, plan, posAt, velAt, dist, fleetState, parkRadius, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH, launchProbe, cantBuild as cantBuildAt, SYSTEM_KEYS, RANDOM_KEYS, SYSTEMS, dailySeed, starPos } from '../src/sim.js';
+import { createGame, step, launch, plan, GM_SUN, kepler, regrav, posAt, velAt, dist, fleetState, parkRadius, parkSpeed, buildStructure, orderShip, cantBuild, slotsOf, income, upgrade, upgradeTime, NEUTRAL, RULES, research, visibility, yardsOf, demolish, cancelShip, accelOf, TECH, launchProbe, cantBuild as cantBuildAt, SYSTEM_KEYS, RANDOM_KEYS, SYSTEMS, dailySeed, starPos } from '../src/sim.js';
 import { createAI, tickAI } from '../src/ai.js';
 import { rng } from '../src/sim.js';
 
@@ -35,9 +35,9 @@ import { rng } from '../src/sim.js';
     const f = { ...plan(g, home, t), t0: g.time };
     const end = fleetState(f, f.t0 + f.T);
     const v1 = velAt(g, t, f.t0 + f.T);
-    worstV = Math.max(worstV, Math.hypot(end.vx - v1.x, end.vy - v1.y, end.vz - v1.z));
-    const k = f.assist !== undefined ? 1.25 : 1;
-    worstA = Math.max(worstA, Math.hypot(f.a1.x, f.a1.y, f.a1.z) / k, Math.hypot(f.a2.x, f.a2.y, f.a2.z) / k);
+    // Matching the target's speed, plus the speed of a circular parking orbit round it.
+    worstV = Math.max(worstV, Math.abs(Math.hypot(end.vx - v1.x, end.vy - v1.y, end.vz - v1.z) - parkSpeed(t)));
+    worstA = Math.max(worstA, Math.hypot(f.a1.x, f.a1.y, f.a1.z), Math.hypot(f.a2.x, f.a2.y, f.a2.z));
     for (let k = 0; k <= 200; k++) {
       const s = fleetState(f, f.t0 + (k / 200) * f.T);
       closestSun = Math.min(closestSun, Math.hypot(s.x, s.y, s.z));
@@ -63,21 +63,38 @@ import { rng } from '../src/sim.js';
   }
 }
 
-// Gravity assists happen on some routes, and only ever make a trip faster.
+// Gravity: moons and stations circle their planets at the speed Kepler's law
+// gives for the planet's mass, well inside its Hill sphere (where it holds
+// them against the sun's tides). Every route settles with gravity on, on
+// every map; a pass by a heavy world sometimes speeds a route along (an assist).
 {
   let assisted = 0;
   let total = 0;
-  for (let seed = 1; seed <= 6; seed++) {
-    const g = createGame({ seed });
+  for (const sys of SYSTEM_KEYS) {
+    const g = createGame({ seed: 2, system: sys });
+    for (const m of g.bodies.filter((b) => b.parent !== null)) {
+      const p = g.bodies[m.parent];
+      assert.ok(Math.abs(m.period - kepler(m.r, p.gm)) < 1e-6, `${sys}: ${m.name} keeps Kepler's law`);
+      const gmStar = p.star ? g.stars[p.star].gm : GM_SUN;
+      const hill = p.r * Math.cbrt(p.gm / (3 * gmStar));
+      assert.ok(m.r <= hill * 0.5 + 1e-9, `${sys}: ${m.name} inside half ${p.name}'s Hill sphere`);
+    }
+    for (const b of g.bodies.filter((x) => x.kind === 'planet' && !x.star)) assert.ok(Math.abs(b.period - kepler(b.r, GM_SUN)) < 1e-6 * b.period, `${sys}: ${b.name}'s year`);
     for (const a of g.bodies) for (const b of g.bodies) {
       if (a === b || a.kind !== 'planet' || b.kind !== 'planet') continue;
       const f = plan(g, a, b);
       total++;
-      if (f.assist !== undefined) { assisted++; assert.ok(g.bodies[f.assist].giant); }
+      assert.ok(f.need <= accelOf(g, a.owner) + 1e-9 && (f.grav || f.legs), `${sys}: ${a.name} -> ${b.name} flies with gravity`);
+      if (f.assist !== undefined) { assisted++; assert.ok(g.bodies[f.assist].kind === 'planet' && ![a.id, b.id].includes(f.assist)); }
     }
   }
   assert.ok(assisted > 0, 'some routes get an assist');
-  console.log(`assists: ${assisted}/${total} planet-to-planet routes`);
+  // Guests rebuild a route's drift from its plan: the same path.
+  const g = createGame({ seed: 3 });
+  const f = { ...plan(g, g.bodies[1], g.bodies[5]), t0: 0 };
+  const bare = regrav(g, { ...f, gs: null, legs: f.legs && f.legs.map((l) => ({ ...l, gs: null })) });
+  assert.ok(dist(fleetState(bare, f.T * 0.6), fleetState(f, f.T * 0.6)) < 1e-9, 'the same drift on a guest');
+  console.log(`gravity: assists on ${assisted}/${total} planet-to-planet routes`);
 }
 
 // Economy: ships only come from shipyards, paid in credits; slots are limited.
@@ -582,25 +599,29 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   console.log('upkeep and drill: ok');
 }
 
-// Vast: a system at true-to-life proportions, hand-picked only. Worlds small
-// beside the gaps to their moons, a sun far wider than planet and moon
-// together; reaches scale with the map; the other maps unchanged.
+// Vast: a system at true-to-life proportions, hand-picked only. A small
+// sun far from the nearest world, worlds with real masses (a gas giant about
+// a thousandth of the sun), moons tucked in close; reaches scale with the
+// map; the other maps unchanged.
 {
   const S = await import('../src/sim.js');
   assert.ok(!RANDOM_KEYS.includes('vast') && SYSTEM_KEYS.includes('vast'), 'Vast is picked by hand only');
   const a = createGame({ seed: 7, system: 'classic' }), v = createGame({ seed: 7, system: 'vast' });
   assert.ok(v.bodies.every((b, i) => S.slotsOf(b) === S.slotsOf(a.bodies[i])), 'build slots unchanged');
-  const home = v.bodies.find((b) => b.owner === 0), moon = v.bodies.find((b) => b.parent === home.id && b.kind === 'moon');
-  const sunD = 2 * 6 * v.stars[0].size;
-  assert.ok(moon && sunD > 3 * moon.r && sunD < 4.5 * moon.r, `the sun is about 3.5 planet-to-moon gaps across (${(sunD / moon.r).toFixed(1)})`);
-  assert.ok(moon.r > 8 * 2 * home.size, 'worlds are small beside the gaps to their moons');
+  const sunR = 6 * v.stars[0].size;
+  assert.ok(v.bodies[0].r > 60 * sunR, `the nearest world is far out, as Mercury is (${(v.bodies[0].r / sunR).toFixed(0)} sun radii)`);
   assert.ok(v.bodies[0].r > v.sunClear + 10, 'the innermost planet clears the sun');
+  for (const b of v.bodies.filter((x) => x.kind === 'planet')) {
+    const mu = b.gm / GM_SUN;
+    assert.ok(b.giant ? mu > 3e-4 && mu < 4e-3 : mu < 2e-4, `${b.name}: a true-to-life mass (${mu.toExponential(1)})`);
+  }
   assert.equal(S.perkRange(v, 'relay'), 4 * S.perkRange(a, 'relay'));
+  const home = v.bodies.find((b) => b.owner === 0);
   const ha = a.bodies.find((b) => b.owner === 0), far = a.bodies.find((b) => b.giant);
   const Ta = plan(a, ha, far).T, Tv = plan(v, home, v.bodies[far.id]).T;
   assert.ok(Tv > Ta * 2.2, `trips are a journey (${Math.round(Ta)}s -> ${Math.round(Tv)}s)`);
   assert.equal(S.travelOf(a), 1, 'other maps keep their timings');
-  console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast; sun ${(sunD / moon.r).toFixed(1)} moon-gaps across`);
+  console.log(`vast: home to ${far.name} ${Math.round(Ta / 60)} min on classic, ${Math.round(Tv / 60)} min on vast; nearest world ${(v.bodies[0].r / sunR).toFixed(0)} sun radii out`);
 }
 
 // Crews (every map): the fleet can't outgrow the crew your worlds field;
