@@ -371,7 +371,8 @@ frames run slow, and raises it again when there's room. Add `?gfx=low` or
 ```sh
 npm install
 npm run dev
-npm run check    # intercepts, flight, battles, AI-only matches
+npm run check    # intercepts, flight, battles, maps (seconds)
+npm run check:matches   # 20 AI-only matches on every map (minutes)
 npm run build
 ```
 

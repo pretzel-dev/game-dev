@@ -1149,10 +1149,12 @@ function pureAlong(f, tau) {
 }
 
 /** Is the path clear of the sun, any companion sun, and the worlds it passes (not those in `skip`)? */
-function clearOfSun(f, game, now, skip = []) {
-  const worlds = game.bodies.filter((b) => b.kind === 'planet' && !skip.includes(b.id));
-  for (let k = 1; k < 128; k++) {
-    const tau = (k / 128) * f.T;
+function clearOfSun(f, game, now, skip = [], quick = false) {
+  // (A quick estimate, for the AI, only minds the suns: the route it flies is planned in full.)
+  const worlds = quick ? [] : game.bodies.filter((b) => b.kind === 'planet' && !skip.includes(b.id));
+  const N = quick ? 48 : 128;
+  for (let k = 1; k < N; k++) {
+    const tau = (k / N) * f.T;
     const p = along(f, tau);
     if (len(p) < (game.sunClear || SUN_CLEAR)) return false;
     // A companion sun: keep clear of it too, wherever it will be.
@@ -1391,7 +1393,7 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
   skip = skip || homesOf(from, to);
   const p0 = start ? start.p : posAt(game, from, now);
   const v0 = start ? start.v : velAt(game, from, now);
-  const clear = (f) => clearOfSun(f, game, now, skip);
+  const clear = (f) => clearOfSun(f, game, now, skip, quick);
   // If the straight line would cross the sun, a torch ship doesn't wait for
   // the planets to move: it steers round, and that route is used if faster.
   const done = (f, blocked) => {
@@ -1503,7 +1505,8 @@ function planWith(game, from, to, now, accel, start = null, quick = false, bf = 
   // path misses the sun; if not, keep looking at longer transfers.
   let prev = 1;
   let blocked = false; // a transfer the drive could fly was rejected for the sun
-  for (let T = 2; T < 20000; T += 2) {
+  // (Steps grow with T: a few percent is plenty to bracket the answer.)
+  for (let T = 2; T < 20000; T += Math.max(2, T * 0.04)) {
     let f = make(T);
     if (f.need > accel) { prev = T; continue; }
     let lo = prev;
