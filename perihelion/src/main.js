@@ -259,10 +259,15 @@ function tutContext() {
     + (3 * Math.hypot(o.target.x - c0.x, o.target.y - c0.y, o.target.z - c0.z)) / c0.dist;
   const mine = game.bodies.filter((b) => b.owner === me);
   if (!tut.target || tut.target.owner !== NEUTRAL) tut.target = firstTarget(game, me);
+  // Your fleets on their way to a world (the one you last attacked, if any are).
+  const out = game.fleets.filter((f) => f.owner === me && !f.probe);
+  const flying = out.some((f) => f.to === tut.sentTo) ? out.filter((f) => f.to === tut.sentTo) : out;
   return {
     game, ui, me, warp, moved, touch: touchInput, target: tut.target, sentTo: tut.sentTo,
     home: mine.find((b) => b.home) || mine[0], gained: mine.length - tut.held0,
-    inFlight: game.fleets.some((f) => f.owner === me && !f.probe), researchOpen: !$('research').hidden,
+    inFlight: flying.length > 0, eta: flying.length ? fmt(Math.min(...flying.map((f) => f.T - (game.time - f.t0)))) : null,
+    fighting: game.bodies.some((b) => b.sieges.some((g) => g.owner === me)),
+    sentName: tut.sentTo !== null ? game.bodies[tut.sentTo].name : '', researchOpen: !$('research').hidden,
   };
 }
 function tutOrder(c) {

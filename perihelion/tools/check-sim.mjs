@@ -642,7 +642,7 @@ assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
   assert.ok(g.credits[0] + 800 >= RULES.ship.cost + RULES.structures.lab.cost + cheapest, 'the training grant covers a ship, a lab and research');
   for (const touch of [true, false]) {
     for (const ui of [{ selected: null, slot: null, mode: null, target: null }, { selected: home.id, slot: 2, mode: 'launch', target: null }, { selected: home.id, slot: null, mode: 'launch', target: 3 }]) {
-      const c = { game: g, ui, me: 0, home, touch, target: firstTarget(g, 0), sentTo: null, moved: 0, warp: 1, gained: 0, inFlight: false, researchOpen: false };
+      const c = { game: g, ui, me: 0, home, touch, target: firstTarget(g, 0), sentTo: null, moved: 0, warp: 1, gained: 0, inFlight: false, researchOpen: false, eta: touch ? '0:42' : null, fighting: !touch, sentName: 'Aether' };
       for (const st of STEPS) {
         assert.ok(st.title && st.text(c).length > 20, `step ${st.title} reads`);
         if (typeof st.point === 'function') st.point(c);
