@@ -766,7 +766,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     st.a.lerp(jN, k);
     st.n.copy(n);
     st.t = gt;
-    if (px < 2) return; // too small to see
+    if (px < 8) return; // too small to read as a jet: from afar it would only twinkle
     const alpha = st.a.length();
     // A pilot's hand, not a metronome: time is cut into uneven slots (each
     // ship its own rhythm), and each slot is a burst or a pause by the dice.
@@ -819,7 +819,10 @@ export function createView(canvas, labelRoot, opts = {}) {
     // blink at once as the view crossed it).
     const hullPx = 0.6 * SHIP_SCALE / 0.8 * ppu;
     const fade = 1 - THREE.MathUtils.smoothstep(hullPx, 3, 14);
-    const glint = fade <= 0 ? null : [(burning ? 9 : 5) * (probe ? 0.8 : 1), (burning ? 1 : 0.7) * glintMul * fade];
+    // Only a real burn brightens the point of light; thruster puffs near a
+    // world don't (from afar they'd just twinkle).
+    const torch = burning && plume >= 0.2;
+    const glint = fade <= 0 ? null : [(torch ? 6.5 : 5) * (probe ? 0.8 : 1), (torch ? 0.85 : 0.7) * glintMul * fade, torch];
     shipR.add(type, p, n, s, color, 0.82 + hash(id, 11) * 0.28, id, burning, plume * (0.8 + Math.sin(t * 40 + seed) * 0.05) * (probe ? 0.35 : 1), glint, 0.6 * ppu, sunlit(p));
     if (gt !== null && !probe) attitudeJets(id, p, n, s[2], gt, t, hullPx);
   }

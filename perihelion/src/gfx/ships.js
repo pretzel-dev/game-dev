@@ -863,16 +863,19 @@ export function createShipRenderer(scene, max) {
         m4.compose(tgt, q, sc.set(0.06 * s[0] * (type >= PROBE ? 0.5 : 1), 1, len));
         plumes.setMatrixAt(i, m4);
         // Up close the torch is toned down a little so it doesn't outshine
-        // the hull; far off it stays at full strength (it shows the heading).
-        pPow.setX(i, 1 - 0.35 * THREE.MathUtils.smoothstep(px, 120, 500));
+        // the hull. Far off it dims too (the point of light carries the ship
+        // there), and a short thruster puff fades out entirely.
+        const far = THREE.MathUtils.smoothstep(px, 4, 40);
+        pPow.setX(i, (1 - 0.35 * THREE.MathUtils.smoothstep(px, 120, 500)) * (plume < 0.2 ? far : 0.3 + 0.7 * far));
         pSeed.setX(i, (seed * 0.371) % 1);
         pTint.setXYZ(i, PLUME_TINT.r, PLUME_TINT.g, PLUME_TINT.b);
       }
       if (glint && glint[0] > 0) {
         const i = nGlint++;
         gPos[i * 3] = p.x; gPos[i * 3 + 1] = p.y; gPos[i * 3 + 2] = p.z;
-        col.set(burning ? '#cfe8ff' : paint);
-        const b = glint[1] * (burning ? 2.2 : 1);
+        const torch = glint[2] ?? burning;
+        col.set(torch ? '#cfe8ff' : paint);
+        const b = glint[1] * (torch ? 1.5 : 1);
         gCol[i * 3] = col.r * b; gCol[i * 3 + 1] = col.g * b; gCol[i * 3 + 2] = col.b * b;
         gSize[i] = glint[0];
       }
