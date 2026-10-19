@@ -144,7 +144,7 @@ function attack(game, ai, { vis, coming, route }) {
       // One strike at a time: small top-ups arrive alone and get picked off.
       if (sending(t) > 0) continue;
       const T = route(s, t);
-      if (T > staysFor(game, t) - 10) continue; // a visitor that will be gone first
+      if (!(T < staysFor(game, t) - 10)) continue; // out of reach (fuel), or a visitor that will be gone first
       const def = believed(game, ai, vis, t);
       // What it builds meanwhile, guns rebuilt by the time we arrive, and
       // enemy ships already on their way there.
@@ -170,7 +170,7 @@ function attack(game, ai, { vis, coming, route }) {
       if (yard && launchProbe(game, yard, best.t)) return true;
     }
   }
-  if (best) { launch(game, best.s, best.t, best.need); return true; }
+  if (best && launch(game, best.s, best.t, best.need)) return true;
 
   // Nothing one site can take alone: gather ships at the site nearest a
   // target, then strike with all of them at once.
@@ -180,13 +180,15 @@ function attack(game, ai, { vis, coming, route }) {
     if (t.owner === ai.owner || stage.owner !== ai.owner || game.time > ai.plan.until) {
       ai.plan = null;
     } else if (readyShips(game, stage) - keep(stage) >= ai.plan.need) {
-      launch(game, stage, t, readyShips(game, stage) - keep(stage));
+      // (On a fuel map the strike may have to wait for a launch window.)
+      if (!launch(game, stage, t, readyShips(game, stage) - keep(stage))) return false;
       ai.plan = null;
       return true;
     } else {
       const src = mine.filter((s) => s !== stage && spare(s) >= 1 && !game.fleets.some((f) => f.from === s.id && f.to === stage.id))
+        .filter((s) => route(s, stage) < Infinity)
         .sort((a, b) => route(a, stage) - route(b, stage))[0];
-      if (src) { launch(game, src, stage, spare(src)); return true; }
+      if (src && launch(game, src, stage, spare(src))) return true;
       return false;
     }
   }

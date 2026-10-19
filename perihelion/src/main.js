@@ -1,5 +1,5 @@
 import { icon, iconBody } from './icons.js';
-import { createGame, step, launch, plan, regrav, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, crewAt, techText, eventText, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
+import { createGame, step, launch, plan, regrav, tankOf, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, crewAt, techText, eventText, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
 import { createView, ownerColor } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
@@ -611,7 +611,7 @@ function updateFleetInfo() {
   if ($('fleet').hidden) return;
   const s = fleetState(f, game.time);
   const left = f.T - (game.time - f.t0);
-  const phase = f.dark && !s.burning ? tip(`${icon('dark')} coasting dark`, 'Drive off: enemies only spot this fleet close in', 'dim') : s.flipping ? 'flipping' : s.phase === 1 ? 'burning' : 'braking';
+  const phase = f.dark && !s.burning ? tip(`${icon('dark')} coasting dark`, 'Drive off: enemies only spot this fleet close in', 'dim') : s.flipping ? 'flipping' : !s.burning ? 'coasting' : s.phase === 1 ? 'burning' : 'braking';
   const to = game.bodies[f.to];
   const speed = Math.hypot(s.vx, s.vy, s.vz);
   if (f.probe) {
@@ -621,7 +621,7 @@ function updateFleetInfo() {
   }
   // Your fleets can switch drive mode in flight (re-plans the rest of the trip).
   // The button is a fixed element (the text around it redraws every frame).
-  const canToggle = f.owner === me && !f.probe && left > 10;
+  const canToggle = f.owner === me && !f.probe && !game.fuel && left > 10;
   $('fdark').hidden = !canToggle;
   if (canToggle) {
     $('fdark').classList.toggle('on', !!f.dark);
@@ -734,7 +734,7 @@ function updateActions() {
   $('buildrow').hidden = launching;
   $('stepper').hidden = !launching || probing;
   $('cancel').hidden = !launching;
-  $('dark').hidden = !launching || probing;
+  $('dark').hidden = !launching || probing || game.fuel; // (on a fuel map routes coast anyway)
   $('dark').classList.toggle('on', ui.dark);
   if (!launching) {
     ui.preview = null;
@@ -756,11 +756,21 @@ function updateActions() {
     const t = game.bodies[ui.target];
     // Re-planned about once a game second (the route barely changes faster than that).
     const key = `${s.id}:${t.id}:${probing}:${ui.dark}:${s.owner}`;
-    if (!ui.preview || ui.previewKey !== key || Math.abs(game.time - ui.previewAt) > 1) {
-      ui.preview = plan(game, s, t, game.time, probing ? RULES.probe.speed : 1, false, !probing && ui.dark ? DARK.burn : 0.5);
+    // (Every few seconds on a fuel map, where the search is longer.)
+    if (!ui.preview || ui.previewKey !== key || Math.abs(game.time - ui.previewAt) > (game.fuel ? 3 : 1)) {
+      ui.preview = plan(game, s, t, game.time, probing ? RULES.probe.speed : 1, false, !probing && ui.dark ? DARK.burn : 0.5, tankOf(game, me) * (probing ? RULES.fuel.probe : 1));
       ui.previewKey = key;
       ui.previewAt = game.time;
     }
+    if (ui.preview.out) {
+      // Too far for one tank right now: say when the worlds line up.
+      const w = ui.preview.window === null ? null : ui.preview.window - (game.time - ui.previewAt);
+      setHTML($('info'), `<span>${probing ? 'Probe' : `<b>${ui.count}</b>`} → <b>${t.name}</b> · ${tip('out of reach', 'Too far for one tank of fuel from here, now. As the worlds move, a launch window opens', 'warn')}${w !== null ? ` · window in <b>${fmt(Math.max(1, Math.ceil(w)))}</b>` : ''}</span>`);
+      $('launch').textContent = 'Confirm';
+      $('launch').disabled = true;
+      return;
+    }
+    const fuel = ui.preview.fuel !== undefined ? ` ${tip(`<span class="fuel${ui.preview.fuel > 0.85 ? ' low' : ''}"><i style="width:${Math.round(ui.preview.fuel * 100)}%"></i></span>`, 'Fuel this route burns, of one tank (each world you hold refuels you). Waiting for the worlds to line up can cost less', 'dim')}` : '';
     const defence = t.owner === me ? 'reinforce' : `${t.ships} ship${t.ships === 1 ? '' : 's'}, ${Math.ceil(t.guns)} gun${Math.ceil(t.guns) === 1 ? '' : 's'}`;
     const cover = t.owner === me ? 0 : coverOf(game, t);
     const seen = !ui.vis || ui.vis.bodies.has(t.id);
@@ -769,7 +779,7 @@ function updateActions() {
       + (ui.preview.detour ? ` ${tip('round the sun', 'The straight line would cross the sun: the fleet steers round it under full thrust', 'dim')}` : '');
     if (probing) {
       const why = cantProbe(game, s, t);
-      setHTML($('info'), `<span>Probe → <b>${t.name}</b> · <b>${fmt(ui.preview.T)}</b>${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
+      setHTML($('info'), `<span>Probe → <b>${t.name}</b> · <b>${fmt(ui.preview.T)}</b>${fuel}${why ? ` · <span class="dim">${why}</span>` : ''}</span>`);
       $('launch').textContent = 'Confirm';
       $('launch').disabled = !!why;
       return;
@@ -781,7 +791,7 @@ function updateActions() {
     const late = ui.preview.T > stay - 5;
     const leaves = Number.isFinite(stay) ? ` · <span class="${late ? 'warn' : 'dim'}">${late ? 'too late' : `leaves ${fmt(stay)}`}</span>` : '';
     const breakout = s.sieges.length ? ` · <span class="warn">${tip('breaking out', 'This world is under attack: half the ships launched will be shot down leaving orbit', 'warn')}</span>` : '';
-    setHTML($('info'), `<span><b>${ui.count}</b>${breakout} → <b>${t.name}</b> <span class="dim">${defenceText}</span> · <b>${fmt(ui.preview.T)}</b>${ui.dark ? ` ${tip('dark', 'Running dark: enemies only spot this fleet close in', 'dim')}` : ''}${assist}${restNote}${leaves}</span>${chips(t, { income: false, seen })}`);
+    setHTML($('info'), `<span><b>${ui.count}</b>${breakout} → <b>${t.name}</b> <span class="dim">${defenceText}</span> · <b>${fmt(ui.preview.T)}</b>${fuel}${ui.dark ? ` ${tip('dark', 'Running dark: enemies only spot this fleet close in', 'dim')}` : ''}${assist}${restNote}${leaves}</span>${chips(t, { income: false, seen })}`);
     $('launch').textContent = 'Confirm';
     $('launch').disabled = ready < 1 || late;
   }

@@ -1530,7 +1530,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     fx.update(t, (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / window.innerHeight);
 
     // Order preview.
-    if (ui.preview) {
+    if (ui.preview && !ui.preview.out) {
       const { p1 } = ui.preview;
       preview.visible = true;
       const pf = { ...ui.preview, t0: 0 };
