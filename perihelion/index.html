@@ -55,14 +55,18 @@
     <div id="menu" class="overlay">
       <h1>Perihelion</h1>
       <button id="resume" class="primary" hidden>Resume</button>
-      <div class="row"><span>Name</span><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /></div>
-      <div class="row"><span>Rivals</span>
-        <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button></div>
+      <div class="setup">
+        <div class="row"><span>Name</span><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /></div>
+        <div class="row"><span>Rivals</span>
+          <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button></div>
+        </div>
+        <div class="row"><span>AI</span>
+          <div class="seg tight" id="difficulty"><button data-v="cadet">Cadet</button><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button><button data-v="brutal">Brutal</button></div>
+        </div>
+        <div class="row"><span>System</span>
+          <div class="picker"><button id="system-prev" aria-label="Previous system" title="Previous system"><svg class="ic" viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button><button id="system-pick" class="pick">Random</button><button id="system-next" aria-label="Next system" title="Next system"><svg class="ic" viewBox="0 0 16 16"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></button></div>
+        </div>
       </div>
-      <div class="row"><span>AI</span>
-        <div class="seg tight" id="difficulty"><button data-v="cadet">Cadet</button><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button><button data-v="brutal">Brutal</button></div>
-      </div>
-      <div class="row"><span>System</span><button id="system-pick" class="pick">Random</button></div>
       <button id="play" class="primary">Play vs AI</button>
       <button id="learn" class="primary ghost">Tutorial</button>
       <p class="how more">More ways to play</p>
@@ -77,9 +81,11 @@
         <button id="join-back" class="primary ghost" aria-label="Back"><svg class="ic" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
       </div>
       <p class="how" id="menu-msg"></p>
-      <button id="howto" class="link">How to play</button>
-      <button id="gfxtoggle" class="link dev">Graphics auto</button>
-      <button id="devtoggle" class="link dev">Dev view off</button>
+      <div class="links">
+        <button id="howto" class="link">How to play</button>
+        <button id="gfxtoggle" class="link dev">Graphics auto</button>
+        <button id="devtoggle" class="link dev">Dev view off</button>
+      </div>
     </div>
 
     <div id="tutorial" class="overlay" hidden>

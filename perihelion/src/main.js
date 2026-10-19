@@ -10,9 +10,11 @@ const $ = (id) => document.getElementById(id);
 // under a finger between press and release loses the tap, so while a pointer
 // is down inside a panel its redraw waits until just after the click.
 let pressed = null;
+let pressedAt = 0;
 const heldPanels = new Set();
 const setHTML = (el, html) => {
-  if (pressed && el.contains(pressed)) { el._pending = html; heldPanels.add(el); return; }
+  // A press is a tap for a moment only: if its release went missing, stop waiting.
+  if (pressed && performance.now() - pressedAt < 1500 && el.contains(pressed)) { el._pending = html; heldPanels.add(el); return; }
   el._pending = undefined;
   if (el._html !== html) { el._html = html; el.innerHTML = html; }
 };
@@ -20,7 +22,7 @@ const flushHeld = () => {
   pressed = null;
   for (const el of heldPanels) { heldPanels.delete(el); if (el._pending !== undefined) setHTML(el, el._pending); }
 };
-window.addEventListener('pointerdown', (e) => { pressed = e.target; }, true);
+window.addEventListener('pointerdown', (e) => { pressed = e.target; pressedAt = performance.now(); }, true);
 // After the click has been handled (it follows pointerup), or soon after if it never comes.
 let flushTimer = 0;
 window.addEventListener('pointerup', () => { clearTimeout(flushTimer); flushTimer = setTimeout(flushHeld, 350); }, true);
@@ -191,11 +193,15 @@ function syncSystem() {
   $('daily').innerHTML = `Daily<small>${SYSTEMS[d.system].name}</small>`;
   $('daily').title = `Today's system, the same for everyone: ${SYSTEMS[d.system].name}`;
 }
-$('system-pick').addEventListener('click', () => {
-  prefs.system = SYSTEM_CHOICES[(SYSTEM_CHOICES.indexOf(prefs.system) + 1) % SYSTEM_CHOICES.length];
+const stepSystem = (d) => {
+  const n = SYSTEM_CHOICES.length;
+  prefs.system = SYSTEM_CHOICES[(SYSTEM_CHOICES.indexOf(prefs.system) + d + n) % n];
   savePrefs();
   syncSystem();
-});
+};
+$('system-pick').addEventListener('click', () => stepSystem(1));
+$('system-prev').addEventListener('click', () => stepSystem(-1));
+$('system-next').addEventListener('click', () => stepSystem(1));
 syncSystem();
 $('play').addEventListener('click', start);
 $('again').addEventListener('click', () => {
@@ -1386,6 +1392,10 @@ canvas.addEventListener('pointerdown', (e) => {
     view.orbit.vaz = view.orbit.vpol = 0;
     return;
   }
+  // The first finger down starts afresh: a finger whose lift was never reported
+  // (it slid off onto a panel, or the browser dropped it) would otherwise
+  // linger and turn every one-finger drag into a pinch.
+  if (e.isPrimary) pointers.clear();
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
     gesture = { kind: 'tap', x0: e.clientX, y0: e.clientY };
@@ -1498,6 +1508,18 @@ function endPointer(e) {
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', (e) => { endPointer(e); gesture = null; ui.dragging = false; });
+// Lifts the canvas doesn't hear about (released over a panel, capture lost)
+// still end that finger, so none is left behind.
+const dropPointer = (e) => {
+  if (!pointers.delete(e.pointerId)) return;
+  if (pointers.size === 0) { gesture = null; ui.dragging = false; } else gesture = { kind: 'orbit' };
+};
+window.addEventListener('pointerup', dropPointer);
+window.addEventListener('pointercancel', dropPointer);
+canvas.addEventListener('lostpointercapture', dropPointer);
+const resetPointers = () => { pointers.clear(); gesture = null; ui.dragging = false; pressed = null; };
+window.addEventListener('blur', resetPointers);
+document.addEventListener('visibilitychange', resetPointers);
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   // Trackpad pinch arrives as ctrl+wheel with small deltas; scale to match.

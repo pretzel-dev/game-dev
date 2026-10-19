@@ -591,3 +591,32 @@ button > .ic:only-child { width: 16px; height: 16px; vertical-align: middle; }
 .lbl.tut::before { content: ''; position: absolute; left: 50%; top: calc(-1.35 * var(--mk, 30px) - 8px); width: calc(1.7 * var(--mk, 30px) + 12px); height: calc(1.7 * var(--mk, 30px) + 12px); margin-left: calc(-0.85 * var(--mk, 30px) - 6px); box-sizing: border-box; border: 2px solid #ffd36a; border-radius: 50%; animation: blink 0.7s ease-in-out infinite alternate; pointer-events: none; }
 /* On a phone the card takes the top; event notes wait until the tour is over. */
 @media (max-width: 759px) { body.tut-on #feed { display: none; } #coach { font-size: 13px; } }
+
+/* Menu, tidied: one settings panel (labels beside their controls), then the
+   big buttons, then the other ways to play, then a line of small links. */
+#menu { gap: 14px; }
+#menu h1 { margin-bottom: 6px; }
+#menu .setup { width: min(380px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--panel); border: 1px solid var(--line);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); }
+#menu .setup .row { flex-direction: row; justify-content: space-between; gap: 10px; }
+#menu .setup .row > span { width: 52px; flex: 0 0 52px; text-align: left; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+#menu .setup .row > :not(span) { flex: 1 1 auto; min-width: 0; }
+#menu .setup #name { width: 100%; height: 40px; }
+#menu .setup .seg { padding: 2px; }
+#menu .setup .seg button { flex: 1 1 0; height: 36px; min-width: 0; padding: 0 4px; }
+#menu .setup .seg.tight button { font-size: 12px; letter-spacing: 0.02em; }
+.picker { display: flex; align-items: stretch; height: 40px; border: 1px solid var(--line); background: rgba(88, 184, 255, 0.05); }
+.picker .pick { flex: 1 1 auto; min-width: 0; height: auto; border: none; background: none; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker button:not(.pick) { flex: 0 0 38px; display: grid; place-items: center; color: var(--accent); }
+.picker button:not(.pick):hover, .picker button:not(.pick):active { background: rgba(88, 184, 255, 0.14); }
+.picker .ic { width: 16px; height: 16px; stroke-width: 2; }
+#menu #play { margin-top: 4px; width: min(380px, 100%); }
+#menu #learn.primary { margin-top: -4px; height: 42px; width: min(380px, 100%); }
+#menu #learn.link { margin-top: -8px; }
+#menu .more { margin: 8px 0 0; }
+#menu .row.mp { margin-top: 0; width: min(380px, 100%); gap: 8px; flex-wrap: nowrap; }
+#menu .row.mp .primary { max-width: none; }
+#menu .links { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 14px; margin-top: 6px; }
+#menu .links .link { padding: 6px 2px; }
+#menu .links .link.dev { opacity: 0.55; }
+#menu #menu-msg:empty { display: none; }
