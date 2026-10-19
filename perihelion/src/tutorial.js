@@ -56,7 +56,7 @@ export const STEPS = [
   },
   {
     title: 'Build',
-    text: (c) => `${c.ui.selected === c.home.id ? '' : `Select <b>${c.home.name}</b>. `}${Tap(c)} an empty <b>+</b> slot, then pick a building (${c.touch ? 'press and hold one' : 'hover over one'} to read what it does). A Research station speeds up research.`,
+    text: (c) => `${c.ui.selected === c.home.id ? '' : `Select <b>${c.home.name}</b>. `}${Tap(c)} an empty <b>+</b> slot, then pick a building (${c.touch ? 'press and hold one' : 'hover over one'} to read what it does). A <b>Lab</b> (research station) speeds up research.`,
     point: (c) => (c.ui.slot !== null && c.ui.selected === c.home.id ? '.ctx .opt:not([disabled])' : '.cell.empty'),
     world: (c) => (c.ui.selected === c.home.id ? null : c.home.id),
     on: 'build',
@@ -81,15 +81,18 @@ export const STEPS = [
   },
   {
     title: 'Speed up time',
-    text: (c) => `Everything orbits, and trips take a while. ${Tap(c)} <b>1×</b> to run time faster (up to 8×), and back to 1× when things get busy.`,
+    text: (c) => `${c.eta !== null ? `Your ships reach <b>${c.sentName}</b> in <b>${c.eta}</b>. Nothing to do but wait: ` : 'Trips take a while. '}${tap(c)} <b>1×</b> to run time faster (up to 8×), and back to 1× when things get busy.`,
     point: '#warp',
     done: (c) => c.warp > 1 || c.gained > 0,
   },
   {
     title: 'Take it',
-    text: (c) => (c.inFlight
-      ? `Your fleet burns halfway, flips and brakes into orbit. When it arrives it fights the guns and ships there. ${Tap(c)} the fleet to follow it.`
-      : 'No fleet on its way: send more ships (build a few first if you need to).'),
+    // Three states: still flying, fighting there, or the attack failed.
+    text: (c) => (c.fighting
+      ? `Your ships are fighting at <b>${c.sentName}</b>, against its guns and any ships there. Win and it's yours.`
+      : c.eta !== null
+        ? `On the way to <b>${c.sentName}</b>: arrives in <b>${c.eta}</b>. Your fleet burns halfway, flips and brakes into orbit, then fights. Nothing to do until then; ${tap(c)} the fleet to follow it, or order more ships meanwhile.`
+        : 'That attack fell short: send more ships (order a few first if you need to).'),
     world: (c) => c.sentTo,
     done: (c) => c.gained > 0,
   },
