@@ -30,5 +30,14 @@ a mesa to a ski jump, an elevated skyway, a canyon gap and a bowl-shaped rim
 that always sends you back. Flip and spin in the air. See
 [`dustline/README.md`](dustline/README.md).
 
+## [Bellbrook](bellbrook/): toy fire engine in a little town
+
+A no-lose toy for small children who love fire engines. Drive round a cute
+town of houses, shops, a farm, a park and a seafront; when the bell rings,
+follow the arrows, spray the fire until it's out, and everyone cheers.
+Sometimes it's a kitten up a tree, so up goes the ladder. Siren, horn, blue
+lights, people who wave, cars that pull over. See
+[`bellbrook/README.md`](bellbrook/README.md).
+
 All the games publish to GitHub Pages from `main`, with a landing page at the root
 (`site/`) and each game in its own folder.
