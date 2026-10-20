@@ -1,0 +1,19 @@
+{
+  "name": "bellbrook",
+  "version": "1.0.0",
+  "description": "A toy fire engine in a cute little town: drive about, spray water, put out fires, everyone cheers.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node tools/check.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  }
+}
