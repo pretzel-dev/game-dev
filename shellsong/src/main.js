@@ -367,6 +367,8 @@ function boot() {
       return Math.round(fps);
     },
     go,
+    /** For testing: look at her from a fixed offset, e.g. { x: 4, y: 0.5, z: 0 } (null to stop). */
+    viewFrom: null,
     teleport(x, y, z, yaw = 0) {
       placeMermaid(mermaid, x, y, z, yaw);
       cam.reset(mermaid);
@@ -549,6 +551,11 @@ function boot() {
     if (started) {
       cam.lookRound(input.look, input.looking, dt);
       cam.update(mermaid, dt);
+      const v = window.__shellsong.viewFrom;
+      if (v) {
+        camera.position.set(mermaid.x + v.x, mermaid.y + v.y, mermaid.z + v.z);
+        camera.lookAt(mermaid.x, mermaid.y + 0.2, mermaid.z);
+      }
     } else {
       // Title screen: a close look at your mermaid, the palace behind her.
       attract += dt;

@@ -163,7 +163,7 @@ export function createMerperson(look, { king = false } = {}) {
   // Long, flowing down her back.
   styles.long = new Group();
   for (const sx of [-1, 1]) styles.long.add(part(lowSphere, mats.hair, sx * 0.17, -0.05, 0.0, 0.07, 0.15, 0.09));
-  chain(styles.long, 0, -0.02, 0.12, king ? 2 : 5, 0.21);
+  chain(styles.long, 0, -0.02, 0.15, king ? 2 : 5, 0.21);
   // A high ponytail with a pearl band.
   styles.ponytail = new Group();
   styles.ponytail.add(part(new TorusGeometry(0.045, 0.018, 6, 12), mats.pearl, 0, 0.16, 0.17));
@@ -174,14 +174,14 @@ export function createMerperson(look, { king = false } = {}) {
     styles.buns.add(part(sphere, mats.hair, sx * 0.13, 0.17, 0.04, 0.085));
     styles.buns.add(part(lowSphere, mats.pearl, sx * 0.13, 0.23, -0.02, 0.022));
   }
-  chain(styles.buns, 0, -0.02, 0.13, 2, 0.17);
+  chain(styles.buns, 0, -0.02, 0.15, 2, 0.17);
   // A short, round bob.
   styles.bob = new Group();
   for (const sx of [-1, 1]) styles.bob.add(part(sphere, mats.hair, sx * 0.16, -0.06, 0.03, 0.1, 0.16, 0.13));
   styles.bob.add(part(sphere, mats.hair, 0, -0.06, 0.13, 0.2, 0.16, 0.1));
   // Two long plaits, one each side.
   styles.plaits = new Group();
-  for (const sx of [-1, 1]) chain(styles.plaits, sx * 0.15, -0.08, 0.06, 5, 0.075, 0.11);
+  for (const sx of [-1, 1]) chain(styles.plaits, sx * 0.14, -0.06, 0.1, 5, 0.075, 0.11);
   for (const g of Object.values(styles)) hair.add(g);
 
   // Crown: a ring of points with a gem at the front.
@@ -413,9 +413,17 @@ export function poseMerperson(model, s, dt, t) {
   u.fin.rotation.x = end.angle + Math.sin(u.phase - 6) * amp * 1.2 - 0.25 * u.sitPose;
 
   // Hair streams back when swimming, floats and sways when still.
+  // Her head lifts to look ahead when she swims (and tips back to sing).
+  const headX = 1.1 * u.swimPose * (1 - u.sitPose) - (ek === 'sing' ? 0.3 * ew : 0);
   u.locks.forEach((g, i) => {
-    // (Down her back is along the body; floating, it drifts out behind.)
-    g.rotation.x = -(0.45 * (1 - u.swimPose) + 0.1) * (g.userData.first ? 1 : 0.3) + Math.sin(t * 1.8 - i * 0.6) * 0.12;
+    // The hair always flows out behind her, whatever her head is doing: the
+    // root of each lock is set against the head's tilt, so in the body's
+    // frame it points down her back and away from it (never into her neck).
+    // Floating, it hangs down and out behind; swimming, it streams back
+    // along her body, lifted over her back.
+    const sway = Math.sin(t * 1.8 - i * 0.6) * 0.1;
+    if (g.userData.first) g.rotation.x = -(0.5 - 0.22 * u.swimPose) - headX + sway;
+    else g.rotation.x = 0.08 - 0.06 * u.swimPose + sway * 0.6;
     g.rotation.z = Math.sin(t * 1.1 - i * 0.5) * 0.08;
   });
 
@@ -473,7 +481,7 @@ export function poseMerperson(model, s, dt, t) {
   }
   // Look where she's going when swimming (lying along the swim, her head
   // lifts to face forward), and round about when still. Singing, chin up.
-  u.head.rotation.x = 1.1 * u.swimPose * (1 - u.sitPose) - (ek === 'sing' ? 0.3 * ew : 0);
+  u.head.rotation.x = headX;
   u.head.rotation.y = Math.sin(t * 0.5) * 0.15 * (1 - u.swimPose);
   u.head.rotation.z = ek === 'sing' || ek === 'dance' ? Math.sin(et * 3) * 0.15 * ew : 0;
 }
