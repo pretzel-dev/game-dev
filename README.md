@@ -39,5 +39,14 @@ Sometimes it's a kitten up a tree, so up goes the ladder. Siren, horn, blue
 lights, people who wave, cars that pull over. See
 [`bellbrook/README.md`](bellbrook/README.md).
 
+## [Shellsong](shellsong/): a mermaid princess under the sea
+
+Charlotte's game. Choose your mermaid's hair, skin, shell top, tail, crown
+and throne colours, then swim: glowing grottos, sunken shipwrecks, twelve
+treasures to find, rocks to sit on at the surface with ships and seagulls,
+fish, turtles, stingrays, whales, dolphins to ride, and the underwater
+palace where the King lives (and your own shell throne). See
+[`shellsong/README.md`](shellsong/README.md).
+
 All the games publish to GitHub Pages from `main`, with a landing page at the root
 (`site/`) and each game in its own folder.

@@ -10,6 +10,7 @@ Small browser games, each in its own folder with its own `package.json`
 | `covewind/` | Free-flight toy | Finished |
 | `dustline/` | Toy rally car in a stunt canyon (no goal) | Active |
 | `bellbrook/` | Toy fire engine in a cute town: put out fires, everyone cheers (for small children, no lose state) | Active |
+| `shellsong/` | Charlotte's mermaid game: choose your colours, swim, find treasure, ride dolphins, the palace and your throne | Active |
 | `site/` | Landing page linking the games | Static |
 
 Live site: https://pretzel-dev.github.io/game-dev/ (each game in its own path).
