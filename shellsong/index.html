@@ -46,7 +46,7 @@
     #pop.pop { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
     #speech {
-      position: absolute; left: 50%; top: max(14px, env(safe-area-inset-top));
+      position: absolute; left: 50%; top: max(70px, calc(env(safe-area-inset-top) + 64px));
       transform: translate(-50%, -150%); transition: transform .45s cubic-bezier(.2, 1.4, .4, 1);
       max-width: min(80vw, 460px); padding: 10px 16px 10px 46px; border-radius: 20px;
       background: var(--glass); border: 1px solid var(--edge); box-shadow: var(--shadow);
@@ -74,6 +74,15 @@
       font-size: 17px; padding: 0; cursor: pointer; box-shadow: var(--shadow);
     }
     .tool.off { opacity: .45; }
+    #emotes {
+      position: absolute; left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top));
+      display: flex; gap: 8px; pointer-events: auto; align-items: center;
+    }
+    .tool.big { width: 48px; height: 48px; font-size: 24px; background: var(--glass); touch-action: none; }
+    #emoteBar { display: flex; gap: 8px; opacity: 0; transform: translateX(-12px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+    #emoteBar.open { opacity: 1; transform: none; pointer-events: auto; }
+    body:not(.playing) #emotes { visibility: hidden; }
+    @media (max-width: 640px) { #emoteBar { flex-wrap: wrap; width: 170px; } }
 
     #keyhints {
       position: absolute; left: max(14px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom));
@@ -203,7 +212,18 @@
     <div id="hint" role="status" aria-live="polite"></div>
     <div id="keyhints">
       W/S swim · A/D turn · Space up · Shift down<br />
-      E sit, ride, jump · Q twirl (let go) · H home · M sound · Esc menu
+      E sit, ride, jump · Q twirl (let go) · 1–5 wave, kiss, sing, dance, flip<br />
+      H home · M sound · Esc menu
+    </div>
+    <div id="emotes">
+      <button class="tool big" id="emoteBtn" aria-label="Emotes">😊</button>
+      <div id="emoteBar">
+        <button class="tool big" data-emote="wave" aria-label="Wave">👋</button>
+        <button class="tool big" data-emote="kiss" aria-label="Blow a kiss">💋</button>
+        <button class="tool big" data-emote="sing" aria-label="Sing">🎵</button>
+        <button class="tool big" data-emote="dance" aria-label="Dance">💃</button>
+        <button class="tool big" data-emote="flip" aria-label="Flip">🤸</button>
+      </div>
     </div>
     <div id="tools">
       <button class="tool" id="menuBtn" aria-label="Menu">☰</button>
@@ -222,6 +242,7 @@
         <div class="sub">You're a mermaid princess! Choose your colours,<br />then swim off to find treasure, ride the dolphins<br />and visit the King in the underwater palace.</div>
         <div id="tabs">
           <button class="tab" data-tab="hair">Hair</button>
+          <button class="tab" data-tab="style">Hairstyle</button>
           <button class="tab" data-tab="skin">Skin</button>
           <button class="tab" data-tab="top">Shell top</button>
           <button class="tab" data-tab="tail">Tail</button>

@@ -226,6 +226,36 @@ export function createAudio() {
       tone(150, t, 0.35, { type: 'sawtooth', peak: 0.05, glide: 1.25, attack: 0.05 });
       tone(185, t + 0.35, 0.5, { type: 'sawtooth', peak: 0.05, glide: 0.9, attack: 0.05 });
     },
+    /** Emote sounds. */
+    emote(kind) {
+      if (!ok()) return;
+      const t = now();
+      if (kind === 'wave') {
+        [0, 4, 7].forEach((st, k) => harp(659 * 2 ** (st / 12), t + k * 0.08, 0.07, n.master));
+      } else if (kind === 'kiss') {
+        // Mwah!
+        tone(900, t + 0.55, 0.12, { type: 'sine', peak: 0.12, glide: 1.6 });
+        noiseHit(t + 0.55, 0.05, 3000, 2, 0.05);
+        [12, 16, 19].forEach((st, k) => harp(523 * 2 ** (st / 12), t + 0.75 + k * 0.1, 0.05, n.master));
+      } else if (kind === 'sing') {
+        // A little song: la-la-la, up and down the scale.
+        const tune = [0, 4, 7, 9, 7, 4, 7, 12, 9, 7, 4, 0];
+        tune.forEach((st, k) => {
+          const f = 440 * 2 ** (st / 12);
+          tone(f, t + k * 0.28, 0.32, { type: 'triangle', peak: 0.07, attack: 0.04 });
+          tone(f * 2, t + k * 0.28, 0.25, { type: 'sine', peak: 0.03, attack: 0.04 });
+        });
+      } else if (kind === 'dance') {
+        const bass = [0, 7, 5, 7];
+        for (let k = 0; k < 12; k++) {
+          harp(262 * 2 ** ((bass[k % 4] + (k % 2 ? 12 : 0)) / 12), t + k * 0.25, 0.06, n.master);
+          if (k % 2 === 0) noiseHit(t + k * 0.25, 0.05, 6000, 1, 0.03);
+        }
+      } else if (kind === 'flip') {
+        noiseHit(t, 0.5, 800, 0.8, 0.12);
+        SCALE.slice(0, 6).forEach((st, k) => harp(523 * 2 ** (st / 12), t + 0.3 + k * 0.05, 0.05, n.master));
+      }
+    },
     dolphin() {
       if (!ok()) return;
       const t = now();

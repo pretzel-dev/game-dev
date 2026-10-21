@@ -6,7 +6,7 @@ const KEY = 'shellsong.settings';
 const defaults = {
   sound: true,
   music: true,
-  look: { hair: 'gold', skin: 'peach', top: 'pink', tail: 'teal', crown: 'gold', throne: 'pink' },
+  look: { hair: 'gold', skin: 'peach', top: 'pink', tail: 'teal', crown: 'gold', throne: 'pink', style: 'long' },
   name: '',
   treasure: [],
 };

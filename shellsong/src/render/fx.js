@@ -5,7 +5,7 @@
  */
 import { BufferAttribute, BufferGeometry, Color, Points, ShaderMaterial } from 'three';
 
-export const SHAPE = { puff: 0, confetti: 1, bubble: 2, star: 3, drop: 4, heart: 5 };
+export const SHAPE = { puff: 0, confetti: 1, bubble: 2, star: 3, drop: 4, heart: 5, note: 6 };
 
 const vertexShader = /* glsl */ `
   attribute vec4 tint;
@@ -65,6 +65,13 @@ const fragmentShader = /* glsl */ `
       if (r > 1.0) discard;
       a *= smoothstep(1.0, 0.55, r);
       col += vec3(0.6) * smoothstep(0.4, 0.0, length(uv - vec2(-0.3, 0.35)));
+    } else if (vShape > 5.5) {
+      // A music note: a round head, a stem and a little flag.
+      vec2 h = uv - vec2(-0.25, -0.5);
+      float head = length(h * vec2(1.0, 1.35)) - 0.3;
+      float stem = max(abs(uv.x - 0.03) - 0.07, abs(uv.y - 0.15) - 0.65);
+      float flag = max(abs(uv.x - 0.25) - 0.22, abs(uv.y - 0.62 + (uv.x - 0.03) * 0.5) - 0.12);
+      if (min(head, min(stem, flag)) > 0.0) discard;
     } else {
       // Heart.
       vec2 h = uv * 1.25;
@@ -208,6 +215,10 @@ export function createFx(scene, max = 2000) {
         const a = (k / n) * 6.28;
         emit({ x, y, z, vx: Math.cos(a) * 2.5, vy: 1.5 + Math.random() * 2, vz: Math.sin(a) * 2.5, life: 1.6, size: 0.9, size1: 0.4, color, bright: 1.5, drag: 1.2, shape: SHAPE.star, spinV: 2, fade: 0.6 });
       }
+    },
+    note(x, y, z) {
+      const cols = [0xff6aa8, 0x5ad0ff, 0xffe05a, 0xb07aff, 0x7af0a0];
+      emit({ x: x + R() * 0.6, y, z: z + R() * 0.6, vx: R() * 0.8, vy: 0.9 + Math.random() * 0.6, vz: R() * 0.8, life: 2, size: 0.55, size1: 0.7, color: cols[Math.floor(Math.random() * cols.length)], bright: 1.3, shape: SHAPE.note, fade: 0.6, wobble: 1 });
     },
     heart(x, y, z, color = 0xff6a9a) {
       emit({ x, y, z, vy: 0.9, life: 1.6, size: 0.6, size1: 0.9, color, bright: 1.2, shape: SHAPE.heart, fade: 0.6 });
