@@ -86,7 +86,7 @@ function withSeeThrough(material, uniforms) {
           vec3 b = uTruck + vec3(0.0, 1.6, 0.0);
           vec3 ab = b - a;
           float t = dot(vWorldPos - a, ab) / dot(ab, ab);
-          if (t > 0.0 && t < 0.93 && vWorldPos.y > 0.4) {
+          if (t > 0.0 && t < 0.93 && vWorldPos.y > 1.2) {
             float d = length(vWorldPos - (a + ab * t));
             float r = 4.5 * smoothstep(0.55, 0.85, t) + 1.0;
             if (d < r) {
@@ -736,7 +736,24 @@ export function createTown(scene, city) {
             solid.box(p.x + sx * (p.w / 2 - 0.1), 0.5, z, 0.15, 1.1, 0.15, COLORS.white);
           }
         }
-        for (const sx of [-1, 1]) solid.box(p.x + sx * (p.w / 2 - 0.1), 1.45, p.z + 3, 0.1, 0.1, p.d - 6, COLORS.white);
+        for (const sx of [-1, 1]) solid.box(p.x + sx * (p.w / 2 - 0.1), 1.45, p.z + 1.5, 0.1, 0.1, p.d - 9, COLORS.white);
+        break;
+      }
+      case 'pierhead': {
+        solid.cyl(p.x, 0.25, p.z, p.r, 0.25, COLORS.wood, 40);
+        const n = 34;
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2;
+          const x = p.x + Math.cos(a) * (p.r - 0.2);
+          const z = p.z + Math.sin(a) * (p.r - 0.2);
+          solid.box(x, -2, z, 0.4, 2.3, 0.4, 0x7a5a3a);
+          // Railings all round, except where the pier comes in (the north side).
+          if (z < p.z && Math.abs(x - p.x) < p.neck / 2 + 0.5) continue;
+          solid.box(x, 0.5, z, 0.15, 1.1, 0.15, COLORS.white);
+          const a2 = ((k + 0.5) / n) * Math.PI * 2;
+          const len = ((Math.PI * 2 * p.r) / n) * 1.02;
+          solid.add(SHAPES.box(), p.x + Math.cos(a2) * (p.r - 0.2), 1.5, p.z + Math.sin(a2) * (p.r - 0.2), len, 0.1, 0.1, COLORS.white, -a2 - Math.PI / 2);
+        }
         break;
       }
       case 'lighthouse': {

@@ -44,7 +44,7 @@ Six by six blocks, all different neighbourhoods:
 | **The building site** | a crane that swings slowly, a digger, a skip and a sand pile |
 | **The farm** | a big red barn, a silo, hay bales, a tractor, cows, crop fields and a windmill |
 | **The park and playground** | a duck pond you can drive through, slides, swings, a roundabout and a sandpit |
-| **The seafront** | a beach with bright beach huts, umbrellas, a lifeguard hut, sandcastles, a pier with a lighthouse, and boats bobbing on the sea |
+| **The seafront** | a beach with bright beach huts, umbrellas, a lifeguard hut, sandcastles, a pier out to a round platform with a lighthouse in the middle, and boats bobbing on the sea |
 
 People stroll round the pavements and cross at the zebra crossings; little
 cars, a bus and an ice cream van (which plays its tune) drive on the left.
@@ -52,23 +52,33 @@ Day, sunset and night (with lit windows, street lamps and headlights).
 
 ## Controls
 
+There are two cameras, picked on the title card (or C on a keyboard):
+
+- **From above** (the default): a toy-box view looking down on the town. Point
+  the stick where you want to go and the truck goes there.
+- **Behind the truck**: a chase camera like Dustline's. Push up to go, down to
+  back up, left and right to steer.
+
+The rest of the controls are the same in both.
+
 **Phone or tablet**: drag anywhere on the left half to drive (the stick
-appears under your thumb; point it where you want to go). Touch anywhere on
+appears under your thumb). Touch anywhere on
 the right half to spray water there (touch near the fire and it aims for the
 fire). Big buttons: water (sprays at the fire for you), siren, horn, ladder.
 
 **Keyboard**: arrows or WASD to drive, Space to spray (aims at the fire),
 or hold the mouse button to spray where you point. F siren, H horn, L ladder,
-Q/E turn the view, mouse wheel or +/− to zoom, T time of day, M sound, Esc
-menu.
+C camera, Q/E turn the view, mouse wheel or +/− to zoom, T time of day,
+M sound, Esc menu.
 
 **Gamepad**: left stick drive, A or right trigger spray, right stick aims,
 X siren, B horn, Y ladder, bumpers turn the view.
 
-The stick is "point where you want to go": the truck turns and drives that
-way, lines itself up with the road if you're nearly lined up, turns on the
-spot when it's slow, slides along walls instead of pushing into them, and
-backs out by itself if it ever noses into a corner.
+From above, the truck turns and drives the way the stick points and lines
+itself up with the road if you're nearly lined up. In both cameras it turns
+on the spot when it's slow, follows walls round instead of pushing into them,
+and backs out by itself if it ever noses into a corner. The corners of the
+map and the end of the pier are rounded, so there's nowhere to get wedged.
 
 ## Run it
 
@@ -95,9 +105,9 @@ src/
     people.js          the townsfolk: walking, crossing, waving, watching, cheering
     traffic.js         cars on the left, taking turns at junctions, pulling over for the siren
   truck/
-    physics.js         "point where you want to go" driving, sliding along walls
+    physics.js         driving: "point where you want to go" or steering like a car
     model.js           the fire engine, its lights, water cannon and ladder
-    camera.js          the toy-box view from above, turned a quarter at a time
+    camera.js          the toy-box view from above, or the chase camera behind
     input.js           touch stick, touch-to-spray, mouse, keyboard, gamepad
   render/
     builder.js         merges thousands of little shapes into a few meshes
@@ -118,7 +128,8 @@ A few things worth knowing:
 - **The rules are pure data.** `world/` and `truck/physics.js` have no DOM or
   rendering, so `tools/check.mjs` builds the town and plays it in Node: an
   autopilot answers 25 calls in a row with the real water simulation, random
-  stick-mashing checks the truck never gets stuck or ends up inside anything,
+  stick-mashing (in both control styles) checks the truck never gets stuck or
+  ends up inside anything,
   and the townsfolk and traffic run for three minutes.
 - **No art assets.** Every model is built from boxes and balls at load, every
   particle shape is drawn in a shader, every sound is synthesised.

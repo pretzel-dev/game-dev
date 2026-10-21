@@ -172,13 +172,18 @@
 
     #error { display: none; position: absolute; inset: 0; place-items: center; background: #bfe2f6; padding: 30px; pointer-events: auto; text-align: center; }
 
+    body.behind #viewBtn { display: none; }
     body:not(.playing) #actions, body:not(.playing) #keyhints, body:not(.playing) #call { visibility: hidden; }
 
     @media (max-height: 520px) {
       #card { padding: 14px 18px 12px; }
       #card h1 { font-size: 40px; }
       #card .sub { margin: 6px 0 10px; font-size: 12px; }
-      .row { margin: 10px 0 2px; }
+      .row { margin: 8px 0 0; }
+      .row .label { display: none; }
+      .swatch { width: 30px; height: 30px; }
+      .chip { padding: 6px 12px; }
+      #start { padding: 10px 28px; font-size: 16px; }
       #card .keys { display: none; }
       #sprayBtn { width: 82px; height: 82px; }
       #sirenBtn { width: 60px; height: 60px; }
@@ -210,7 +215,7 @@
     <div id="arrow"></div>
     <div id="keyhints">
       Arrows / WASD drive · Space or click to spray<br />
-      F siren · H horn · L ladder · Q/E turn view · M sound · Esc menu
+      F siren · H horn · L ladder · C camera · Q/E turn view · M sound · Esc menu
     </div>
     <div id="tools">
       <button class="tool" id="menuBtn" aria-label="Menu">☰</button>
@@ -255,6 +260,11 @@
           <button class="chip" data-light="day">Day</button>
           <button class="chip" data-light="sunset">Sunset</button>
           <button class="chip" data-light="night">Night</button>
+        </div>
+        <div class="row">
+          <div class="label">Camera</div>
+          <button class="chip" data-drive="above">From above</button>
+          <button class="chip" data-drive="behind">Behind the truck</button>
         </div>
         <div class="keys">
           Phone: drag on the left to drive · touch on the right to spray there<br />

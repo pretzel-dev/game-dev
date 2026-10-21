@@ -55,7 +55,7 @@ export function placeTruck(t, x, z, heading) {
 
 /**
  * input: { dx, dz } desired direction in the world (length 0..1),
- *        or { hold: true } to stop where it is.
+ *        or { throttle, steer } (each -1..1) to drive it like a car.
  * world: { collider, ponds }, cars: moving circles to keep clear of.
  */
 export function updateTruck(t, input, world, dt, cars = null) {
@@ -87,8 +87,41 @@ export function updateTruck(t, input, world, dt, cars = null) {
   let want = t.heading;
   let targetSpeed = 0;
   let turn = 0;
+  const steering = input.steer !== undefined;
+  const push = steering ? Math.abs(input.throttle) : mag;
 
-  if (mag > 0.08) {
+  if (steering) {
+    // "Behind" mode, like a car: stick up is go, down is back up, sideways
+    // steers. It still turns a little on the spot, and still backs itself
+    // out of corners.
+    const th = input.throttle;
+    const st = input.steer;
+    if (t.backing > 0 && th > 0.05) {
+      t.backing -= dt;
+      targetSpeed = -TRUCK.reverseSpeed;
+      turn = -(st || 0.7);
+    } else if (th < -0.05) {
+      targetSpeed = th * TRUCK.reverseSpeed;
+      turn = -st; // reversing: the back goes the way you steer
+    } else {
+      targetSpeed = Math.max(0, th) * TRUCK.maxSpeed * (1 - 0.3 * Math.abs(st));
+      turn = st;
+      // Scraping along a wall: ease round to run along it.
+      if (t.contactT > 0 && th > 0.05) {
+        const n = t.contact;
+        const fx0 = Math.sin(t.heading);
+        const fz0 = -Math.cos(t.heading);
+        const into = -(fx0 * n.x + fz0 * n.z);
+        if (into > 0) {
+          // Along the wall, whichever way it already leans.
+          const side = Math.sign(fx0 * -n.z + fz0 * n.x) || 1;
+          const along = Math.atan2(-n.z * side, -(n.x * side));
+          turn = clamp(turn + clamp(angleDelta(t.heading, along) * 2, -1, 1) * Math.min(1, into * 2), -1, 1);
+        }
+      }
+    }
+    if (th <= 0.05) t.backing = 0;
+  } else if (mag > 0.08) {
     want = Math.atan2(ix, -iz);
     // Nearly along the road you're on? Then exactly along it.
     const road = nearestRoadPoint(t.x, t.z);
@@ -159,9 +192,10 @@ export function updateTruck(t, input, world, dt, cars = null) {
       t.speed *= 0.3;
     } else if (into > 0) t.speed *= 1 - into * into * Math.min(1, 8 * dt);
     // Nosed in and going nowhere? Back out for a moment.
-    if (mag > 0.3 && Math.abs(t.speed) < 1.2 && t.backing <= 0 && into > 0.3) {
+    if (push > 0.3 && Math.abs(t.speed) < 1.2 && t.backing <= 0 && into > 0.3) {
       t.blocked += dt;
-      if (t.blocked > 0.45) {
+      // (Steering it like a car, first give it a moment to turn along the wall.)
+      if (t.blocked > (steering ? 1.4 : 0.45)) {
         t.backing = 1.1;
         t.blocked = 0;
       }

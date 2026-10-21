@@ -199,6 +199,43 @@ console.log('mashing');
   ok(pinned <= 4, `hardly ever pinned in place (${pinned} of ${Math.round((60 * 6 * 60) / 120)} stretches)`);
 }
 
+/* ------------------------------ 3b. steering it from behind, like a car --- */
+console.log('steering from behind');
+{
+  const rng = mulberry32(77);
+  const truck = createTruck(city.spawn);
+  let inside = 0;
+  let outside = 0;
+  let pinned = 0;
+  let stretches = 0;
+  let input = { throttle: 0, steer: 0 };
+  let since = 0;
+  let mark = { x: truck.x, z: truck.z };
+  for (let k = 0; k < 60 * 60 * 6; k++) {
+    since += DT;
+    if (since > 2.5) {
+      if (input.throttle > 0.5 && Math.hypot(truck.x - mark.x, truck.z - mark.z) < 1.5) {
+        pinned++;
+        if (process.env.VERBOSE) console.log('    pinned at', truck.x.toFixed(1), truck.z.toFixed(1));
+      }
+      stretches++;
+      // Mostly full gas, steering a bit, sometimes backing up.
+      input = { throttle: rng() < 0.12 ? -1 : 0.6 + rng() * 0.4, steer: rng() < 0.4 ? 0 : (rng() - 0.5) * 2 };
+      since = 0;
+      mark = { x: truck.x, z: truck.z };
+    }
+    updateTruck(truck, input, world, DT);
+    if (!inBounds(truck.x, truck.z)) outside++;
+    for (const off of TRUCK.offsets) {
+      const fx = Math.sin(truck.heading) * off;
+      const fz = -Math.cos(truck.heading) * off;
+      if (collider.boxAt(truck.x + fx, 0.5, truck.z + fz)) inside++;
+    }
+  }
+  ok(outside === 0 && inside === 0, 'never left the map or ended up inside a building');
+  ok(pinned <= 4, `hardly ever pinned in place (${pinned} of ${stretches} stretches)`);
+}
+
 /* ------------------------------------------- 4. people and traffic --- */
 console.log('town life');
 {
