@@ -29,6 +29,17 @@ export const SWIM = {
   findReach: 2.8, // how close to be to find treasure
 };
 
+/** Emotes, and how long each one lasts (seconds). */
+export const EMOTES = { wave: 2.2, kiss: 1.8, sing: 3.6, dance: 3.2, flip: 1.3 };
+
+/** Start an emote (a flip only while swimming). */
+export function emote(m, kind) {
+  if (!EMOTES[kind] || (kind === 'flip' && m.mode !== 'swim')) return false;
+  m.emote = { kind, t: 0, dur: EMOTES[kind] };
+  m.events.push({ type: 'emote', kind });
+  return true;
+}
+
 export function createMermaid(spawn) {
   return {
     x: spawn.x,
@@ -43,6 +54,7 @@ export function createMermaid(spawn) {
     seat: null,
     ride: null,
     twirl: 0,
+    emote: null, // { kind, t, dur }
     stroke: 0, // how hard she's swimming, for the tail
     atSurface: false,
     time: 0,
@@ -134,6 +146,7 @@ const p = { x: 0, y: 0, z: 0 };
  */
 export function updateMermaid(m, input, ocean, dt) {
   m.time += dt;
+  if (m.emote && (m.emote.t += dt) >= m.emote.dur) m.emote = null;
   const turn = clamp(input.turn || 0, -1, 1);
   const fwd = clamp(input.forward || 0, -1, 1);
   const rise = clamp(input.rise || 0, -1, 1);

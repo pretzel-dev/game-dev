@@ -184,7 +184,8 @@ export function buildOcean(seed = 0x5ea5) {
   // Inside: the King on his throne, and the princess's shell throne beside him.
   P.kingThrone = { x: P.x - 3.6, y: P.floor, z: P.z - 8.2, yaw: Math.PI };
   P.throne = { x: P.x + 3.6, y: P.floor, z: P.z - 8, yaw: Math.PI - 0.15 };
-  ocean.seats.push({ kind: 'throne', name: 'your throne', x: P.throne.x, y: P.floor + 1.4, z: P.throne.z + 0.3, yaw: P.throne.yaw });
+  // (A seat's y is where her middle goes: hips on the cushion, tail over the front.)
+  ocean.seats.push({ kind: 'throne', name: 'your throne', x: P.throne.x + Math.sin(P.throne.yaw) * 0.4, y: P.floor + 1.6, z: P.throne.z - Math.cos(P.throne.yaw) * 0.4, yaw: P.throne.yaw });
   ocean.spheres.push({ x: P.kingThrone.x, y: P.floor + 1.2, z: P.kingThrone.z - 0.3, r: 2.2 });
   // Where the treasures you find are put on show, round your throne.
   P.display = [];
@@ -252,8 +253,10 @@ export function buildOcean(seed = 0x5ea5) {
       const rock = { x, y: -0.9, z, r: 2.0, sy: 0.75, color: 0x8a8f9a };
       ocean.rocks.push(rock);
       ocean.spheres.push({ x, y: -1.2, z, r: 1.9 });
-      // Sit on top, facing out to sea.
-      ocean.seats.push({ kind: 'rock', name: `a rock by ${isl.name}`, x, y: rock.y + rock.r * rock.sy + 0.05, z, yaw: Math.atan2(Math.cos(a), -Math.sin(a)) });
+      // Sit on the seaward edge, facing out to sea, tail hanging down into the water.
+      const edge = 1.1;
+      const top = rock.y + rock.sy * Math.sqrt(rock.r * rock.r - edge * edge);
+      ocean.seats.push({ kind: 'rock', name: `a rock by ${isl.name}`, x: x + Math.cos(a) * edge, y: top + 0.25, z: z + Math.sin(a) * edge, yaw: Math.atan2(Math.cos(a), -Math.sin(a)) });
     }
     if (!isl.rocksOnly) {
       for (let k = 0; k < 7; k++) {

@@ -16,7 +16,7 @@
  */
 import { buildOcean, heightAt, WORLD_R } from '../src/world/ocean.js';
 import { insideSomething, pushSphere } from '../src/world/collide.js';
-import { createMermaid, updateMermaid, actionFor, act, letGo, findTreasure, placeMermaid, SWIM } from '../src/world/swim.js';
+import { createMermaid, updateMermaid, actionFor, act, letGo, findTreasure, placeMermaid, emote, EMOTES, SWIM } from '../src/world/swim.js';
 import { createCreatures, updateCreatures } from '../src/world/creatures.js';
 import { angleDelta, mulberry32 } from '../src/core/utils.js';
 
@@ -145,6 +145,19 @@ console.log('sitting');
   }
   ok(sat === ocean.seats.length, `sat on all ${sat} rocks and thrones`);
   ok(m.mode === 'swim', 'and swam off again');
+}
+
+/* ---------------------------------------------------------- emotes --- */
+console.log('emotes');
+{
+  const m = createMermaid(ocean.spawn);
+  let done = 0;
+  for (const kind of Object.keys(EMOTES)) {
+    if (!emote(m, kind)) continue;
+    for (let k = 0; k < 60 * 5 && m.emote; k++) updateMermaid(m, { forward: 0.5 }, ocean, DT);
+    if (!m.emote) done++;
+  }
+  ok(done === Object.keys(EMOTES).length, `all ${done} emotes play and finish while swimming`);
 }
 
 /* -------------------------------------------- 4. riding a dolphin --- */

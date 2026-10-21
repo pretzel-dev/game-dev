@@ -10,6 +10,7 @@ On the title card (or the ☰ menu any time):
 | | |
 | --- | --- |
 | **Hair** | gold, honey, brown, black, red, pink, purple, blue, mint, silver |
+| **Hairstyle** | long, ponytail, plaits, buns, short |
 | **Skin** | six skin tones, plus sea green and lilac |
 | **Shell top** | pink, purple, gold, white, blue, coral, mint |
 | **Tail** | teal, purple, pink, blue, green, gold, coral, silver |
@@ -29,6 +30,8 @@ Your colours and your treasure are remembered next time.
 | **Shipwrecks** | three sunken ships with broken masts, torn sails, cannons and spilled barrels. |
 | **The surface** | come up to the top to see sailing ships, seagulls wheeling over the islands, and palm trees. There are rocks round every island to **Sit** on. |
 | **Creatures** | schools of bright fish that swirl round you, turtles, stingrays, jellyfish, seahorses in the palace garden, crabs on the sand, dolphins that leap out of the water, and two great whales that come up to blow. |
+| **Your fish friend** | a round little yellow fish with blue stripes who swims along beside you, spins when you do an emote and jumps for joy when you find treasure. |
+| **Emotes** | tap 😊 (top left) for **wave**, **blow a kiss** (hearts float out to you), **sing** (music notes; fish come and swirl round you and dolphins jump for joy), **dance** and **flip**. Near the palace, the King answers. |
 | **Dolphins** | swim up to one and press **Ride**. Push up to go fast, press **Jump!** to leap right out of the water, and **Let go** to swim off. |
 
 ## Controls
@@ -36,12 +39,13 @@ Your colours and your treasure are remembered next time.
 **Phone or tablet**: drag anywhere on the left half to swim (the stick
 appears under your thumb: up swims forward, left and right turn). ▲ and ▼
 swim up and down. The big pink button appears when there's something to do
-(Sit, Ride, Jump!, Swim). ✨ does a twirl. Drag on the right half to look
-round.
+(Sit, Ride, Jump!, Swim). ✨ does a twirl, 😊 opens the emotes. Drag on the
+right half to look round.
 
 **Keyboard**: W/S swim forward and back, A/D turn, Space up, Shift down,
-E to sit, ride or jump, Q to twirl (or let go of a dolphin), H back to the
-palace, M sound, Esc menu.
+E to sit, ride or jump, Q to twirl (or let go of a dolphin), 1 to 5 for the
+emotes (wave, kiss, sing, dance, flip), H back to the palace, M sound, Esc
+menu.
 
 **Gamepad**: left stick swims, triggers up and down, A sits, rides and
 jumps, X twirls.
@@ -76,7 +80,9 @@ src/
                        seahorses, crabs, ships and gulls
   render/
     looks.js           every colour you can choose
-    mermaid.js         the mermaid and the King (a smooth tube for the tail)
+    mermaid.js         the mermaid and the King (a smooth tube for the tail),
+                       hairstyles, emotes, sitting with her tail over the edge
+    friend.js          your fish friend
     scenery.js         palace, thrones, grottos, wrecks, coral, kelp, clams, chests
     seabed.js          the sea floor, with dancing sunlight (caustics)
     water.js           the surface from above and below, sunbeams, drifting specks

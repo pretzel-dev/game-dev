@@ -143,21 +143,46 @@ export function createMerperson(look, { king = false } = {}) {
   head.add(hair);
   hair.add(part(sphere, mats.hair, 0, 0.035, 0.02, 0.225, 0.215, 0.215));
   for (let k = -2; k <= 2; k++) hair.add(part(lowSphere, mats.hair, k * 0.055, 0.12 - Math.abs(k) * 0.025, -0.16 + Math.abs(k) * 0.02, 0.06, 0.05, 0.05));
-  for (const sx of [-1, 1]) hair.add(part(lowSphere, mats.hair, sx * 0.17, -0.05, 0.0, 0.07, 0.15, 0.09));
+  // Hairstyles: each one a group, shown or hidden. Every chain of locks sways.
   const locks = [];
-  let parent = hair;
-  let y = -0.02;
-  const lockCount = king ? 2 : 5;
-  for (let k = 0; k < lockCount; k++) {
-    const g = new Group();
-    g.position.set(0, k === 0 ? y : -0.13, k === 0 ? 0.12 : 0.005);
-    const w = 0.21 - k * 0.02;
-    g.add(part(sphere, mats.hair, 0, -0.08, 0.02, w, 0.14, 0.075));
-    parent.add(g);
-    locks.push(g);
-    parent = g;
-    y = 0;
+  /** A chain of ellipsoid locks hanging from (x, y, z), getting narrower. */
+  const chain = (into, x, y, z, count, w0, step = 0.13) => {
+    let parent = into;
+    for (let k = 0; k < count; k++) {
+      const g = new Group();
+      g.position.set(k === 0 ? x : 0, k === 0 ? y : -step, k === 0 ? z : 0.005);
+      const w = w0 - k * (w0 / (count + 2));
+      g.add(part(sphere, mats.hair, 0, -step * 0.6, 0.02, w, step * 1.05, w * 0.4));
+      g.userData.first = k === 0;
+      parent.add(g);
+      locks.push(g);
+      parent = g;
+    }
+  };
+  const styles = {};
+  // Long, flowing down her back.
+  styles.long = new Group();
+  for (const sx of [-1, 1]) styles.long.add(part(lowSphere, mats.hair, sx * 0.17, -0.05, 0.0, 0.07, 0.15, 0.09));
+  chain(styles.long, 0, -0.02, 0.12, king ? 2 : 5, 0.21);
+  // A high ponytail with a pearl band.
+  styles.ponytail = new Group();
+  styles.ponytail.add(part(new TorusGeometry(0.045, 0.018, 6, 12), mats.pearl, 0, 0.16, 0.17));
+  chain(styles.ponytail, 0, 0.16, 0.19, 5, 0.11, 0.12);
+  // Two buns on top, and a short fall behind.
+  styles.buns = new Group();
+  for (const sx of [-1, 1]) {
+    styles.buns.add(part(sphere, mats.hair, sx * 0.13, 0.17, 0.04, 0.085));
+    styles.buns.add(part(lowSphere, mats.pearl, sx * 0.13, 0.23, -0.02, 0.022));
   }
+  chain(styles.buns, 0, -0.02, 0.13, 2, 0.17);
+  // A short, round bob.
+  styles.bob = new Group();
+  for (const sx of [-1, 1]) styles.bob.add(part(sphere, mats.hair, sx * 0.16, -0.06, 0.03, 0.1, 0.16, 0.13));
+  styles.bob.add(part(sphere, mats.hair, 0, -0.06, 0.13, 0.2, 0.16, 0.1));
+  // Two long plaits, one each side.
+  styles.plaits = new Group();
+  for (const sx of [-1, 1]) chain(styles.plaits, sx * 0.15, -0.08, 0.06, 5, 0.075, 0.11);
+  for (const g of Object.values(styles)) hair.add(g);
 
   // Crown: a ring of points with a gem at the front.
   const crown = new Group();
@@ -227,7 +252,7 @@ export function createMerperson(look, { king = false } = {}) {
   }
   fin.add(part(sphere, mats.tail, 0, 0, 0, 0.06, 0.07, 0.05));
 
-  root.userData = { mats, body, head, hair, locks, crown, arms, tail, fin, king, wave: 0, swimPose: 0, sitPose: 0, phase: 0, bends: TAIL.map(() => 0) };
+  root.userData = { mats, body, head, hair, locks, styles, crown, arms, tail, fin, king, wave: 0, swimPose: 0, sitPose: 0, phase: 0, bends: TAIL.map(() => 0), emote: 0, emoteKind: null };
   setLook(root, look);
   return root;
 }
@@ -319,7 +344,9 @@ function createTail(material) {
 }
 
 export function setLook(model, look) {
-  const { mats, king } = model.userData;
+  const { mats, king, styles } = model.userData;
+  const style = king ? 'long' : styles[look?.style] ? look.style : 'long';
+  for (const [name, g] of Object.entries(styles)) g.visible = name === style;
   if (king) {
     mats.skin.color.setHex(0xf2c8a0);
     mats.hair.color.setHex(0xf4f4f8);
@@ -351,18 +378,35 @@ export function poseMerperson(model, s, dt, t) {
   const stroke = s.stroke ?? 0;
   u.phase += dt * (2 + stroke * 5);
 
-  // Lie along the swim, tipped by pitch; upright when floating or sitting.
-  const spin = s.twirl > 0 ? (1 - s.twirl) * Math.PI * 4 : 0;
-  u.body.rotation.set(-(Math.PI / 2) * u.swimPose * (1 - u.sitPose) + (s.pitch || 0) * u.swimPose, spin, (s.roll || 0) * (0.4 + 0.6 * u.swimPose));
-  // A gentle bob when still.
-  u.body.position.y = Math.sin(t * 1.6) * 0.05 * (1 - u.swimPose) * (1 - u.sitPose);
+  // Emotes: which one, and how far in (fading in and out).
+  const em = s.emote;
+  if (em) u.emoteKind = em.kind;
+  u.emote = damp(u.emote, em ? Math.min(1, (em.dur - em.t) * 3) : 0, 8, dt);
+  const ek = u.emote > 0.01 ? u.emoteKind : null;
+  const et = em ? em.t : 0;
+  const ew = u.emote;
 
-  // Tail: a wave running down it, bigger when swimming hard. Sitting, it curls forward.
-  const amp = 0.12 + stroke * 0.32;
+  // Lie along the swim, tipped by pitch; upright when floating or sitting.
+  let spin = s.twirl > 0 ? (1 - s.twirl) * Math.PI * 4 : 0;
+  let flip = 0;
+  let sway = 0;
+  if (ek === 'flip' && em) flip = -Math.PI * 2 * Math.min(1, (em.t / em.dur) * 1.15);
+  if (ek === 'dance') {
+    sway = Math.sin(et * 7) * 0.3 * ew;
+    spin += Math.sin(et * 3.5) * 0.5 * ew;
+  }
+  u.body.rotation.set(-(Math.PI / 2) * u.swimPose * (1 - u.sitPose) + (s.pitch || 0) * u.swimPose + flip, spin, (s.roll || 0) * (0.4 + 0.6 * u.swimPose) + sway);
+  // A gentle bob when still (and a bounce when dancing).
+  u.body.position.y = Math.sin(t * 1.6) * 0.05 * (1 - u.swimPose) * (1 - u.sitPose) + (ek === 'dance' ? Math.abs(Math.sin(et * 7)) * 0.08 * ew : 0);
+
+  // Tail: a wave running down it, bigger when swimming hard. Sitting, it
+  // reaches forward over the edge of the rock and hangs down into the water.
+  const amp = 0.12 + stroke * 0.32 + (ek === 'dance' ? 0.25 * ew : 0);
+  const SIT = [1.35, 0.15, -0.25, -0.35, -0.35, -0.3, -0.2];
   u.bends.forEach((_, i) => {
     const wave = Math.sin(u.phase - i * 0.75) * amp * (0.4 + i * 0.12);
-    const curl = i === 0 ? 1.25 : i < 3 ? 0.25 : -0.05;
-    u.bends[i] = wave * (1 - u.sitPose * 0.7) - curl * u.sitPose + Math.sin(t * 1.2 + i) * 0.04;
+    const swish = i > 3 ? Math.sin(t * 1.5 - i * 0.5) * 0.08 : 0;
+    u.bends[i] = wave * (1 - u.sitPose * 0.8) + (SIT[i] + swish) * u.sitPose + Math.sin(t * 1.2 + i) * 0.04;
   });
   const end = u.tail.update(u.bends);
   u.fin.position.set(0, end.y, end.z);
@@ -371,12 +415,12 @@ export function poseMerperson(model, s, dt, t) {
   // Hair streams back when swimming, floats and sways when still.
   u.locks.forEach((g, i) => {
     // (Down her back is along the body; floating, it drifts out behind.)
-    g.rotation.x = -(0.45 * (1 - u.swimPose) + 0.1) * (i === 0 ? 1 : 0.3) + Math.sin(t * 1.8 - i * 0.6) * 0.12;
+    g.rotation.x = -(0.45 * (1 - u.swimPose) + 0.1) * (g.userData.first ? 1 : 0.3) + Math.sin(t * 1.8 - i * 0.6) * 0.12;
     g.rotation.z = Math.sin(t * 1.1 - i * 0.5) * 0.08;
   });
 
   // Arms: a breaststroke when swimming, floating out when still, and a wave.
-  const wantWave = s.wave ? 1 : 0;
+  const wantWave = s.wave || ek === 'wave' ? 1 : 0;
   u.wave = damp(u.wave, wantWave, 4, dt);
   // (Rotating x forward swings an arm to the front; z swings it out to the side.)
   for (const a of u.arms) {
@@ -397,6 +441,27 @@ export function poseMerperson(model, s, dt, t) {
       z = z * (1 - u.wave) + (2.5 + Math.sin(t * 9) * 0.35) * u.wave;
       elbow = elbow * (1 - u.wave) + 0.4 * u.wave;
     }
+    // Emotes take over the arms.
+    if (ek === 'kiss' && sx > 0) {
+      // Hand to her lips, then out towards you.
+      const out = em ? Math.min(1, Math.max(0, (em.t - 0.6) * 2.5)) : 1;
+      x = x * (1 - ew) + (1.2 + out * 0.5) * ew;
+      z = z * (1 - ew) + 0.25 * ew;
+      elbow = elbow * (1 - ew) + (2.3 - out * 1.8) * ew;
+    } else if (ek === 'sing') {
+      x = x * (1 - ew) + 0.9 * ew;
+      z = z * (1 - ew) + sx * (1.0 + Math.sin(et * 2 + sx) * 0.25) * ew;
+      elbow = elbow * (1 - ew) + 0.2 * ew;
+    } else if (ek === 'dance') {
+      const up = Math.sin(et * 7 + (sx > 0 ? 0 : Math.PI)) > 0;
+      x = x * (1 - ew) + 0.3 * ew;
+      z = z * (1 - ew) + sx * (up ? 2.7 : 1.2) * ew;
+      elbow = elbow * (1 - ew) + 0.5 * ew;
+    } else if (ek === 'flip') {
+      x = x * (1 - ew) + 2.8 * ew;
+      z = z * (1 - ew) + sx * 0.3 * ew;
+      elbow = elbow * (1 - ew);
+    }
     if (u.king && sx > 0) {
       // Holding the trident upright.
       x = 0.3;
@@ -406,6 +471,10 @@ export function poseMerperson(model, s, dt, t) {
     a.shoulder.rotation.set(x, 0, z);
     a.elbow.rotation.set(elbow, 0, 0);
   }
+  // Look where she's going when swimming (lying along the swim, her head
+  // lifts to face forward), and round about when still. Singing, chin up.
+  u.head.rotation.x = 1.1 * u.swimPose * (1 - u.sitPose) - (ek === 'sing' ? 0.3 * ew : 0);
   u.head.rotation.y = Math.sin(t * 0.5) * 0.15 * (1 - u.swimPose);
+  u.head.rotation.z = ek === 'sing' || ek === 'dance' ? Math.sin(et * 3) * 0.15 * ew : 0;
 }
 

@@ -78,7 +78,10 @@ export const LOOKS = {
   },
 };
 
-export const DEFAULT_LOOK = { hair: 'gold', skin: 'peach', top: 'pink', tail: 'teal', crown: 'gold', throne: 'pink' };
+export const DEFAULT_LOOK = { hair: 'gold', skin: 'peach', top: 'pink', tail: 'teal', crown: 'gold', throne: 'pink', style: 'long' };
+
+/** Hairstyles (shapes, not colours). */
+export const HAIRSTYLES = { long: 'Long', ponytail: 'Ponytail', plaits: 'Plaits', buns: 'Buns', bob: 'Short' };
 
 /** The colour (as a number) for one part of a look, falling back to the default. */
 export function colorOf(look, part) {

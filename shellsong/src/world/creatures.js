@@ -204,7 +204,8 @@ function follow(a, t, gap, top) {
 
 /**
  * Advance everything by dt. ctx: { mermaid: { x, y, z }, riding: the
- * dolphin being ridden or null }. Events: splash, spout, leap.
+ * dolphin being ridden or null, lure: where she's singing, or null }.
+ * Events: splash, spout.
  */
 export function updateCreatures(C, dt, ctx) {
   C.t += dt;
@@ -226,12 +227,18 @@ export function updateCreatures(C, dt, ctx) {
     let tx = s.x + Math.cos(a) * F.orbit[k] * 1.6;
     let ty = s.y + F.height[k] + Math.sin(a * 2) * 0.4;
     let tz = s.z + Math.sin(a) * F.orbit[k] * 1.6;
+    // When she sings, nearby schools come and swirl round her instead.
+    if (ctx.lure && Math.hypot(s.x - ctx.lure.x, s.z - ctx.lure.z) < 25) {
+      tx = ctx.lure.x + Math.cos(a) * (2.2 + F.orbit[k] * 0.5);
+      ty = ctx.lure.y + F.height[k] * 0.6 + Math.sin(a * 2) * 0.4;
+      tz = ctx.lure.z + Math.sin(a) * (2.2 + F.orbit[k] * 0.5);
+    }
     // Scatter from the mermaid, then drift back.
     const dx = F.px[k] - m.x;
     const dy = F.py[k] - m.y;
     const dz = F.pz[k] - m.z;
     const d = Math.hypot(dx, dy, dz);
-    if (d < 5 && d > 1e-3) {
+    if (d < 5 && d > 1e-3 && !ctx.lure) {
       const push = (5 - d) * 2.2;
       tx += (dx / d) * push;
       ty += (dy / d) * push * 0.5;
@@ -316,6 +323,8 @@ export function updateCreatures(C, dt, ctx) {
       if (Math.hypot(d.x - px, d.z - pz) > 1e-3) d.yaw = Math.atan2(d.x - px, -(d.z - pz));
     }
     // Leap: up out of the water in an arc, and back in with a splash.
+    // (Sing to them and the ones nearby jump for joy.)
+    if (ctx.lure && d.leap < 0 && d.leapIn > 0.5 && Math.hypot(d.x - ctx.lure.x, d.z - ctx.lure.z) < 35) d.leapIn = 0.2 + ((d.anim * 13) % 1.5);
     d.leapIn -= dt;
     if (d.leap < 0 && d.leapIn <= 0 && d.offset.k === 0) {
       d.leap = 0;

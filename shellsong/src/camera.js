@@ -24,7 +24,8 @@ export function createCamera(camera, ocean) {
   const p = { x: 0, y: 0, z: 0 };
 
   function place(m, dt, snap = false) {
-    const sitting = m.mode === 'sit' || m.mode === 'throne';
+    // Sitting, or doing an emote (other than a flip): come round to see her face.
+    const sitting = m.mode === 'sit' || m.mode === 'throne' || (m.emote && m.emote.kind !== 'flip' && m.mode !== 'ride' && m.mode !== 'leap');
     const riding = m.mode === 'ride' || m.mode === 'leap';
     // Sitting: look at her from the front, a little to one side.
     const want = sitting ? m.yaw + Math.PI + 0.5 + Math.sin(m.time * 0.1) * 0.3 : m.yaw;

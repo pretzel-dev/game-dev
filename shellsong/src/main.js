@@ -32,7 +32,7 @@ import {
 import { QUALITY, degrade } from './core/quality.js';
 import { settings } from './core/settings.js';
 import { buildOcean, TREASURE_LIST } from './world/ocean.js';
-import { createMermaid, updateMermaid, actionFor, act, letGo, findTreasure, placeMermaid } from './world/swim.js';
+import { createMermaid, updateMermaid, actionFor, act, letGo, findTreasure, placeMermaid, emote } from './world/swim.js';
 import { createCreatures, updateCreatures } from './world/creatures.js';
 import { createSeabed } from './render/seabed.js';
 import { createWater } from './render/water.js';
@@ -40,7 +40,8 @@ import { createScenery } from './render/scenery.js';
 import { createCreaturesView } from './render/creatures.js';
 import { createMerperson, setLook, poseMerperson } from './render/mermaid.js';
 import { makeTreasure } from './render/treasures.js';
-import { LOOKS, DEFAULT_LOOK, colorOf } from './render/looks.js';
+import { LOOKS, DEFAULT_LOOK, HAIRSTYLES, colorOf } from './render/looks.js';
+import { createFriend } from './render/friend.js';
 import { createFx } from './render/fx.js';
 import { createSky } from './render/sky.js';
 import { createPost } from './render/post.js';
@@ -118,6 +119,7 @@ function boot() {
   const creaturesView = createCreaturesView(scene, creatures);
   const fx = createFx(scene, QUALITY.particles);
   const cam = createCamera(camera, ocean);
+  const friend = createFriend(scene);
   const audio = createAudio();
   const hud = createHud();
 
@@ -143,6 +145,25 @@ function boot() {
     const row = document.querySelector('#swatches');
     if (!row) return;
     row.innerHTML = '';
+    if (tab === 'style') {
+      for (const [name, label] of Object.entries(HAIRSTYLES)) {
+        const b = document.createElement('button');
+        b.className = 'tab';
+        b.textContent = label;
+        b.setAttribute('aria-pressed', String((look.style || 'long') === name));
+        b.addEventListener('click', () => {
+          look.style = name;
+          settings.set('look', { ...look });
+          setLook(model, look);
+          renderSwatches();
+          audio.sparkle();
+          fx.sparkle(mermaid.x, mermaid.y + 0.7, mermaid.z, colorOf(look, 'hair'), 8, 0.6);
+        });
+        row.appendChild(b);
+      }
+      for (const t of document.querySelectorAll('[data-tab]')) t.setAttribute('aria-pressed', String(t.dataset.tab === tab));
+      return;
+    }
     for (const [name, hex] of Object.entries(LOOKS[tab].colors)) {
       const b = document.createElement('button');
       b.className = 'swatch';
@@ -223,6 +244,34 @@ function boot() {
   if (settings.get('music') === false) audio.setMusic(false);
   hud.setSound(audio.enabled);
   hud.setMusic(settings.get('music') !== false);
+
+  // Emotes: the 😊 button opens a row of them (or press 1 to 5).
+  let wantEmote = null;
+  const emoteBar = document.querySelector('#emoteBar');
+  document.querySelector('#emoteBtn')?.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    audio.start();
+    emoteBar?.classList.toggle('open');
+  });
+  for (const b of document.querySelectorAll('[data-emote]')) {
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      wantEmote = b.dataset.emote;
+    });
+  }
+  const EMOTE_KEYS = { Digit1: 'wave', Digit2: 'kiss', Digit3: 'sing', Digit4: 'dance', Digit5: 'flip' };
+  addEventListener('keydown', (e) => {
+    if (e.target?.tagName !== 'INPUT' && EMOTE_KEYS[e.code]) wantEmote = EMOTE_KEYS[e.code];
+  });
+  const KING_SAYS = {
+    wave: () => `Hello, ${princess()}!`,
+    kiss: () => 'And a kiss for you too, my darling!',
+    sing: () => 'What a beautiful song!',
+    dance: () => 'What lovely dancing!',
+    flip: () => 'What a splendid flip!',
+  };
+  let noteT = 0;
+  let kissHearts = 0;
 
   const startBtn = document.querySelector('#start');
   const homeBtn = document.querySelector('#home');
@@ -342,6 +391,8 @@ function boot() {
       letGo(mermaid);
       input.twirl = false;
     }
+    if (live && wantEmote) emote(mermaid, wantEmote);
+    wantEmote = null;
     if (live) updateMermaid(mermaid, input, ocean, dt);
     hud.action(live ? action : null, mermaid.mode === 'ride' || mermaid.mode === 'leap');
     for (const e of mermaid.events) {
@@ -361,6 +412,21 @@ function boot() {
         hud.hint(coarse ? 'Push up to go fast! Press Jump to leap out of the water.' : 'W to go fast! Press E to jump out of the water. Q to let go.', 4);
       } else if (e.type === 'leap') {
         audio.dolphin();
+      } else if (e.type === 'emote') {
+        audio.emote(e.kind);
+        friend.cheer();
+        if (e.kind === 'flip') fx.bubbles(mermaid.x, mermaid.y, mermaid.z, 14);
+        if (e.kind === 'dance') fx.sparkle(mermaid.x, mermaid.y + 0.5, mermaid.z, colorOf(look, 'tail'), 14, 1);
+        if (e.kind === 'kiss') kissHearts = 5;
+        // The King answers, if he's near enough to see.
+        if (Math.hypot(mermaid.x - KT.x, mermaid.y - KT.y, mermaid.z - KT.z) < 18) {
+          setTimeout(() => {
+            audio.hello();
+            hud.say(KING_SAYS[e.kind](), 3);
+          }, 700);
+          kingT = 3;
+        }
+        sayOnce('emote', 'Try them all! Sing to the fish and dolphins.', 3);
       } else if (e.type === 'splash') {
         fx.splash(e.x, 0, e.z, 30, e.size);
         audio.splash(e.size);
@@ -376,6 +442,7 @@ function boot() {
         found.add(tr.id);
         settings.set('treasure', [...found]);
         audio.treasure();
+        friend.cheer(true);
         fx.confetti(tr.x, tr.y + 1, tr.z, 90);
         fx.coins(tr.x, tr.y + 1, tr.z, 30);
         fx.stars(tr.x, tr.y + 1.2, tr.z, 10);
@@ -440,7 +507,20 @@ function boot() {
     poseMerperson(king, kingState, dt, t);
 
     /* -- creatures -- */
-    updateCreatures(creatures, dt, { mermaid, riding: mermaid.mode === 'ride' || mermaid.mode === 'leap' ? mermaid.ride : null });
+    const singing = mermaid.emote?.kind === 'sing';
+    if (singing && (noteT -= dt) <= 0) {
+      noteT = 0.22;
+      fx.note(mermaid.x, mermaid.y + 0.9, mermaid.z);
+    }
+    if (kissHearts > 0 && mermaid.emote?.kind === 'kiss' && mermaid.emote.t > 0.6) {
+      // Hearts float out from her hand, towards you.
+      kissHearts--;
+      const tx = camera.position.x - mermaid.x;
+      const tz = camera.position.z - mermaid.z;
+      const l = Math.hypot(tx, tz) || 1;
+      fx.emit({ x: mermaid.x, y: mermaid.y + 0.6, z: mermaid.z, vx: (tx / l) * 1.5 + (Math.random() - 0.5), vy: 0.6 + Math.random() * 0.5, vz: (tz / l) * 1.5 + (Math.random() - 0.5), life: 1.8, size: 0.4, size1: 0.6, color: 0xff6a9a, bright: 1.3, shape: 5, fade: 0.6, drag: 0.8 });
+    }
+    updateCreatures(creatures, dt, { mermaid, riding: mermaid.mode === 'ride' || mermaid.mode === 'leap' ? mermaid.ride : null, lure: singing ? mermaid : null });
     creaturesView.update(t);
     for (const e of creatures.events) {
       const d = Math.hypot(e.x - mermaid.x, e.z - mermaid.z);
@@ -463,6 +543,7 @@ function boot() {
     model.rotation.y = -mermaid.yaw;
     poseMerperson(model, { ...mermaid, wave: mermaid.mode === 'sit' && Math.sin(t * 0.4) > 0.6 }, dt, t);
     scenery.update(t, dt, found, mermaid);
+    friend.update(mermaid, dt, t);
 
     /* -- camera -- */
     if (started) {
