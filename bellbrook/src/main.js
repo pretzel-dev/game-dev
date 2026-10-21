@@ -187,7 +187,45 @@ function boot() {
     for (const chip of document.querySelectorAll('[data-paint]')) chip.setAttribute('aria-pressed', String(chip.dataset.paint === name));
   }
   setPaint(paint);
-  const rig = createCameraRig(camera, { view: settings.get('view') || 0 });
+  // Two ways to play: steer it from behind like a car, or point the way from above.
+  let drive = settings.get('drive') === 'behind' ? 'behind' : 'above';
+  /** The first building on the line a -> b, as a fraction of the way (1 if none). */
+  function firstBuilding(a, b) {
+    let best = 1;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dz = b.z - a.z;
+    for (const box of city.boxes) {
+      let t0 = 0;
+      let t1 = best;
+      for (const [o, d, lo, hi] of [
+        [a.x, dx, box.minX, box.maxX],
+        [a.y, dy, 0, box.h],
+        [a.z, dz, box.minZ, box.maxZ],
+      ]) {
+        if (Math.abs(d) < 1e-9) {
+          if (o < lo || o > hi) t0 = 2;
+          continue;
+        }
+        let u = (lo - o) / d;
+        let v = (hi - o) / d;
+        if (u > v) [u, v] = [v, u];
+        t0 = Math.max(t0, u);
+        t1 = Math.min(t1, v);
+      }
+      if (t0 <= t1 && t0 < best) best = t0;
+    }
+    return best;
+  }
+  const rig = createCameraRig(camera, { view: settings.get('view') || 0, mode: drive, blocker: firstBuilding });
+  function setDrive(mode) {
+    drive = mode;
+    settings.set('drive', mode);
+    rig.setMode(mode, truck);
+    document.body.classList.toggle('behind', mode === 'behind');
+    for (const chip of document.querySelectorAll('[data-drive]')) chip.setAttribute('aria-pressed', String(chip.dataset.drive === mode));
+  }
+  setDrive(drive);
   rig.reset(truck);
 
   /* ------------------------------------------------------- the townsfolk --- */
@@ -261,6 +299,10 @@ function boot() {
       zoom: (f) => rig.zoom(f),
       sound: toggleSound,
       light: cycleLight,
+      camera: () => {
+        setDrive(drive === 'behind' ? 'above' : 'behind');
+        hud.hint(drive === 'behind' ? 'Behind the truck' : 'From above', 1.4);
+      },
       menu: () => (menuOpen ? closeMenu() : openMenu()),
     },
     onFirstInput: () => audio.start(),
@@ -269,6 +311,7 @@ function boot() {
   document.querySelector('#lightBtn')?.addEventListener('click', cycleLight);
   document.querySelector('#soundBtn')?.addEventListener('click', toggleSound);
   for (const chip of document.querySelectorAll('[data-light]')) chip.addEventListener('click', () => setLight(chip.dataset.light));
+  for (const chip of document.querySelectorAll('[data-drive]')) chip.addEventListener('click', () => setDrive(chip.dataset.drive));
   for (const chip of document.querySelectorAll('[data-paint]')) chip.addEventListener('click', () => setPaint(chip.dataset.paint));
   if (settings.get('sound') === false) audio.setEnabled(false);
   hud.setSound(audio.enabled);
@@ -286,7 +329,8 @@ function boot() {
     audio.bell(3);
     rig.reset(truck);
     document.querySelector('#sirenBtn')?.classList.add('pulse');
-    hud.hint(coarse ? 'Drag on the left to drive. Try the siren!' : 'Arrow keys or WASD to drive. F for the siren!', 4.5);
+    if (drive === 'behind') hud.hint(coarse ? 'Push up on the left to go, left and right to steer. Try the siren!' : 'W to go, A and D to steer, S to back up. F for the siren!', 5);
+    else hud.hint(coarse ? 'Drag on the left to drive. Try the siren!' : 'Arrow keys or WASD to drive. F for the siren!', 4.5);
   }
   function openMenu() {
     if (!started || menuOpen) return;
@@ -477,9 +521,10 @@ function boot() {
     const input = live ? controls.sample(dt) : idle;
 
     /* -- drive -- */
-    const move = rig.toWorld(input.mx, input.my);
+    // From above the stick points the way; from behind it's gas and steering.
+    const move = drive === 'behind' ? { throttle: input.my, steer: input.mx } : rig.toWorld(input.mx, input.my);
     // With the ladder up, the truck stays put (it lowers if you drive off).
-    if (ladderUp && Math.hypot(move.dx, move.dz) > 0.5 && kitten.state !== 'down') {
+    if (ladderUp && Math.hypot(input.mx, input.my) > 0.5 && kitten.state !== 'down') {
       ladderUp = false;
       hud.setButton('#ladderBtn', false);
       audio.ladder(false);
@@ -664,8 +709,13 @@ function boot() {
     fx.setScale(renderer.domElement.height, camera.fov);
 
     // The sun's shadow box follows the camera's focus.
-    const fxp = started ? camera.position.x + Math.sin(rig.yaw) * Math.cos(0.86) * rig.distance : truck.x;
-    const fzp = started ? camera.position.z - Math.cos(rig.yaw) * Math.cos(0.86) * rig.distance : truck.z;
+    let fxp = started ? camera.position.x + Math.sin(rig.yaw) * Math.cos(0.86) * rig.distance : truck.x;
+    let fzp = started ? camera.position.z - Math.cos(rig.yaw) * Math.cos(0.86) * rig.distance : truck.z;
+    if (started && drive === 'behind') {
+      // Most of what you see is ahead of the truck.
+      fxp = truck.x + Math.sin(truck.heading) * 25;
+      fzp = truck.z - Math.cos(truck.heading) * 25;
+    }
     sun.target.position.set(fxp, 0, fzp);
     sun.position.set(fxp, 0, fzp).addScaledVector(sunDir, 200);
 

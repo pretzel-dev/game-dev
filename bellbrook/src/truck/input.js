@@ -60,6 +60,7 @@ export function createInput({ actions = {}, onFirstInput = () => {} } = {}) {
     else if (e.code === 'KeyE') actions.turn?.(1);
     else if (e.code === 'KeyM') actions.sound?.();
     else if (e.code === 'KeyT') actions.light?.();
+    else if (e.code === 'KeyC') actions.camera?.();
     else if (e.code === 'Minus' || e.code === 'NumpadSubtract') actions.zoom?.(1.15);
     else if (e.code === 'Equal' || e.code === 'NumpadAdd') actions.zoom?.(1 / 1.15);
   });

@@ -12,7 +12,11 @@ import { BLOCK, N, HALF, PITCH, ROAD, roadAt, blockMin, blockMax, nearestRoadPoi
 export const KERB = 0.15; // pavements and everything inside a block sit this high
 export const SEA_Z = 206; // the beach runs from the seafront road down to here
 export const BOUNDS = { minX: -198, maxX: 198, minZ: -200, maxZ: SEA_Z - 3 };
-export const PIER = { minX: 51, maxX: 61, minZ: SEA_Z - 6, maxZ: SEA_Z + 58 };
+export const PIER = { minX: 51, maxX: 61, minZ: SEA_Z - 6, maxZ: SEA_Z + 44 };
+// A round platform on the end, with the lighthouse in the middle: drive into
+// the rail and you follow it round, like a roundabout, and back along the pier.
+export const PIER_HEAD = { x: 56, z: SEA_Z + 56, r: 15 };
+const LAND = [BOUNDS, PIER];
 
 // Which kind of neighbourhood each block is. Row 0 is the north edge.
 export const DISTRICTS = [
@@ -390,7 +394,7 @@ export function buildCity(seed = 0xbe11b200) {
     prop('hydrant', x0 + 4, front + 1);
     // Three firefighters who wave you off and cheer you home.
     for (let k = 0; k < 3; k++) city.crew.push({ x: cx - 15 + k * 1.6, z: front + 2.5 + (k % 2) * 0.8 });
-    city.spawn = { x: cx - 2, z: front + 5.5, heading: Math.PI };
+    city.spawn = { x: cx - 2, z: front + 10, heading: Math.PI };
   }
 
   function hospital(blk) {
@@ -688,7 +692,7 @@ export function buildCity(seed = 0xbe11b200) {
   // Beach huts in a row of bright colours.
   const hutColors = [0xf25a7a, 0x3f8fd2, 0xf2d03b, 0x4fb06a, 0xf28a3b, 0xb07ae0, 0x2fb5a8];
   for (let k = 0; k < 13; k++) {
-    const x = -160 + k * 7;
+    const x = -165 + k * 9; // gaps wide enough to drive through, never to get wedged in
     const color = hutColors[k % hutColors.length];
     prop('hut', x, promenade + 14, { color });
     box(x, promenade + 14, 3.6, 3.4, 4.2);
@@ -704,8 +708,9 @@ export function buildCity(seed = 0xbe11b200) {
   prop('sandcastle', 90, SEA_Z - 12);
   // The pier, with a lighthouse on the end, and boats bobbing about.
   prop('pier', (PIER.minX + PIER.maxX) / 2, (PIER.minZ + PIER.maxZ) / 2, { w: PIER.maxX - PIER.minX, d: PIER.maxZ - PIER.minZ });
-  prop('lighthouse', (PIER.minX + PIER.maxX) / 2, PIER.maxZ - 3, { h: 16 });
-  city.circles.push({ x: (PIER.minX + PIER.maxX) / 2, z: PIER.maxZ - 3, r: 3 });
+  prop('pierhead', PIER_HEAD.x, PIER_HEAD.z, { r: PIER_HEAD.r, neck: PIER.maxX - PIER.minX });
+  prop('lighthouse', PIER_HEAD.x, PIER_HEAD.z, { h: 16 });
+  city.circles.push({ x: PIER_HEAD.x, z: PIER_HEAD.z, r: 3 });
   for (const [bx, bz, color] of [
     [10, SEA_Z + 30, 0xf25a7a],
     [-40, SEA_Z + 45, 0x3f8fd2],
@@ -733,16 +738,47 @@ export function buildCity(seed = 0xbe11b200) {
 
 /** Is the point inside the land you can drive on (town + beach + pier)? */
 export function inBounds(x, z) {
-  if (x >= BOUNDS.minX && x <= BOUNDS.maxX && z >= BOUNDS.minZ && z <= BOUNDS.maxZ) return true;
-  return x >= PIER.minX && x <= PIER.maxX && z >= PIER.minZ && z <= PIER.maxZ;
+  if (Math.hypot(x - PIER_HEAD.x, z - PIER_HEAD.z) <= PIER_HEAD.r) return true;
+  if (!LAND.some((r) => x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ)) return false;
+  const c = roundCorner(x, z);
+  return !c || (c.x === x && c.z === z);
+}
+
+// The corners of the land are rounded, so driving into one carries you round it.
+const CORNER = 24;
+/** If (x, z) is out past a rounded corner of the land, the nearest point on it. */
+function roundCorner(x, z) {
+  const b = BOUNDS;
+  const cx = x < b.minX + CORNER ? b.minX + CORNER : x > b.maxX - CORNER ? b.maxX - CORNER : null;
+  const cz = z < b.minZ + CORNER ? b.minZ + CORNER : z > b.maxZ - CORNER ? b.maxZ - CORNER : null;
+  if (cx === null || cz === null) return null;
+  // (Not where the pier leaves the beach.)
+  if (x >= PIER.minX && x <= PIER.maxX) return null;
+  const d = Math.hypot(x - cx, z - cz);
+  if (d <= CORNER) return { x, z };
+  return { x: cx + ((x - cx) / d) * CORNER, z: cz + ((z - cz) / d) * CORNER };
 }
 
 /** Nearest point inside the drivable land. */
 export function clampToBounds(x, z) {
   if (inBounds(x, z)) return { x, z };
-  const a = { x: Math.min(BOUNDS.maxX, Math.max(BOUNDS.minX, x)), z: Math.min(BOUNDS.maxZ, Math.max(BOUNDS.minZ, z)) };
-  const b = { x: Math.min(PIER.maxX, Math.max(PIER.minX, x)), z: Math.min(PIER.maxZ, Math.max(PIER.minZ, z)) };
-  return Math.hypot(a.x - x, a.z - z) <= Math.hypot(b.x - x, b.z - z) ? a : b;
+  if (x >= BOUNDS.minX && x <= BOUNDS.maxX && z >= BOUNDS.minZ && z <= BOUNDS.maxZ) return roundCorner(x, z);
+  let best = null;
+  let bestD = Infinity;
+  for (const r of LAND) {
+    let p = { x: Math.min(r.maxX, Math.max(r.minX, x)), z: Math.min(r.maxZ, Math.max(r.minZ, z)) };
+    if (r === BOUNDS) p = roundCorner(p.x, p.z) || p;
+    const d = Math.hypot(p.x - x, p.z - z);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  const dx = x - PIER_HEAD.x;
+  const dz = z - PIER_HEAD.z;
+  const d = Math.hypot(dx, dz);
+  if (d - PIER_HEAD.r < bestD) best = { x: PIER_HEAD.x + (dx / d) * PIER_HEAD.r, z: PIER_HEAD.z + (dz / d) * PIER_HEAD.r };
+  return best;
 }
 
 /** Height of the ground underfoot: up on the kerb inside a block, else 0. */
