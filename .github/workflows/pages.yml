@@ -5,7 +5,7 @@ name: Deploy games to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ['covewind/**', 'starfall/**', 'perihelion/**', 'dustline/**', 'bellbrook/**', 'site/**', '.github/workflows/pages.yml']
+    paths: ['covewind/**', 'starfall/**', 'perihelion/**', 'dustline/**', 'bellbrook/**', 'shellsong/**', 'site/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -53,6 +53,9 @@ jobs:
       - name: Build Bellbrook
         working-directory: bellbrook
         run: npm ci && npm run check && npm run build
+      - name: Build Shellsong
+        working-directory: shellsong
+        run: npm ci && npm run check && npm run build
       - name: Assemble site
         run: |
           mkdir -p _site
@@ -62,6 +65,7 @@ jobs:
           cp -r perihelion/dist _site/perihelion
           cp -r dustline/dist _site/dustline
           cp -r bellbrook/dist _site/bellbrook
+          cp -r shellsong/dist _site/shellsong
       - name: Publish to gh-pages
         working-directory: _site
         run: |
