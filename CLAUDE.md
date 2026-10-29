@@ -100,7 +100,8 @@ block it; append `?peer=127.0.0.1:9000` to the URL to use a local
   pack anything new), contact shade, near/far detail, eclipse dimming,
   decks on gas giants; sun shadows up close (`gfx/shadow.js`); a closer
   camera on small worlds; orbital yard/harvester and station detail;
-  special-world features (`perkMeshes`, `ORBITS`). Next: megaprojects.
+  special-world features (`perkMeshes`, `ORBITS`); megaprojects reworked
+  (`gfx/megastructures.js`). The first pass of the overhaul is complete.
 - Move multiplayer to a server on Cloudflare (Durable Objects): the game keeps
   running without the host, and nobody can pause. Add a TURN relay for strict
   networks. The owner has a Cloudflare account and a Cloudflare MCP connector,

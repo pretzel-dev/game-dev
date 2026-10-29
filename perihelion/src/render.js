@@ -1638,7 +1638,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     // Sun shadows, close to a world with buildings on it.
     {
       const v = orbit.follow !== null ? views[orbit.follow] : null;
-      const fp = v && ((v.lit && v.lit.length) || v.perk.lit.length) ? bodyPos[orbit.follow] : null;
+      const fp = v && ((v.lit && v.lit.length) || v.perk.lit.length || v.megaObj) ? bodyPos[orbit.follow] : null;
       const near = fp && camera.position.distanceTo(tmp.set(fp.x, fp.y, fp.z)) - v.b.size < v.b.size * 2.5 + 0.4;
       shadows.update(near ? tmp : null, v ? v.b.size : 0, sunGroup.position, camera, quality === 'high' ? 2048 : 1024);
     }
