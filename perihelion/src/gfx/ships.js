@@ -598,8 +598,9 @@ export function hullMaterial(uT, groundTex = null) {
           float grit = fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
           float gnd = isK(10.0);
           // painted with the world's own surface where it has a map (gnd.xy
-          // on it), else the rock's light and dark (gnd.z) and a mottling.
-          vec3 gmap = uGroundTex > 0.5 ? pow(texture2D(tGround, vGnd.xy).rgb, vec3(2.2)) : vec3(vGnd.z);
+          // on it), else a mottling; gnd.z is the rock's light and dark and
+          // the shade at the foot of the structures standing on it.
+          vec3 gmap = (uGroundTex > 0.5 ? pow(texture2D(tGround, vGnd.xy).rgb, vec3(2.2)) : vec3(1.0)) * vGnd.z;
           float mot = (sin(vLocal.x * 9.0 + vLocal.z * 3.1) + sin(vLocal.z * 11.0 - vLocal.x * 4.3) + sin((vLocal.x + vLocal.z) * 23.0)) * (1.0 - uGroundTex);
           diffuseColor.rgb = mix(diffuseColor.rgb, vGround * gmap * vTint * (0.9 + grit * 0.2 * fine) * (1.0 + mot * 0.06), gnd);
         }`)

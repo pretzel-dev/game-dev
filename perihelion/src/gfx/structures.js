@@ -306,6 +306,7 @@ function siteOn(b, k, env) {
 function groundAttrs(geo, site) {
   const P = geo.attributes.position, n = P.count;
   const g = new Float32Array(n * 3);
+  const ao = footShade(geo, site);
   const q = new THREE.Quaternion().setFromUnitVectors(UP, site.n), v = new THREE.Vector3();
   for (let i = 0; i < n; i++) {
     const x = P.getX(i), z = P.getZ(i);
@@ -317,7 +318,7 @@ function groundAttrs(geo, site) {
       g[i * 3] = site.u0 + ((((u - site.u0 + 0.5) % 1) + 1) % 1) - 0.5;
       g[i * 3 + 1] = 1 - Math.acos(THREE.MathUtils.clamp(v.y, -1, 1)) / Math.PI;
     }
-    g[i * 3 + 2] = site.shadeAt ? site.shadeAt(x, z) : 1;
+    g[i * 3 + 2] = (site.shadeAt ? site.shadeAt(x, z) : 1) * ao(x, z);
   }
   geo.setAttribute('gnd', new THREE.BufferAttribute(g, 3));
 }
@@ -376,6 +377,50 @@ function probeRock(field, dir, R) {
     lo = Math.min(lo, h); hi = Math.max(hi, h);
   }
   return { p: c, n, rough: hi - lo, ground: [gr[0] / 4, gr[1] / 4, gr[2] / 4] };
+}
+
+/**
+ * Contact shade: the ground darkens at the foot of whatever stands on it
+ * (less sky reaches it), which is what makes a building look set down
+ * rather than floating. Marks the footprint of every part low enough to
+ * touch the ground on a grid round the site, blurs it, and returns the
+ * shade at a point (x, z in U).
+ */
+const AO_N = 64, AO_SPAN = 2;
+function footShade(geo, site) {
+  const P = geo.attributes.position, kind = geo.attributes.kind;
+  const G = new Float32Array(AO_N * AO_N), cell = (2 * AO_SPAN) / AO_N;
+  const ix = (v) => Math.floor((v + AO_SPAN) / cell);
+  for (let t = 0; t < P.count; t += 3) {
+    if (kind.getX(t) === GROUND) continue;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, low = Infinity;
+    for (let j = t; j < t + 3; j++) {
+      const x = P.getX(j), z = P.getZ(j);
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+      low = Math.min(low, P.getY(j) - site.lift(x, z));
+    }
+    if (low > 0.06 || x1 - x0 > 1 || z1 - z0 > 1) continue; // only what stands on the ground (not long struts and cables)
+    for (let i = Math.max(0, ix(x0)); i <= Math.min(AO_N - 1, ix(x1)); i++) for (let k = Math.max(0, ix(z0)); k <= Math.min(AO_N - 1, ix(z1)); k++) G[i * AO_N + k] = 1;
+  }
+  // Blur twice with a 5-cell box (a soft falloff about a tenth of a U wide).
+  const B = new Float32Array(AO_N * AO_N);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < AO_N; i++) for (let k = 0; k < AO_N; k++) {
+      let s = 0, c = 0;
+      for (let d = -2; d <= 2; d++) { const kk = k + d; if (kk >= 0 && kk < AO_N) { s += G[i * AO_N + kk]; c++; } }
+      B[i * AO_N + k] = s / c;
+    }
+    for (let i = 0; i < AO_N; i++) for (let k = 0; k < AO_N; k++) {
+      let s = 0, c = 0;
+      for (let d = -2; d <= 2; d++) { const ii = i + d; if (ii >= 0 && ii < AO_N) { s += B[ii * AO_N + k]; c++; } }
+      G[i * AO_N + k] = s / c;
+    }
+  }
+  return (x, z) => {
+    const i = ix(x), k = ix(z);
+    if (i < 0 || k < 0 || i >= AO_N || k >= AO_N) return 1;
+    return 1 - 0.6 * Math.min(1, G[i * AO_N + k] * 1.8);
+  };
 }
 
 /** The rock round a site (in the site's frame) on a grid: its height (lift) and colour (colAt), as functions of x, z in U. */
@@ -626,7 +671,7 @@ function siteKit(K, ctx) {
      */
     worked(x, z, r, tint = 0.8) {
       if (deck || ctx.air) return;
-      K.add(ragged(new THREE.CircleGeometry(r, 40).rotateX(-X), r * 0.6, 0.12).translate(x, 0.004, z), GROUND, tint);
+      K.add(ragged(new THREE.RingGeometry(r * 0.005, r, 48, 14).rotateX(-X), r * 0.6, 0.12).translate(x, 0.004, z), GROUND, tint);
     },
     /** Vehicle tracks: a faint line of compacted ground. */
     tracks(x0, z0, x1, z1, w = 0.03) {

@@ -1015,6 +1015,11 @@ export function createView(canvas, labelRoot, opts = {}) {
       if (Math.abs(orbit.goalDist - orbit.dist) < 0.01 * orbit.dist) orbit.goalDist = null;
     }
     orbit.pol = THREE.MathUtils.clamp(orbit.pol, 0.15, Math.PI - 0.15);
+    // Following a world, the camera may come down to just over its surface
+    // (that's where the buildings are); otherwise no nearer than 1.2 from
+    // the view centre. Eased, so letting go of a world doesn't jolt the view.
+    const minGoal = orbit.follow !== null && game.bodies[orbit.follow] ? game.bodies[orbit.follow].size * 1.08 + 0.1 : 1.2;
+    orbit.minDist += (minGoal - orbit.minDist) * Math.min(1, dt * 3);
     orbit.dist = THREE.MathUtils.clamp(orbit.dist, orbit.minDist, orbit.maxDist);
     camera.position.setFromSphericalCoords(orbit.dist, orbit.pol, orbit.az).add(orbit.target);
     camera.lookAt(orbit.target);
