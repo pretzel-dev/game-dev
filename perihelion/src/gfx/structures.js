@@ -5,43 +5,39 @@ import { rng } from '../sim.js';
 /**
  * Buildings on worlds, from the same parts kit as ships and stations
  * (plating, owner's paint, lit windows, ceramic radiators, solar cells).
- * Each level adds or enlarges one major structure, so upgrades read from
- * the silhouette. Surface buildings stand on wide, short-load-path
- * foundations (these worlds have gravity) and are built with +Y as "up";
- * the two orbital ones (shipyard, gas harvester) are built in orbit as one
- * cluster each, in the plane round the world. They're drawn larger than
- * life (a real facility would be invisible against a planet); that's
- * presentation only.
+ *
+ * Surface buildings (mine, guns, security bureau, research station,
+ * habitat, exchange) are sites: drawn near real scale in one shared unit
+ * (SITE_U), laid over the ground under them (asteroids are probed), their
+ * earthworks painted with the world's own surface, with a near and a far
+ * version (see SITES and siteKit). On a gas giant they stand on a floating
+ * deck. Each level adds equipment rather than scaling up. The two orbital
+ * ones (shipyard, gas harvester) are built in orbit as one cluster each, at
+ * ship scale.
  *
  * Finished buildings use the hull material; ones being built or scrapped
  * show as a hologram (`ghost`). The returned group may carry
  * `userData.wip` (the hull in the yard, in build stages: the view shows
- * them only while a ship is being built, more as it nears completion) and `userData.spin` ([{ mesh, axis, rate }]: parts that
- * turn, like a habitat drum on an asteroid).
+ * them only while a ship is being built, more as it nears completion),
+ * `userData.spin` ([{ mesh, axis, rate }]: parts that turn, like a habitat
+ * drum) and `userData.lod` (a site's near and far meshes).
  */
 export function structureMesh(type, b, k, done, level, uT, ghost, color, env = null) {
-  const s = buildingScale(b);
   const F = stationUnit(b);
   const K = kit(b.id * 17 + k * 101 + level);
-  // Sites (the mine, so far): real-scale-ish, in site units, on the terrain.
-  const siteR = type === 'mine' ? MINE_R[level - 1] * SITE_U : 0;
-  const site = siteR ? siteOn(b, k, siteR, env) : null;
+  // Surface buildings are sites: near real scale, in site units, laid over the ground.
+  const def = SITES[type];
+  const site = def ? siteOn(b, k, env) : null;
+  const siteR = site ? def.r[level - 1] * SITE_U : 0;
+  const ctx = site && { rock: b.kind === 'asteroid', deck: site.deck, air: !!(env && env.air), sink: site.sink / SITE_U, spins: [] };
+  const gk = site && site.key + type + level;
   const r = K.r;
-  const orbital = type === 'shipyard' || type === 'skimmer';
   const extra = []; // [kit, role] built alongside the main mesh
-  // Vertical prisms and domes (the kit's cylinders run along z).
-  const vc = (r1, r2, h, x, y, z, kind = HULL, seg = 12, tint) => K.add(new THREE.CylinderGeometry(r1, r2, h, seg).translate(x, y + h / 2, z), kind, tint);
-  const dome = (rad, x, y, z, kind = HULL, tint) => K.add(new THREE.SphereGeometry(rad, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2).translate(x, y, z), kind, tint);
-  const winBand = (w, x, y, z, n, face = 1, axis = 'z') => {
-    for (let i = 0; i < n; i++) {
-      const o = (i - (n - 1) / 2) * (w / n);
-      if (axis === 'z') K.box(s * 0.035, s * 0.025, s * 0.006, x + o, y, z + face * 0.003, WINDOW);
-      else K.box(s * 0.006, s * 0.025, s * 0.035, x + face * 0.003, y, z + o, WINDOW);
-    }
-  };
   let place = null; // orbital: a matrix taking the local frame to its spot in orbit
 
-  if (type === 'shipyard') {
+  if (site) {
+    if (!siteGeos.has(gk)) def.build(siteKit(K, ctx), K, level, ctx);
+  } else if (type === 'shipyard') {
     // One orbital drydock: a big open cradle (one hull at a time), a
     // control and power hub at one end, a gantry, solar and radiators.
     // Local frame: +x along the orbit, +y away from the world, +z across.
@@ -114,178 +110,6 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     // A transfer craft between the collectors and the platform.
     K.tank(c * 0.18, c * 0.5, c * 1.4, py * 0.55, 0, HULL);
     K.light(0, py + c * 0.5, len / 2 + c * 0.9, NAV_G, c * 0.12);
-  } else if (type === 'defence') {
-    // An armoured firing platform with two gun mounts per level (each one
-    // gun, so the count on the platform is the guns it adds), a central
-    // magazine, and a fire-control radar on its own mast (not a gun).
-    const R = s * (0.5 + level * 0.14);
-    vc(R, R * 1.12, s * 0.16, 0, 0, 0, DARK, 8);
-    vc(R * 1.01, R * 1.01, s * 0.03, 0, s * 0.16, 0, PAINT, 8);
-    K.box(R * 0.7, s * 0.2, R * 0.5, 0, s * 0.19 + s * 0.1, 0, HULL, 0.9); // magazine
-    K.box(R * 0.72, s * 0.04, R * 0.08, 0, s * 0.3, R * 0.2, DARK);
-    const n = level * 2;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + 0.4;
-      const x = Math.cos(a) * R * 0.72, z = Math.sin(a) * R * 0.72, y = s * 0.19;
-      vc(s * 0.11, s * 0.13, s * 0.08, x, y, z, DARK, 8);
-      K.add(new THREE.BoxGeometry(s * 0.17, s * 0.1, s * 0.15).rotateY(-a).translate(x, y + s * 0.13, z), HULL);
-      K.boom(x + Math.cos(a) * s * 0.06, y + s * 0.15, z + Math.sin(a) * s * 0.06, [Math.cos(a), 0.45, Math.sin(a)], s * 0.42, s * 0.04, DARK, 0.6);
-    }
-    // Radar on a mast off to one side.
-    K.boom(-R * 0.15, s * 0.3, -R * 0.15, [0, 1, 0], s * 0.5, s * 0.04);
-    K.sphere(s * 0.1, -R * 0.15, s * 0.82, -R * 0.15, HULL, 1.1, 12);
-    K.box(s * 0.04, s * 0.04, s * 0.04, R * 0.6, s * 0.2, 0, NAV_R);
-  } else if (type === 'exchange') {
-    // A space elevator, the bond market's freight line: a wide ground
-    // terminal, twin tethers past a geostationary port up to a
-    // counterweight. Level I: a docking hub with two freight arms. Level
-    // II: a wide docking ring with berths and storage, and a cargo annex.
-    vc(s * 0.7, s * 0.8, s * 0.12, 0, 0, 0, DARK, 8);
-    vc(s * 0.5, s * 0.6, s * 0.18, 0, s * 0.12, 0, HULL, 8);
-    vc(s * 0.51, s * 0.51, s * 0.04, 0, s * 0.24, 0, PAINT, 8);
-    vc(s * 0.16, s * 0.22, s * 0.5, 0, s * 0.3, 0, HULL, 10); // climber terminal
-    for (const a of [0.5, 2.6, 4.4]) K.radiator(Math.cos(a) * s * 0.55, s * 0.14, Math.sin(a) * s * 0.55, s * 0.28, s * 0.22, Math.PI / 2, 2, s * 0.015);
-    winBand(s * 0.8, 0, s * 0.2, s * 0.6, 8);
-    const top = s * 3.6, port = s * 2.5; // about a station's height in all
-    for (const sx of [-1, 1]) K.add(new THREE.CylinderGeometry(s * 0.018, s * 0.018, top - s * 0.8, 5).translate(sx * s * 0.05, s * 0.8 + (top - s * 0.8) / 2, 0), DARK);
-    for (const y of [1.25, 1.9, 3.1]) { K.box(s * 0.16, s * 0.2, s * 0.12, 0, s * y, 0, HULL, 0.9); K.box(s * 0.12, s * 0.03, s * 0.004, 0, s * y, s * 0.062, WINDOW); }
-    // The port (drawn larger than the base: it's what the player should see).
-    const P = s * 0.95;
-    vc(P * 0.32, P * 0.32, P * 0.4, 0, port - P * 0.2, 0, HULL, 16);
-    vc(P * 0.33, P * 0.33, P * 0.1, 0, port - P * 0.05, 0, PAINT, 16);
-    for (const sx of [-1, 1]) {
-      const [ex, ey] = K.boom(sx * P * 0.3, port, 0, [sx, 0, 0], P * 0.45, P * 0.07, HULL, 0.9);
-      K.box(P * 0.06, P * 0.16, P * 0.16, ex, ey, 0, DARK);
-      K.strapped(P * 0.07, P * 0.16, sx * P * 0.5, port - P * 0.14, 0, sx > 0);
-    }
-    if (level >= 2) {
-      K.add(new THREE.TorusGeometry(P * 1.0, P * 0.08, 8, 48).rotateX(Math.PI / 2).translate(0, port, 0), HULL);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + 0.26;
-        K.strut(Math.cos(a) * P * 0.32, port, Math.sin(a) * P * 0.32, Math.cos(a) * P * 0.95, port, Math.sin(a) * P * 0.95, P * 0.04);
-        K.frame(P * 0.28, P * 0.18, P * 0.28, Math.cos(a) * P * 1.18, port, Math.sin(a) * P * 1.18, P * 0.02); // freight berth
-        if (i % 2 === 0) K.sphere(P * 0.09, Math.cos(a) * P * 1.18, port, Math.sin(a) * P * 1.18, i === 0 ? PAINT : HULL, 1, 10);
-      }
-      vc(P * 0.4, P * 0.4, P * 0.3, 0, port - P * 0.6, 0, HULL, 16); // cargo annex
-      for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; K.box(P * 0.04, P * 0.03, P * 0.05, Math.cos(a) * P * 1.08, port, Math.sin(a) * P * 1.08, WINDOW); }
-    }
-    // Counterweight.
-    K.box(s * 0.5, s * 0.35, s * 0.4, 0, top, 0, DARK, 0.7);
-    K.box(s * 0.3, s * 0.25, s * 0.3, s * 0.22, top + s * 0.2, s * 0.1, DARK, 0.6);
-    K.box(s * 0.05, s * 0.05, s * 0.05, 0, top + s * 0.25, 0, STROBE);
-  } else if (type === 'habitat') {
-    if (b.kind === 'asteroid') {
-      // Little gravity here: a housing drum on an axle that spins for it.
-      for (const sx of [-1, 1]) vc(s * 0.06, s * 0.09, s * 0.5, sx * s * (0.35 + level * 0.12), 0, 0, DARK, 6);
-      K.add(new THREE.CylinderGeometry(s * 0.05, s * 0.05, s * (0.9 + level * 0.25), 8).rotateZ(Math.PI / 2).translate(0, s * 0.5, 0), DARK);
-      const D = kit(b.id * 5 + level);
-      for (let i = 0; i < level; i++) {
-        const x = (i - (level - 1) / 2) * s * 0.3;
-        D.add(new THREE.CylinderGeometry(s * 0.3, s * 0.3, s * 0.24, 20).rotateZ(Math.PI / 2).translate(x, 0, 0), i === 1 ? PAINT : HULL);
-        for (let j = 0; j < 10; j++) { const a = (j / 10) * Math.PI * 2; D.box(s * 0.12, s * 0.025, s * 0.025, x, Math.cos(a) * s * 0.302, Math.sin(a) * s * 0.302, WINDOW); }
-      }
-      extra.push([D, 'spin', [0, s * 0.5, 0]]);
-    } else {
-      // A settlement: pressurised domes, low residential blocks and towers,
-      // covered connectors; each level a larger district.
-      vc(s * (0.6 + level * 0.18), s * (0.66 + level * 0.18), s * 0.05, 0, 0, 0, DARK, 10);
-      dome(s * 0.28, 0, s * 0.05, 0, HULL, 1.05);
-      vc(s * 0.29, s * 0.29, s * 0.04, 0, s * 0.05, 0, PAINT, 16);
-      winBand(s * 0.3, 0, s * 0.12, s * 0.28, 6);
-      const block = (x, z, w, h, d, rot = 0) => {
-        K.add(new THREE.BoxGeometry(w, h, d).rotateY(rot).translate(x, s * 0.05 + h / 2, z), HULL, 0.95);
-        for (let f = 0; f < Math.max(1, Math.round(h / (s * 0.08))); f++) K.add(new THREE.BoxGeometry(w * 0.85, s * 0.018, d + s * 0.008).rotateY(rot).translate(x, s * 0.09 + f * s * 0.08, z), WINDOW);
-      };
-      const tube = (x0, z0, x1, z1) => K.strut(x0, s * 0.09, z0, x1, s * 0.09, z1, s * 0.07, HULL, 0.85);
-      block(s * 0.48, 0, s * 0.22, s * 0.16, s * 0.4); tube(s * 0.28, 0, s * 0.37, 0);
-      block(-s * 0.42, s * 0.18, s * 0.3, s * 0.12, s * 0.2, 0.4); tube(-s * 0.26, s * 0.1, -s * 0.3, s * 0.14);
-      if (level >= 2) {
-        block(-s * 0.2, -s * 0.5, s * 0.18, s * 0.5, s * 0.18); // residential tower
-        K.box(s * 0.2, s * 0.03, s * 0.2, -s * 0.2, s * 0.56, -s * 0.5, PAINT);
-        tube(-s * 0.1, -s * 0.26, -s * 0.17, -s * 0.41);
-        dome(s * 0.18, s * 0.42, s * 0.05, -s * 0.48, HULL, 1.05); tube(s * 0.3, -s * 0.2, s * 0.38, -s * 0.36);
-      }
-      if (level >= 3) {
-        dome(s * 0.34, -s * 0.62, s * 0.05, -s * 0.18, HULL, 1.05);
-        vc(s * 0.35, s * 0.35, s * 0.04, -s * 0.62, s * 0.05, -s * 0.18, PAINT, 16);
-        block(s * 0.15, s * 0.55, s * 0.5, s * 0.1, s * 0.16); block(s * 0.15, s * 0.55, s * 0.36, s * 0.2, s * 0.1);
-        block(s * 0.72, -s * 0.2, s * 0.16, s * 0.7, s * 0.16);
-        tube(s * 0.06, s * 0.27, s * 0.12, s * 0.46);
-      }
-      for (const a of [2.0, 5.0]) K.radiator(Math.cos(a) * s * (0.6 + level * 0.12), s * 0.05, Math.sin(a) * s * (0.6 + level * 0.12), s * 0.22, s * 0.2, Math.PI / 2, 2, s * 0.012);
-      K.box(s * 0.04, s * 0.04, s * 0.04, 0, s * 0.35, 0, STROBE);
-    }
-  } else if (type === 'bureau') {
-    // Security bureau: a reinforced operations block, a protected sensor
-    // dome, a laser-comm head on its own pedestal (a lens, not a gun) and
-    // a lattice antenna mast set apart. Level II: a second operations
-    // annex on a covered link, a phased-array panel and a second dome.
-    vc(s * 0.4, s * 0.48, s * 0.24, 0, 0, 0, HULL, 8);
-    vc(s * 0.41, s * 0.41, s * 0.035, 0, s * 0.18, 0, PAINT, 8);
-    K.box(s * 0.3, s * 0.025, s * 0.008, 0, s * 0.12, s * 0.42, WINDOW);
-    vc(s * 0.13, s * 0.16, s * 0.12, s * 0.62, 0, -s * 0.1, DARK, 8);
-    K.sphere(s * 0.2, s * 0.62, s * 0.3, -s * 0.1, HULL, 1.12, 16); // radome
-    vc(s * 0.06, s * 0.08, s * 0.22, -s * 0.18, s * 0.24, s * 0.12, DARK, 8);
-    K.add(new THREE.CylinderGeometry(s * 0.08, s * 0.08, s * 0.16, 12).rotateX(0.8).translate(-s * 0.18, s * 0.52, s * 0.16), HULL);
-    K.add(new THREE.CylinderGeometry(s * 0.055, s * 0.055, s * 0.01, 12).rotateX(0.8).translate(-s * 0.18, s * 0.579, s * 0.221), WINDOW);
-    const mx = -s * 0.62, mz = -s * 0.3;
-    for (const a of [0, 2.1, 4.2]) K.strut(mx + Math.cos(a) * s * 0.1, 0, mz + Math.sin(a) * s * 0.1, mx + Math.cos(a) * s * 0.03, s * 1.15, mz + Math.sin(a) * s * 0.03, s * 0.02);
-    for (let i = 1; i < 5; i++) vc(s * (0.1 - i * 0.016), s * (0.1 - i * 0.016), s * 0.012, mx, s * i * 0.23, mz, DARK, 3);
-    K.box(s * 0.04, s * 0.04, s * 0.04, mx, s * 1.18, mz, STROBE);
-    if (level >= 2) {
-      K.strut(s * 0.3, s * 0.1, s * 0.25, s * 0.55, s * 0.1, s * 0.52, s * 0.12, HULL, 0.9);
-      vc(s * 0.26, s * 0.3, s * 0.2, s * 0.68, 0, s * 0.68, HULL, 8);
-      vc(s * 0.27, s * 0.27, s * 0.03, s * 0.68, s * 0.15, s * 0.68, PAINT, 8);
-      K.add(new THREE.BoxGeometry(s * 0.42, s * 0.36, s * 0.03).rotateX(-0.5).translate(s * 0.68, s * 0.38, s * 0.92), DARK, 0.6); // phased array
-      K.frame(s * 0.44, s * 0.03, s * 0.03, s * 0.68, s * 0.22, s * 0.86, s * 0.015);
-      K.sphere(s * 0.13, -s * 0.15, s * 0.18, -s * 0.62, HULL, 1.12, 14);
-      vc(s * 0.1, s * 0.12, s * 0.08, -s * 0.15, 0, -s * 0.62, DARK, 8);
-    }
-  } else if (type === 'lab') {
-    // Research: each level a bigger campus. I: the main lab block and a
-    // large dish. II: a second lab module on a link, an optical telescope
-    // on a fork mount, and a power/cooling block. III: an observatory
-    // dome, more linked modules, a dish array and an open experiment deck.
-    K.box(s * 0.7, s * 0.2, s * 0.36, 0, s * 0.1, 0, HULL);
-    K.box(s * 0.72, s * 0.035, s * 0.38, 0, s * 0.2, 0, PAINT);
-    winBand(s * 0.6, 0, s * 0.12, s * 0.18, 8);
-    const bigDish = (x, z, rad, dir) => {
-      vc(s * 0.06, s * 0.1, s * 0.3, x, 0, z, DARK, 8);
-      K.dish(rad, x, s * 0.34, z, dir);
-    };
-    bigDish(-s * 0.55, -s * 0.3, s * 0.34, [0.3, 1, 0.5]);
-    if (level >= 2) {
-      K.strut(s * 0.35, s * 0.1, 0, s * 0.6, s * 0.1, 0, s * 0.1, HULL, 0.9);
-      K.add(new THREE.CylinderGeometry(s * 0.16, s * 0.16, s * 0.5, 16).rotateZ(Math.PI / 2).translate(s * 0.85, s * 0.16, 0), HULL); // second lab module
-      K.add(new THREE.CylinderGeometry(s * 0.165, s * 0.165, s * 0.1, 16).rotateZ(Math.PI / 2).translate(s * 0.85, s * 0.16, 0), PAINT);
-      // Telescope on a fork mount.
-      vc(s * 0.12, s * 0.14, s * 0.1, s * 0.3, 0, s * 0.5, DARK, 10);
-      for (const sx of [-1, 1]) K.box(s * 0.03, s * 0.22, s * 0.05, s * 0.3 + sx * s * 0.11, s * 0.2, s * 0.5, DARK);
-      K.add(new THREE.CylinderGeometry(s * 0.09, s * 0.1, s * 0.55, 14).rotateX(0.6).translate(s * 0.3, s * 0.38, s * 0.55), HULL, 1.05);
-      K.add(new THREE.CylinderGeometry(s * 0.07, s * 0.07, s * 0.01, 14).rotateX(0.6).translate(s * 0.3, s * 0.612, s * 0.707), DARK, 0.4);
-      // Power and cooling block.
-      K.box(s * 0.22, s * 0.16, s * 0.2, s * 0.85, s * 0.08, -s * 0.42, DARK, 0.8);
-      K.radiator(s * 0.85, s * 0.16, -s * 0.42, s * 0.3, s * 0.26, Math.PI / 2, 2, s * 0.012);
-    }
-    if (level >= 3) {
-      // Observatory dome with its slit.
-      vc(s * 0.27, s * 0.27, s * 0.14, -s * 0.15, 0, s * 0.62, HULL, 16);
-      dome(s * 0.27, -s * 0.15, s * 0.14, s * 0.62, HULL, 1.1);
-      K.add(new THREE.BoxGeometry(s * 0.07, s * 0.28, s * 0.02).translate(-s * 0.15, s * 0.3, s * 0.88), DARK, 0.4);
-      K.strut(-s * 0.15, s * 0.1, s * 0.2, -s * 0.15, s * 0.1, s * 0.38, s * 0.1, HULL, 0.9);
-      // A dish array and an open experiment deck.
-      for (let i = 0; i < 3; i++) bigDish(-s * (0.5 + i * 0.32), -s * 0.75, s * 0.18, [0.2, 1, 0.4]);
-      for (const [x, z] of [[-0.95, 0.1], [-1.25, 0.1], [-0.95, 0.4], [-1.25, 0.4]]) K.box(s * 0.025, s * 0.2, s * 0.025, x * s, s * 0.1, z * s, DARK);
-      K.box(s * 0.36, s * 0.025, s * 0.36, -s * 1.1, s * 0.2, s * 0.25, DARK, 0.75);
-      K.box(s * 0.1, s * 0.1, s * 0.1, -s * 1.02, s * 0.27, s * 0.18, HULL);
-      K.sphere(s * 0.06, -s * 1.2, s * 0.28, s * 0.34, HULL, 1.1, 10);
-      K.strut(-s * 0.35, s * 0.1, 0, -s * 0.92, s * 0.2, s * 0.2, s * 0.05, HULL, 0.8);
-      K.solar(-s * 0.55, s * 0.1, -s * 1.15, s * 0.5, s * 0.3, 0.25, s * 0.012);
-    }
-    K.box(s * 0.04, s * 0.04, s * 0.04, -s * 0.55, s * 0.72, -s * 0.3, STROBE);
-  } else {
-    // Mine: see mineSite. Built in site units (U), seated on the terrain.
-    if (!siteGeos.has(site.key + level)) mineSite(K, level, b.kind === 'asteroid', site.sink / SITE_U);
   }
   void r;
   const mk = (geo) => {
@@ -293,7 +117,7 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     let m;
     if (!done) m = new THREE.Mesh(geo, ghost);
     else {
-      m = singleHull(geo, uT);
+      m = singleHull(geo, uT, site && site.tex);
       m.userData.set(color, 1, true);
       m.userData.paint = color;
       if (site) m.userData.ground(site.ground);
@@ -311,7 +135,6 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     // the parts big enough to see (the rest would be under a pixel). Built
     // once per site and level, then copied: a world rebuilds its buildings
     // whenever any of them changes.
-    const gk = site.key + level;
     let pair = siteGeos.get(gk);
     if (!pair) {
       const fine = K.build(1, 7 * SITE_U, SITE_COARSE);
@@ -326,16 +149,35 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
         geo.rotateY(site.spin);
         const P = geo.attributes.position;
         for (let i = 0; i < P.count; i++) P.setY(i, P.getY(i) + site.lift(P.getX(i), P.getZ(i)));
+        groundAttrs(geo, site);
         geo.scale(SITE_U / siteR, SITE_U / siteR, SITE_U / siteR);
         geo.computeBoundingSphere();
       }
+      // Parts that turn on their own (a drum, a gravity ring): built about
+      // their own axle, then stood in place (turned with the site, on the ground).
+      const c = Math.cos(site.spin), sn = Math.sin(site.spin);
+      pair.push(ctx.spins.map((sp) => {
+        const geo = sp.K.build(1, 7 * SITE_U).scale(SITE_U / siteR, SITE_U / siteR, SITE_U / siteR);
+        geo.computeBoundingSphere();
+        const [x, y, z] = sp.at, px = x * c + z * sn, pz = -x * sn + z * c;
+        return { geo, pos: [px * SITE_U, (y + site.lift(px, pz)) * SITE_U, pz * SITE_U], axis: sp.axis, rate: sp.rate };
+      }));
       siteGeos.set(gk, pair);
       if (siteGeos.size > 48) siteGeos.delete(siteGeos.keys().next().value); // oldest first
     }
     const mf = mk(pair[0].clone()), mc = mk(pair[1].clone());
     mc.visible = false;
     g.add(mf, mc);
-    g.userData.lod = { fine: mf, coarse: mc, r: siteR };
+    g.userData.lod = { fine: mf, coarse: mc, r: Math.max(siteR, (def.tall || 0) * SITE_U), extra: [] };
+    for (const sp of pair[2]) {
+      const m = mk(sp.geo.clone());
+      m.position.set(...sp.pos);
+      m.rotation.order = 'YXZ';
+      m.rotation.y = site.spin;
+      (g.userData.spin ||= []).push({ mesh: m, axis: sp.axis, rate: sp.rate });
+      g.userData.lod.extra.push(m);
+      g.add(m);
+    }
     g.position.copy(site.p);
     g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), site.n);
     return g;
@@ -352,15 +194,8 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     if (role === 'wip') (g.userData.wip ||= []).push(m); // build stages, in order
     g.add(m);
   }
-  if (orbital) {
-    // A fixed tilt for the plane the orbital clusters sit in.
-    g.rotation.x = Math.PI / 2 + 0.35;
-    return g;
-  }
-  const rr = rng(b.id * 17 + k * 101 + (type === 'mine' ? 5 : 0));
-  const dir = new THREE.Vector3(rr() - 0.5, (rr() - 0.5) * 0.9, rr() - 0.5).normalize();
-  g.position.copy(dir).multiplyScalar(b.size * (b.kind === 'asteroid' ? 1.02 : 0.99));
-  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  // The orbital clusters (yard, harvester) sit in one tilted plane round the world.
+  g.rotation.x = Math.PI / 2 + 0.35;
   return g;
 }
 
@@ -394,9 +229,9 @@ function orbitFrame(R, a) {
  * of a moon across. At the usual zoom it's a small, distinct silhouette;
  * the world's ring and label do the work of finding it.
  */
-export const SITE_U = 0.08;
-/** Footprint radius of a mine at levels I, II, III, in U. */
-const MINE_R = [1.0, 1.2, 1.4];
+export const SITE_U = 0.09;
+/** The biggest footprint radius of any site, in U (a slot's spot is chosen for it). */
+const SITE_MAX_R = 1.4;
 /** Parts smaller than this (radius, in U) are left off the far-off version. */
 const SITE_COARSE = 0.045;
 
@@ -410,32 +245,81 @@ const SITE_COARSE = 0.045;
  * surface, trying a few spots and keeping the flattest.
  */
 const sites = new Map();
-/** Finished site geometry, [near, far] by site and level (never drawn itself: meshes get copies). */
+/** Finished site geometry, [near, far, turning parts] by site, type and level (never drawn itself: meshes get copies). */
 const siteGeos = new Map();
-function siteOn(b, k, R, env) {
+const UP = new THREE.Vector3(0, 1, 0);
+function siteOn(b, k, env) {
   const body = env && env.body;
   const rock = b.kind === 'asteroid' && body && body.geometry && body.geometry.attributes.color ? body.geometry : null;
-  // One spot per building, whatever its level: probed for the biggest
-  // footprint, so an upgrade grows the site where it is.
-  const key = `${b.id}:${k}:${rock ? rock.uuid : b.size}`;
+  // One spot per building slot, whatever is built there and its level:
+  // probed for the biggest footprint, so an upgrade grows the site in place.
+  const key = `${b.id}:${k}:${rock ? rock.uuid : b.size}:`;
   if (sites.has(key)) return sites.get(key);
-  R = Math.max(R, MINE_R[MINE_R.length - 1] * SITE_U);
+  const R = SITE_MAX_R * SITE_U;
   const rr = rng(b.id * 17 + k * 101 + 5);
   const field = rock && rockField(rock);
+  const others = [...sites.values()].filter((o) => o.bid === b.id);
   let best = null;
-  for (let i = 0; i < (field ? 5 : 1); i++) {
+  for (let i = 0; i < (field ? 6 : 10); i++) {
     const dir = new THREE.Vector3(rr() - 0.5, (rr() - 0.5) * 0.9, rr() - 0.5).normalize();
-    const st = field ? probeRock(field, dir, R) : { p: dir.clone().multiplyScalar(b.size), n: dir, rough: 0, ground: null };
-    if (!best || st.rough < best.rough) best = st;
+    const st = field ? probeRock(field, dir, R) : { p: dir.clone().multiplyScalar(b.size), n: dir, rough: 0 };
+    // Keep clear of the other buildings here, and (on a world with seas) off the water.
+    let score = st.rough;
+    for (const o of others) if (o.p.distanceTo(st.p) < R * 2.1) score += 100;
+    if (env && env.wet && env.wet(dir)) score += 1000;
+    if (!best || score < best.score) best = { ...st, score };
+    if (!field && score === 0) break;
   }
+  best.bid = b.id;
   const rU = b.size / SITE_U;
-  best.lift = field ? liftOver(field, best.p, best.n, R * 1.3) : (x, z) => -(rU - Math.sqrt(Math.max(0, rU * rU - x * x - z * z)));
-  best.sink = field ? 0.004 : 0.0015;
+  if (b.giant) {
+    // No ground on a gas giant: a floating deck just over the cloud tops.
+    best.deck = true;
+    best.p.multiplyScalar((b.size + 0.03) / b.size);
+    best.lift = () => 0;
+    best.sink = 0;
+  } else if (field) {
+    Object.assign(best, liftOver(field, best.p, best.n, R * 1.3));
+    best.sink = 0.004;
+  } else {
+    best.lift = (x, z) => -(rU - Math.sqrt(Math.max(0, rU * rU - x * x - z * z)));
+    best.sink = 0.0015;
+  }
   best.spin = rr() * Math.PI * 2;
-  best.key = key + ':';
-  if (!best.ground) best.ground = (env && env.groundAt && env.groundAt(best.n)) || [0.16, 0.15, 0.14];
+  best.key = key;
+  // The earthworks' colour: the world's own map (and a brightness to match
+  // its lighting), or the rock's colours (per point, colAt), or a plain grey.
+  if (env && env.tex && !b.giant) {
+    best.tex = env.tex;
+    best.ground = env.groundK;
+    best.u0 = Math.atan2(best.n.z, -best.n.x) / (2 * Math.PI);
+  } else best.ground = field ? best.mean.map((c) => c * 0.8) : [0.16, 0.15, 0.14]; // (rock is shaded darker than plain lighting)
   sites.set(key, best);
   return best;
+}
+
+/**
+ * Per point of a site's geometry (in U, laid over the ground), packed in one
+ * attribute (a shader has only sixteen): where on the world's map it is
+ * (xy), and how light the rock is there against its mean (z).
+ */
+function groundAttrs(geo, site) {
+  const P = geo.attributes.position, n = P.count;
+  const g = new Float32Array(n * 3);
+  const q = new THREE.Quaternion().setFromUnitVectors(UP, site.n), v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    const x = P.getX(i), z = P.getZ(i);
+    if (site.tex) {
+      v.set(x, P.getY(i), z).multiplyScalar(SITE_U).applyQuaternion(q).add(site.p).normalize();
+      // Where THREE.SphereGeometry puts that direction in its uv; unwrapped
+      // round the site's own longitude so a site on the seam doesn't tear.
+      const u = Math.atan2(v.z, -v.x) / (2 * Math.PI);
+      g[i * 3] = site.u0 + ((((u - site.u0 + 0.5) % 1) + 1) % 1) - 0.5;
+      g[i * 3 + 1] = 1 - Math.acos(THREE.MathUtils.clamp(v.y, -1, 1)) / Math.PI;
+    }
+    g[i * 3 + 2] = site.shadeAt ? site.shadeAt(x, z) : 1;
+  }
+  geo.setAttribute('gnd', new THREE.BufferAttribute(g, 3));
 }
 
 /**
@@ -494,32 +378,54 @@ function probeRock(field, dir, R) {
   return { p: c, n, rough: hi - lo, ground: [gr[0] / 4, gr[1] / 4, gr[2] / 4] };
 }
 
-/** The rock's height over a grid round a site (in the site's frame), as a function of x, z in U. */
+/** The rock round a site (in the site's frame) on a grid: its height (lift) and colour (colAt), as functions of x, z in U. */
 function liftOver(field, p, n, span) {
-  const qn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
+  const qn = new THREE.Quaternion().setFromUnitVectors(UP, n);
   const ax = new THREE.Vector3(1, 0, 0).applyQuaternion(qn), az = new THREE.Vector3(0, 0, 1).applyQuaternion(qn);
-  const N = 9, H = new Float32Array(N * N), q = new THREE.Vector3(), s = new THREE.Vector3();
+  const N = 9, H = new Float32Array(N * N), C = new Float32Array(N * N * 3), q = new THREE.Vector3(), s = new THREE.Vector3(), c = [0, 0, 0];
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     const x = (i / (N - 1) - 0.5) * 2 * span, z = (j / (N - 1) - 0.5) * 2 * span;
     q.copy(p).addScaledVector(ax, x).addScaledVector(az, z).normalize();
-    H[i * N + j] = field.at(q, s).sub(p).dot(n) / SITE_U;
+    c[0] = c[1] = c[2] = 0;
+    H[i * N + j] = field.at(q, s, c).sub(p).dot(n) / SITE_U;
+    C.set(c, (i * N + j) * 3);
   }
   const g = (N - 1) / ((2 * span) / SITE_U);
-  return (x, z) => {
+  const at = (x, z, A, k, w) => {
     const fx = THREE.MathUtils.clamp(x * g + (N - 1) / 2, 0, N - 1.001), fz = THREE.MathUtils.clamp(z * g + (N - 1) / 2, 0, N - 1.001);
     const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
-    return (H[i * N + j] * (1 - u) + H[(i + 1) * N + j] * u) * (1 - v) + (H[i * N + j + 1] * (1 - u) + H[(i + 1) * N + j + 1] * u) * v;
+    const a = (ii, jj) => A[(ii * N + jj) * w + k];
+    return (a(i, j) * (1 - u) + a(i + 1, j) * u) * (1 - v) + (a(i, j + 1) * (1 - u) + a(i + 1, j + 1) * u) * v;
   };
+  // The rock's mean colour, and how much lighter or darker each point is (rocks keep one tint throughout).
+  const mean = [0, 0, 0];
+  for (let i = 0; i < N * N; i++) for (let j = 0; j < 3; j++) mean[j] += C[i * 3 + j] / (N * N);
+  const m = mean[0] + mean[1] + mean[2] || 1;
+  return { lift: (x, z) => at(x, z, H, 0, 1), shadeAt: (x, z) => (at(x, z, C, 0, 3) + at(x, z, C, 1, 3) + at(x, z, C, 2, 3)) / m, mean };
 }
 
 /**
  * The parts of a site, in site units (U) with +y up and the ground at y = 0.
- * `sink` (U) is how far below 0 the ground may fall away under the site's
- * edge: anything standing on the ground reaches down that far.
+ * `ctx.sink` (U) is how far below 0 the ground may fall away under the
+ * site's edge: anything standing on the ground reaches down that far. On a
+ * gas giant (`ctx.deck`) there's no ground: earthworks are left out and the
+ * site stands on a floating deck.
  */
-function siteKit(K, sink) {
+function siteKit(K, ctx) {
   const X = Math.PI / 2;
+  const sink = ctx.sink, deck = ctx.deck;
   const put = (geo, x, y, z, rot = 0) => geo.rotateY(rot).translate(x, y, z);
+  // A ragged edge for ground that's been worked or dumped: not a circle.
+  const ragged = (geo, from, amp) => {
+    const P = geo.attributes.position, ph = K.r() * 6, ph2 = K.r() * 6;
+    for (let i = 0; i < P.count; i++) {
+      const px = P.getX(i), pz = P.getZ(i), rho = Math.hypot(px, pz);
+      if (rho < from) continue;
+      const a = Math.atan2(pz, px), f = 1 + ((rho - from) / from) * amp * (Math.sin(3 * a + ph) + 0.5 * Math.sin(5 * a + ph2) + 0.3 * Math.sin(11 * a + ph * 2));
+      P.setX(i, px * f); P.setZ(i, pz * f);
+    }
+    return geo;
+  };
   const S = {
     /** A footing slab, its top at y = h. */
     foot(x, z, w, d, h = 0.015, rot = 0, kind = DARK, tint = 0.55) {
@@ -622,6 +528,7 @@ function siteKit(K, sink) {
      * same. `oval` squashes it.
      */
     pit(x, z, R, n, oval = 0.85, rot = 0) {
+      if (deck) return { H: 0, r0: R * 0.32, step: 0, hb: 0 };
       const pts = [new THREE.Vector2(0, 0)];
       const hb = 0.014, r0 = R * 0.32, step = (R - r0) / n;
       pts.push(new THREE.Vector2(r0, 0));
@@ -649,6 +556,7 @@ function siteKit(K, sink) {
     },
     /** A haul road of compacted ground, from (x0, y0, z0) up to (x1, y1, z1). */
     ramp(x0, y0, z0, x1, y1, z1, w = 0.05) {
+      if (deck) return;
       const d = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0), len = d.length();
       const geo = new THREE.BoxGeometry(w, 0.006, len).translate(0, 0.003, len / 2);
       geo.lookAt(d); // (BufferGeometry.lookAt turns +z to face d)
@@ -656,6 +564,7 @@ function siteKit(K, sink) {
     },
     /** A spoil heap. */
     heap(x, z, r, h, tint = 1.02) {
+      if (deck) return;
       const pts = [new THREE.Vector2(r * 1.08, -sink), new THREE.Vector2(r, 0), new THREE.Vector2(r * 0.7, h * 0.55), new THREE.Vector2(r * 0.35, h * 0.92), new THREE.Vector2(0, h)];
       K.add(new THREE.LatheGeometry(pts, 16).scale(1, 1, 0.75 + K.r() * 0.2).rotateY(K.r() * 3).translate(x, 0, z), GROUND, tint);
     },
@@ -710,6 +619,109 @@ function siteKit(K, sink) {
     guys(x, z, h, r) {
       for (let i = 0; i < 3; i++) { const a = (i / 3) * Math.PI * 2 + 0.4; K.strut(x, h, z, x + Math.cos(a) * r, -sink * 0.5, z + Math.sin(a) * r, 0.003, DARK, 0.8); }
     },
+    /**
+     * Worked ground: a ragged apron of disturbed regolith, a little darker,
+     * under a site. Not on worlds with air: seen through their haze, flat
+     * ground painted outside it reads as a plate.
+     */
+    worked(x, z, r, tint = 0.8) {
+      if (deck || ctx.air) return;
+      K.add(ragged(new THREE.CircleGeometry(r, 40).rotateX(-X), r * 0.6, 0.12).translate(x, 0.004, z), GROUND, tint);
+    },
+    /** Vehicle tracks: a faint line of compacted ground. */
+    tracks(x0, z0, x1, z1, w = 0.03) {
+      if (deck) return;
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      K.add(new THREE.BoxGeometry(len, 0.004, w).translate(len / 2, 0.006, 0).rotateY(-Math.atan2(z1 - z0, x1 - x0)).translate(x0, 0, z0), GROUND, 0.8);
+    },
+    /** A berm: a ring of piled regolith (a blast wall, or shielding). */
+    berm(x, z, r, h, w) {
+      if (deck) return;
+      const pts = [new THREE.Vector2(r + w, -sink), new THREE.Vector2(r + w * 0.35, h), new THREE.Vector2(r - w * 0.35, h), new THREE.Vector2(r - w, -sink)];
+      K.add(new THREE.LatheGeometry(pts, 32).translate(x, 0, z), GROUND, 0.95);
+    },
+    /** A module under a mound of regolith (the shielding), its two ends with their airlocks showing. */
+    mound(x, z, r, len, rot = 0) {
+      const cy = S.can(x, z, r, len, rot, false);
+      K.add(put(new THREE.BoxGeometry(r * 0.7, r * 0.9, r * 0.7).translate(len / 2 + r * 0.45, r * 0.45, 0), x, 0, z, rot), DARK, 0.7);
+      K.add(put(new THREE.BoxGeometry(r * 0.3, r * 0.25, r * 0.72).translate(len / 2 + r * 0.45, r * 0.55, 0), x, 0, z, rot), WINDOW);
+      if (deck) return cy;
+      K.add(put(new THREE.SphereGeometry(1, 18, 8, 0, Math.PI * 2, 0, X).scale(len * 0.46, r * 2.6, r * 2.2), x, -sink, z, rot), GROUND, 0.97);
+      return cy;
+    },
+    /** A bunker: a squat vault under a mound, its door showing. */
+    bunker(x, z, w, d, h, rot = 0) {
+      K.add(put(new THREE.BoxGeometry(w, h + sink, d).translate(0, (h - sink) / 2, 0), x, 0, z, rot), DARK, 0.65);
+      K.add(put(new THREE.BoxGeometry(w * 0.3, h * 0.7, 0.01).translate(0, h * 0.35, d / 2 + 0.004), x, 0, z, rot), PAINT, 0.8);
+      if (!deck) K.add(put(new THREE.SphereGeometry(1, 16, 7, 0, Math.PI * 2, 0, X).scale(w * 0.8, h * 1.7, d * 0.62), x, -sink, z, rot), GROUND, 0.95);
+    },
+    /** A pressurised dome (a greenhouse or a commons), ribbed, with a lit band at its foot. */
+    dome(x, z, r, glass = true) {
+      K.add(new THREE.CylinderGeometry(r * 1.04, r * 1.08, 0.02 + sink, 20).translate(x, (0.02 - sink) / 2, z), DARK, 0.6);
+      K.add(new THREE.SphereGeometry(r, 20, 8, 0, Math.PI * 2, 0, X).translate(x, 0.02, z), glass ? SOLAR : HULL, glass ? 0.8 : 1.05);
+      if (glass) for (let i = 0; i < 6; i++) K.add(new THREE.TorusGeometry(r * 1.005, r * 0.012, 3, 24, Math.PI).rotateY((i / 6) * Math.PI).translate(x, 0.02, z), HULL, 0.9);
+      for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; K.box(r * 0.18, r * 0.06, r * 0.05, x + Math.cos(a) * r * 0.98, 0.03, z + Math.sin(a) * r * 0.98, WINDOW); }
+    },
+    /** A gun mount: a ring base, an armoured turret, twin long barrels, aimed outward along angle a. */
+    turret(x, z, a) {
+      K.add(new THREE.CylinderGeometry(0.045, 0.055, 0.03 + sink, 10).translate(x, (0.03 - sink) / 2, z), DARK, 0.6);
+      K.add(put(new THREE.BoxGeometry(0.08, 0.04, 0.07).translate(-0.01, 0.05, 0), x, 0, z, -a), HULL, 0.95);
+      K.add(put(new THREE.BoxGeometry(0.012, 0.004, 0.072).translate(-0.03, 0.071, 0), x, 0, z, -a), PAINT);
+      for (const o of [-0.016, 0.016]) K.add(put(new THREE.BoxGeometry(0.2, 0.011, 0.011).translate(0.1, 0, 0).rotateZ(0.32).translate(0.02, 0.055, o), x, 0, z, -a), DARK, 0.55);
+    },
+    /** A radome: a sensor sphere on a short drum. */
+    radome(x, z, r, h = 0.06) {
+      K.add(new THREE.CylinderGeometry(r * 0.6, r * 0.75, h + sink, 10).translate(x, (h - sink) / 2, z), DARK, 0.65);
+      K.add(new THREE.SphereGeometry(r, 16, 10).translate(x, h + r * 0.8, z), HULL, 1.1);
+    },
+    /** A big dish on a pedestal, looking up at the sky. */
+    bigDish(x, z, r, dir = [0.35, 1, 0.3]) {
+      K.add(new THREE.CylinderGeometry(r * 0.25, r * 0.35, r * 0.7 + sink, 8).translate(x, (r * 0.7 - sink) / 2, z), DARK, 0.65);
+      K.dish(r, x, r * 0.85, z, dir);
+    },
+    /** An observatory: a drum with a domed roof and its slit. */
+    observatory(x, z, r) {
+      K.add(new THREE.CylinderGeometry(r, r * 1.05, r * 0.9 + sink, 16).translate(x, (r * 0.9 - sink) / 2, z), HULL, 0.95);
+      K.add(new THREE.SphereGeometry(r * 1.02, 16, 8, 0, Math.PI * 2, 0, X).translate(x, r * 0.9, z), HULL, 1.1);
+      K.add(new THREE.BoxGeometry(r * 0.3, r * 1.1, r * 0.4).translate(x, r * 1.4, z + r * 0.75), DARK, 0.35);
+      K.add(new THREE.CylinderGeometry(r * 1.02, r * 1.02, r * 0.14, 16, 1, true).translate(x, r * 0.6, z), PAINT);
+    },
+    /** A block (an operations hall), bermed up its walls where there's ground. */
+    block(x, z, w, d, h, rot = 0, paint = true) {
+      K.add(put(new THREE.BoxGeometry(w, h + sink, d).translate(0, (h - sink) / 2, 0), x, 0, z, rot), HULL, 0.95);
+      if (paint) K.add(put(new THREE.BoxGeometry(w * 1.01, h * 0.14, d * 1.01).translate(0, h * 0.8, 0), x, 0, z, rot), PAINT);
+      for (let i = 0; i < 4; i++) K.add(put(new THREE.BoxGeometry(w * 0.14, h * 0.12, 0.004).translate((i - 1.5) * w * 0.22, h * 0.55, d / 2 + 0.002), x, 0, z, rot), WINDOW);
+      for (const [ox, oz] of [[-0.25, 0.1], [0.2, -0.15]]) K.add(put(new THREE.BoxGeometry(w * 0.2, h * 0.25, d * 0.3).translate(ox * w, h * 1.12, oz * d), x, 0, z, rot), DARK, 0.7);
+      // Regolith banked against the walls (shielding), a slope out from them.
+      const bh = Math.min(h * 0.55, 0.045), k = 1 + (1.4 * bh) / Math.min(w, d);
+      if (!deck) K.add(put(new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2 * k, bh + sink, 4, 1).rotateY(Math.PI / 4).scale(w, 1, d).translate(0, (bh - sink) / 2, 0), x, 0, z, rot), GROUND, 0.95);
+    },
+    /** A perimeter fence: posts and a top wire, round a circle. */
+    fence(x, z, r, n) {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2, a2 = ((i + 1) / n) * Math.PI * 2;
+        K.strut(x + Math.cos(a) * r, -sink, z + Math.sin(a) * r, x + Math.cos(a) * r, 0.05, z + Math.sin(a) * r, 0.005, DARK);
+        K.strut(x + Math.cos(a) * r, 0.05, z + Math.sin(a) * r, x + Math.cos(a2) * r, 0.05, z + Math.sin(a2) * r, 0.003, DARK, 0.8);
+      }
+    },
+    /** A floating deck for a gas giant: a platform on a truss, lift envelopes below in the clouds. */
+    deck(r) {
+      K.add(new THREE.CylinderGeometry(r, r * 0.96, 0.025, 28).translate(0, -0.0125, 0), DARK, 0.6);
+      K.add(new THREE.CylinderGeometry(r * 1.005, r * 1.005, 0.01, 28, 1, true).translate(0, -0.005, 0), PAINT);
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; K.strut(Math.cos(a) * r * 0.9, -0.025, Math.sin(a) * r * 0.9, Math.cos(a) * r * 0.3, -0.18, Math.sin(a) * r * 0.3, 0.012, DARK); }
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + 0.5, ex = Math.cos(a) * r * 0.55, ez = Math.sin(a) * r * 0.55;
+        K.add(new THREE.SphereGeometry(r * 0.32, 16, 10).scale(1.6, 0.8, 1).rotateY(-a).translate(ex, -0.22, ez), HULL, 1.05);
+        K.strut(ex, -0.16, ez, ex * 0.5, -0.025, ez * 0.5, 0.008, DARK);
+      }
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; K.box(0.012, 0.012, 0.012, Math.cos(a) * r * 0.98, 0.006, Math.sin(a) * r * 0.98, i % 2 ? NAV_G : NAV_R); }
+    },
+    /** A part that turns on its own (built in its own kit about its own axle at x, y, z). */
+    spinner(x, y, z, axis, rate, build) {
+      const K2 = kit(Math.floor(K.r() * 1e6));
+      build(K2);
+      ctx.spins.push({ K: K2, at: [x, y, z], axis, rate });
+    },
   };
   return S;
 }
@@ -730,8 +742,8 @@ function siteKit(K, sink) {
  *     farm, a third module, and a landing pad (or, on rock, a tug berth)
  *     where the ore leaves.
  */
-function mineSite(K, level, rock, sink) {
-  const S = siteKit(K, sink);
+function mineSite(S, K, level, c) {
+  const rock = c.rock, sink = c.sink;
   const L2 = level >= 2, L3 = level >= 3;
   // The pit, west of centre; the works east of it.
   const R = [0.34, 0.46, 0.6][level - 1];
@@ -824,3 +836,243 @@ function mineSite(K, level, rock, sink) {
     S.lamp(-0.05, 1.05);
   }
 }
+
+/**
+ * Guns: a hardened battery. A berm round the position, a magazine bunker in
+ * the middle, and two gun mounts per level (each one gun, so the mounts are
+ * the guns it adds), each a turret with twin barrels aimed outward. Fire
+ * control on its own mast; level II adds a capacitor bank and radiators,
+ * level III a second sensor dome.
+ */
+function gunsSite(S, K, level, c) {
+  const R = [0.5, 0.6, 0.7][level - 1];
+  if (c.deck) S.deck(R + 0.18);
+  S.worked(0, 0, R + 0.14);
+  S.berm(0, 0, R * 0.92, 0.04, 0.08);
+  S.bunker(0, 0, 0.18, 0.12, 0.05, 0.4);
+  const n = level * 2;
+  for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2 + 0.3; S.turret(Math.cos(a) * R * 0.58, Math.sin(a) * R * 0.58, a); }
+  // Fire control: a radar on a lattice mast, outside the berm.
+  const mx = R + 0.08, mz = -0.12;
+  S.tower(mx, mz, 0.045, 0.24, 0.005);
+  K.dish(0.045, mx, 0.25, mz, [0.4, 1, -0.3]);
+  K.box(0.012, 0.012, 0.012, mx, 0.29, mz, STROBE);
+  if (c.rock) S.guys(mx, mz, 0.2, 0.12);
+  S.foot(mx - 0.02, mz + 0.14, 0.09, 0.07, 0.04);
+  if (level >= 2) {
+    // A capacitor bank for the guns, with its radiators.
+    S.foot(-R - 0.06, 0.1, 0.1, 0.18, 0.05, 0, HULL, 0.9);
+    S.radiators(-R - 0.06, 0.1, 0.18, 0.05, 3, Math.PI / 2 + 0.2);
+  }
+  if (level >= 3) S.radome(0.1, R + 0.1, 0.05, 0.05);
+  S.lamp(R * 0.3, -R - 0.05, 0.12);
+  S.lamp(-R * 0.4, R + 0.02, 0.12);
+  S.tracks(0, 0, -R - 0.25, -0.2);
+}
+
+/**
+ * Security bureau: a fenced compound. An operations block banked with
+ * regolith, a radome, a laser-comm head (a lens, not a gun) on its pedestal,
+ * and a tall lattice antenna mast. Level II adds an annex on a covered link,
+ * phased-array panels and a second dome.
+ */
+function bureauSite(S, K, level, c) {
+  const R = level >= 2 ? 0.72 : 0.56;
+  if (c.deck) S.deck(R + 0.12);
+  S.worked(0, 0, R + 0.08);
+  S.fence(0, 0, R, 22 + level * 8);
+  S.block(-0.08, 0.04, 0.24, 0.15, 0.075, 0.25);
+  S.radome(0.22, -0.18, 0.075, 0.07);
+  // The laser-comm head: a drum on a pedestal, its lens up.
+  K.add(new THREE.CylinderGeometry(0.03, 0.04, 0.09 + c.sink, 8).translate(0.2, (0.09 - c.sink) / 2, 0.2), DARK, 0.65);
+  K.add(new THREE.CylinderGeometry(0.035, 0.035, 0.07, 12).rotateX(0.7).translate(0.2, 0.12, 0.21), HULL);
+  K.add(new THREE.CylinderGeometry(0.026, 0.026, 0.006, 12).rotateX(0.7).translate(0.2, 0.145, 0.235), WINDOW);
+  // The antenna mast, with its cross-arms.
+  const mx = -0.32, mz = -0.3;
+  S.tower(mx, mz, 0.05, 0.46, 0.005);
+  for (const y of [0.3, 0.38]) K.box(0.14, 0.006, 0.006, mx, y, mz, DARK, 0.7);
+  K.box(0.012, 0.012, 0.012, mx, 0.47, mz, STROBE);
+  if (c.rock) S.guys(mx, mz, 0.4, 0.16);
+  S.lamp(0.38, 0.05, 0.12);
+  S.lamp(-0.3, 0.32, 0.12);
+  if (level >= 2) {
+    S.block(0.32, 0.38, 0.16, 0.12, 0.06, -0.4);
+    S.tube(0.04, 0.12, 0.26, 0.32, 0.04, 0.018);
+    // Phased arrays: flat panels on frames, tipped to the sky.
+    for (const [x, z, a] of [[-0.48, 0.1, 0.3], [-0.42, 0.34, -0.5]]) {
+      K.add(new THREE.BoxGeometry(0.14, 0.12, 0.012).rotateX(-0.6).rotateY(a).translate(x, 0.08, z), DARK, 0.55);
+      K.strut(x, -c.sink, z, x, 0.06, z, 0.01, DARK);
+    }
+    S.radome(0.48, -0.1, 0.055, 0.05);
+  }
+}
+
+/**
+ * Research station: a growing campus. I: two lab modules on footings, a big
+ * dish, solar and a mast. II: an observatory, a third module and a power
+ * and cooling block. III: a dish array, an open experiment deck and a
+ * landing pad with a lander for the samples.
+ */
+function labSite(S, K, level, c) {
+  const L2 = level >= 2, L3 = level >= 3;
+  if (c.deck) S.deck([0.55, 0.7, 0.9][level - 1]);
+  S.worked(0, 0, [0.5, 0.65, 0.85][level - 1]);
+  S.foot(-0.02, 0.06, 0.3, 0.12, 0.012, 0.2);
+  const cy = S.can(-0.02, 0.06, 0.05, 0.22, 0.2, true);
+  S.foot(0.24, 0.24, 0.24, 0.1, 0.012, 1.3);
+  S.can(0.24, 0.24, 0.045, 0.18, 1.3);
+  S.tube(0.06, 0.1, 0.2, 0.18, cy);
+  S.bigDish(-0.3, -0.2, 0.12);
+  S.solar(0.12, -0.32, 0.3, 3, 0.1);
+  S.mast(0.42, -0.06, 0.24);
+  if (c.rock) S.guys(0.42, -0.06, 0.2, 0.1);
+  S.lamp(-0.16, 0.3, 0.12);
+  if (L2) {
+    S.observatory(0.08, 0.5, 0.08);
+    S.foot(-0.3, 0.32, 0.24, 0.1, 0.012, 2.4);
+    S.can(-0.3, 0.32, 0.045, 0.18, 2.4);
+    S.tube(-0.12, 0.14, -0.24, 0.26, cy);
+    S.foot(0.5, 0.25, 0.12, 0.1, 0.06, 0.4, HULL, 0.85);
+    S.radiators(0.5, 0.25, 0.16, 0.05, 3, 0.4);
+  }
+  if (L3) {
+    for (let i = 0; i < 3; i++) S.bigDish(-0.55 + i * 0.14, -0.5 + i * 0.05, 0.06, [0.2, 1, 0.5]);
+    // An open experiment deck on legs, instruments on it.
+    K.frame(0.22, 0.05, 0.16, -0.58, 0.07, 0.2, 0.006);
+    K.box(0.22, 0.006, 0.16, -0.58, 0.095, 0.2, DARK, 0.6);
+    K.box(0.05, 0.04, 0.05, -0.62, 0.12, 0.18, HULL);
+    K.sphere(0.025, -0.52, 0.12, 0.24, HULL, 1.1, 10);
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) K.strut(-0.58 + dx * 0.1, -c.sink, 0.2 + dz * 0.07, -0.58 + dx * 0.1, 0.045, 0.2 + dz * 0.07, 0.008, DARK);
+    if (!c.deck) { S.pad(0.62, -0.42, 0.14); S.lander(0.62, -0.42); S.tracks(0.5, -0.32, 0.2, -0.05); }
+    S.lamp(0.45, -0.6, 0.12);
+  }
+}
+
+/**
+ * Habitat. On a moon or planet the crew live under the ground they've piled
+ * over their modules (the regolith is the radiation shielding): mounds with
+ * airlocks showing, a greenhouse dome, walkways; II adds more modules and a
+ * big commons dome; III a tower and, on low-gravity worlds, a turning
+ * gravity ring. On an asteroid: drums on an axle that spin for gravity,
+ * one per level.
+ */
+function habitatSite(S, K, level, c) {
+  if (c.rock) {
+    const len = 0.22 + level * 0.12;
+    for (const sx of [-1, 1]) {
+      K.add(new THREE.CylinderGeometry(0.03, 0.05, 0.2 + c.sink, 8).translate(sx * (len / 2 + 0.04), (0.2 - c.sink) / 2, 0), DARK, 0.65);
+      S.guys(sx * (len / 2 + 0.04), 0, 0.18, 0.12);
+    }
+    K.add(new THREE.CylinderGeometry(0.018, 0.018, len + 0.12, 8).rotateZ(Math.PI / 2).translate(0, 0.2, 0), DARK, 0.7);
+    S.spinner(0, 0.2, 0, 'x', 0.5, (D) => {
+      for (let i = 0; i < level; i++) {
+        const x = (i - (level - 1) / 2) * 0.13;
+        D.add(new THREE.CylinderGeometry(0.11, 0.11, 0.1, 22).rotateZ(Math.PI / 2).translate(x, 0, 0), i === 1 ? PAINT : HULL);
+        for (let j = 0; j < 12; j++) { const a = (j / 12) * Math.PI * 2; D.box(0.04, 0.01, 0.012, x, Math.cos(a) * 0.111, Math.sin(a) * 0.111, WINDOW); }
+      }
+    });
+    S.solar(0, 0.32, 0.36, 3, 0, 0.6);
+    S.mast(0.3, -0.25, 0.22);
+    S.guys(0.3, -0.25, 0.18, 0.1);
+    S.lamp(-0.25, -0.22, 0.12);
+    return;
+  }
+  const L2 = level >= 2, L3 = level >= 3;
+  if (c.deck) S.deck([0.55, 0.75, 0.95][level - 1]);
+  S.worked(0, 0, [0.5, 0.68, 0.88][level - 1]);
+  S.mound(-0.12, 0.1, 0.05, 0.26, 0.35);
+  S.mound(0.16, -0.12, 0.05, 0.24, 1.9);
+  S.dome(0.2, 0.2, 0.08);
+  S.tube(0.02, 0.0, 0.14, 0.14, 0.05);
+  S.solar(-0.15, -0.34, 0.32, 3, 0.2);
+  S.radiators(0.4, -0.05, 0.14, 0.05, 2, Math.PI / 2);
+  S.lamp(-0.32, 0.12, 0.12);
+  if (L2) {
+    S.dome(-0.18, 0.42, 0.12, false);
+    S.mound(-0.45, 0.05, 0.05, 0.24, 2.6);
+    S.mound(0.1, 0.5, 0.05, 0.22, 0.1);
+    S.tube(-0.12, 0.2, -0.16, 0.32, 0.05);
+    S.lamp(0.3, 0.42, 0.12);
+  }
+  if (L3) {
+    // A tower of quarters, and a gravity ring turning on its hub.
+    S.block(0.45, 0.3, 0.1, 0.1, 0.36, 0.3, true);
+    for (let f = 0; f < 6; f++) K.add(new THREE.BoxGeometry(0.104, 0.008, 0.104).rotateY(0.3).translate(0.45, 0.06 + f * 0.05, 0.3), WINDOW);
+    K.add(new THREE.CylinderGeometry(0.03, 0.045, 0.08 + c.sink, 10).translate(-0.4, (0.08 - c.sink) / 2, -0.32), DARK, 0.65);
+    S.spinner(-0.4, 0.1, -0.32, 'y', 0.35, (D) => {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        D.add(new THREE.BoxGeometry(0.05, 0.035, 0.042).rotateY(-a).translate(Math.cos(a) * 0.16, 0, Math.sin(a) * 0.16), i % 8 === 3 ? PAINT : HULL, 0.95);
+        if (i % 2 === 0) D.box(0.012, 0.01, 0.02, Math.cos(a) * 0.186, 0, Math.sin(a) * 0.186, WINDOW);
+      }
+      for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.4; D.strut(0, 0, 0, Math.cos(a) * 0.14, 0, Math.sin(a) * 0.14, 0.01, DARK); }
+      D.add(new THREE.CylinderGeometry(0.03, 0.03, 0.04, 10), HULL);
+    });
+  }
+}
+
+/**
+ * Orbital exchange: a space elevator, the bond market's freight line. A wide
+ * ground terminal with its freight halls, twin tethers past a port high up
+ * to a counterweight, climbers on the way. Level I: the port is a hub with
+ * two freight arms; level II adds a docking ring with berths and a cargo
+ * annex. (Far shorter than a real one, which would reach geostationary
+ * orbit: the port is what reads from a distance.)
+ */
+const EX_PORT = 8.5, EX_TOP = 12;
+function exchangeSite(S, K, level, c) {
+  S.worked(0, 0, 0.82);
+  K.add(new THREE.CylinderGeometry(0.28, 0.32, 0.06 + c.sink, 16).translate(0, (0.06 - c.sink) / 2, 0), DARK, 0.6);
+  K.add(new THREE.CylinderGeometry(0.2, 0.24, 0.08, 16).translate(0, 0.1, 0), HULL, 0.95);
+  K.add(new THREE.CylinderGeometry(0.205, 0.205, 0.02, 16, 1, true).translate(0, 0.12, 0), PAINT);
+  K.add(new THREE.CylinderGeometry(0.06, 0.08, 0.3, 12).translate(0, 0.29, 0), HULL);
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; K.box(0.04, 0.012, 0.01, Math.cos(a) * 0.243, 0.1, Math.sin(a) * 0.243, WINDOW); }
+  // Freight halls and the lines out to them.
+  S.block(0.5, 0.15, 0.2, 0.12, 0.07, 0.3);
+  S.block(-0.45, -0.3, 0.18, 0.12, 0.06, -0.6);
+  S.tracks(0.25, 0.05, 0.42, 0.13);
+  S.tracks(-0.22, -0.12, -0.38, -0.26);
+  S.radiators(0.15, -0.5, 0.24, 0.06, 3, 0.3);
+  S.lamp(0.36, -0.3, 0.14);
+  S.lamp(-0.3, 0.38, 0.14);
+  // The tethers, the climbers, the port, the counterweight.
+  for (const sx of [-1, 1]) K.strut(sx * 0.03, 0.44, 0, sx * 0.03, EX_TOP, 0, 0.045, DARK);
+  for (const y of [2.2, 4.8, 7.1, 10.2]) { K.box(0.14, 0.2, 0.12, 0, y, 0, HULL, 0.9); K.box(0.1, 0.03, 0.004, 0, y, 0.062, WINDOW); }
+  const P = 0.45;
+  K.add(new THREE.CylinderGeometry(P * 0.8, P * 0.8, P, 16).translate(0, EX_PORT, 0), HULL);
+  K.add(new THREE.CylinderGeometry(P * 0.82, P * 0.82, P * 0.25, 16, 1, true).translate(0, EX_PORT + P * 0.1, 0), PAINT);
+  for (const sx of [-1, 1]) {
+    const [ex, ey] = K.boom(sx * P * 0.75, EX_PORT, 0, [sx, 0, 0], P * 1.1, P * 0.14, HULL, 0.9);
+    K.box(P * 0.12, P * 0.35, P * 0.35, ex, ey, 0, DARK);
+    K.strapped(P * 0.16, P * 0.4, sx * P * 1.2, EX_PORT - P * 0.3, 0, sx > 0);
+  }
+  K.solar(0, EX_PORT + P * 0.5, 0, P * 2.2, P * 0.8, Math.PI / 2 + 0.3, 0.01);
+  if (level >= 2) {
+    K.add(new THREE.TorusGeometry(P * 2.4, P * 0.16, 8, 48).rotateX(Math.PI / 2).translate(0, EX_PORT, 0), HULL);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.26;
+      K.strut(Math.cos(a) * P * 0.8, EX_PORT, Math.sin(a) * P * 0.8, Math.cos(a) * P * 2.3, EX_PORT, Math.sin(a) * P * 2.3, P * 0.08);
+      K.frame(P * 0.6, P * 0.4, P * 0.6, Math.cos(a) * P * 2.8, EX_PORT, Math.sin(a) * P * 2.8, P * 0.04);
+      if (i % 2 === 0) K.sphere(P * 0.2, Math.cos(a) * P * 2.8, EX_PORT, Math.sin(a) * P * 2.8, i === 0 ? PAINT : HULL, 1, 10);
+    }
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; K.box(P * 0.1, P * 0.06, P * 0.12, Math.cos(a) * P * 2.58, EX_PORT, Math.sin(a) * P * 2.58, WINDOW); }
+    K.add(new THREE.CylinderGeometry(P * 0.9, P * 0.9, P * 0.7, 16).translate(0, EX_PORT - P * 1.2, 0), HULL);
+  }
+  K.box(0.6, 0.4, 0.5, 0, EX_TOP, 0, DARK, 0.7);
+  K.box(0.35, 0.3, 0.3, 0.25, EX_TOP + 0.3, 0.1, DARK, 0.6);
+  K.box(0.03, 0.03, 0.03, 0, EX_TOP + 0.25, 0, STROBE);
+}
+
+/**
+ * The buildings drawn as sites: footprint radius by level (in U, for their
+ * level of detail and cloud clearing), how tall they reach (U, if more than
+ * that), and what builds them.
+ */
+const SITES = {
+  mine: { r: [1.0, 1.2, 1.4], build: mineSite },
+  defence: { r: [0.75, 0.85, 0.95], build: gunsSite },
+  bureau: { r: [0.7, 0.85], build: bureauSite },
+  lab: { r: [0.7, 0.85, 1.05], build: labSite },
+  habitat: { r: [0.65, 0.85, 1.0], build: habitatSite },
+  exchange: { r: [1.0, 1.1], build: exchangeSite, tall: EX_TOP },
+};

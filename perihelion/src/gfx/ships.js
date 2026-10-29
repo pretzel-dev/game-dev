@@ -540,20 +540,30 @@ export function shipGeometries() {
 }
 
 /** Hull material: PBR plating lit by the sun and the sky, with tags for paint and lights. */
-export function hullMaterial(uT) {
+/** A white texel: the ground texture for buildings on worlds that have none. */
+const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+white.needsUpdate = true;
+/**
+ * The hull material. `groundTex` (a world's baked surface map) is what a
+ * building's earthworks on that world are painted with.
+ */
+export function hullMaterial(uT, groundTex = null) {
   const pl = platingTex();
   const mat = new THREE.MeshStandardMaterial({ color: '#d4d8de', map: pl, roughnessMap: pl, metalness: 0.35, roughness: 0.62, emissive: '#06070a' });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uT = uT;
     sh.uniforms.uPxK = hullPx;
+    sh.uniforms.tGround = { value: groundTex || white };
+    sh.uniforms.uGroundTex = { value: groundTex ? 1 : 0 };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        attribute float kind; attribute float tint; attribute vec3 iPaint; attribute float iSun; attribute float iSeed; attribute float iHull; attribute float iLit; attribute vec3 iGround;
+        attribute float kind; attribute float tint; attribute vec3 iPaint; attribute float iSun; attribute float iSeed; attribute float iHull; attribute float iLit; attribute vec3 iGround; attribute vec3 gnd;
+        varying vec3 vGnd;
         varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying vec3 vGround;
         uniform float uPxK; varying float vPx; varying vec3 vLocal;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vLocal = position;
-        vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit; vGround = iGround;`)
+        vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit; vGround = iGround; vGnd = gnd;`)
       .replace('#include <project_vertex>', `#include <project_vertex>
         // How big the whole vessel is on screen, in pixels.
         vPx = uPxK * length((modelMatrix * instanceMatrix)[0].xyz) * 0.6 / max(-mvPosition.z, 1e-3);`);
@@ -561,6 +571,7 @@ export function hullMaterial(uT) {
       .replace('#include <common>', `#include <common>
         uniform float uT;
         varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx; varying vec3 vLocal; varying vec3 vGround;
+        varying vec3 vGnd; uniform sampler2D tGround; uniform float uGroundTex;
         float isK(float k) { return 1.0 - step(0.5, abs(vKind - k)); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         // Radiators and solar cells aren't armour plate: no plating pattern.
@@ -586,9 +597,11 @@ export function hullMaterial(uT) {
           vec3 q = floor(vLocal * 900.0);
           float grit = fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
           float gnd = isK(10.0);
-          // and mottled on a larger scale, as the world's own surface is.
-          float mot = sin(vLocal.x * 9.0 + vLocal.z * 3.1) + sin(vLocal.z * 11.0 - vLocal.x * 4.3) + sin((vLocal.x + vLocal.z) * 23.0);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vGround * vTint * (0.9 + grit * 0.2 * fine) * (1.0 + mot * 0.06), gnd);
+          // painted with the world's own surface where it has a map (gnd.xy
+          // on it), else the rock's light and dark (gnd.z) and a mottling.
+          vec3 gmap = uGroundTex > 0.5 ? pow(texture2D(tGround, vGnd.xy).rgb, vec3(2.2)) : vec3(vGnd.z);
+          float mot = (sin(vLocal.x * 9.0 + vLocal.z * 3.1) + sin(vLocal.z * 11.0 - vLocal.x * 4.3) + sin((vLocal.x + vLocal.z) * 23.0)) * (1.0 - uGroundTex);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vGround * gmap * vTint * (0.9 + grit * 0.2 * fine) * (1.0 + mot * 0.06), gnd);
         }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         // Bare structure is worked metal (it catches the sun), radiators are
@@ -734,9 +747,14 @@ function glintMaterial() {
  * A single (non-fleet) hull mesh with the ship material, e.g. a station:
  * returns the mesh and a setter for paint colour, sunlight and lights on/off.
  */
-export function singleHull(geo, uT) {
+export function singleHull(geo, uT, groundTex = null) {
   const g = geo.clone();
-  const m = new THREE.InstancedMesh(g, singleMat || (singleMat = hullMaterial(uT)), 1);
+  let mat = singleMat || (singleMat = hullMaterial(uT));
+  if (groundTex) {
+    if (!groundMats.has(groundTex)) groundMats.set(groundTex, hullMaterial(uT, groundTex));
+    mat = groundMats.get(groundTex);
+  }
+  const m = new THREE.InstancedMesh(g, mat, 1);
   const a = (n, v) => { const at = new THREE.InstancedBufferAttribute(new Float32Array(v), v.length); g.setAttribute(n, at); return at; };
   const paint = a('iPaint', [0.6, 0.6, 0.6]), sun = a('iSun', [1]), lit = a('iLit', [0]), ground = a('iGround', [0.2, 0.19, 0.18]);
   a('iSeed', [Math.random()]); a('iHull', [0.95]);
@@ -753,6 +771,8 @@ export function singleHull(geo, uT) {
   return m;
 }
 let singleMat = null;
+/** One per world with a surface map (same shader; only its ground texture differs). */
+const groundMats = new WeakMap();
 
 /** Below this on-screen size (the view's px, about 1.8x the hull's length in pixels) ships draw coarse: the parts it drops are then under a pixel or two, so the switch doesn't pop. */
 const FAR_PX = 40;

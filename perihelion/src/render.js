@@ -314,7 +314,8 @@ export function createView(canvas, labelRoot, opts = {}) {
       let tail = null;
       let ring = null;
       let atmo = null;
-      let alb = null; // the baked surface map, read back for the colour of the ground under a site
+      let alb = null; // the baked surface map: buildings' earthworks are painted with it
+      let ocean = false, air = false;
       // Stations: a little smaller than their size (a real one is tiny beside a world).
       if (b.kind === 'station') body = stationMesh(b.size * STATION_SCALE, b.id % STATION_CORES, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
@@ -343,6 +344,8 @@ export function createView(canvas, labelRoot, opts = {}) {
         const maps = bake(b, look);
         baked.push(...maps.rts);
         alb = maps.rts[0];
+        ocean = look.kind === 0 && look.type !== 1;
+        air = !!look.atmo;
         const tilt = 0.2 + b.hue * 0.3;
         if (b.giant && b.hue > 0.4) {
           // Rings in the equatorial plane, tilted with the planet.
@@ -394,7 +397,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, alb, lods: [], ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_CORES) : null };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, alb, ocean, air, lods: [], ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_CORES) : null };
     });
     // The asteroid belt: a lane of small rocks round the named asteroids.
     if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
@@ -504,24 +507,30 @@ export function createView(canvas, labelRoot, opts = {}) {
   const dir = new THREE.Vector3();
   const perp = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
-  // The colour of a world's surface round a direction (in its own frame):
-  // a patch of its baked map read back, once per site, so a building's
-  // earthworks are the ground they're dug from. Worlds are lit in their own
-  // shader by the star's colour; buildings by the scene's warmer point
-  // light (x 1/PI in three's lighting): GROUND_K evens that out.
+  // What a site needs from the world under it: its surface map (the
+  // earthworks are painted with it), the brightness that evens out the two
+  // ways of lighting (worlds are lit in their own shader by the star's
+  // colour, buildings by the scene's warmer point light, x 1/PI), and on a
+  // world with seas, whether a direction is open water (read back once).
   const GROUND_K = [1.22 / (1.0 * 3 / Math.PI), 1.17 / (0.879 * 3 / Math.PI), 1.08 / (0.723 * 3 / Math.PI)].map((k) => k * 0.9);
-  const patch = new Uint8Array(16 * 8 * 4);
-  function groundColour(v, d) {
-    if (!v.alb) return null;
-    const W = v.alb.width, H = v.alb.height;
-    // Where THREE.SphereGeometry puts that direction in its uv.
-    const u = (((Math.atan2(d.z, -d.x) / (2 * Math.PI)) % 1) + 1) % 1;
-    const t = 1 - Math.acos(THREE.MathUtils.clamp(d.y, -1, 1)) / Math.PI;
-    const x = THREE.MathUtils.clamp(Math.floor(u * W) - 8, 0, W - 16), y = THREE.MathUtils.clamp(Math.floor(t * H) - 4, 0, H - 8);
-    renderer.readRenderTargetPixels(v.alb, x, y, 16, 8, patch);
-    const c = [0, 0, 0];
-    for (let i = 0; i < 128; i++) for (let j = 0; j < 3; j++) c[j] += ((patch[i * 4 + j] / 255) ** 2.2 / 128) * GROUND_K[j];
-    return c;
+  function siteEnv(v) {
+    if (v.env) return v.env;
+    const env = { body: v.body, giant: !!v.b.giant, air: v.air };
+    if (v.alb && !v.b.giant) {
+      env.tex = v.alb.texture;
+      env.groundK = GROUND_K;
+      if (v.ocean) {
+        const W = v.alb.width, H = v.alb.height;
+        let px = null;
+        env.wet = (d) => {
+          if (!px) { px = new Uint8Array(W * H * 4); renderer.readRenderTargetPixels(v.alb, 0, 0, W, H, px); }
+          const u = (((Math.atan2(d.z, -d.x) / (2 * Math.PI)) % 1) + 1) % 1;
+          const t = 1 - Math.acos(THREE.MathUtils.clamp(d.y, -1, 1)) / Math.PI;
+          return px[(Math.min(H - 1, Math.floor(t * H)) * W + Math.min(W - 1, Math.floor(u * W))) * 4 + 3] < 130; // height under sea level (0.5), with a shore
+        };
+      }
+    }
+    return (v.env = env);
   }
   const ppuAt = (p) => window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.distanceTo(p));
   const hash = (a, b) => {
@@ -1211,14 +1220,14 @@ export function createView(canvas, labelRoot, opts = {}) {
           setStationModules(v.body, b.structures.map((x) => ({ type: x.type, level: x.level, done: !x.scrap && (x.left <= 0 || !!x.next) })), ghostMat);
           v.wips.push(...v.body.userData.station.wip);
         } else b.structures.forEach((x, k) => {
-          const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner), { body: v.body, groundAt: (d) => groundColour(v, d) });
+          const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner), siteEnv(v));
           if (m.userData.wip) v.wips.push(m.userData.wip);
           if (m.userData.lod) v.lods.push(m.userData.lod);
           const lit = [];
           m.traverse((o) => { if (o.userData.set) lit.push(o); });
           if (lit.length) v.lit.push({ g: m, lit, sun: 1 });
           // A clearing in the clouds over each surface building.
-          if (x.type !== 'shipyard' && x.type !== 'skimmer') v.holes.push({ dir: m.position.clone().normalize(), cos: Math.cos(Math.min(0.6, (buildingScale(b) * (x.type === 'lab' || x.type === 'mine' ? 1.5 : 1.15)) / b.size)) });
+          if (x.type !== 'shipyard' && x.type !== 'skimmer') v.holes.push({ dir: m.position.clone().normalize(), cos: Math.cos(Math.min(0.6, (m.userData.lod ? m.userData.lod.r * 1.4 : buildingScale(b) * 1.15) / b.size)) });
           if (m.userData.spin) v.spins.push(...m.userData.spin);
           // Surface structures turn with the world; yards and skimmers orbit on their own.
           (x.type === 'shipyard' || x.type === 'skimmer' ? v.structs : v.surface).add(m);
@@ -1248,6 +1257,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         const px = L.r * ppu;
         L.fine.visible = px > SITE_FINE_PX;
         L.coarse.visible = px <= SITE_FINE_PX && px > 1.5;
+        for (const e of L.extra) e.visible = px > 1.5; // parts that turn on their own
       }
       // Markers stay a readable size on screen however far out we are.
       // Moons and stations get smaller rings than planets.
