@@ -10,6 +10,7 @@ import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
 import { stationMesh, stationPorts, setStationModules, STATION_CORES } from './gfx/stations.js';
 import { megaMesh, megaProgress } from './gfx/megastructures.js';
 import { structureMesh, buildingScale } from './gfx/structures.js';
+import { createShadows, SHADOW_LAYER } from './gfx/shadow.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
 import { BIOMES, createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
@@ -198,6 +199,7 @@ export function createView(canvas, labelRoot, opts = {}) {
   renderer.setPixelRatio(1);
   renderer.autoClear = true;
   const scene = new THREE.Scene();
+  const shadows = createShadows(renderer, scene);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.02, 20000);
   const post = createPost(renderer);
   post.setSamples(quality === 'high' ? 4 : 2);
@@ -1229,7 +1231,7 @@ export function createView(canvas, labelRoot, opts = {}) {
           if (m.userData.wip) v.wips.push(m.userData.wip);
           if (m.userData.lod) v.lods.push(m.userData.lod);
           const lit = [];
-          m.traverse((o) => { if (o.userData.set) lit.push(o); });
+          m.traverse((o) => { if (o.userData.set) { lit.push(o); o.layers.enable(SHADOW_LAYER); } });
           if (lit.length) v.lit.push({ g: m, lit, sun: 1 });
           // A clearing in the clouds over each surface building.
           if (x.type !== 'shipyard' && x.type !== 'skimmer') v.holes.push({ dir: m.position.clone().normalize(), cos: Math.cos(Math.min(0.6, (m.userData.lod ? m.userData.lod.r * 1.4 : buildingScale(b) * 1.15) / b.size)) });
@@ -1620,6 +1622,13 @@ export function createView(canvas, labelRoot, opts = {}) {
     // Depth of field only when zoomed in close (and on High).
     post.uniforms.uFocus.value = orbit.dist;
     post.uniforms.uDof.value = quality === 'high' ? 1 - THREE.MathUtils.smoothstep(orbit.dist, 10, 40) : 0;
+    // Sun shadows, close to a world with buildings on it.
+    {
+      const v = orbit.follow !== null ? views[orbit.follow] : null;
+      const fp = v && v.lit && v.lit.length ? bodyPos[orbit.follow] : null;
+      const near = fp && camera.position.distanceTo(tmp.set(fp.x, fp.y, fp.z)) - v.b.size < v.b.size * 2.5 + 0.4;
+      shadows.update(near ? tmp : null, v ? v.b.size : 0, sunGroup.position, camera, quality === 'high' ? 2048 : 1024);
+    }
     adapt(t);
     post.render(scene, camera, t);
   }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { NOISE } from './glsl.js';
+import { SHADOW_GLSL, addShadowUniforms } from './shadow.js';
 import { rng } from '../sim.js';
 
 /**
@@ -85,9 +86,10 @@ export function rockMaterial(opts = {}) {
   const tumble = !!opts.tumble;
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uT = opts.uT || { value: 0 };
+    addShadowUniforms(sh.uniforms);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        uniform float uT; varying vec3 vObj; varying vec3 vRx; varying vec3 vRy; varying vec3 vRz;
+        uniform float uT; varying vec3 vObj; varying vec3 vRx; varying vec3 vRy; varying vec3 vRz; varying vec3 vShW;
         mat3 rotAxis(vec3 a, float t) { float c = cos(t), s = sin(t); vec3 u = normalize(a); return mat3(c + u.x*u.x*(1.0-c), u.y*u.x*(1.0-c) + u.z*s, u.z*u.x*(1.0-c) - u.y*s, u.x*u.y*(1.0-c) - u.z*s, c + u.y*u.y*(1.0-c), u.z*u.y*(1.0-c) + u.x*s, u.x*u.z*(1.0-c) + u.y*s, u.y*u.z*(1.0-c) - u.x*s, c + u.z*u.z*(1.0-c)); }`)
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
         ${tumble ? `float fid = float(gl_InstanceID);
@@ -97,10 +99,18 @@ export function rockMaterial(opts = {}) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         ${tumble ? 'transformed = tum * transformed;' : ''}
         vObj = transformed;
-        vRx = normalMatrix * vec3(1.0, 0.0, 0.0); vRy = normalMatrix * vec3(0.0, 1.0, 0.0); vRz = normalMatrix * vec3(0.0, 0.0, 1.0);`);
+        vRx = normalMatrix * vec3(1.0, 0.0, 0.0); vRy = normalMatrix * vec3(0.0, 1.0, 0.0); vRz = normalMatrix * vec3(0.0, 0.0, 1.0);
+        {
+          vec4 sw = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            sw = instanceMatrix * sw;
+          #endif
+          vShW = (modelMatrix * sw).xyz;
+        }`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vObj; varying vec3 vRx; varying vec3 vRy; varying vec3 vRz;
+        varying vec3 vObj; varying vec3 vRx; varying vec3 vRy; varying vec3 vRz; varying vec3 vShW;
+        ${SHADOW_GLSL}
         ${NOISE}
         float rockH(vec3 p) { return fbm(p, 3) + abs(snoise(p * 0.5)) * 0.5; }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -113,7 +123,9 @@ export function rockMaterial(opts = {}) {
           vec3 gv = vRx * g.x + vRy * g.y + vRz * g.z;
           normal = normalize(normal - (gv - dot(gv, normal) * normal) * 0.22);
           diffuseColor.rgb *= 0.85 + h0 * 0.3;
-        }`);
+        }`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        { float shd = sunShadow(vShW, 0.002); reflectedLight.directDiffuse *= shd; reflectedLight.directSpecular *= shd; }`);
   };
   return mat;
 }
