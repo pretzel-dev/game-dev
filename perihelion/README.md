@@ -394,11 +394,11 @@ Playwright (`npm run preview` first; Playwright isn't a dependency).
     surveyor with a turning habitat ring; survey, relay and recon probes),
     drive plumes, glints; `stations.js`: habitat, shipyard, refinery and
     bastion, each with a fixed hub and (when crewed) a ring or drum that
-    turns on its own; `structures.js`: buildings on worlds. The mine is
-    the first "site": drawn near real scale in a shared unit (`SITE_U`,
-    about a ship's length), laid over the real terrain (asteroids are
-    probed), its earthworks coloured like the ground under them, with a
-    near and a far level of detail. The other buildings move to this next;
+    turns on its own; `structures.js`: buildings on worlds. Surface
+    buildings are "sites": near real scale in a shared unit (`SITE_U`, about
+    a ship's length), laid over the real terrain (asteroids are probed),
+    earthworks painted with the world's own surface map, a near and a far
+    level of detail, floating decks on gas giants;
     `megastructures.js`: the six megaprojects, built in stages
   - `rocks.js`: asteroids and the belt; `fx.js`: weapons fire and explosions
 - `src/main.js`: touch input, UI, game loop
