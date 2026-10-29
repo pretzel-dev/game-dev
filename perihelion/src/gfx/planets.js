@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SHADOW_GLSL, addShadowUniforms } from './shadow.js';
 import { NOISE, LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG, FULLSCREEN_VERT } from './glsl.js';
 
 /**
@@ -485,6 +486,7 @@ export function surfaceMaterial(b, look, maps, ring) {
     uRingN: { value: new THREE.Vector3(0, 1, 0) }, uRingIn: { value: 0 }, uRingOut: { value: 0 }, tRing: { value: ring ? ring.tex : null },
     uCenter: { value: new THREE.Vector3() }, uRadius: { value: b.size },
   };
+  addShadowUniforms(uniforms);
   return new THREE.ShaderMaterial({
     uniforms,
     vertexShader: /* glsl */ `${LD_VERT_PARS}
@@ -504,6 +506,7 @@ export function surfaceMaterial(b, look, maps, ring) {
       }`,
     fragmentShader: /* glsl */ `${LD_FRAG_PARS}
       ${ECLIPSE}
+      ${SHADOW_GLSL}
       uniform sampler2D tAlb, tAux, tRing;
       uniform vec3 uStarPos[2], uStarCol[2];
       uniform float uCity, uCloudShift, uCloudK, uOcean, uAirless, uAtmoK, uT, uFlow, uRingIn, uRingOut, uRadius;
@@ -558,6 +561,7 @@ export function surfaceMaterial(b, look, maps, ring) {
           // Only the lit hemisphere (the normal map can't light the night side).
           diff *= smoothstep(-0.06, 0.08, ngl);
           float sh = eclipse(vWorld, L, ld);
+          if (i == 0) sh *= sunShadow(vWorld, 0.0015); // buildings' shadows on the ground
           // Ring shadow on the planet.
           if (uRingOut > 0.0) {
             float dn = dot(L, uRingN);

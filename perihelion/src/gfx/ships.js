@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './glsl.js';
 import { rng } from '../sim.js';
+import { SHADOW_GLSL, addShadowUniforms } from './shadow.js';
 
 /**
  * Ships, drawn with GPU instancing: one draw call per hull type for every
@@ -555,23 +556,27 @@ export function hullMaterial(uT, groundTex = null) {
     sh.uniforms.uPxK = hullPx;
     sh.uniforms.tGround = { value: groundTex || white };
     sh.uniforms.uGroundTex = { value: groundTex ? 1 : 0 };
+    addShadowUniforms(sh.uniforms);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         attribute float kind; attribute float tint; attribute vec3 iPaint; attribute float iSun; attribute float iSeed; attribute float iHull; attribute float iLit; attribute vec3 iGround; attribute vec3 gnd;
         varying vec3 vGnd;
         varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying vec3 vGround;
-        uniform float uPxK; varying float vPx; varying vec3 vLocal;`)
+        uniform float uPxK; varying float vPx; varying vec3 vLocal; varying vec3 vShW;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vLocal = position;
         vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit; vGround = iGround; vGnd = gnd;`)
       .replace('#include <project_vertex>', `#include <project_vertex>
         // How big the whole vessel is on screen, in pixels.
-        vPx = uPxK * length((modelMatrix * instanceMatrix)[0].xyz) * 0.6 / max(-mvPosition.z, 1e-3);`);
+        vPx = uPxK * length((modelMatrix * instanceMatrix)[0].xyz) * 0.6 / max(-mvPosition.z, 1e-3);
+        vShW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uT;
         varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx; varying vec3 vLocal; varying vec3 vGround;
         varying vec3 vGnd; uniform sampler2D tGround; uniform float uGroundTex;
+        varying vec3 vShW;
+        ${SHADOW_GLSL}
         float isK(float k) { return 1.0 - step(0.5, abs(vKind - k)); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         // Radiators and solar cells aren't armour plate: no plating pattern.
@@ -635,8 +640,10 @@ export function hullMaterial(uT, groundTex = null) {
           totalEmissiveRadiance += paint * vPaint * 0.05;
         }`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-        reflectedLight.directDiffuse *= vSun;
-        reflectedLight.directSpecular *= vSun;
+        // In the sun's eye (an eclipse: vSun) and out of other buildings' shadows.
+        float shd = vSun * sunShadow(vShW, 0.004);
+        reflectedLight.directDiffuse *= shd;
+        reflectedLight.directSpecular *= shd;
         {
           // Fill: a faint cool skylight and an edge rim, so the side away from
           // the sun keeps its outline against space instead of vanishing. The
