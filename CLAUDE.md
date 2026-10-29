@@ -92,6 +92,16 @@ block it; append `?peer=127.0.0.1:9000` to the URL to use a local
 
 ## Planned next
 
+- **Building overhaul (in progress).** Brief: redraw every building, station,
+  special world and megaproject at believable scale, mobile-friendly. Done:
+  the mine (PR #125) as the reference: `SITE_U` scale, sites laid over the
+  terrain (`siteOn`, `rockField`), `GROUND` part kind coloured from the
+  world's map, near/far detail, geometry cache, eclipse dimming. Waiting on
+  the owner's verdict on the mine before the other seven buildings, then
+  stations, special worlds, megaprojects. Open questions: sample the world's
+  surface texture on earthworks (they look smoother than the moon); old
+  buildings beside the mine are still oversized; let the camera zoom closer
+  to small worlds; overall mine size.
 - Move multiplayer to a server on Cloudflare (Durable Objects): the game keeps
   running without the host, and nobody can pause. Add a TURN relay for strict
   networks. The owner has a Cloudflare account and a Cloudflare MCP connector,
