@@ -9,7 +9,7 @@ import { createSun } from './gfx/sun.js';
 import { createShipRenderer, platingTex, hullPx } from './gfx/ships.js';
 import { stationMesh, stationPorts, setStationModules, STATION_CORES } from './gfx/stations.js';
 import { megaMesh, megaProgress } from './gfx/megastructures.js';
-import { structureMesh, buildingScale } from './gfx/structures.js';
+import { structureMesh, buildingScale, perkMeshes } from './gfx/structures.js';
 import { createShadows, SHADOW_LAYER } from './gfx/shadow.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
@@ -401,6 +401,19 @@ export function createView(canvas, labelRoot, opts = {}) {
       }
       return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, alb, ocean, air, lods: [], ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_CORES) : null };
     });
+    // Special worlds: what makes them special shows on them (and round them)
+    // from the start. Placed before any buildings, which keep clear of it.
+    for (const v of views) {
+      v.perk = { lods: [], lit: [] };
+      if (!v.b.perk || v.b.kind === 'station') continue;
+      for (const { m, orbital } of perkMeshes(v.b, shipR.uT, siteEnv(v))) {
+        (orbital ? v.g : v.body).add(m);
+        if (m.userData.lod) v.perk.lods.push(m.userData.lod);
+        const lit = [];
+        m.traverse((o) => { if (o.userData.set) { lit.push(o); o.layers.enable(SHADOW_LAYER); } });
+        v.perk.lit.push({ g: m, lit, sun: 1 });
+      }
+    }
     // The asteroid belt: a lane of small rocks round the named asteroids.
     if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
     const rocks = game.bodies.filter((x) => x.kind === 'asteroid');
@@ -1256,11 +1269,11 @@ export function createView(canvas, labelRoot, opts = {}) {
       // once the whole site is a pixel or two.
       // In a world's shadow (an eclipse), its buildings go dark with it,
       // each where it stands (the shadow's edge crosses a world slowly).
-      if (v.lit) for (const L of v.lit) {
+      for (const list of [v.lit, v.perk.lit]) if (list) for (const L of list) {
         const sun = sunlit(L.g.getWorldPosition(litPos));
         if (Math.abs(sun - L.sun) > 0.01) { L.sun = sun; for (const o of L.lit) o.userData.set(o.userData.paint, sun, true); }
       }
-      for (const L of v.lods) {
+      for (const list of [v.lods, v.perk.lods]) for (const L of list) {
         const px = L.r * ppu;
         L.fine.visible = px > SITE_FINE_PX;
         L.coarse.visible = px <= SITE_FINE_PX && px > 1.5;
@@ -1625,7 +1638,7 @@ export function createView(canvas, labelRoot, opts = {}) {
     // Sun shadows, close to a world with buildings on it.
     {
       const v = orbit.follow !== null ? views[orbit.follow] : null;
-      const fp = v && v.lit && v.lit.length ? bodyPos[orbit.follow] : null;
+      const fp = v && ((v.lit && v.lit.length) || v.perk.lit.length) ? bodyPos[orbit.follow] : null;
       const near = fp && camera.position.distanceTo(tmp.set(fp.x, fp.y, fp.z)) - v.b.size < v.b.size * 2.5 + 0.4;
       shadows.update(near ? tmp : null, v ? v.b.size : 0, sunGroup.position, camera, quality === 'high' ? 2048 : 1024);
     }

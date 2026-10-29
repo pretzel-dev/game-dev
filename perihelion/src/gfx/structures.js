@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE, RAD, SOLAR, GROUND } from './ships.js';
+import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE, THROAT, RAD, SOLAR, GROUND } from './ships.js';
 import { rng } from '../sim.js';
 
 /**
@@ -97,6 +97,9 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     for (let i = 4; i < 7; i++) W2.add(new THREE.CylinderGeometry(c * 0.66, c * 0.66, L * 0.08, 16, 1, true, 0, Math.PI * 2).rotateZ(Math.PI / 2).translate(-L * 0.28 + i * L * 0.09, 0, 0), i === 5 ? PAINT : HULL);
     W2.add(new THREE.CylinderGeometry(c * 0.3, c * 0.55, c * 0.7, 16, 1, true).rotateZ(Math.PI / 2).translate(-L * 0.4, 0, 0), DARK, 0.7);
     extra.push([W, 'wip'], [W1, 'wip'], [W2, 'wip']);
+  } else if (ORBITS[type]) {
+    // A special world's works in orbit (its old relay ring, a fuel depot, a hulk).
+    place = ORBITS[type](K, b);
   } else if (type === 'skimmer') {
     // A gas-harvesting system, all on one side so it reads as one
     // installation: aerostat collectors riding the cloud tops (one group
@@ -217,7 +220,7 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
   const mf = mk(fine), mc = mk(coarse);
   mc.visible = false;
   g.add(mf, mc);
-  g.userData.lod = { fine: mf, coarse: mc, r: type === 'shipyard' ? 0.35 : F * 0.22 * 6, extra: [] };
+  g.userData.lod = { fine: mf, coarse: mc, r: type === 'shipyard' ? 0.35 : ORBITS[type] ? 0.5 : F * 0.22 * 6, extra: [] };
   for (const [X, role, at] of extra) {
     if (role === 'wip' && !done) continue;
     const m = mk(X.build(1));
@@ -1155,4 +1158,166 @@ const SITES = {
   lab: { r: [0.7, 0.85, 1.05], build: labSite },
   habitat: { r: [0.65, 0.85, 1.0], build: habitatSite },
   exchange: { r: [1.0, 1.1], build: exchangeSite, tall: EX_TOP },
+};
+
+// ---- Special worlds -------------------------------------------------------
+// What makes a special world special is there before anyone builds on it:
+// a surface site (in the slot PERK_SLOT, so buildings keep clear of it)
+// and, for some, works in orbit. Neutral weathered grey, the same parts
+// kit, so they belong to the same history as everything else.
+
+const PERK_SLOT = 50;
+const OLD = '#6a7080';
+
+/** The special-world features of b, as [{ m, orbital }] (none on a gas giant's surface). */
+export function perkMeshes(b, uT, env) {
+  const out = [];
+  if (SITES['perk-' + b.perk] && !b.giant) out.push({ m: structureMesh('perk-' + b.perk, b, PERK_SLOT, true, 1, uT, null, OLD, env), orbital: false });
+  if (ORBITS['orbit-' + b.perk]) out.push({ m: structureMesh('orbit-' + b.perk, b, 0, true, 1, uT, null, OLD, env), orbital: true });
+  return out;
+}
+
+/** Rich seam: veins of ore across the ground, crystals where they break the surface, survey stakes and a test pit. */
+function seamSite(S, K, level, c) {
+  for (let i = 0; i < 6; i++) {
+    const a = K.r() * Math.PI, len = 0.5 + K.r() * 0.7, x = (K.r() - 0.5) * 0.9, z = (K.r() - 0.5) * 0.9;
+    K.add(new THREE.BoxGeometry(len, 0.03 + c.sink, 0.045 + K.r() * 0.03).translate(0, (0.03 - c.sink) / 2, 0).rotateY(a).translate(x, 0, z), GROUND, 1.5);
+    for (let j = 0; j < 3; j++) {
+      const f = (j / 2 - 0.5) * len * 0.8, px = x + Math.cos(a) * f, pz = z - Math.sin(a) * f;
+      K.add(new THREE.OctahedronGeometry(0.015 + K.r() * 0.015).scale(1, 1.4, 1).rotateZ((K.r() - 0.5) * 0.8).rotateY(K.r() * 3).translate(px, 0.03, pz), SOLAR, 1.4);
+    }
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2, x = Math.cos(a) * 0.75, z = Math.sin(a) * 0.75;
+    K.strut(x, -c.sink, z, x, 0.08, z, 0.008, DARK);
+    K.box(0.014, 0.014, 0.014, x, 0.085, z, NAV_R);
+  }
+  S.pit(0.4, -0.35, 0.14, 2, 0.9);
+}
+
+/** Old relay: a vast weathered dish on its lattice mount, one segment gone; its mast fallen beside it. */
+function relaySite(S, K, level, c) {
+  K.add(new THREE.CylinderGeometry(0.22, 0.3, 0.06 + c.sink, 10).translate(0, (0.06 - c.sink) / 2, 0), DARK, 0.4);
+  S.tower(0, 0, 0.2, 0.34, 0.012, DARK);
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0.45, 1, 0.2).normalize());
+  K.add(new THREE.CylinderGeometry(0.55, 0.07, 0.17, 26, 1, true, 0, Math.PI * 1.7).translate(0, 0.085, 0).applyQuaternion(q).translate(0, 0.38, 0), HULL, 0.5);
+  K.add(new THREE.TorusGeometry(0.55, 0.012, 4, 26, Math.PI * 1.7).rotateX(Math.PI / 2).translate(0, 0.17, 0).applyQuaternion(q).translate(0, 0.38, 0), DARK, 0.45);
+  const feed = new THREE.Vector3(0, 0.42, 0).applyQuaternion(q);
+  K.strut(0, 0.38, 0, feed.x, 0.38 + feed.y, feed.z, 0.012, DARK, 0.5);
+  K.box(0.05, 0.05, 0.05, feed.x, 0.38 + feed.y, feed.z, HULL, 0.5);
+  // The fallen mast, and wreckage.
+  K.truss(0.55, 0.05, -0.75, 0.25, 0.07, 6, 0.008, DARK);
+  for (let i = 0; i < 5; i++) K.box(0.04 + K.r() * 0.06, 0.02, 0.04 + K.r() * 0.05, (K.r() - 0.5) * 1.3, 0.01, (K.r() - 0.5) * 1.3, HULL, 0.45);
+}
+
+/** Listening post: a long-baseline line of dishes, a radome and an operations block, cable runs between. */
+function postSite(S, K, level, c) {
+  for (let i = 0; i < 6; i++) S.bigDish(-0.8 + i * 0.32, -0.15 + (i % 2) * 0.08, 0.1, [0.25, 1, 0.35]);
+  S.tracks(-0.8, -0.15, 0.8, -0.1, 0.015);
+  S.radome(0.15, 0.35, 0.09, 0.06);
+  S.block(-0.25, 0.38, 0.18, 0.12, 0.06, 0.2);
+  S.mast(0.55, 0.4, 0.3);
+  S.lamp(-0.5, 0.25, 0.12);
+}
+
+/** Fortress rock: gun casemates cut into the rock, trenches between, a big radar dome in the middle. */
+function fortressSite(S, K, level, c) {
+  S.radome(0, 0, 0.12, 0.06);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.4, x = Math.cos(a) * 0.6, z = Math.sin(a) * 0.6;
+    S.bunker(x, z, 0.22, 0.16, 0.07, -a + Math.PI / 2);
+    K.add(new THREE.BoxGeometry(0.34, 0.025, 0.025).translate(0.17, 0, 0).rotateY(-a).translate(x + Math.cos(a) * 0.08, 0.05, z + Math.sin(a) * 0.08), DARK, 0.5); // the gun through its embrasure
+    S.tracks(0, 0, x * 0.85, z * 0.85, 0.04);
+    S.berm(x, z, 0.2, 0.04, 0.05);
+  }
+  S.mast(-0.25, 0.3, 0.28);
+}
+
+/**
+ * Ancient archive: not built by anyone here. A ring of dark glassy spires
+ * round a low pyramid, faint light in their seams; and beside it, the
+ * small camp of the people studying it.
+ */
+function archiveSite(S, K, level, c) {
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2, x = Math.cos(a) * 0.5, z = Math.sin(a) * 0.5, h = 0.32 + ((i * 37) % 5) * 0.05;
+    K.add(new THREE.OctahedronGeometry(1).scale(0.055, h, 0.055).rotateY(a).translate(x, h * 0.75 - c.sink, z), SOLAR, 0.45);
+    K.add(new THREE.BoxGeometry(0.006, h * 0.8, 0.006).translate(x * 1.11, h * 0.6, z * 1.11), THROAT, 1);
+  }
+  K.add(new THREE.ConeGeometry(0.22, 0.2, 4).rotateY(Math.PI / 4).translate(0, 0.1 - c.sink * 0.5, 0), SOLAR, 0.5);
+  // The research camp.
+  S.foot(0.85, -0.25, 0.26, 0.12, 0.012, 0.4);
+  S.can(0.85, -0.25, 0.045, 0.2, 0.4, true);
+  S.lamp(0.7, -0.05, 0.12);
+  S.lamp(0.95, 0.05, 0.12);
+  S.tracks(0.75, -0.2, 0.35, -0.05, 0.02);
+}
+
+/** Tidal forge: heat-exchanger towers over the tidal vents, radiator walls, a foundry with its doors aglow. */
+function forgeSite(S, K, level, c) {
+  for (let i = 0; i < 3; i++) {
+    const x = -0.45 + i * 0.3, z = -0.25;
+    K.add(new THREE.CylinderGeometry(0.06, 0.08, 0.42 + c.sink, 12).translate(x, (0.42 - c.sink) / 2, z), HULL, 0.9);
+    K.add(new THREE.CylinderGeometry(0.065, 0.065, 0.04, 12, 1, true).translate(x, 0.34, z), PAINT);
+    for (let j = 0; j < 4; j++) K.add(new THREE.BoxGeometry(0.004, 0.3, 0.07).translate(0.08, 0.2, 0).rotateY((j / 4) * Math.PI * 2).translate(x, 0, z), RAD, 0.95);
+    // The vent under it, glowing.
+    K.add(new THREE.CylinderGeometry(0.05, 0.05, 0.006, 10).translate(x + 0.1, 0.004, z + 0.08), WINDOW);
+  }
+  S.radiators(0.1, 0.25, 0.6, 0.12, 6, 0.1);
+  S.radiators(0.1, 0.45, 0.6, 0.12, 6, 0.1);
+  S.plant(0.55, -0.25, 0.26, 0.18, 0.12, 0.3);
+  for (let i = 0; i < 3; i++) K.box(0.05, 0.05, 0.004, 0.47 + i * 0.07, 0.035, -0.15, WINDOW);
+  for (let i = 0; i < 3; i++) K.pipe(-0.45 + i * 0.3, 0.12, -0.25, 0.42, 0.06, -0.25, 0.012);
+  S.lamp(-0.7, 0.1, 0.14);
+}
+
+for (const [k, r, build] of [['seam', 0.95, seamSite], ['relay', 1.0, relaySite], ['post', 1.0, postSite], ['fortress', 0.9, fortressSite], ['archive', 1.0, archiveSite], ['forge', 1.0, forgeSite]]) SITES['perk-' + k] = { r: [r], build };
+
+/** Works in orbit, each building its parts and returning where they sit (local +x along the orbit, +y away from the world). */
+const ORBITS = {
+  /** The old relay's ring: most of a great truss ring round the world, broken, its nodes dark. */
+  'orbit-relay': (K, b) => {
+    const R = b.size * 2.1;
+    K.add(new THREE.TorusGeometry(R, 0.012, 4, 120, Math.PI * 1.35).rotateX(Math.PI / 2), DARK, 0.5);
+    K.add(new THREE.TorusGeometry(R, 0.007, 3, 120, Math.PI * 1.2).rotateX(Math.PI / 2).translate(0, 0.035, 0), DARK, 0.45);
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 1.2, cx = Math.cos(a) * R, cz = -Math.sin(a) * R;
+      K.strut(cx, 0, cz, cx, 0.035, cz, 0.006, DARK, 0.45);
+      if (i % 8 === 0) K.box(0.06, 0.05, 0.06, cx, 0.02, cz, HULL, 0.45);
+    }
+    return new THREE.Matrix4();
+  },
+  /** Fuel depot: a tank farm on a truss, transfer arms, a tanker at its berth. */
+  'orbit-depot': (K, b) => {
+    const c = 0.078;
+    K.truss(0, 0, -c * 3, c * 3, c * 0.4, 6, c * 0.05);
+    for (let i = 0; i < 6; i++) for (const sx of [-1, 1]) K.strapped(c * 0.32, c * 0.6, sx * c * 0.6, 0, -c * 2.4 + i * c * 0.95, i % 3 === 0 && sx > 0);
+    K.add(new THREE.CylinderGeometry(c * 0.4, c * 0.4, c * 1.0, 14).rotateX(Math.PI / 2).translate(0, c * 0.6, c * 3.2), HULL);
+    for (let i = 0; i < 6; i++) K.box(c * 0.05, c * 0.1, c * 0.02, (i - 2.5) * c * 0.12, c * 0.6, c * 3.71, WINDOW);
+    for (const sx of [-1, 1]) {
+      const [ex, ey, ez] = K.boom(sx * c * 0.3, c * 0.4, c * 1.2, [sx, 0.6, 0.2], c * 1.2, c * 0.06, HULL, 0.9);
+      K.box(c * 0.15, c * 0.15, c * 0.15, ex, ey, ez, DARK, 0.7);
+    }
+    K.tank(c * 0.3, c * 1.3, c * 2.2, c * 0.4, c * 1.6, HULL);
+    K.radiator(0, -c * 0.4, 0, c * 1.5, c * 3, -Math.PI / 2, 4, c * 0.04);
+    K.light(0, c * 0.9, c * 3.2, STROBE, c * 0.12);
+    return orbitFrame(b.size * 1.8, 2.2);
+  },
+  /** Drydock hulk: a huge derelict warship, plates gone in places, wrapped in scaffolding and being worked on. */
+  'orbit-hulk': (K, b) => {
+    const c = 0.078, L = c * 9, R = c * 0.75;
+    for (let i = 0; i < 9; i++) {
+      const x = -L / 2 + (i + 0.5) * (L / 9);
+      const open = i % 3 === 1;
+      K.add(new THREE.CylinderGeometry(R, R, L / 9 * 0.96, 16, 1, true, open ? 0.6 : 0, open ? Math.PI * 1.3 : Math.PI * 2).rotateZ(Math.PI / 2).translate(x, 0, 0), HULL, 0.55 + (i % 2) * 0.1);
+      K.add(new THREE.TorusGeometry(R * 0.98, c * 0.05, 4, 18).rotateY(Math.PI / 2).translate(x - L / 18, 0, 0), DARK, 0.5);
+    }
+    K.add(new THREE.CylinderGeometry(R * 0.7, R * 1.2, c * 1.5, 16, 1, true).rotateZ(Math.PI / 2).translate(-L / 2 - c * 0.7, 0, 0), DARK, 0.5);
+    K.add(new THREE.CylinderGeometry(R * 0.3, R, c * 0.9, 16).rotateZ(-Math.PI / 2).translate(L / 2 + c * 0.45, 0, 0), HULL, 0.5);
+    // Scaffolding round the middle, a crane, work lights.
+    for (let i = 0; i < 3; i++) K.frame(L * 0.18, R * 2.8, R * 2.8, -L * 0.2 + i * L * 0.2, 0, 0, c * 0.03);
+    K.boom(0, R * 1.4, R * 1.4, [0.6, 0.4, 0], c * 2, c * 0.08, HULL, 0.9);
+    for (let i = 0; i < 6; i++) K.light(-L * 0.3 + i * L * 0.12, R * 1.45, (i % 2 ? 1 : -1) * R * 1.4, WINDOW, c * 0.06);
+    return orbitFrame(b.size * 1.9, 4.0);
+  },
 };
