@@ -25,6 +25,8 @@ const FORMATION = 0.55;
 // Parking orbits turn slowly (radians per second of game time), as big orbits do.
 const DOCK_SPEED = 0.03;
 const STATION_SCALE = 0.8;
+/** A site (a building at near real scale) shows every part once its radius is this many pixels on screen. */
+const SITE_FINE_PX = 30;
 const yAxis = new THREE.Vector3(0, 1, 0);
 const SIEGE_SPEED = -0.045;
 const MAX_SHIPS = 400;
@@ -312,6 +314,7 @@ export function createView(canvas, labelRoot, opts = {}) {
       let tail = null;
       let ring = null;
       let atmo = null;
+      let alb = null; // the baked surface map, read back for the colour of the ground under a site
       // Stations: a little smaller than their size (a real one is tiny beside a world).
       if (b.kind === 'station') body = stationMesh(b.size * STATION_SCALE, b.id % STATION_CORES, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
@@ -339,6 +342,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         const look = lookOf(b);
         const maps = bake(b, look);
         baked.push(...maps.rts);
+        alb = maps.rts[0];
         const tilt = 0.2 + b.hue * 0.3;
         if (b.giant && b.hue > 0.4) {
           // Rings in the equatorial plane, tilted with the planet.
@@ -390,7 +394,7 @@ export function createView(canvas, labelRoot, opts = {}) {
         reach.visible = false;
         world.add(reach);
       }
-      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_CORES) : null };
+      return { b, g, body, surface, mark, lineHolder, line, label, shown: '', owner: null, pulse: 0, sig: null, structs: null, hulk, tail, reach, ring, atmo, alb, lods: [], ringN: new THREE.Vector3(), occ: [], ports: b.kind === 'station' ? stationPorts(b.id % STATION_CORES) : null };
     });
     // The asteroid belt: a lane of small rocks round the named asteroids.
     if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
@@ -493,12 +497,32 @@ export function createView(canvas, labelRoot, opts = {}) {
   }
 
   const tmp = new THREE.Vector3();
+  const litPos = new THREE.Vector3();
   const tmp2 = new THREE.Vector3();
   const tmp3 = new THREE.Vector3();
   const tmp4 = new THREE.Vector3(), tmp5 = new THREE.Vector3();
   const dir = new THREE.Vector3();
   const perp = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
+  // The colour of a world's surface round a direction (in its own frame):
+  // a patch of its baked map read back, once per site, so a building's
+  // earthworks are the ground they're dug from. Worlds are lit in their own
+  // shader by the star's colour; buildings by the scene's warmer point
+  // light (x 1/PI in three's lighting): GROUND_K evens that out.
+  const GROUND_K = [1.22 / (1.0 * 3 / Math.PI), 1.17 / (0.879 * 3 / Math.PI), 1.08 / (0.723 * 3 / Math.PI)].map((k) => k * 0.9);
+  const patch = new Uint8Array(16 * 8 * 4);
+  function groundColour(v, d) {
+    if (!v.alb) return null;
+    const W = v.alb.width, H = v.alb.height;
+    // Where THREE.SphereGeometry puts that direction in its uv.
+    const u = (((Math.atan2(d.z, -d.x) / (2 * Math.PI)) % 1) + 1) % 1;
+    const t = 1 - Math.acos(THREE.MathUtils.clamp(d.y, -1, 1)) / Math.PI;
+    const x = THREE.MathUtils.clamp(Math.floor(u * W) - 8, 0, W - 16), y = THREE.MathUtils.clamp(Math.floor(t * H) - 4, 0, H - 8);
+    renderer.readRenderTargetPixels(v.alb, x, y, 16, 8, patch);
+    const c = [0, 0, 0];
+    for (let i = 0; i < 128; i++) for (let j = 0; j < 3; j++) c[j] += ((patch[i * 4 + j] / 255) ** 2.2 / 128) * GROUND_K[j];
+    return c;
+  }
   const ppuAt = (p) => window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.distanceTo(p));
   const hash = (a, b) => {
     let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35);
@@ -1172,19 +1196,27 @@ export function createView(canvas, labelRoot, opts = {}) {
       const sig = b.owner + ':' + b.structures.map((x) => x.type + x.level + ((x.left > 0 && !x.next) || x.scrap ? '~' : '')).join();
       if (sig !== v.sig) {
         v.sig = sig;
+        // Free the old buildings' geometry (each has its own; the materials are shared).
+        for (const grp of [v.structs, v.surface]) grp?.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
         if (v.structs) v.structs.removeFromParent();
         v.surface.clear();
         v.structs = new THREE.Group();
         v.wips = []; // per yard, the hull's build stages: shown as that yard's ship comes together
         v.holes = [];
         v.spins = []; // parts that turn on their own (a habitat drum)
+        v.lods = []; // sites with a near and a far version
+        v.lit = []; // finished buildings, dimmed where the world is in eclipse
         // A station shows what's built on it as modules on its hub.
         if (b.kind === 'station') {
           setStationModules(v.body, b.structures.map((x) => ({ type: x.type, level: x.level, done: !x.scrap && (x.left <= 0 || !!x.next) })), ghostMat);
           v.wips.push(...v.body.userData.station.wip);
         } else b.structures.forEach((x, k) => {
-          const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner));
+          const m = structureMesh(x.type, b, k, !x.scrap && (x.left <= 0 || !!x.next), x.level, shipR.uT, ghostMat, b.owner === NEUTRAL ? '#6a7080' : ownerColor(b.owner), { body: v.body, groundAt: (d) => groundColour(v, d) });
           if (m.userData.wip) v.wips.push(m.userData.wip);
+          if (m.userData.lod) v.lods.push(m.userData.lod);
+          const lit = [];
+          m.traverse((o) => { if (o.userData.set) lit.push(o); });
+          if (lit.length) v.lit.push({ g: m, lit, sun: 1 });
           // A clearing in the clouds over each surface building.
           if (x.type !== 'shipyard' && x.type !== 'skimmer') v.holes.push({ dir: m.position.clone().normalize(), cos: Math.cos(Math.min(0.6, (buildingScale(b) * (x.type === 'lab' || x.type === 'mine' ? 1.5 : 1.15)) / b.size)) });
           if (m.userData.spin) v.spins.push(...m.userData.spin);
@@ -1203,6 +1235,20 @@ export function createView(canvas, labelRoot, opts = {}) {
       const selected = ui.selected === b.id;
       const targeted = ui.target === b.id;
       const ppu = ppuAt(v.g.position);
+      // Sites drawn near real scale: every part up close, the outline from
+      // further out (what it leaves off is then under a pixel), and nothing
+      // once the whole site is a pixel or two.
+      // In a world's shadow (an eclipse), its buildings go dark with it,
+      // each where it stands (the shadow's edge crosses a world slowly).
+      if (v.lit) for (const L of v.lit) {
+        const sun = sunlit(L.g.getWorldPosition(litPos));
+        if (Math.abs(sun - L.sun) > 0.01) { L.sun = sun; for (const o of L.lit) o.userData.set(o.userData.paint, sun, true); }
+      }
+      for (const L of v.lods) {
+        const px = L.r * ppu;
+        L.fine.visible = px > SITE_FINE_PX;
+        L.coarse.visible = px <= SITE_FINE_PX && px > 1.5;
+      }
       // Markers stay a readable size on screen however far out we are.
       // Moons and stations get smaller rings than planets.
       const sat = b.parent !== null;
