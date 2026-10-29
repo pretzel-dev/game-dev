@@ -20,6 +20,8 @@ import { rng } from '../sim.js';
 /** Screen pixels per world unit at distance 1 (set by the view each frame). */
 export const hullPx = { value: 800 };
 export const HULL = 0, DARK = 1, PAINT = 2, WINDOW = 3, NAV_R = 4, NAV_G = 5, STROBE = 6, THROAT = 7, RAD = 8, SOLAR = 9;
+/** Worked ground (spoil, berms, pit benches): the world's own colour (`iGround`), not plating. */
+export const GROUND = 10;
 
 /** Hull plating: panels of slightly different tone, seams, hatches, scuffs. */
 let plating = null;
@@ -546,23 +548,24 @@ export function hullMaterial(uT) {
     sh.uniforms.uPxK = hullPx;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        attribute float kind; attribute float tint; attribute vec3 iPaint; attribute float iSun; attribute float iSeed; attribute float iHull; attribute float iLit;
-        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit;
+        attribute float kind; attribute float tint; attribute vec3 iPaint; attribute float iSun; attribute float iSeed; attribute float iHull; attribute float iLit; attribute vec3 iGround;
+        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying vec3 vGround;
         uniform float uPxK; varying float vPx; varying vec3 vLocal;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vLocal = position;
-        vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit;`)
+        vKind = kind; vTint = tint; vPaint = iPaint; vSun = iSun; vSeed = iSeed; vHull = iHull; vLit = iLit; vGround = iGround;`)
       .replace('#include <project_vertex>', `#include <project_vertex>
         // How big the whole vessel is on screen, in pixels.
         vPx = uPxK * length((modelMatrix * instanceMatrix)[0].xyz) * 0.6 / max(-mvPosition.z, 1e-3);`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uT;
-        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx; varying vec3 vLocal;
+        varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx; varying vec3 vLocal; varying vec3 vGround;
         float isK(float k) { return 1.0 - step(0.5, abs(vKind - k)); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         // Radiators and solar cells aren't armour plate: no plating pattern.
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, isK(8.0) + isK(9.0));`)
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, isK(8.0) + isK(9.0));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), isK(10.0));`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float dark = isK(1.0) + isK(7.0);
         float paint = isK(2.0);
@@ -577,17 +580,28 @@ export function hullMaterial(uT) {
         vec2 cg = abs(fract(vec2(vLocal.x + vLocal.y, vLocal.z) * 90.0) - 0.5) * 2.0;
         float cell = max(smoothstep(0.8, 0.95, cg.x), smoothstep(0.8, 0.95, cg.y));
         base = mix(base, vec3(0.55, 0.58, 0.62), sol * cell * 0.6 * fine);
-        diffuseColor.rgb *= mix(base, vPaint * 0.9 + 0.04, paint);`)
+        diffuseColor.rgb *= mix(base, vPaint * 0.9 + 0.04, paint);
+        {
+          // Worked ground: the world's colour, with grit up close.
+          vec3 q = floor(vLocal * 900.0);
+          float grit = fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+          float gnd = isK(10.0);
+          // and mottled on a larger scale, as the world's own surface is.
+          float mot = sin(vLocal.x * 9.0 + vLocal.z * 3.1) + sin(vLocal.z * 11.0 - vLocal.x * 4.3) + sin((vLocal.x + vLocal.z) * 23.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vGround * vTint * (0.9 + grit * 0.2 * fine) * (1.0 + mot * 0.06), gnd);
+        }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         // Bare structure is worked metal (it catches the sun), radiators are
         // matte ceramic, solar cells glassy.
         roughnessFactor = mix(roughnessFactor, 0.45, isK(1.0));
         roughnessFactor = mix(roughnessFactor, 0.9, isK(8.0));
-        roughnessFactor = mix(roughnessFactor, 0.22, isK(9.0));`)
+        roughnessFactor = mix(roughnessFactor, 0.22, isK(9.0));
+        roughnessFactor = mix(roughnessFactor, 1.0, isK(10.0));`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
         metalnessFactor = mix(metalnessFactor, 0.7, isK(1.0));
         metalnessFactor = mix(metalnessFactor, 0.05, isK(8.0));
-        metalnessFactor = mix(metalnessFactor, 0.5, isK(9.0));`)
+        metalnessFactor = mix(metalnessFactor, 0.5, isK(9.0));
+        metalnessFactor = mix(metalnessFactor, 0.0, isK(10.0));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // Soft pulses, not on/off: a light switching on in one frame reads as a flash.
@@ -724,7 +738,7 @@ export function singleHull(geo, uT) {
   const g = geo.clone();
   const m = new THREE.InstancedMesh(g, singleMat || (singleMat = hullMaterial(uT)), 1);
   const a = (n, v) => { const at = new THREE.InstancedBufferAttribute(new Float32Array(v), v.length); g.setAttribute(n, at); return at; };
-  const paint = a('iPaint', [0.6, 0.6, 0.6]), sun = a('iSun', [1]), lit = a('iLit', [0]);
+  const paint = a('iPaint', [0.6, 0.6, 0.6]), sun = a('iSun', [1]), lit = a('iLit', [0]), ground = a('iGround', [0.2, 0.19, 0.18]);
   a('iSeed', [Math.random()]); a('iHull', [0.95]);
   m.setMatrixAt(0, new THREE.Matrix4());
   m.frustumCulled = false;
@@ -734,6 +748,8 @@ export function singleHull(geo, uT) {
     sun.setX(0, sunV); sun.needsUpdate = true;
     lit.setX(0, on ? 1 : 0); lit.needsUpdate = true;
   };
+  // Linear RGB of the ground it stands on (for GROUND parts).
+  m.userData.ground = (c) => { ground.setXYZ(0, c[0], c[1], c[2]); ground.needsUpdate = true; };
   return m;
 }
 let singleMat = null;
