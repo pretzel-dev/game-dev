@@ -1,3 +1,6 @@
+import '@fontsource/rajdhani/latin-500.css';
+import '@fontsource/rajdhani/latin-600.css';
+import '@fontsource/rajdhani/latin-700.css';
 import { icon, iconBody } from './icons.js';
 import { createGame, step, launch, plan, regrav, tankOf, fleetState, rng, NEUTRAL, RULES, slotsOf, cantBuild, buildStructure, cantOrderShip, orderShip, income, upgrade, cantUpgrade, upgradeCost, upgradeTime, coverOf, coverFrom, TECH, nextTech, research, cantResearch, researchSpeed, projectSpeed, upkeepOf, crewCap, crewUsed, crewAt, techText, eventText, visibility, demolish, cantDemolish, demolishFee, cancelShip, yardsOf, vetLevel, incomeOf, launchProbe, cantProbe, readyShips, restingShips, SYSTEMS, SYSTEM_KEYS, RANDOM_KEYS, dailySeed, PERKS, perkRange, bureauReach, scaleOf, EVENTS, staysFor, posAt, dist, JOINTS, BRANCH_RING, techTitle, PROJECTS, cantProject, startProject, DARK, SPY, cantSpy, plantSpy, catchRate, setDark, fortressGuns, depotBoost, incomeParts, buildSpeed, shipTime } from './sim.js';
 import { createAI, tickAI } from './ai.js';
@@ -30,7 +33,7 @@ window.addEventListener('pointercancel', () => { clearTimeout(flushTimer); flush
 window.addEventListener('click', () => { clearTimeout(flushTimer); setTimeout(flushHeld, 0); });
 
 const prefs = (() => {
-  const d = { rivals: 1, difficulty: 'normal', system: 'random', pct: 100, dev: false, gfx: 'auto' };
+  const d = { rivals: 1, difficulty: 'normal', system: 'random', pct: 100, dev: false, gfx: 'auto', ui: 1 };
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion') || '{}') }; } catch { return d; }
 })();
 const savePrefs = () => { try { localStorage.setItem('perihelion', JSON.stringify(prefs)); } catch { /* ignore */ } };
@@ -423,6 +426,19 @@ $('gfxtoggle').addEventListener('click', () => {
   view.setQuality(gfxLevel());
   syncGfx();
 });
+// Interface size: Auto already grows on big screens; this scales it further.
+const UI_SIZES = [[1, 'Standard'], [1.2, 'Large'], [1.4, 'Larger']];
+$('uitoggle').addEventListener('click', () => {
+  const i = UI_SIZES.findIndex(([v]) => v === prefs.ui);
+  prefs.ui = UI_SIZES[(i + 1) % UI_SIZES.length][0];
+  savePrefs();
+  syncUi();
+});
+function syncUi() {
+  document.documentElement.style.setProperty('--ui-mult', prefs.ui);
+  $('uitoggle').textContent = `Text size: ${(UI_SIZES.find(([v]) => v === prefs.ui) || UI_SIZES[0])[1]}`;
+}
+syncUi();
 function syncGfx() { $('gfxtoggle').textContent = `Graphics ${prefs.gfx === 'auto' ? `auto (${gfxLevel()})` : prefs.gfx}`; }
 syncGfx();
 function syncDev() { $('devtoggle').textContent = `Dev view ${prefs.dev ? 'on' : 'off'}`; $('devbar').hidden = !prefs.dev || net !== null || !game; }
@@ -1684,7 +1700,7 @@ function reportImage() {
   c.width = W; c.height = H;
   const g = c.getContext('2d');
   const players = Array.from({ length: game.players }, (_, i) => i);
-  const font = (w, px) => `${w} ${px}px Rajdhani, system-ui, sans-serif`;
+  const font = (w, px) => `${w} ${px}px Rajdhani, 'Segoe UI', system-ui, sans-serif`;
   g.fillStyle = '#03040a'; g.fillRect(0, 0, W, H);
   g.strokeStyle = 'rgba(120,190,255,0.25)'; g.lineWidth = 2; g.strokeRect(24, 24, W - 48, H - 48);
   g.textAlign = 'center';
@@ -1741,6 +1757,7 @@ function reportImage() {
   return c;
 }
 async function shareReport() {
+  try { await document.fonts.load('700 30px Rajdhani'); await document.fonts.load('500 30px Rajdhani'); } catch { /* draw with the fallback */ }
   const blob = await new Promise((r) => reportImage().toBlob(r, 'image/png'));
   const file = new File([blob], 'perihelion-report.png', { type: 'image/png' });
   try {
