@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE } from './ships.js';
+import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE, SOLAR } from './ships.js';
+import { SHADOW_LAYER } from './shadow.js';
 
 /**
  * Megaprojects: one great structure per world, from the same parts kit as
@@ -32,28 +33,43 @@ export function megaMesh(key, b, uT, ghostMat) {
 
   if (key === 'sundiver') {
     // Local +z points at the sun (the view turns the group each frame).
+    // I: the framework, a great ring of truss with its spokes, and the
+    // receiving station behind it. II: the collector field, hexagonal
+    // panels filling the ring. III: the receiver dish, the heat-shielded
+    // divers far sunward beaming power home, and the lights.
     faceSun = true;
-    const z0 = R * 1.6;
-    // Station core with big radiators (it runs hot), behind the dish.
-    A.cyl(M * 0.16, M * 0.16, M * 0.7, z0 - M * 0.3, HULL, 16);
-    A.cyl(M * 0.17, M * 0.17, M * 0.12, z0 - M * 0.3, PAINT, 16);
-    for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) A.radiator(Math.cos(a) * M * 0.16, Math.sin(a) * M * 0.16, z0 - M * 0.45, M * 0.7, M * 0.35, a, 3, M * 0.012);
-    A.light(0, 0, z0 - M * 0.7, STROBE, M * 0.04);
-    // The collector dish, facing the sun.
-    B.dish(M * 0.95, 0, 0, z0 + M * 0.05, [0, 0, 1]);
-    B.add(new THREE.TorusGeometry(M * 0.95, M * 0.03, 6, 48).translate(0, 0, z0 + M * 0.35), DARK, 0.7);
-    // Sun-divers: craft hiding behind conical heat shields, sunward.
+    const z0 = R * 1.6, Rf = M * 1.7;
+    A.add(new THREE.TorusGeometry(Rf, M * 0.04, 6, 64).translate(0, 0, z0), DARK, 0.8);
+    A.add(new THREE.TorusGeometry(Rf * 0.98, M * 0.02, 4, 64).translate(0, 0, z0 - M * 0.12), DARK, 0.7);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      A.strut(c * M * 0.2, sn * M * 0.2, z0 - M * 0.05, c * Rf, sn * Rf, z0, M * 0.025);
+      A.strut(c * Rf, sn * Rf, z0, c * Rf * 0.98, sn * Rf * 0.98, z0 - M * 0.12, M * 0.015);
+    }
+    A.cyl(M * 0.18, M * 0.18, M * 0.8, z0 - M * 0.5, HULL, 16);
+    A.cyl(M * 0.19, M * 0.19, M * 0.12, z0 - M * 0.4, PAINT, 16);
+    for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) A.radiator(Math.cos(a) * M * 0.18, Math.sin(a) * M * 0.18, z0 - M * 0.6, M * 0.8, M * 0.4, a, 3, M * 0.012);
+    // The collector field: hex tiles on a hex grid, inside the ring.
+    const hx = M * 0.21;
+    for (let q = -8; q <= 8; q++) for (let r = -8; r <= 8; r++) {
+      const x = hx * 1.5 * q, y = hx * Math.sqrt(3) * (r + q / 2);
+      const d = Math.hypot(x, y);
+      if (d > Rf * 0.93 || d < M * 0.45) continue;
+      B.add(new THREE.CylinderGeometry(hx * 0.95, hx * 0.95, M * 0.012, 6).rotateX(Math.PI / 2).translate(x, y, z0 + M * 0.02), SOLAR, 0.9 + ((q * 7 + r * 3) % 5) * 0.04);
+    }
+    C.dish(M * 0.45, 0, 0, z0 + M * 0.05, [0, 0, 1]);
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2 + 0.4;
-      const x = Math.cos(a) * M * 0.6, y = Math.sin(a) * M * 0.6, z = z0 + M * (1.3 + i * 0.25);
-      C.add(new THREE.CylinderGeometry(M * 0.01, M * 0.2, M * 0.16, 16).rotateX(Math.PI / 2).translate(x, y, z), HULL, 1.15); // shield
+      const x = Math.cos(a) * M * 0.6, y = Math.sin(a) * M * 0.6, z = z0 + M * (2.0 + i * 0.35);
+      C.add(new THREE.CylinderGeometry(M * 0.01, M * 0.22, M * 0.16, 16).rotateX(Math.PI / 2).translate(x, y, z), HULL, 1.15); // shield
       C.cyl(M * 0.05, M * 0.06, M * 0.22, z - M * 0.18, DARK, 10, x, y);
       C.box(M * 0.12, M * 0.02, M * 0.08, x, y, z - M * 0.22, PAINT);
     }
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; C.light(Math.cos(a) * Rf, Math.sin(a) * Rf, z0 + M * 0.05, i % 2 ? STROBE : NAV_G, M * 0.04); }
   } else if (key === 'massdriver') {
     // Built on the surface (local +y up), along local x, rising toward +x.
     surface = true;
-    const L = M * 3.2;
+    const L = M * 4.6;
     const ground = (x) => Math.sqrt(Math.max(0, R * R - x * x)) - R; // the world curves away under it
     const rail = (x) => M * 0.12 + ((x + L / 2) / L) * M * 0.75;
     const n = 12;
@@ -74,6 +90,11 @@ export function megaMesh(key, b, uT, ghostMat) {
     for (const z of [-0.32, 0.32]) C.radiator(fx, ground(fx) + M * 0.28, M * z, M * 0.4, M * 0.3, Math.PI / 2, 2, M * 0.012);
     C.box(M * 0.2, M * 0.07, M * 0.07, -L * 0.2, rail(-L * 0.2) + M * 0.06, 0, PAINT); // a capsule on the rail
     C.light(L / 2, rail(L / 2) + M * 0.06, 0, STROBE, M * 0.04);
+    // The muzzle: a launch cradle on a tower, and lights along the rail.
+    const mx = L / 2;
+    for (const sz of [-1, 1]) C.strut(mx, rail(mx), sz * M * 0.12, mx, ground(mx) - M * 0.02, sz * M * 0.25, M * 0.05);
+    C.add(new THREE.TorusGeometry(M * 0.16, M * 0.04, 6, 18).rotateY(Math.PI / 2).rotateZ(Math.atan2(M * 0.75, L)).translate(mx, rail(mx), 0), PAINT, 1);
+    for (let i = 1; i < 6; i++) { const x = -L / 2 + (L * i) / 6; C.light(x, rail(x) + M * 0.14, M * 0.1, i % 2 ? NAV_G : NAV_R, M * 0.03); }
   } else if (key === 'ringyard') {
     // A full truss ring round the giant (in its equatorial plane).
     const Rr = R * 1.45, w = M * 0.2;
@@ -108,6 +129,11 @@ export function megaMesh(key, b, uT, ghostMat) {
       const hull = new THREE.CylinderGeometry(M * 0.1, M * 0.1, M * 0.7, 10).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(Y, T)).translate(P.x, P.y, P.z);
       C.add(hull, i % 2 ? HULL : PAINT);
       C.strut(c * (Rr + w), 0, sn * (Rr + w), c * (Rr + M * 0.25), 0, sn * (Rr + M * 0.25), M * 0.05);
+      // A crane over each berth, and work lights.
+      const top = pt(0, -hr, hy + M * 0.25), arm = pt(hl * 0.6, 0, hy + M * 0.25);
+      C.strut(P.x, P.y + hy, P.z, top.x, top.y, top.z, M * 0.03);
+      C.strut(top.x, top.y, top.z, arm.x, arm.y, arm.z, M * 0.025, HULL, 0.9);
+      for (const a1 of [-hl, hl]) { const lp = pt(a1, hr, hy); C.light(lp.x, lp.y, lp.z, WINDOW, M * 0.035); }
     }
   } else if (key === 'citadel') {
     // Six armoured battle platforms in a ring round the world: hexagonal
@@ -131,6 +157,13 @@ export function megaMesh(key, b, uT, ghostMat) {
       K.radiator(x - c * P * 0.26, 0, z - s * P * 0.26, P * 0.22, P * 0.14, Math.PI / 2, 2, P * 0.01);
       K.light(x, -P * 0.1, z, NAV_R, P * 0.03);
     }
+    // Picket satellites on the ring between the platforms: sensors and point defence.
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + 0.3 + Math.PI / 12, c = Math.cos(a), s = Math.sin(a);
+      C.sphere(P * 0.04, c * Rr, P * 0.02, s * Rr, HULL, 1.05, 10);
+      C.box(P * 0.12, P * 0.01, P * 0.05, c * Rr, P * 0.02, s * Rr, SOLAR);
+      C.light(c * Rr, P * 0.07, s * Rr, NAV_R, P * 0.02);
+    }
   } else if (key === 'array') {
     // In orbit (local +y away from the world): a Y of trusses, a dish at each tip.
     place = orbitAt(R * 1.6, 0.9);
@@ -144,6 +177,10 @@ export function megaMesh(key, b, uT, ghostMat) {
       const K = i < 2 ? B : C;
       K.dish(M * 0.38, c * L, 0, s * L, [c * 0.25, 1, s * 0.25]);
       K.box(M * 0.12, M * 0.08, M * 0.12, c * L, -M * 0.06, s * L, HULL, 0.9);
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
+      for (const f of [0.45, 0.8]) C.dish(M * 0.14, c * M * 1.2 * f, M * 0.06, s * M * 1.2 * f, [c * 0.4, 1, s * 0.4]);
     }
     C.cyl(M * 0.03, M * 0.04, M * 0.2, -M * 0.35, HULL, 10); // laser link
     C.light(0, M * 0.2, 0, STROBE, M * 0.04);
@@ -159,7 +196,8 @@ export function megaMesh(key, b, uT, ghostMat) {
     const W = kit(14);
     W.hoop(M * 0.75, M * 0.12, M * 0.18, 40, 0, 4, M * 0.1, M * 0.012);
     spin = W;
-    for (let i = 0; i < 4; i++) C.box(M * 0.06, M * 0.06, M * 0.06, M * (1.1 + (i % 2) * 0.2), M * (0.3 - i * 0.2), M * 0.4, DARK, 0.7); // targets
+    for (let i = 0; i < 8; i++) C.box(M * 0.06, M * 0.06, M * 0.06, M * (1.1 + (i % 3) * 0.22), M * (0.5 - i * 0.14), M * (0.3 + (i % 2) * 0.25), DARK, 0.7); // the target range
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.7; C.tank(M * 0.04, M * 0.14, Math.cos(a) * M * 1.05, Math.sin(a) * M * 1.05, M * 0.15, HULL); C.light(Math.cos(a) * M * 1.05, Math.sin(a) * M * 1.05, M * 0.26, STROBE, M * 0.025); } // trainers out on exercise
     for (const [x, y] of [[0.12, 0.12], [-0.12, -0.12]]) { C.box(M * 0.05, M * 0.05, M * 0.3, M * x, M * y, -M * 0.85, HULL); C.box(M * 0.06, M * 0.02, M * 0.1, M * x, M * y, -M * 0.8, PAINT); }
     C.light(0, 0, M * 0.68, STROBE, M * 0.04);
   }
@@ -170,6 +208,7 @@ export function megaMesh(key, b, uT, ghostMat) {
     const geo = K.build(1, 7);
     geo.applyMatrix4(place);
     const solid = singleHull(geo, uT);
+    solid.computeBoundingSphere(); solid.frustumCulled = true; solid.layers.enable(SHADOW_LAYER);
     const ghost = new THREE.Mesh(geo, ghostMat);
     g.add(solid, ghost);
     out.push([solid, ghost]);
