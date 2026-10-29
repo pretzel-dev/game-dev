@@ -43,6 +43,12 @@ export function stationMesh(size, core, uT) {
     k.cyl(S * 0.27, S * 0.2, S * 0.1, -S * 0.27, HULL, 18);
     cylZ(S * 0.28, S * 0.14, S * 0.02, PAINT);
     for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 + 0.3; k.box(S * 0.03, S * 0.03, S * 0.06, Math.cos(a) * S * 0.272, Math.sin(a) * S * 0.272, -S * 0.12, WINDOW); }
+    // Ribs, a second deck of windows, utility modules on the hull and a
+    // pair of radiator wings off the drum.
+    for (const z of [-0.18, 0.12]) cylZ(S * 0.285, S * 0.025, S * z, DARK);
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; k.box(S * 0.022, S * 0.022, S * 0.04, Math.cos(a) * S * 0.272, Math.sin(a) * S * 0.272, S * 0.06, WINDOW); }
+    for (const a of [1.2, 2.9, 4.4]) k.box(S * 0.1, S * 0.08, S * 0.16, Math.cos(a) * S * 0.31, Math.sin(a) * S * 0.31, S * 0.0, DARK, 0.75);
+    for (const sx of [-1, 1]) k.radiator(sx * S * 0.27, 0, S * 0.0, S * 0.36, S * 0.2, sx > 0 ? 0.2 : Math.PI - 0.2, 2, S * 0.008);
   } else if (core === 1) {
     // Open radial docking hub: a small node and four open arms, each
     // ending in a docking node.
@@ -60,7 +66,12 @@ export function stationMesh(size, core, uT) {
       }
       k.pipe(ux * r0, uy * r0, 0, ux * r1, uy * r1, 0, S * 0.025, HULL); // pressurised tunnel
       k.sphere(S * 0.075, ux * S * 0.72, uy * S * 0.72, 0, HULL, 1, 12);
+      // A pressurised module across each arm's end, lit.
+      k.cyl(S * 0.07, S * 0.07, S * 0.26, 0, HULL, 12, ux * S * 0.6, uy * S * 0.6);
+      for (const e of [-1, 1]) k.box(S * 0.02, S * 0.02, S * 0.05, ux * S * 0.6 + vx * S * 0.07, uy * S * 0.6 + vy * S * 0.07, e * S * 0.06, WINDOW);
     }
+    // Propellant on the hub.
+    for (const sx of [-1, 1]) k.strapped(S * 0.06, S * 0.18, sx * S * 0.13, sx * S * 0.13, -S * 0.3, sx > 0);
   } else {
     // Long modular spine: cans of different sizes and ages along a spine.
     cylZ(S * 0.07, S * 1.2, -S * 0.15, DARK, 10);
@@ -69,6 +80,12 @@ export function stationMesh(size, core, uT) {
       for (const e of [-0.5, 0.5]) k.cyl(S * rad * 1.04, S * rad * 1.04, S * 0.02, S * (z + e * len), DARK, 16, S * x, S * y);
     }
     cylZ(S * 0.205, S * 0.1, 0, PAINT);
+    // A cargo rack round the fore spine: frames of containers.
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4, x = Math.cos(a) * S * 0.12, y = Math.sin(a) * S * 0.12;
+      k.frame(S * 0.1, S * 0.1, S * 0.3, x, y, S * 0.58, S * 0.008);
+      for (let j = 0; j < 3; j++) if ((i + j) % 4 !== 3) k.box(S * 0.085, S * 0.085, S * 0.085, x, y, S * (0.48 + j * 0.1), (i + j) % 3 === 0 ? PAINT : HULL, 0.8 + r() * 0.3);
+    }
   }
   cylZ(S * 0.1, S * 0.12, S * 0.42, DARK, 12); // forward hard point (where a yard attaches)
   k.greeble(S * 0.36, S * 0.36, S * 0.5, 0, 0, 0, 6);
@@ -90,7 +107,7 @@ export function stationMesh(size, core, uT) {
   k.light(0, 0, S * 0.49, STROBE, S * 0.05);
   k.light(S * 0.2, 0, -S * 0.1, NAV_G, S * 0.04); k.light(-S * 0.2, 0, -S * 0.1, NAV_R, S * 0.04);
   void r;
-  const mesh = singleHull(k.build(1, uvD(S)), uT);
+  const mesh = cull(singleHull(k.build(1, uvD(S)), uT));
   mesh.userData.spin = 0.015; // a slow drift: nothing in zero g needs to hold still
   const base = mesh.userData.set;
   const st = { S, uT, parts: [], wip: [], last: ['#6a7080', 1, false] };
@@ -104,6 +121,8 @@ export function stationMesh(size, core, uT) {
 }
 
 const uvD = (S) => 7 / Math.max(S * 2.5, 1);
+/** Let the renderer skip it when it's off screen (singleHull turns that off). */
+const cull = (m) => { m.computeBoundingSphere(); m.frustumCulled = true; return m; };
 
 /**
  * Show what's built on a station: `mods` is [{ type, level, done }]. Old
@@ -127,7 +146,7 @@ export function setStationModules(mesh, mods, ghost) {
     else if (mod.type === 'habitat') ring = habitat(k, S, mod.level, mod.done);
     else continue;
     const geo = k.build(1, uvD(S));
-    const part = mod.done || !ghost ? singleHull(geo, st.uT) : new THREE.Mesh(geo, ghost);
+    const part = mod.done || !ghost ? cull(singleHull(geo, st.uT)) : new THREE.Mesh(geo, ghost);
     mesh.add(part);
     st.parts.push(part);
     if (ring && part.userData.set) {

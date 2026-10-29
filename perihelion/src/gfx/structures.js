@@ -51,8 +51,7 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
       for (const sz of [-1, 1]) K.box(t, Hh * 2, t, x, 0, sz * Wd, DARK);
       if (i < 7) for (const sz of [-1, 1]) K.strut(x, -Hh, sz * Wd, x + L / 7, Hh, sz * Wd, t * 0.7);
     }
-    K.box(L * 0.18, t * 2.2, Wd * 2.1, L * 0.41, Hh, 0, PAINT); // yard markings on the end beams
-    K.box(L * 0.18, t * 2.2, Wd * 2.1, -L * 0.41, -Hh, 0, PAINT);
+    for (const e of [-1, 1]) K.box(L * 0.03, t * 1.4, Wd * 2.02, e * L * 0.47, e * Hh, 0, PAINT); // yard markings on the end beams
     // Gantry riding the top rails, its arm reaching in.
     K.box(c * 0.35, c * 0.25, Wd * 2.3, c * 0.8, Hh + c * 0.18, 0, HULL);
     K.box(c * 0.2, c * 0.2, c * 0.3, c * 0.8, Hh, c * 0.3, DARK);
@@ -67,6 +66,27 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     K.radiator(hx, -c * 0.6, 0, c * 1.6, c * 0.9, -Math.PI / 2, 3, c * 0.04);
     K.dish(c * 0.45, hx - c * 0.5, 0, c * 0.9, [-0.4, 0.3, 1]);
     K.light(L / 2, Hh, Wd, NAV_G, c * 0.12); K.light(L / 2, -Hh, -Wd, NAV_R, c * 0.12); K.light(hx, c * 0.7, 0, STROBE, c * 0.14);
+    // Robot arms on the side rails, reaching in to the work: shoulder, upper
+    // arm, elbow, forearm, a tool head.
+    for (const [ax, sz] of [[-0.18, 1], [0.12, -1], [0.3, 1]]) {
+      const x0 = L * ax, z0 = sz * Wd;
+      K.box(c * 0.16, c * 0.12, c * 0.16, x0, Hh * 0.2, z0, DARK, 0.8);
+      const [ex, ey, ez] = K.boom(x0, Hh * 0.2, z0, [0.3, 0.5, -sz * 0.8], c * 0.55, c * 0.07, HULL, 0.9);
+      K.sphere(c * 0.06, ex, ey, ez, DARK, 0.7, 8);
+      const [tx, ty, tz] = K.boom(ex, ey, ez, [0.2, -0.7, -sz * 0.6], c * 0.45, c * 0.05, HULL, 0.85);
+      K.box(c * 0.08, c * 0.08, c * 0.08, tx, ty, tz, DARK, 0.6);
+      K.light(tx, ty - c * 0.05, tz, WINDOW, c * 0.035);
+    }
+    // Floodlights on the cradle's corners.
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) K.light(sx * L * 0.48, Hh + t, sz * Wd, WINDOW, c * 0.05);
+    // The crew's quarters across the hub, a supply depot of tanks on its
+    // truss, and a tug parked alongside.
+    K.add(new THREE.CylinderGeometry(c * 0.32, c * 0.32, c * 1.6, 14).translate(hx, 0, 0), HULL, 0.95);
+    for (let i = 0; i < 5; i++) K.box(c * 0.05, c * 0.14, c * 0.05, hx + c * 0.32, (i - 2) * c * 0.28, 0, WINDOW);
+    K.truss(hx - c * 0.2, -c * 0.9, -c * 0.4, c * 2.6, c * 0.35, 4, c * 0.04);
+    for (let i = 0; i < 4; i++) K.strapped(c * 0.22, c * 0.55, hx - c * 0.2 + ((i % 2) ? 0.3 : -0.3) * c, -c * 0.9, c * (0.4 + Math.floor(i / 2) * 1.1), i === 0);
+    K.tank(c * 0.16, c * 0.6, hx + c * 1.4, c * 0.9, c * 1.2, HULL);
+    K.box(c * 0.3, c * 0.2, c * 0.25, hx + c * 1.4, c * 0.9, c * 1.75, DARK, 0.7);
     // The hull in the cradle: shown only while a ship is being built.
     // In three stages, shown as the build progresses: frame, plating, drive.
     const W = kit(b.id * 7 + 3), W1 = kit(b.id * 7 + 4), W2 = kit(b.id * 7 + 5);
@@ -96,6 +116,9 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
       K.strapped(c * 0.16, c * 0.5, x - c * 0.25, y - c * 0.28, 0, false);
       for (const sx of [-1, 1]) K.strut(x + sx * c * 0.5, y + c * 0.15, 0, x + sx * c * 0.8, y + c * 0.55, 0, c * 0.05);
       K.light(x, y - c * 0.2, c * 0.25, STROBE, c * 0.1);
+      // Grilles in the intake, and the collector's cable up to the platform.
+      for (let j = 0; j < 3; j++) K.add(new THREE.TorusGeometry(c * (0.42 - j * 0.07), c * 0.02, 3, 14).rotateY(Math.PI / 2).translate(x + c * (1.35 - j * 0.12), y - c * 0.05, 0), DARK, 0.6);
+      K.strut(x, y + c * 1.85, 0, x * 0.2, c * 5.5 - c * 0.45, 0, c * 0.03, DARK, 0.8);
     }
     // Orbital platform: a spine with tank clusters, radiators and a dock.
     const py = c * 5.5, len = c * (3 + level * 1.8);
@@ -110,6 +133,12 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     // A transfer craft between the collectors and the platform.
     K.tank(c * 0.18, c * 0.5, c * 1.4, py * 0.55, 0, HULL);
     K.light(0, py + c * 0.5, len / 2 + c * 0.9, NAV_G, c * 0.12);
+    // The crew can on the platform, and a tanker at the dock taking on fuel.
+    K.add(new THREE.CylinderGeometry(c * 0.3, c * 0.3, c * 1.2, 14).rotateZ(Math.PI / 2).translate(0, py + c * 0.65, -len * 0.3), HULL);
+    for (let i = 0; i < 6; i++) K.box(c * 0.08, c * 0.05, c * 0.02, (i - 2.5) * c * 0.18, py + c * 0.65, -len * 0.3 + c * 0.3, WINDOW);
+    K.tank(c * 0.28, c * 1.2, 0, py, len / 2 + c * 1.9, HULL);
+    K.add(new THREE.CylinderGeometry(c * 0.3, c * 0.3, c * 0.35, 12, 1, true).rotateX(Math.PI / 2).translate(0, py, len / 2 + c * 1.9), PAINT);
+    K.add(new THREE.CylinderGeometry(c * 0.12, c * 0.22, c * 0.3, 12, 1, true).rotateX(Math.PI / 2).translate(0, py, len / 2 + c * 2.9), DARK, 0.6);
   }
   void r;
   const mk = (geo) => {
@@ -122,10 +151,8 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
       m.userData.paint = color;
       if (site) m.userData.ground(site.ground);
     }
-    if (site) {
-      m.scale.setScalar(siteR);
-      if (m.isInstancedMesh) { m.computeBoundingSphere(); m.frustumCulled = true; }
-    }
+    if (site) m.scale.setScalar(siteR);
+    if (m.isInstancedMesh) { m.computeBoundingSphere(); m.frustumCulled = true; } // (singleHull turns culling off)
     return m;
   };
   const g = new THREE.Group();
@@ -182,7 +209,15 @@ export function structureMesh(type, b, k, done, level, uT, ghost, color, env = n
     g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), site.n);
     return g;
   }
-  g.add(mk(K.build(1)));
+  // In orbit: a near version and a far one (without the parts too small to
+  // see from there), as for sites.
+  const fine = K.build(1, 7, 0.006);
+  const coarse = fine.userData.coarse;
+  delete fine.userData.coarse;
+  const mf = mk(fine), mc = mk(coarse);
+  mc.visible = false;
+  g.add(mf, mc);
+  g.userData.lod = { fine: mf, coarse: mc, r: type === 'shipyard' ? 0.35 : F * 0.22 * 6, extra: [] };
   for (const [X, role, at] of extra) {
     if (role === 'wip' && !done) continue;
     const m = mk(X.build(1));
