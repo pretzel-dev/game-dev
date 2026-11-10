@@ -45,10 +45,15 @@ await page.tap('[data-a="clear"]');
 await page.evaluate(() => { window.__perihelion.game.credits[0] = 3000; });
 p = await P();
 await page.touchscreen.tap(p.home.x, p.home.y);
+await page.waitForTimeout(300);
+// (A station or moon may sit right over the capital on screen: make sure it is the capital that is selected.)
+await page.evaluate(() => { const { game, ui } = window.__perihelion; if (ui.selBody !== game.homes[0].id) { ui.sel = new Set(); ui.selBody = game.homes[0].id; } });
 await page.waitForSelector('[data-a="slot"]');
 await page.tap('[data-a="slot"]');
 await page.tap('[data-a="build"][data-v="mine"]');
+await page.waitForTimeout(500);
 await page.tap('[data-a="ship"][data-v="corvette"]');
+await page.waitForTimeout(300);
 await page.tap('#rnd');
 await page.tap('[data-a="research"][data-v="weapons"]');
 await page.waitForTimeout(500);

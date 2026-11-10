@@ -139,12 +139,14 @@ function think(game, ai) {
   const idle = (s) => !s.order || (s.order.type === 'orbit' && s.at === null && false);
   const myStr = (list) => list.reduce((v, s) => v + strength(s), 0);
   if (threat && will()) {
-    const near = line.filter((s) => dist2(s, threat.k) < 160 && !(s.order && s.order.type === 'attack') && !(s.at !== null && game.bodies[s.at].owner !== o) && !(s.order && s.order.body === ai.siege));
+    // Send a detachment big enough for the job (the nearest ships), not the whole fleet.
     const T = game.ships.find((s) => s.id === threat.id);
-    if (T && near.length && (myStr(near) >= threatStr * 0.8 || threat.b.home)) {
-      setOrder(game, o, near.map((s) => s.id), { type: 'attack', ship: T.id, mode: 'match', d0: 5, profile: 'hard' });
-      return;
-    }
+    const cand = line.filter((s) => dist2(s, threat.k) < 160 && !(s.order && s.order.type === 'attack') && !(s.at !== null && game.bodies[s.at].owner !== o) && !(s.order && s.order.body === ai.siege))
+      .sort((x, y) => dist2(x, threat.k) - dist2(y, threat.k));
+    const det = [];
+    let v = 0;
+    for (const s of cand) { if (v >= threatStr * 1.5 + 0.5) break; det.push(s); v += strength(s); }
+    if (T && det.length && (v >= threatStr * 0.8 || threat.b.home)) setOrder(game, o, det.map((s) => s.id), { type: 'attack', ship: T.id, mode: 'match', d0: 5, profile: 'hard' });
   }
 
   // The main group: the biggest stack sitting idle together in one orbit.
@@ -192,9 +194,10 @@ function think(game, ai) {
     // Against another navy, go in strength: most of the line together, and not while badly outnumbered.
     if (enemy && str < enemyStr(b.owner) * 0.7 * push) continue;
     if (b.home && enemy) {
-      const need = (b.bhp / 100 + Math.max(2, enemyStr(b.owner))) * margin;
+      const ahead = mine.length >= 2 * worldsOf(game, b.owner).length && t > 600;
+      const need = (b.bhp / 100 + Math.max(2, enemyStr(b.owner))) * margin * (ahead ? 0.6 : 1);
       if (str < need) continue;
-      const v = 50 / (1 + dist2(p, here) / 200);
+      const v = (ahead ? 500 : 50) / (1 + dist2(p, here) / 200);
       if (v > bestV) { bestV = v; best = b; }
       continue;
     }

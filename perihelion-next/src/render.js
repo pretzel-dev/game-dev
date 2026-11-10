@@ -620,8 +620,8 @@ export function createView(canvas, plot, opts = {}) {
         // Velocity: a tick along the direction of travel, longer when faster.
         const sp2 = Math.hypot(s.vx, s.vy, s.vz);
         if (sp2 > 0.05 && ppu) {
-          const q3 = proj(s.x + s.vx * 6, s.y + s.vy * 6, s.z + s.vz * 6);
-          if (q3.ok) { ctx.strokeStyle = c; ctx.globalAlpha = 0.45; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(q3.x, q3.y); ctx.stroke(); ctx.globalAlpha = 1; }
+          const q3 = proj(s.x + s.vx * 3.5, s.y + s.vy * 3.5, s.z + s.vz * 3.5);
+          if (q3.ok) { ctx.strokeStyle = c; ctx.globalAlpha = 0.4; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(q3.x, q3.y); ctx.stroke(); ctx.globalAlpha = 1; }
         }
       }
       if (picked || aimed) {

@@ -143,7 +143,12 @@ function refreshRoutes() {
 }
 function tap(x, y, double) {
   if (!live()) return;
-  const hit = view.pick(x, y);
+  let hit = view.pick(x, y);
+  // With ships selected, a tap on a world means "go there" even if one of your own ships is drawn over it.
+  if (hit && hit.ship != null && ui.sel.size) {
+    const s = S.shipById(game, hit.ship), w = view.pick(x, y, false);
+    if (s && mine(s) && w && !selShips().every((k) => k.at === w.body)) hit = w;
+  }
   if (hit && hit.ship != null) {
     const s = S.shipById(game, hit.ship);
     if (!s) return;
@@ -180,6 +185,12 @@ function stripHTML() {
     const one = ships.length === 1 ? ships[0] : null;
     let h = `<div class="head"><b>${one ? esc(one.name) : `${ships.length} ships`}</b><small>${one ? CLASSES[one.cls].name : ''}</small><button class="x" data-a="clear">${icon('close')}</button></div>`;
     h += `<div class="row">${ships.map((s) => chip(s)).join('')}</div>`;
+    const lead = ships.find((s) => s.order && s.at === null);
+    if (lead && ui.target == null && ui.targetShip == null) {
+      const o = lead.order;
+      const to = o.body != null ? game.bodies[o.body].name : o.type === 'attack' ? (S.shipById(game, o.ship)?.name || 'contact') : '';
+      h += `<div class="sub">${icon(o.type === 'burn' ? 'plot' : o.type === 'orbit' ? (o.via != null && !o.done ? 'sling' : o.profile) : 'strike')} ${esc(to)}${o.type !== 'burn' && lead.tau ? `<span class="num">${mmss(Math.ceil(lead.tau / 5) * 5)}</span>` : ''}</div>`;
+    }
     if (ui.target != null) {
       const b = game.bodies[ui.target];
       const tank = Math.min(...ships.map((s) => s.dv));
@@ -406,12 +417,17 @@ function refreshUI() {
   $('warp').hidden = mode !== 'solo';
   $('pause').innerHTML = icon(paused ? 'play' : 'pause');
   $('pause').hidden = mode === 'guest';
+  for (const b of game.bodies) {
+    if (b.owner === me && b.yt > 1 && !b.warnedYield) { b.warnedYield = true; notice('captured', HOSTILE, b.name, () => view.focus(game, b.id, false)); sfx('alarm'); }
+    else if (b.yt <= 0) b.warnedYield = false;
+  }
   const sh = stripHTML();
   $('strip').hidden = !sh || !$('sheet').hidden;
   setHTML($('strip'), sh);
   if (!$('sheet').hidden) setHTML($('sheet'), sheetHTML());
   if (scn) setHTML($('brief'), briefHTML());
 }
+$('brief').onclick = () => { ui.briefShut = !ui.briefShut; refreshUI(); };
 $('rnd').onclick = () => { $('sheet').hidden = !$('sheet').hidden; sfx($('sheet').hidden ? 'close' : 'open'); refreshUI(); };
 $('sys').onclick = () => { view.orbit.follow = null; view.orbit.ship = null; view.orbit.target.set(0, 0, 0); view.orbit.goalDist = view.orbit.maxDist * 0.3; sfx('tap'); };
 $('warp').onclick = () => { warp = warp >= 8 ? 1 : warp * 2; sfx('tap'); refreshUI(); };
@@ -421,7 +437,7 @@ $('menuBtn').onclick = () => pauseMenu();
 // ---- Scenario briefing ------------------------------------------------------------------
 function briefHTML() {
   const st = scn.state(game, me);
-  return `<b>${esc(scn.name)}${st.clock != null ? `<span class="t">${mmss(Math.max(0, st.clock))}</span>` : ''}</b>${esc(st.text)}`;
+  return `<b>${esc(scn.name)}${st.clock != null ? `<span class="t">${mmss(Math.max(0, st.clock))}</span>` : ''}</b>${ui.briefShut ? '' : esc(st.text)}`;
 }
 
 // ---- Menus --------------------------------------------------------------------------------
@@ -434,7 +450,7 @@ const seg = (a, list, cur, lab = (x) => x) => `<div class="seg">${list.map((x) =
 
 function titleNav() {
   const day = S.dailySeed().key.slice(5);
-  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="scenarios">Scenarios</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
+  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="scenarios">Scenarios${prefs.done.first ? '' : '<small>start here</small>'}</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
   $('fine').innerHTML = `<button data-a="sound">Sound ${prefs.sound ? 'on' : 'off'}</button><button data-a="text">Text ${prefs.ui === 1 ? 'standard' : prefs.ui > 1 ? 'large' : 'small'}</button><button data-a="gfx">Graphics ${prefs.gfx}</button>`;
 }
 function setupPanel(daily = false) {
@@ -485,6 +501,7 @@ function manualPanel() {
     ${k('plot', '<b>Plot a burn</b> by hand: drag from the ship; the dashed line shows where she will coast.')}
     ${k('bolt', 'Hits knock out <b>systems</b> (drive, reactor, weapons, sensors). Crews repair them in time; a badly hurt ship needs a yard or a tender.')}
     ${k('freight', '<b>Freighters</b> carry each world\'s earnings home. Raid the enemy\'s, guard your own. A ship in orbit of a world blockades it.')}
+    ${k('yard', '<b>Yard</b>: builds, repairs and rearms ships. <b>Mine</b> and <b>refinery</b> (gas giants) raise a world\'s earnings; a refinery also refuels quickly. <b>Battery</b>: guns and point defence on the ground.')}
     ${k('battery', 'Silence a world\'s <b>battery</b>, clear its defenders, and it yields to whoever holds the orbit.')}
     <p>Mouse: drag to pan, right-drag to turn, wheel to zoom. Keys: Space pause, 1 to 4 speed, H system, R research, Esc back.</p></div>`);
 }

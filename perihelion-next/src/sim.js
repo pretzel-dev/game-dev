@@ -59,7 +59,7 @@ export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
   concord: { name: 'Meridian Concord', short: 'Concord', text: 'The old inner-worlds navy: heavy plate, deep magazines, slow to turn.', hull: 1.4, armour: 4, cost: 1.05, accel: 0.95, start: ['frigate', 'escort', 'corvette'] },
-  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Outer-system torch ships: fast drives and hard-hitting rails, thin skins.', accel: 1.2, rail: 1.3, hull: 0.95, dv: 1.1, start: ['frigate', 'corvette', 'corvette'] },
+  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Outer-system torch ships: fast drives and hard-hitting rails, thin skins.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'corvette', 'corvette'] },
   holds: { name: 'Lantern Holds', short: 'Holds', text: 'Belt freeholders: cheap hulls that run cold and are hard to find.', cost: 0.9, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, start: ['frigate', 'frigate', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);

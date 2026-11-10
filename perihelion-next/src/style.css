@@ -84,6 +84,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .chip .dots i.out { background: var(--hostile); }
 .sub { color: var(--dim); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; display: flex; gap: 0.6rem; align-items: center; }
 .sub .ic { width: 0.85rem; height: 0.85rem; }
+.sub .num { margin-left: auto; color: var(--ink); }
 .hint { color: var(--amber); font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; }
 
 /* ---- Sheets (research) -------------------------------------------------------- */
