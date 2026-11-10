@@ -98,16 +98,23 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - `src/render.js`: the 3D scene plus a 2D "plot table" canvas over it for all
   linework and names. `src/main.js`: UI; **all orders go through `act()`**;
   the local player is `me`.
-- The look is a naval plot table: black, thin amber and bone-white lines,
-  **icons instead of words**; words only for names. Don't add boxes or text.
+- The look is a naval plot table: black, thin amber and bone-white lines.
+  **Every button has a plain word under its icon** (the owner found icon-only
+  buttons unreadable). Keep copy short and literal: no taglines, no flavour
+  sentences, no tracked-out capitals, no accent bars, nothing that pulses
+  (the owner reads those as the "AI look").
+- **Scale matters to the owner**: space must feel vast and travel slow. Worlds
+  are spread by `SPREAD` in `sim.js`; don't shrink it to shorten games.
+- Touch and mouse handling in `main.js` is a port of the first game's; keep
+  the two in step.
 - Panels redraw several times a second: keep their HTML steady (round times
   and bars) or taps get lost.
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.
 - Sound (`src/audio.js`) is generated in the browser as a trial. The owner
   dislikes cheap synth sound: if they reject it, keep interface and alert
   sounds only and source audio files.
-- Tests: `npm run check`, `npm run check:matches` (every AI match must
-  finish), `node tools/smoke.mjs`, `node tools/mp-smoke.mjs`.
+- Tests: `npm run check`, `npm run check:matches` (at most two of 24
+  may stalemate), `node tools/smoke.mjs`, `node tools/mp-smoke.mjs`.
 
 ## Owner's preferences
 

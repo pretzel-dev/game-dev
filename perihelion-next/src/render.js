@@ -32,7 +32,7 @@ export function playerColors(game) {
 }
 
 const SUN_RADIUS = 6;
-const SHIP_SCALE = 0.55;
+const SHIP_SCALE = 0.4;
 const MAX_SHIPS = 160;
 const UP = new THREE.Vector3(0, 1, 0);
 const CLASS_SCALE = { corvette: 0.6, frigate: 1, escort: 0.95, battleship: 1.7, tender: 1.2, freighter: 1.3 };
@@ -225,7 +225,7 @@ export function createView(canvas, plot, opts = {}) {
       v.occ = fam.slice(0, 4).map((x) => x.id);
     }
     const outer = Math.max(...game.bodies.filter((b) => b.kind === 'planet').map((b) => b.r));
-    orbit.maxDist = outer * 5;
+    orbit.maxDist = outer * 4;
     farClip = outer * 30;
   }
 
@@ -448,8 +448,8 @@ export function createView(canvas, plot, opts = {}) {
     // ---- Effects from the sim (shots, hits, explosions) ----
     const inSight = (x, y, z) => {
       if (ui.dev) return true;
-      for (const s of game.ships) if (s.owner === me && Math.hypot(s.x - x, s.y - y, s.z - z) < 70) return true;
-      for (const b of game.bodies) if (b.owner === me) { const p = bodyPos[b.id]; if (Math.hypot(p.x - x, p.y - y, p.z - z) < 80) return true; }
+      for (const s of game.ships) if (s.owner === me && Math.hypot(s.x - x, s.y - y, s.z - z) < 140) return true;
+      for (const b of game.bodies) if (b.owner === me) { const p = bodyPos[b.id]; if (Math.hypot(p.x - x, p.y - y, p.z - z) < 160) return true; }
       return false;
     };
     const sound = (type, x, y, z, gain = 1) => {
@@ -494,7 +494,7 @@ export function createView(canvas, plot, opts = {}) {
     // ---- The plot ----
     ctx.clearRect(0, 0, W, H);
     const sel = ui.sel || new Set();
-    const zoomedOut = orbit.dist > 60;
+    const zoomedOut = orbit.dist > 260;
 
     // Routes on offer for the chosen destination.
     if (ui.routes) {
@@ -546,7 +546,7 @@ export function createView(canvas, plot, opts = {}) {
       // Names: planets always; moons and the rest once there is room.
       const parent = b.parent !== null ? views[b.parent] : null;
       const crowded = parent && Math.hypot(parent.sx - v.sx, parent.sy - v.sy) < 46;
-      if (!crowded && !(b.kind === 'asteroid' && orbit.dist > 260) && !big) label(b.name, v.sx, v.sy + R + (b.yt > 0 ? 18 : 11), picked ? INK : b.owner === NEUTRAL ? DIM : c, picked ? 1 : 0.8, b.kind === 'planet' ? 10.5 : 9);
+      if (!crowded && !(b.kind === 'asteroid' && orbit.dist > 900) && !big) label(b.name, v.sx, v.sy + R + (b.yt > 0 ? 18 : 11), picked ? INK : b.owner === NEUTRAL ? DIM : c, picked ? 1 : 0.8, b.kind === 'planet' ? 10.5 : 9);
     }
 
     // ---- Ships ----
@@ -769,10 +769,39 @@ export function createView(canvas, plot, opts = {}) {
     if (id === null || !zoom) return;
     orbit.goalDist = Math.max(orbit.minDist, game.bodies[id].size * 9 + 6);
   }
+  /** The point a drag should turn around: the world under the cursor, else where the cursor meets the plane. */
+  function pivotAt(x, y) {
+    const h = pick(x, y, false);
+    if (h) return views[h.body].g.position.clone();
+    return groundAt(x, y) || orbit.target.clone();
+  }
+  /** Turn the view around a pivot (camera and look-at point both swing). */
+  function rotateAround(pivot, daz, dpol) {
+    release(); orbit.goalDist = null;
+    const off = new THREE.Vector3().subVectors(camera.position, orbit.target);
+    const sph = new THREE.Spherical().setFromVector3(off);
+    const pol = THREE.MathUtils.clamp(sph.phi + dpol, 0.15, Math.PI - 0.15);
+    dpol = pol - sph.phi;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    const q = new THREE.Quaternion().setFromAxisAngle(UP, daz).multiply(new THREE.Quaternion().setFromAxisAngle(right, dpol));
+    const cam = camera.position.clone().sub(pivot).applyQuaternion(q).add(pivot);
+    orbit.target.sub(pivot).applyQuaternion(q).add(pivot);
+    sph.setFromVector3(cam.clone().sub(orbit.target));
+    orbit.az = sph.theta; orbit.pol = sph.phi; orbit.dist = sph.radius;
+  }
   function followShip(id, zoom = false) { orbit.follow = null; orbit.ship = id; if (zoom) orbit.goalDist = 9; }
   const following = () => orbit.follow !== null || orbit.ship != null;
   function zoomBy(factor) { orbit.goalDist = null; orbit.dist = THREE.MathUtils.clamp(orbit.dist * factor, orbit.minDist, orbit.maxDist); }
-  function zoomToward(x, y, factor) { if (following()) zoomBy(factor); else zoomAt(x, y, factor); }
+  function zoomToward(x, y, factor) {
+    if (following()) { zoomBy(factor); return; }
+    const h = pick(x, y, false);
+    orbit.goalDist = null;
+    if (!h) { zoomAt(x, y, factor); return; }
+    const p = views[h.body].g.position;
+    const next = THREE.MathUtils.clamp(orbit.dist * factor, orbit.minDist, orbit.maxDist);
+    orbit.target.lerp(p, 1 - next / orbit.dist);
+    orbit.dist = next;
+  }
   function screenOf(id) { const v = views[id]; return { x: v.sx, y: v.sy }; }
   function screenOfShip(id) { return shipScreen.get(id) || null; }
   /** The point on the plane of the orbits under a screen position (for plotting burns by hand). */
@@ -800,5 +829,5 @@ export function createView(canvas, plot, opts = {}) {
     else if (avg < 1 / 57 && pixelRatio < max && t > holdUntil) { pixelRatio = Math.min(max, pixelRatio + 0.25); resize(); }
   }
 
-  return { _debug: { scene, renderer, camera }, build, render, resize, setQuality, pick, orbit, zoomAt, zoomBy, pan, focus, followShip, following, zoomToward, screenOf, screenOfShip, worldAt };
+  return { _debug: { scene, renderer, camera }, build, render, resize, setQuality, pick, orbit, zoomAt, zoomBy, pan, focus, followShip, following, zoomToward, screenOf, screenOfShip, worldAt, pivotAt, rotateAround };
 }

@@ -22,7 +22,7 @@ const farWorld = (game, from, owner = NEUTRAL) => game.bodies.filter((b) => b.ow
 export const SCENARIOS = {
   first: {
     name: 'First command',
-    text: 'Learn the helm: take a moon, build on it, and see off a raider.',
+    text: 'Tutorial',
     make() {
       const s = base(11);
       spawnShip(s.game, 0, 'frigate', s.home);
@@ -46,10 +46,10 @@ export const SCENARIOS = {
       if (c.step === 3 && !game.ships.some((s) => s.id === c.raider && s.owner === 1)) c.step = 4;
       if (!mine.length && c.step < 4) return { text: 'Your ships are lost.', done: 'lose' };
       const text = [
-        `Tap one of your ships over ${home.name}, then tap the moon ${moon.name} and choose a course. The amber bar under each choice is the fuel it costs.`,
-        `Hold the orbit over ${moon.name}. An undefended world yields to whoever keeps its orbit.`,
-        `${moon.name} is yours. Tap it, tap the empty slot and build a mine. Freighters will carry its earnings home.`,
-        'A raider is burning in: its drive shows across the whole system. Select your ships, tap the contact, then choose Pass (a fast firing run) or Match (close and fight).',
+        `Tap one of your ships, then tap the moon ${moon.name} and pick a course.`,
+        `Stay in orbit until ${moon.name} yields.`,
+        `Tap ${moon.name}, then Build, then Mine.`,
+        'A raider is coming. Select your ships, tap the raider, then Pass or Match.',
         'Well done.',
       ][c.step];
       return { text, done: c.step === 4 ? 'win' : null, why: 'First command' };
@@ -57,7 +57,7 @@ export const SCENARIOS = {
   },
   blockade: {
     name: 'Blockade run',
-    text: 'Your outpost is cut off. Get the tender into its orbit before the garrison starves.',
+    text: 'Get a tender past three warships',
     make() {
       const s = base(23, 'boreal', 'concord');
       const post = farWorld(s.game, s.home);
@@ -68,7 +68,7 @@ export const SCENARIOS = {
       spawnShip(s.game, 1, 'frigate', post);
       spawnShip(s.game, 1, 'frigate', post);
       spawnShip(s.game, 1, 'escort', post);
-      s.game.scn = { post: post.id, tender: t.id, limit: 420 };
+      s.game.scn = { post: post.id, tender: t.id, limit: 900 };
       return s;
     },
     state(game) {
@@ -77,12 +77,12 @@ export const SCENARIOS = {
       if (!t) return { text: 'The tender is lost.', done: 'lose', clock };
       if (t.at === post.id) return { text: 'The tender is in.', done: 'win', why: 'Blockade run', clock };
       if (clock <= 0 || post.owner !== 0) return { text: 'The outpost has fallen.', done: 'lose', clock: 0 };
-      return { text: `Get the tender ${t.name} into orbit of ${post.name}. Three warships sit over it: draw them off, slip in dark, or come round fast from behind the world.`, clock };
+      return { text: `Get the tender ${t.name} into orbit of ${post.name}.`, clock };
     },
   },
   hunt: {
     name: 'Raider hunt',
-    text: 'Something is taking your freighters. Find it and finish it.',
+    text: 'Find the ship taking your freighters',
     make() {
       const s = base(37, 'concord', 'holds');
       for (const b of s.game.bodies) if (b.kind === 'asteroid' || b.parent === s.home.id) give(b, 0);
@@ -91,7 +91,7 @@ export const SCENARIOS = {
       spawnShip(s.game, 0, 'corvette', s.home);
       const rock = s.game.bodies.find((b) => b.kind === 'asteroid');
       const r = spawnShip(s.game, 1, 'corvette', rock);
-      s.game.scn = { raider: r.id, limit: 480, lost: 0, seen: 0 };
+      s.game.scn = { raider: r.id, limit: 1200, lost: 0, seen: 0 };
       return s;
     },
     state(game) {
@@ -104,14 +104,14 @@ export const SCENARIOS = {
       if (!r.order && game.time > 20) {
         let prey = null, pd = 1e9;
         for (const f of game.ships) { if (f.owner !== 0 || !f.st.civil) continue; const d = Math.hypot(f.x - r.x, f.z - r.z); if (d < pd) { pd = d; prey = f; } }
-        if (prey) setOrder(game, 1, [r.id], { type: 'attack', ship: prey.id, mode: 'match', d0: 1.2, profile: pd > 60 ? 'cruise' : 'hard' });
+        if (prey) setOrder(game, 1, [r.id], { type: 'attack', ship: prey.id, mode: 'match', d0: 1.2, profile: pd > 200 ? 'cruise' : 'hard' });
       }
-      return { text: `A cold-running raider is boarding your freighters (${c.lost} of 3 lost). It only shows when it burns or comes close. Run it down.`, clock };
+      return { text: `Destroy the raider. Freighters lost: ${c.lost} of 3.`, clock };
     },
   },
   hold: {
     name: 'Hold until relief',
-    text: 'A strike group is burning for your yard moon. The battle line is four minutes out.',
+    text: 'Keep your moon for twelve minutes',
     make() {
       const s = base(51, 'concord', 'boreal');
       give(s.moon, 0, 1);
@@ -119,7 +119,7 @@ export const SCENARIOS = {
       spawnShip(s.game, 0, 'escort', s.moon);
       const ids = ['frigate', 'frigate', 'corvette', 'corvette'].map((cls) => spawnShip(s.game, 1, cls, s.foe).id);
       setOrder(s.game, 1, ids, { type: 'orbit', body: s.moon.id, profile: 'hard' });
-      s.game.scn = { moon: s.moon.id, limit: 300, foes: ids };
+      s.game.scn = { moon: s.moon.id, limit: 720, foes: ids };
       return s;
     },
     state(game) {
@@ -129,12 +129,12 @@ export const SCENARIOS = {
       for (const id of c.foes) { const f = shipById(game, id); if (f && !f.order && f.at !== moon.id) setOrder(game, 1, [id], { type: 'orbit', body: moon.id, profile: 'hard' }); }
       if (moon.owner !== 0) return { text: `${moon.name} has fallen.`, done: 'lose', clock: Math.max(0, clock) };
       if (clock <= 0) return { text: 'Relief has arrived.', done: 'win', why: 'Hold until relief', clock: 0 };
-      return { text: `Keep ${moon.name}. Its battery covers you in orbit; meet them at speed and you risk everything on one pass.`, clock };
+      return { text: `Keep ${moon.name} until the clock runs out.`, clock };
     },
   },
   convoy: {
     name: 'Convoy',
-    text: 'Three loaded freighters, two hunters. Bring at least two home.',
+    text: 'Bring two of three freighters home',
     make() {
       const s = base(64, 'boreal', 'holds');
       const from = farWorld(s.game, s.home);
@@ -163,7 +163,7 @@ export const SCENARIOS = {
       }
       if (c.home >= 2) return { text: 'The convoy is in.', done: 'win', why: 'Convoy' };
       if (c.home + left < 2) return { text: 'Too few got through.', done: 'lose' };
-      return { text: `Escort the freighters home (${c.home} in, ${left} still under way). Hunters are burning to cut them off: meet them before they reach the convoy.` };
+      return { text: `Freighters home: ${c.home}. Still under way: ${left}.` };
     },
   },
 };
