@@ -63,7 +63,8 @@ window.addEventListener('resize', () => view.resize());
 let game = null, ais = [], me = 0, mode = 'demo'; // demo | solo | host | guest
 let paused = false, warp = 1, room = null, scn = null, ended = false, netFx = [], lastSnap = 0, notesT = 0;
 const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, plotMode: false };
-const live = () => mode !== 'demo' && game && !ended;
+const inGame = () => mode === 'solo' || mode === 'host' || mode === 'guest';
+const live = () => inGame() && game && !ended;
 const mine = (s) => s.owner === me;
 const selShips = () => game.ships.filter((s) => ui.sel.has(s.id) && s.owner === me);
 
@@ -166,7 +167,7 @@ function tap(x, y, double) {
 }
 
 // ---- The strip (what is selected) ---------------------------------------------------
-const bar = (v) => `style="--v:${Math.round(Math.max(0, Math.min(1, v)) * 100)}%"`;
+const bar = (v) => `style="--v:${Math.round(Math.max(0, Math.min(1, v)) * 25) * 4}%"`;
 function chip(s, on = true) {
   const dots = ['drive', 'reactor', 'weapons', 'sensors'].map((k) => `<i class="${s.out[k] > 0 ? 'out' : ''}"></i>`).join('');
   return `<button class="chip ${on ? 'on' : ''}" data-a="chip" data-v="${s.id}" title="${esc(s.name)}">${glyph(s.cls, ui.colors[s.owner])}<span class="bars"><i class="${s.hull < s.st.hull * 0.35 ? 'low' : ''}" ${bar(s.hull / s.st.hull)}></i><i class="f" ${bar(s.dv / s.st.dv)}></i></span><span class="dots">${dots}</span></button>`;
@@ -185,7 +186,7 @@ function stripHTML() {
       h += `<div class="sub">${icon('arrived')} ${esc(b.name)}</div><div class="row">`;
       for (const r of ui.routes || []) {
         const over = r.dv > tank;
-        h += tile('go', r.key, icon(r.key), mmss(r.time), `wide ${over ? 'no' : ''}`, `<span class="fuel"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, (r.dv / Math.max(0.01, tank)) * 100)}%"></i></span>`);
+        h += tile('go', r.key, icon(r.key), mmss(Math.round(r.time / 5) * 5), `wide ${over ? 'no' : ''}`, `<span class="fuel"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, Math.round((r.dv / Math.max(0.01, tank)) * 20) * 5)}%"></i></span>`);
       }
       if (b.owner !== me && S.batteryMax(b) > 0 && b.bhp > 0) h += tile('strike', b.id, icon('strike'), '', 'wide');
       if (!(ui.routes || []).length) h += `<span class="hint">no course</span>`;
@@ -232,7 +233,7 @@ function stripHTML() {
       for (const x of b.structures) {
         const S0 = RULES.structures[x.type];
         const can = S.working(x) && x.level < S0.maxLevel;
-        h += tile(can ? 'upgrade' : 'none', x.type, icon(x.type), can ? `${icon('up')}` : '', `${can && game.credits[me] < S.upgradeCost(x) ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.left > 0 ? `<span class="prog" style="width:${(1 - x.left / x.total) * 100}%"></span>` : ''}${can ? `<small>${S.upgradeCost(x)}</small>` : ''}`);
+        h += tile(can ? 'upgrade' : 'none', x.type, icon(x.type), can ? `${icon('up')}` : '', `${can && game.credits[me] < S.upgradeCost(x) ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}${can ? `<small>${S.upgradeCost(x)}</small>` : ''}`);
       }
       for (let i = b.structures.length; i < slots; i++) h += tile('slot', '', icon('add'), '', `empty ${ui.build ? 'on' : ''}`);
       h += '</div>';
@@ -250,12 +251,12 @@ function stripHTML() {
         for (const cls of BUILDABLE) {
           const why = S.cantOrderShip(game, b, cls);
           if (why && why.startsWith('Needs') && cls === 'battleship' && game.tech[me].weapons < 2) { h += tile('none', '', glyph(cls, DIMC), icon('research'), 'no'); continue; }
-          h += tile('ship', cls, glyph(cls, ui.colors[me]), S.shipCost(game, me, cls), why ? 'no' : '');
+          h += tile('ship', cls, glyph(cls, ui.colors[me]), S.shipCost(game, me, cls), why ? 'no' : '').replace('<button', `<button title="${CLASSES[cls].name}"`);
         }
         h += '</div>';
-        if (b.queue.length) h += `<div class="row">${b.queue.map((qq, i) => tile('cancel', i, glyph(qq.cls, AMBER), i === 0 ? mmss(qq.left) : '', 'on', i === 0 ? `<span class="prog" style="width:${(1 - qq.left / qq.total) * 100}%"></span>` : '')).join('')}</div>`;
+        if (b.queue.length) h += `<div class="row">${b.queue.map((qq, i) => tile('cancel', i, glyph(qq.cls, AMBER), i === 0 ? mmss(Math.ceil(qq.left / 5) * 5) : '', 'on', i === 0 ? `<span class="prog" style="width:${Math.round((1 - qq.left / qq.total) * 20) * 5}%"></span>` : '')).join('')}</div>`;
       }
-      if (!b.home) h += `<div class="sub">${icon('freight')}<span class="fuel" style="flex:1;height:3px;background:var(--faint);position:relative"><i style="position:absolute;inset:0 auto 0 0;background:var(--amber);width:${Math.min(100, (b.stock / RULES.load) * 100)}%"></i></span>${b.blockaded ? `<span style="color:${HOSTILE}">blockaded</span>` : ''}</div>`;
+      if (!b.home) h += `<div class="sub">${icon('freight')}<span class="fuel" style="flex:1;height:3px;background:var(--faint);position:relative"><i style="position:absolute;inset:0 auto 0 0;background:var(--amber);width:${Math.min(100, Math.round((b.stock / RULES.load) * 20) * 5)}%"></i></span>${b.blockaded ? `<span style="color:${HOSTILE}">blockaded</span>` : ''}</div>`;
     } else if (b.structures.length) {
       h += `<div class="sub">${b.structures.filter(S.working).map((x) => icon(x.type)).join('')}</div>`;
     }
@@ -330,7 +331,7 @@ function sheetHTML() {
     const why = next ? S.cantResearch(game, me, key) : 'Complete';
     h += `<div class="line">${icon(key)}<div class="what"><b>${next ? T.levels[lv] : T.name}</b><span>${next ? T.text[lv] : 'Complete'}</span></div>`
       + `<span class="pipsv">${T.levels.map((_, i) => `<i class="${i < lv ? 'on' : i === lv && on ? 'now' : ''}"></i>`).join('')}</span>`
-      + (on ? `<span class="num">${mmss(tech.project.left)}</span>` : next ? `<button class="tile ${why ? 'no' : 'go'}" data-a="research" data-v="${key}"><small>${T.cost[lv]}</small></button>` : '') + '</div>';
+      + (on ? `<span class="num">${mmss(Math.ceil(tech.project.left / 5) * 5)}</span>` : next ? `<button class="tile ${why ? 'no' : 'go'}" data-a="research" data-v="${key}"><small>${T.cost[lv]}</small></button>` : '') + '</div>';
   }
   return h;
 }
@@ -358,7 +359,7 @@ function drainEvents() {
   for (const e of game.events) {
     if (e.seen) continue;
     e.seen = true;
-    if (mode === 'demo') continue;
+    if (!inGame()) continue;
     const s = e.ship != null ? S.shipById(game, e.ship) : null;
     const toShip = s ? () => view.followShip(s.id) : null;
     const b = e.at != null ? game.bodies[e.at] : null;
@@ -391,7 +392,7 @@ $('rnd').innerHTML = icon('research') + '<i class="bar"></i>';
 $('sys').innerHTML = icon('system');
 $('menuBtn').innerHTML = icon('menu');
 function refreshUI() {
-  if (!game || mode === 'demo') return;
+  if (!game || !inGame()) return;
   $('cr').textContent = Math.floor(game.credits[me] || 0);
   const cap = S.fleetCap(game, me), n = S.warshipsOf(game, me).length, qd = S.fleetSize(game, me) - n;
   let pips = '';
@@ -459,10 +460,18 @@ function startScenario(k) {
   const made = sc.make();
   start(made.game, { players: made.players, mode: 'solo', scn: { key: k, name: sc.name, state: sc.state }, look: made.look, me: 0 });
 }
+const CLASS_TEXT = {
+  corvette: 'small, fast and hard to see. Scout and raider.',
+  frigate: 'the workhorse. Torpedo tubes and a rail.',
+  escort: 'point defence for the ships beside her.',
+  battleship: 'spinal rails and armour. Needs Spinal mounts research.',
+  tender: 'unarmed. Refuels, rearms and patches ships flying alongside.',
+};
 function manualPanel() {
   const k = (ic, t) => `<div class="k">${icon(ic)}<div>${t}</div></div>`;
   showPanel(`${head('Manual')}<div class="prose">
     <p>Take orbit over the enemy <b>capital</b> (the double ring) and hold it until it yields. You command a handful of named ships; each one matters.</p>
+    <div class="k">${BUILDABLE.map((c) => `${glyph(c, AMBER)}<div><b>${CLASSES[c].name}</b>: ${CLASS_TEXT[c]}</div>`).join('')}</div>
     ${k('contact', '<b>Select</b> a ship by tapping it, or a world to see what is there. With ships selected, tap a world to plot a course, or tap a contact to engage it.')}
     ${k('hard', '<b>Hard burn</b>: fastest, visible across the whole system, drinks fuel.')}
     ${k('cruise', '<b>Cruise</b>: a measured burn and a coast. The everyday choice.')}
@@ -481,11 +490,11 @@ function manualPanel() {
 }
 function endPanel(won, why) {
   ended = true;
-  $('strip').hidden = true; $('sheet').hidden = true;
+  $('strip').hidden = true; $('sheet').hidden = true; $('hud').hidden = true; $('brief').hidden = true;
   sfx(won ? 'won' : 'defeat');
   const st = game.stats[me] || {};
   const row = (label, a) => `<span>${label}</span><b>${a}</b><b></b><b></b>`;
-  showPanel(`<div class="mast"><h1 style="font-size:2rem;color:${won ? AMBER : HOSTILE}">${won ? 'Victory' : 'Defeat'}</h1><p class="tag">${esc(why || (game.daily ? `Daily ${game.daily}` : ''))} · ${mmss(game.time)}</p></div>`
+  showPanel(`<div class="mast"><h1 style="font-size:2rem;color:${won ? AMBER : HOSTILE}">${won ? 'Victory' : 'Defeat'}</h1><p class="tag">${[why || (game.daily ? `Daily ${game.daily}` : ''), mmss(game.time)].filter(Boolean).map(esc).join(' · ')}</p></div>`
     + `<div class="tally">${row('Ships commissioned', st.built || 0)}${row('Ships lost', st.lost || 0)}${row('Ships destroyed', st.killed || 0)}${row('Worlds taken', st.captured || 0)}${row('Freight delivered', st.hauled || 0)}${row('Freighters raided', st.raided || 0)}</div>`
     + `<button class="cta" data-a="again">Again</button><button class="cta ghost" data-a="quit">Title</button>`);
   if (scn && won) { prefs.done[scn.key] = true; save(); }
@@ -581,6 +590,7 @@ function clickPanel(a, v) {
     case 'kick': room.remove(+v); break;
     case 'startMP': startMP(); break;
     case 'leaveLobby': closeRoom(); mode = 'demo'; mpPanel(); break;
+    case 'titleMP': closeRoom(); mode = 'demo'; hidePanel(); break;
     case 'resume': paused = false; hidePanel(); break;
     case 'again': if (scn) startScenario(scn.key); else if (mode === 'solo') launch(game.daily ? S.dailySeed().seed : (Math.random() * 1e9) | 0, !!game.daily); else { closeRoom(); demo(); } break;
     case 'quit': closeRoom(); hidePanel(); demo(); break;
@@ -706,7 +716,7 @@ function frame(nowMs) {
       netFx = [];
     }
   }
-  if (mode === 'demo') view.orbit.az += dt * 0.015;
+  if (!inGame()) view.orbit.az += dt * 0.015;
   ui.warp = warp;
   const rep = view.render(game, ui, gdt, t);
   drainEvents();
@@ -723,7 +733,7 @@ function frame(nowMs) {
     else if (!ended && !game.alive[me]) endPanel(false, '');
   }
   if (nowMs - uiT > 220) { uiT = nowMs; refreshUI(); }
-  if (nowMs - audioT > 120) { audioT = nowMs; audio.update({ burn: mode === 'demo' ? 0 : rep.burn, battle: mode === 'demo' ? rep.battle * 0.4 : rep.battle, zoom: rep.zoom, paused: hold }); }
+  if (nowMs - audioT > 120) { audioT = nowMs; audio.update({ burn: inGame() ? rep.burn : 0, battle: inGame() ? rep.battle : rep.battle * 0.4, zoom: rep.zoom, paused: hold }); }
 }
 titleNav();
 demo();
