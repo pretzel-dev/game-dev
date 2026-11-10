@@ -5,7 +5,8 @@ Small browser games, each in its own folder with its own `package.json`
 
 | Folder | What | Status |
 |---|---|---|
-| `perihelion/` | Hard-sci-fi strategy in one solar system, solo vs AI or host-in-browser multiplayer | Active |
+| `perihelion/` | Hard-sci-fi strategy in one solar system, solo vs AI or host-in-browser multiplayer | Live; being replaced |
+| `perihelion-next/` | The rebuilt Perihelion: a handful of named ships, real fuel and flight, battles in open space | Active (in testing) |
 | `starfall/` | 3D space strategy across star systems | Finished |
 | `covewind/` | Free-flight toy | Finished |
 | `dustline/` | Toy rally car in a stunt canyon (no goal) | Active |
@@ -80,6 +81,33 @@ node tools/mp-smoke.mjs out/       # two-browser multiplayer test (needs a local
 Multiplayer uses the free public PeerJS broker by default. Sandboxes often
 block it; append `?peer=127.0.0.1:9000` to the URL to use a local
 `peer` server bound to 127.0.0.1 (IPv6 may be unavailable).
+
+## Perihelion (new build): `perihelion-next/`
+
+The overhaul agreed with the owner (November 2026): an empire game where the
+fleet is a handful of named ships that fight real battles, in real time,
+multiplayer intact. Read `perihelion-next/README.md` for the rules. It lives
+beside the old game and deploys to `/perihelion-next/`; when the owner says so
+it replaces `perihelion/`. Cut from the old game, and possibly coming back
+after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
+
+- `src/sim.js`: pure data and functions. Ships are integrated bodies (gravity
+  from the sun and planets, thrust from the autopilot `guide`). Routes are
+  found by flying an order forward (`dryRun`), so the plan and the flight use
+  the same code. Tunables are at the top (`RULES`, `CLASSES`, `FACTIONS`).
+- `src/render.js`: the 3D scene plus a 2D "plot table" canvas over it for all
+  linework and names. `src/main.js`: UI; **all orders go through `act()`**;
+  the local player is `me`.
+- The look is a naval plot table: black, thin amber and bone-white lines,
+  **icons instead of words**; words only for names. Don't add boxes or text.
+- Panels redraw several times a second: keep their HTML steady (round times
+  and bars) or taps get lost.
+- Guests don't run the sim; anything a guest must see goes in `snapshot()`.
+- Sound (`src/audio.js`) is generated in the browser as a trial. The owner
+  dislikes cheap synth sound: if they reject it, keep interface and alert
+  sounds only and source audio files.
+- Tests: `npm run check`, `npm run check:matches` (every AI match must
+  finish), `node tools/smoke.mjs`, `node tools/mp-smoke.mjs`.
 
 ## Owner's preferences
 

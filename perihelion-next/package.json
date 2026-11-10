@@ -1,0 +1,22 @@
+{
+  "name": "perihelion-next",
+  "version": "2.0.0",
+  "description": "Fleet actions in a single star system: a hard-sci-fi strategy game.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node tools/check-sim.mjs",
+    "check:matches": "node tools/check-matches.mjs"
+  },
+  "dependencies": {
+    "@fontsource/rajdhani": "^5.3.0",
+    "peerjs": "^1.5.5",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  }
+}

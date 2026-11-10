@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#040406" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Perihelion</title>
+    <link rel="icon" href="favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <canvas id="plot"></canvas>
+
+    <!-- In play: almost everything is an icon; words are kept for names. -->
+    <div id="hud" hidden>
+      <div id="purse" title="Credits and fleet"><span id="cr">0</span><span id="pips"></span></div>
+      <button id="rnd" class="sq" aria-label="Research" title="Research (R)"></button>
+      <span class="grow"></span>
+      <button id="sys" class="sq" aria-label="Whole system" title="Whole system (H)"></button>
+      <button id="warp" class="sq" aria-label="Time speed" title="Time speed (1-4)">1×</button>
+      <button id="pause" class="sq" aria-label="Pause" title="Pause (Space)"></button>
+      <button id="menuBtn" class="sq" aria-label="Menu" title="Menu (Esc)"></button>
+    </div>
+    <div id="feed"></div>
+    <div id="brief" hidden></div>
+    <div id="strip" hidden></div>
+    <div id="sheet" hidden></div>
+
+    <div id="title" class="screen">
+      <div class="mast">
+        <h1>Perihelion</h1>
+        <p class="tag">Fleet actions in a single star system</p>
+      </div>
+      <nav id="nav"></nav>
+      <p class="fine" id="fine"></p>
+    </div>
+    <div id="panel" class="screen" hidden></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
