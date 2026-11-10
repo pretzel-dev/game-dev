@@ -10,7 +10,15 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 }, devi
 page.setDefaultTimeout(90000);
 const tap0 = page.tap.bind(page);
 // Panels redraw as the game runs: click the element itself rather than wait for it to hold still.
-page.tap = async (sel) => { await page.waitForSelector(sel); try { await page.$eval(sel, (el) => el.click()); } catch { await tap0(sel); } };
+// On touch the first tap on a button shows what it does (it gains the class `arm`); a second tap does it.
+page.tap = async (sel) => {
+  await page.waitForSelector(sel);
+  try {
+    await page.$eval(sel, (el) => el.click());
+    await page.waitForTimeout(350);
+    if (await page.$(`${sel}.arm`)) await page.$eval(`${sel}.arm`, (el) => el.click());
+  } catch { await tap0(sel); }
+};
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text().slice(0, 200)));
