@@ -6,7 +6,7 @@
 
 import Peer from 'peerjs';
 
-const PREFIX = 'perihelion-v1-';
+const PREFIX = 'perihelion-v2-';
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const MAX_SEATS = 3;
 // ?peer=host:port points at a self-hosted PeerJS server (for testing);
@@ -23,12 +23,12 @@ export const makeCode = () => Array.from({ length: 5 }, () => LETTERS[(Math.rand
  * error(text), left(seat).
  * Seats: [{ kind: 'human' | 'ai', name, conn?, online, difficulty? }]; seat 0 is the host.
  */
-export function hostRoom(name, on) {
+export function hostRoom(name, on, faction = 'concord') {
   const code = makeCode();
   const peer = new Peer(PREFIX + code, OPTS);
-  const seats = [{ kind: 'human', name, online: true }];
+  const seats = [{ kind: 'human', name, online: true, faction }];
   let started = false;
-  const pub = () => seats.map((s) => ({ kind: s.kind, name: s.name, online: s.online, difficulty: s.difficulty })); // never the tokens
+  const pub = () => seats.map((s) => ({ kind: s.kind, name: s.name, online: s.online, difficulty: s.difficulty, faction: s.faction })); // never the tokens
   const send = (conn, msg) => { try { if (conn && conn.open) conn.send(msg); } catch { /* ignore */ } };
   const room = {
     code,
@@ -37,9 +37,9 @@ export function hostRoom(name, on) {
     broadcast(msg) { for (const s of seats) if (s.conn) send(s.conn, msg); },
     sendTo(i, msg) { send(seats[i]?.conn, msg); },
     lobby() { for (const [i, s] of seats.entries()) if (s.conn) send(s.conn, { t: 'lobby', seats: pub(), you: i, code }); on.seats(pub()); },
-    addAI(difficulty) {
+    addAI(difficulty, faction = 'boreal') {
       if (started || seats.length >= MAX_SEATS) return;
-      seats.push({ kind: 'ai', name: `AI · ${difficulty}`, online: true, difficulty });
+      seats.push({ kind: 'ai', name: `AI · ${difficulty}`, online: true, difficulty, faction });
       room.lobby();
     },
     remove(i) {
@@ -65,7 +65,7 @@ export function hostRoom(name, on) {
         if (i < 0) {
           if (seats.length >= MAX_SEATS) { send(conn, { t: 'full', why: 'Room is full' }); return; }
           if (seats.some((s) => s.online && s.token && s.token === token)) { send(conn, { t: 'full', why: 'Already in this room' }); return; }
-          seats.push({ kind: 'human', name: uniqueName(seats, name), token });
+          seats.push({ kind: 'human', name: uniqueName(seats, name), token, faction: ['concord', 'boreal', 'holds'].includes(msg.faction) ? msg.faction : 'concord' });
           i = seats.length - 1;
         }
         Object.assign(seats[i], { conn, online: true });
@@ -104,7 +104,7 @@ function uniqueName(seats, name) {
 }
 
 /** Join a room by code with this browser's rejoin token. `on` receives every message from the host, plus error(text) and closed(). */
-export function joinRoom(code, name, token, on) {
+export function joinRoom(code, name, token, on, faction = 'concord') {
   const peer = new Peer(OPTS);
   let conn = null;
   const room = {
@@ -114,7 +114,7 @@ export function joinRoom(code, name, token, on) {
   peer.on('open', () => {
     conn = peer.connect(PREFIX + code.toUpperCase(), { reliable: true });
     const timer = setTimeout(() => { if (!conn.open) on.error('No game found with that code'); }, 9000);
-    conn.on('open', () => { clearTimeout(timer); room.send({ t: 'hello', name, token }); });
+    conn.on('open', () => { clearTimeout(timer); room.send({ t: 'hello', name, token, faction }); });
     conn.on('data', (msg) => on.message(msg));
     conn.on('close', () => on.closed());
   });

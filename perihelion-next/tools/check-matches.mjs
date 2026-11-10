@@ -1,27 +1,27 @@
-// Balance check: 20 AI-only matches across every system type must finish,
-// and Hard must beat Normal. Slow (the planner is the cost), so it runs apart
-// from the fast checks: `npm run check:matches`, and in the deploy only when
-// src/sim.js or src/ai.js changed.
-import assert from 'node:assert/strict';
-import { createGame, step, rng, RANDOM_KEYS } from '../src/sim.js';
-import { createAI, tickAI } from '../src/ai.js';
-
-// AI-only matches finish.
-let finished = 0;
-let hardWins = 0;
-const lengths = [];
-for (let seed = 1; seed <= 20; seed++) {
-  // Every system type gets matches (three or four each).
-  const g = createGame({ seed, opponents: 1 + (seed % 2), system: RANDOM_KEYS[seed % RANDOM_KEYS.length] });
-  const r = rng(seed);
-  const ais = Array.from({ length: g.players }, (_, i) => createAI(i, i ? 'hard' : 'normal', r));
-  let t = 0;
-  for (; t < 14400 && g.winner === null; t += 0.5) {
-    for (const ai of ais) tickAI(g, ai, 0.5);
-    step(g, 0.5);
-  }
-  if (g.winner !== null) { finished++; lengths.push(Math.round(t / 60)); if (g.winner > 0) hardWins++; }
+// AI-only matches across every pairing of powers (and three-way games): each must
+// end with a winner. Slow-ish; run before merging a balance change. npm run check:matches
+import * as S from '../src/sim.js';
+import { createAI, stepAI } from '../src/ai.js';
+const F = S.FACTION_KEYS;
+const level = process.argv[2] || 'normal';
+const N = +process.argv[3] || 24;
+const wins = {}, played = {};
+let bad = 0, total = 0, mins = [];
+for (let i = 0; i < N; i++) {
+  const three = i % 4 === 3;
+  const fs = three ? [F[i % 3], F[(i + 1) % 3], F[(i + 2) % 3]] : [F[i % 3], F[(i + 1 + (i >> 2) % 2) % 3]];
+  const players = fs.map((f) => ({ faction: f, ai: level }));
+  const g = S.createGame({ seed: 100 + i, players });
+  const ais = players.map((p, k) => createAI(g, k, p.ai, 100 + i));
+  while (!g.over && g.time < 3600) { S.step(g, 1); for (const a of ais) stepAI(g, a, 1); }
+  for (const f of fs) played[f] = (played[f] || 0) + 1;
+  total++;
+  if (!g.over) { bad++; console.log(`match ${i} (${fs.join(' v ')}): no result`); continue; }
+  const w = g.factions[g.over.winner];
+  wins[w] = (wins[w] || 0) + 1;
+  mins.push(g.over.t / 60);
+  console.log(`match ${i} (${fs.join(' v ')}): ${w} in ${(g.over.t / 60).toFixed(0)} min; ships built ${g.stats.map((s) => s.built).join('/')}`);
 }
-console.log(`sim ok: ${finished}/20 AI matches finished (Hard won ${hardWins}); minutes: ${lengths.join(' ')}`);
-assert.ok(finished >= 18);
-assert.ok(hardWins >= finished * 0.75, 'Hard beats Normal (difficulty ladder)');
+mins.sort((a, b) => a - b);
+console.log(`wins by power: ${F.map((f) => `${f} ${wins[f] || 0}/${played[f] || 0}`).join(', ')}; median ${mins[mins.length >> 1]?.toFixed(0)} min, longest ${mins[mins.length - 1]?.toFixed(0)} min`);
+if (bad) { console.log(`${bad} of ${total} matches did not finish`); process.exit(1); }

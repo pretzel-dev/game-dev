@@ -1,7 +1,7 @@
 {
-  "name": "perihelion",
-  "version": "0.1.0",
-  "description": "A slow, hard-sci-fi strategy game inside one solar system.",
+  "name": "perihelion-next",
+  "version": "2.0.0",
+  "description": "Fleet actions in a single star system: a hard-sci-fi strategy game.",
   "private": true,
   "type": "module",
   "scripts": {

@@ -26,9 +26,9 @@ export const RULES = {
     refinery: { name: 'Refinery', cost: 300, time: 50, where: ['planet'], giant: true, maxLevel: 2, income: 1.5 },
     battery: { name: 'Battery', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], maxLevel: 2 },
   },
-  batteryHp: 120, // per level
+  batteryHp: 100, // per level
   batteryRegen: 1.5,
-  yield: { asteroid: 18, moon: 20, station: 22, planet: 32, giant: 40, home: 70 }, // seconds of unchallenged orbit
+  yield: { asteroid: 18, moon: 20, station: 22, planet: 30, giant: 36, home: 50 }, // seconds of unchallenged orbit
   refuel: 0.5, // delta-v per second in orbit of a world you hold (x3 at a refinery or capital)
   repair: 1.5, // hull per second at a yard (a third of that elsewhere, or beside a tender)
   rearm: 4, // seconds per torpedo at a yard or capital
@@ -58,9 +58,9 @@ export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender
 
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'The old inner-worlds navy: heavy plate, deep magazines, slow to turn.', hull: 1.3, armour: 3, cost: 1.2, accel: 0.9, start: ['frigate', 'escort'] },
-  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Outer-system torch ships: fast drives and hard-hitting rails, thin skins.', accel: 1.2, rail: 1.25, hull: 0.9, dv: 1.1, start: ['frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Belt freeholders: cheap hulls that run cold and are hard to find.', cost: 0.75, time: 0.8, sig: 0.6, hull: 0.85, cap: 1, start: ['frigate', 'frigate', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'The old inner-worlds navy: heavy plate, deep magazines, slow to turn.', hull: 1.4, armour: 4, cost: 1.05, accel: 0.95, start: ['frigate', 'escort', 'corvette'] },
+  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Outer-system torch ships: fast drives and hard-hitting rails, thin skins.', accel: 1.2, rail: 1.3, hull: 0.95, dv: 1.1, start: ['frigate', 'corvette', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Belt freeholders: cheap hulls that run cold and are hard to find.', cost: 0.9, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, start: ['frigate', 'frigate', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
@@ -476,6 +476,16 @@ export function salvo(game, owner, ids, target) {
   }
   return any;
 }
+/** Abandon ships (a crew takes to the boats): they are gone, and their place in the fleet is free. */
+export function scuttle(game, owner, ids) {
+  for (const s of game.ships) {
+    if (!ids.includes(s.id) || s.owner !== owner || s.st.civil) continue;
+    s.dead = true;
+    note(game, { type: 'scuttled', owner, ship: s.id, name: s.name });
+  }
+  game.ships = game.ships.filter((s) => !s.dead);
+  return true;
+}
 const planetOf = (game, b) => (b.parent === null ? b : game.bodies[b.parent]);
 
 // ---- Flight -------------------------------------------------------------------------
@@ -630,6 +640,7 @@ export function advance(game, s, t, h, G, lookup) {
   if (s.order && s.order.type === 'burn') s.order.left -= h;
   if (a * h > s.dv) { const k = s.dv / (a * h); s.tx *= k; s.ty *= k; s.tz *= k; a *= k; }
   s.dv -= a * h;
+  if (s.dv < 1e-6) s.dv = 0;
   s.burn = a > 0.004 ? 1 : 0;
   let gx = 0, gy = 0, gz = 0;
   const o = s.order;
@@ -680,7 +691,7 @@ export function advance(game, s, t, h, G, lookup) {
  * Fly an order forward without touching the game: how long it takes, how much
  * fuel it burns, and the path, for the route panel and the AI.
  */
-export function dryRun(game, s0, order, { maxT = 700, h = 1, every = 4 } = {}) {
+export function dryRun(game, s0, order, { maxT = 700, h = 1, every = 4, coast = 0 } = {}) {
   const s = {
     id: s0.id, owner: s0.owner, x: s0.x, y: s0.y, z: s0.z, vx: s0.vx, vy: s0.vy, vz: s0.vz, tx: 0, ty: 0, tz: 0,
     st: s0.st, out: { drive: 0, reactor: 0 }, dv: 1e9, order: { ...order }, at: null, tau: 0, coast: false, inSoi: false, term: false, av: 0,
@@ -696,10 +707,11 @@ export function dryRun(game, s0, order, { maxT = 700, h = 1, every = 4 } = {}) {
     used += before - s.dv;
     t += h;
     if (++k % every === 0) path.push({ x: s.x, y: s.y, z: s.z });
-    if (s.at !== null || !s.order) break;
+    if (s.at !== null) break;
+    if (!s.order && (coast -= h) <= 0) break;
   }
   path.push({ x: s.x, y: s.y, z: s.z });
-  return { time: t - game.time, dv: used, ok: s.at !== null || (order.type !== 'orbit' && !s.order), path, end: { x: s.x, y: s.y, z: s.z } };
+  return { time: t - game.time, dv: used, ok: s.at !== null || order.type !== 'orbit', path, end: { x: s.x, y: s.y, z: s.z } };
 }
 
 /**
