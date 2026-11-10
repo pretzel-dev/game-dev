@@ -175,3 +175,6 @@ nav button:first-child { color: var(--ink); }
 .line .what b { font-size: 0.95rem; } .line .what span { font-size: 0.8rem; }
 .tally span { font-size: 0.84rem; }
 input { text-transform: none; }
+
+.tile.arm { border-color: var(--amber); background: rgba(224, 161, 58, 0.14); }
+.hint { color: var(--ink); }

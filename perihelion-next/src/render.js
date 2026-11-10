@@ -32,7 +32,7 @@ export function playerColors(game) {
 }
 
 const SUN_RADIUS = 6;
-const SHIP_SCALE = 0.4;
+const SHIP_SCALE = 0.45; // ships against worlds, as in the first game
 const MAX_SHIPS = 160;
 const UP = new THREE.Vector3(0, 1, 0);
 const CLASS_SCALE = { corvette: 0.6, frigate: 1, escort: 0.95, battleship: 1.7, tender: 1.2, freighter: 1.3 };
@@ -208,7 +208,7 @@ export function createView(canvas, plot, opts = {}) {
       const lineHolder = new THREE.Group();
       lineHolder.add(line);
       world.add(lineHolder);
-      return { b, g, body, line, lineHolder, ring, atmo, owner: null, occ: [], sx: 0, sy: 0, sr: 0, on: false };
+      return { b, g, body, line, lineHolder, ring, atmo, owner: null, occ: [], sx: 0, sy: 0, sr: 0, on: false, show: 1 };
     });
     if (belt) { belt.group.removeFromParent(); belt.dispose(); belt = null; }
     const rocks = game.bodies.filter((x) => x.kind === 'asteroid');
@@ -288,6 +288,51 @@ export function createView(canvas, plot, opts = {}) {
     return vis;
   }
 
+  const hash = (a, b) => {
+    let x = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35);
+    x ^= x >>> 15; x = Math.imul(x, 0x2c1b3c6d);
+    return ((x ^ (x >>> 12)) >>> 0) / 4294967296;
+  };
+  // Attitude jets (as in the first game). A ship turns the way a real one does: paired jets at
+  // nose and tail fire on opposite sides to start a turn and the opposite pair to stop it.
+  const spin = new Map();
+  const jA = new THREE.Vector3(), jN = new THREE.Vector3(), jP = new THREE.Vector3(), jD = new THREE.Vector3(), tmp5 = new THREE.Vector3();
+  function attitudeJets(id, p, n, s, gt, t, px) {
+    let st = spin.get(id);
+    if (!st) { spin.set(id, { n: n.clone(), w: new THREE.Vector3(), a: new THREE.Vector3(), t: gt }); return; }
+    const dt = gt - st.t;
+    if (dt <= 1e-4) { if (dt < -1) st.t = gt; return; }
+    if (dt > 2) { st.n.copy(n); st.w.set(0, 0, 0); st.a.set(0, 0, 0); st.t = gt; return; }
+    jA.crossVectors(st.n, n).divideScalar(dt);
+    const k = 1 - Math.exp(-dt * 6);
+    jN.copy(jA).sub(st.w).divideScalar(dt);
+    st.w.lerp(jA, k); st.a.lerp(jN, k); st.n.copy(n); st.t = gt;
+    if (px < 8) return;
+    const alpha = st.a.length();
+    const rate = 5 + hash(id, 17) * 5;
+    const u = t * rate + hash(id, 23) * 9;
+    const slot = Math.floor(u);
+    const r1 = hash(id * 7 + slot, 31), r2 = hash(slot, id * 3 + 1);
+    const frac = u - slot;
+    let pow;
+    if (alpha >= 0.04) {
+      pow = Math.min(1, (alpha - 0.04) * 3);
+      if (r1 > 0.45 + 0.35 * pow || frac > 0.35 + r2 * 0.6) return;
+    } else {
+      if (r1 > 0.05 || frac > 0.3) return;
+      pow = 0.15 + r2 * 0.2;
+      jN.set(r2 - 0.5, hash(slot, id) - 0.5, hash(id, slot * 5) - 0.5);
+    }
+    const L = s * 0.32;
+    jD.crossVectors(alpha >= 0.04 ? st.a : jN, n);
+    if (jD.lengthSq() < 1e-10) return;
+    jD.normalize();
+    const len = s * (0.06 + 0.1 * pow) * (0.75 + r2 * 0.5), wid = s * 0.05;
+    const p0 = (0.35 + 0.5 * pow) * (0.8 + r1 * 0.4);
+    const which = r2 < 0.18 ? 1 : r2 > 0.86 ? 2 : 3;
+    if (which & 1) { jP.copy(p).addScaledVector(n, L).addScaledVector(jD, -s * 0.06); shipR.jet(jP, tmp5.copy(jD).negate(), len, wid, p0, id); }
+    if (which & 2) { jP.copy(p).addScaledVector(n, -L * 0.85).addScaledVector(jD, s * 0.06); shipR.jet(jP, jD, len * (0.85 + r1 * 0.3), wid, p0, id + 0.5); }
+  }
   // What the view remembers between frames.
   const heads = new Map(); // ship id -> facing (unit vector), turned smoothly
   const ghosts = new Map(); // enemy ship id -> last known { x, y, z, vx, vy, vz, t, owner, cls, known }
@@ -441,6 +486,14 @@ export function createView(canvas, plot, opts = {}) {
         }
       }
       v.owner = b.owner;
+      // A planet's family (moons, station) appears as you come in on it, or when one of them is picked.
+      if (b.parent !== null) {
+        const pp = bodyPos[b.parent];
+        const span = b.r * ppuAt(tmp2.set(pp.x, pp.y, pp.z));
+        v.show = ui.selBody === b.id || ui.target === b.id || orbit.follow === b.id ? 1 : THREE.MathUtils.smoothstep(span, 16, 34);
+        v.lineHolder.visible = v.show > 0.05;
+        v.line.material.uniforms.uOpacity.value = 0.5 * v.show;
+      } else v.show = 1;
       const q = proj(p.x, p.y, p.z);
       v.on = q.ok; v.sx = q.x; v.sy = q.y; v.sr = b.size * ppuAt(tmp2.set(p.x, p.y, p.z));
     }
@@ -510,7 +563,16 @@ export function createView(canvas, plot, opts = {}) {
     for (const v of views) {
       if (!v.on) continue;
       const b = v.b;
+      if (v.show < 0.05) continue;
       const R = Math.max(v.sr * 1.25 + 4, b.kind === 'planet' ? 9 : 6);
+      // From afar a planet carries a dot for each world of its family, in the holder's colour.
+      if (b.kind === 'planet') {
+        const fam = views.filter((x) => x.b.parent === b.id);
+        if (fam.length && fam[0].show < 0.5) {
+          fam.forEach((x, i) => { ctx.fillStyle = colorOf(x.b.owner); ctx.globalAlpha = 0.9 * (1 - fam[0].show * 2); ctx.fillRect(v.sx - (fam.length * 6 - 2) / 2 + i * 6, v.sy + R + 19, 4, 4); });
+          ctx.globalAlpha = 1;
+        }
+      }
       const c = colorOf(b.owner);
       const picked = ui.selBody === b.id, aimed = ui.target === b.id;
       const big = v.sr > 60;
@@ -586,14 +648,16 @@ export function createView(canvas, plot, opts = {}) {
         const glint = fade <= 0 ? null : [s.burn ? 7 : 4.5, (s.burn ? 0.9 : 0.5) * fade, !!s.burn];
         const hull = 0.85 + ((s.id * 37) % 20) / 100 - (crippled(s) ? 0.3 : 0);
         const sc = shipLib.hullIndex ? SHIP_SCALE : scale; // the new hulls carry their class size in the model
-        shipR.add(hullType(game.factions[s.owner], s.cls, s.id), p, h, [sc, sc, sc], c, hull, s.id, !!s.burn, 0.5 + 1.6 * Math.min(1.4, thrust / (s.st.accel || 0.1)), glint, hullPx, sunlit(p));
+        shipR.add(hullType(game.factions[s.owner], s.cls, s.id), p, h, [sc, sc, sc], c, hull, s.id, !!s.burn, (0.45 + 0.55 * Math.min(1, thrust / (s.st.accel || 0.1))) * (0.8 + Math.sin(t * 40 + s.id) * 0.05), glint, hullPx, sunlit(p));
+        attitudeJets(s.id, p, h, sc * (CLASS_SCALE[s.cls] || 1), now, t, hullPx);
       } else if (s.burn) shipR.add(0, p, h, [0.01, 0.01, 0.01], c, 1, s.id, true, 1.4, [7, 0.9, true], 0, 1);
       const q = proj(p.x, p.y, p.z);
       if (!q.ok) continue;
       const sx = q.x, sy = q.y;
-      const b = s.at !== null ? views[s.at] : null;
-      if (b && b.on && parkRadius(b.b) * ppu < 22) {
-        const key = s.at;
+      let b = s.at !== null ? views[s.at] : null;
+      if (b && b.show < 0.5) b = views[b.b.parent]; // her moon isn't drawn from this far out: list her at the planet
+      if (b && b.on && (b.b.id !== s.at || parkRadius(b.b) * ppu < 22)) {
+        const key = b.b.id;
         if (!rows.has(key)) rows.set(key, []);
         rows.get(key).push({ s, known, c });
         continue;
@@ -732,7 +796,7 @@ export function createView(canvas, plot, opts = {}) {
       if (best) return best;
     }
     for (const v of views) {
-      if (!v.on) continue;
+      if (!v.on || v.show < 0.5) continue;
       const d = Math.hypot(v.sx - x, v.sy - y);
       const r = Math.max(26, v.sr + 12);
       if (d < r && d < bestD) { bestD = d; best = { body: v.b.id }; }

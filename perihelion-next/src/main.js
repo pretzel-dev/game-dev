@@ -139,7 +139,7 @@ function apply(owner, c) {
 }
 
 // ---- Selection -------------------------------------------------------------------
-function clearSel() { ui.sel = new Set(); ui.target = null; ui.targetShip = null; ui.routes = null; ui.routeKey = null; ui.build = false; ui.plotMode = false; ui.plot = null; }
+function clearSel() { ui.armed = null; ui.sel = new Set(); ui.target = null; ui.targetShip = null; ui.routes = null; ui.routeKey = null; ui.build = false; ui.plotMode = false; ui.plot = null; }
 function selectShips(list) { clearSel(); ui.selBody = null; for (const s of list) ui.sel.add(s.id); sfx('select'); }
 function setTarget(bodyId) { ui.target = bodyId; ui.targetShip = null; ui.routeKey = null; refreshRoutes(); sfx('tap'); }
 function refreshRoutes() {
@@ -185,7 +185,37 @@ function chip(s, on = true) {
 }
 const L = (ic, word) => `${ic}<em>${word}</em>`;
 const ROUTE_NAME = { hard: 'Hard burn', cruise: 'Cruise', dark: 'Dark', sling: 'Slingshot' };
-const tile = (a, v, ic, small, cls = '', extra = '') => `<button class="tile ${cls}" data-a="${a}" data-v="${v}">${ic}${small ? `<small>${small}</small>` : ''}${extra}</button>`;
+// What each button does, in a line. On touch the first tap shows it and the second does it; with a mouse, hover.
+const HINT = {
+  'go:hard': 'Fastest. Seen across the system. Uses the most fuel.',
+  'go:cruise': 'Burn, coast, brake. The everyday choice.',
+  'go:dark': 'Short burns and a long cold coast. Slow, but hard to see.',
+  'go:sling': 'Swing past a heavy world to save fuel.',
+  strike: 'Fly past at speed, firing on the battery. Does not stop.',
+  pass: 'Charge through at speed. Hits hard, over in seconds.',
+  match: 'Come alongside and fight. Boards crippled ships and freighters.',
+  salvo: 'Fire every tube at this target now.',
+  torps: 'Free: ships fire torpedoes on their own. Held: they save them.',
+  fire: 'Held: guns stay silent, so the ship stays hidden.',
+  evade: 'Dodge rail fire. Costs fuel and spoils your own aim.',
+  plot: 'Drag from the ship to burn that way, then coast.',
+  cut: 'Drive off. The ship coasts.',
+  retreat: 'Hard burn to your nearest world.',
+  upgrade: 'Raise this to the next level.',
+  'build:yard': 'Builds, repairs and rearms ships.',
+  'build:mine': 'More income from this world.',
+  'build:refinery': 'More income. Refuels ships quickly.',
+  'build:battery': 'Guns and point defence on the ground.',
+  'ship:corvette': 'Small, fast, hard to see. Scout and raider.',
+  'ship:frigate': 'The workhorse. Torpedoes and a rail.',
+  'ship:escort': 'Point defence for the ships beside her.',
+  'ship:battleship': 'Spinal rails and heavy armour.',
+  'ship:tender': 'Unarmed. Refuels and rearms ships alongside.',
+};
+const hintOf = (a, v) => HINT[`${a}:${v}`] || HINT[a] || '';
+let touchInput = false;
+window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; }, true);
+const tile = (a, v, ic, small, cls = '', extra = '') => `<button class="tile ${cls} ${ui.armed === `${a}:${v}` ? 'arm' : ''}" title="${hintOf(a, v)}" data-a="${a}" data-v="${v}">${ic}${small ? `<small>${small}</small>` : ''}${extra}</button>`;
 function stripHTML() {
   if (!live()) return '';
   const ships = selShips();
@@ -286,6 +316,10 @@ function stripHTML() {
 }
 const DIMC = '#6d685c';
 function clickStrip(a, v) {
+  // Touch: the first tap on a button says what it does; the second does it.
+  const key = `${a}:${v}`;
+  if (touchInput && hintOf(a, v) && ui.armed !== key) { ui.armed = key; sfx('tap'); refreshUI(); return; }
+  ui.armed = null;
   const ships = selShips(), ids = ships.map((s) => s.id);
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
   const order = (o) => { act({ t: 'order', ids, order: o }); sfx('confirm'); };
@@ -429,7 +463,8 @@ function refreshUI() {
     if (b.owner === me && b.yt > 1 && !b.warnedYield) { b.warnedYield = true; notice('captured', HOSTILE, `${b.name} under siege`, () => view.focus(game, b.id, false)); sfx('alarm'); }
     else if (b.yt <= 0) b.warnedYield = false;
   }
-  const sh = stripHTML();
+  let sh = stripHTML();
+  if (sh && ui.armed) { const [a, v] = ui.armed.split(':'); sh += `<div class="hint">${hintOf(a, v)} Tap again.</div>`; }
   $('strip').hidden = !sh || !$('sheet').hidden;
   setHTML($('strip'), sh);
   if (!$('sheet').hidden) setHTML($('sheet'), sheetHTML());
