@@ -10,7 +10,9 @@ import { PLANET_NAMES, MOON_NAMES, STATION_NAMES, ROCK_NAMES, SHIP_NAMES } from 
 
 export const NEUTRAL = -1;
 export const DT = 0.2; // the sim advances in fixed steps of this many seconds
-export const GM_SUN = 28; // the sun's pull (G times its mass), world units^3 / s^2
+export const GM_SUN = 140;
+/** Distances between worlds, against their sizes: space is mostly empty. */
+export const SPREAD = 5; // the sun's pull (G times its mass), world units^3 / s^2
 export const SUN_R = 10;
 
 export const RULES = {
@@ -18,7 +20,7 @@ export const RULES = {
   homeIncome: 2, // credits per second straight into the treasury at a capital
   // Credits per second a held world sets aside; freighters haul it home.
   income: { planet: 0.8, giant: 1.0, moon: 0.4, station: 0.5, asteroid: 0.3 },
-  load: 90, // a freighter sails once this much is waiting
+  load: 120, // a freighter sails once this much is waiting
   stockCap: 400,
   structures: {
     yard: { name: 'Yard', cost: 350, time: 60, where: ['planet', 'station'], maxLevel: 1 },
@@ -36,10 +38,10 @@ export const RULES = {
   pdcRange: 5,
   railRange: 14,
   railCool: 4,
-  torpRange: 34, // ships loose torpedoes on their own inside this
-  torp: { accel: 0.5, dv: 6, dmg: 28, life: 90, reload: 14, hit: 0.55 },
-  cold: 18, // range at which a cold (coasting) ship is spotted
-  ident: 45, // range at which a burning ship is identified, not just seen
+  torpRange: 45, // ships loose torpedoes on their own inside this
+  torp: { accel: 0.4, dv: 8, dmg: 28, life: 150, reload: 14, hit: 0.55 },
+  cold: 24, // range at which a cold (coasting) ship is spotted
+  ident: 90, // range at which a burning ship is identified, not just seen
   worldSensor: 1.4, // a held world sees this much further than a ship
   board: { freighter: 6, warship: 20, range: 2.4, speed: 0.5 },
   capBase: 4, capMax: 9,
@@ -47,20 +49,20 @@ export const RULES = {
 
 // Ship classes. accel in units/s^2, dv is the tank as a total speed change.
 export const CLASSES = {
-  corvette: { name: 'Corvette', cost: 260, time: 50, hull: 60, armour: 0, accel: 0.13, dv: 26, size: 0.6, sig: 0.55, sensor: 1.4, rails: [5], pdc: 1, tubes: 2, mag: 4, power: 1 },
-  frigate: { name: 'Frigate', cost: 450, time: 75, hull: 110, armour: 2, accel: 0.1, dv: 20, size: 0.9, sig: 1, sensor: 1, rails: [9], pdc: 2, tubes: 4, mag: 12, power: 2.2 },
-  escort: { name: 'Escort', cost: 420, time: 75, hull: 100, armour: 2, accel: 0.09, dv: 20, size: 0.9, sig: 1, sensor: 1.1, rails: [5], pdc: 6, tubes: 0, mag: 0, power: 1.8 },
-  battleship: { name: 'Battleship', cost: 1100, time: 150, hull: 300, armour: 8, accel: 0.07, dv: 18, size: 1.6, sig: 1.5, sensor: 1, rails: [16, 16], pdc: 4, tubes: 4, mag: 8, power: 6, needs: ['weapons', 2] },
-  tender: { name: 'Tender', cost: 320, time: 60, hull: 90, armour: 0, accel: 0.08, dv: 70, size: 1.2, sig: 1.2, sensor: 0.8, rails: [], pdc: 1, tubes: 0, mag: 0, power: 0, stores: 24 },
-  freighter: { name: 'Freighter', cost: 0, time: 0, hull: 55, armour: 0, accel: 0.055, dv: 1e6, size: 1.3, sig: 1.3, sensor: 0.5, rails: [], pdc: 0, tubes: 0, mag: 0, power: 0, civil: true },
+  corvette: { name: 'Corvette', cost: 260, time: 50, hull: 60, armour: 0, accel: 0.065, dv: 26, size: 0.6, sig: 0.55, sensor: 1.4, rails: [5], pdc: 1, tubes: 2, mag: 4, power: 1 },
+  frigate: { name: 'Frigate', cost: 450, time: 75, hull: 110, armour: 2, accel: 0.05, dv: 20, size: 0.9, sig: 1, sensor: 1, rails: [9], pdc: 2, tubes: 4, mag: 12, power: 2.2 },
+  escort: { name: 'Escort', cost: 420, time: 75, hull: 100, armour: 2, accel: 0.045, dv: 20, size: 0.9, sig: 1, sensor: 1.1, rails: [5], pdc: 6, tubes: 0, mag: 0, power: 1.8 },
+  battleship: { name: 'Battleship', cost: 1100, time: 150, hull: 300, armour: 8, accel: 0.035, dv: 18, size: 1.6, sig: 1.5, sensor: 1, rails: [16, 16], pdc: 4, tubes: 4, mag: 8, power: 6, needs: ['weapons', 2] },
+  tender: { name: 'Tender', cost: 320, time: 60, hull: 90, armour: 0, accel: 0.04, dv: 70, size: 1.2, sig: 1.2, sensor: 0.8, rails: [], pdc: 1, tubes: 0, mag: 0, power: 0, stores: 24 },
+  freighter: { name: 'Freighter', cost: 0, time: 0, hull: 55, armour: 0, accel: 0.03, dv: 1e6, size: 1.3, sig: 1.3, sensor: 0.5, rails: [], pdc: 0, tubes: 0, mag: 0, power: 0, civil: true },
 };
 export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender'];
 
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'The old inner-worlds navy: heavy plate, deep magazines, slow to turn.', hull: 1.4, armour: 4, cost: 1.05, accel: 0.95, start: ['frigate', 'escort', 'corvette'] },
-  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Outer-system torch ships: fast drives and hard-hitting rails, thin skins.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Belt freeholders: cheap hulls that run cold and are hard to find.', cost: 0.9, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, start: ['frigate', 'frigate', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Armoured and tough. Costs more, turns slower.', hull: 1.4, armour: 4, cost: 1.05, accel: 0.95, start: ['frigate', 'escort', 'corvette'] },
+  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast drives, hard-hitting rails, more fuel.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'corvette', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap, hard to spot, fragile. One extra ship.', cost: 0.9, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, start: ['frigate', 'frigate', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
@@ -75,8 +77,8 @@ export const TECH_KEYS = Object.keys(TECH);
 // destination), and how far off course it lets itself drift before correcting.
 export const PROFILES = {
   hard: { name: 'Hard burn', a: 1, cap: Infinity, lat: 0.03 },
-  cruise: { name: 'Cruise', a: 0.7, cap: 1.5, lat: 0.1 },
-  dark: { name: 'Dark', a: 1, cap: 0.9, lat: 0.35 },
+  cruise: { name: 'Cruise', a: 0.7, cap: 1.6, lat: 0.1 },
+  dark: { name: 'Dark', a: 1, cap: 1, lat: 0.35 },
 };
 
 // ---- Small helpers ------------------------------------------------------------
@@ -191,7 +193,7 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
   const court = rand() < 0.3; // one great giant with a crowd of moons
   let specs = [], beltR = 0, tries = 0;
   const beltAfter = Math.floor(count / 2);
-  const beltW = 6 + rand() * 8;
+  const beltW = (6 + rand() * 8) * 3;
   do {
   specs = [];
   for (let i = 0; i < count; i++) {
@@ -202,26 +204,26 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
     const size = big ? 5.2 : giant ? 3.4 + rand() * 1.2 : 1.6 + rand() * 1;
     const moonsN = home ? 1 : big ? 4 : giant ? 2 + Math.floor(rand() * 2) : i === 0 ? 0 : Math.floor(rand() * 2);
     const moons = [];
-    for (let m = 0; m < moonsN; m++) moons.push({ r: size * 2.8 + 4 + m * 4.5 + rand() * 0.8, size: 0.5 + rand() * 0.5 });
+    for (let m = 0; m < moonsN; m++) moons.push({ r: size * 4 + 9 + m * 10 + rand() * 2, size: 0.5 + rand() * 0.5 });
     specs.push({ home, giant, size, moons, station: false });
   }
   const hosts = shuffle(specs.filter((s) => !s.home)).slice(0, 1 + Math.floor(rand() * 2));
   for (const s of hosts) s.station = true;
   for (const sp of specs) {
-    sp.stationR = sp.size * 2.4 + 1.5;
+    sp.stationR = sp.size * 3 + 3;
     sp.reach = Math.max(sp.size * 1.6, sp.station ? sp.stationR + 1 : 0, ...sp.moons.map((m) => m.r + m.size));
   }
-  const GAP = 6;
+  const GAP = 6 * SPREAD;
   let prev = null;
   specs.forEach((sp, i) => {
-    sp.r = prev ? prev.r + prev.reach + sp.reach + GAP + rand() * 5 : 34 + rand() * 6;
+    sp.r = prev ? prev.r + prev.reach + sp.reach + GAP + rand() * 5 * SPREAD : (34 + rand() * 6) * SPREAD;
     if (i === beltAfter) {
       beltR = prev.r + prev.reach + GAP;
-      sp.r = beltR + beltW + GAP + sp.reach + rand() * 6;
+      sp.r = beltR + beltW + GAP + sp.reach + rand() * 6 * SPREAD;
     }
     prev = sp;
   });
-  } while (specs[specs.length - 1].r > 190 && ++tries < 12); // keep the system compact enough for a short game
+  } while (specs[specs.length - 1].r > 190 * SPREAD && ++tries < 12); // keep the system compact enough for a short game
   for (const sp of specs) {
     sp.gm = DENSITY[sp.giant ? 'gas' : 'rock'] * sp.size ** 3;
     const out = Math.max(0, ...sp.moons.map((m) => m.r), sp.station ? sp.stationR : 0);
@@ -676,7 +678,7 @@ export function advance(game, s, t, h, G, lookup) {
     const p = posAt(game, game.bodies[o.body], t + h);
     const dp = Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z);
     if (o.near === undefined || dp < o.near) o.near = dp;
-    else if (dp > o.near + 10) { s.order = null; s.coast = false; }
+    else if (dp > o.near + 25) { s.order = null; s.coast = false; }
   } else if (o && o.type === 'attack' && o.mode === 'pass') {
     const T = lookup(o.ship);
     if (T) {
@@ -691,7 +693,7 @@ export function advance(game, s, t, h, G, lookup) {
  * Fly an order forward without touching the game: how long it takes, how much
  * fuel it burns, and the path, for the route panel and the AI.
  */
-export function dryRun(game, s0, order, { maxT = 700, h = 1, every = 4, coast = 0 } = {}) {
+export function dryRun(game, s0, order, { maxT = 2400, h = 1.5, every = 4, coast = 0 } = {}) {
   const s = {
     id: s0.id, owner: s0.owner, x: s0.x, y: s0.y, z: s0.z, vx: s0.vx, vy: s0.vy, vz: s0.vz, tx: 0, ty: 0, tz: 0,
     st: s0.st, out: { drive: 0, reactor: 0 }, dv: 1e9, order: { ...order }, at: null, tau: 0, coast: false, inSoi: false, term: false, av: 0,
@@ -737,9 +739,9 @@ export function routes(game, ids, bodyId) {
   for (const b of game.planets) {
     if (b.gm < 1.5 || b.id === planetOf(game, target).id || (lead.at !== null && planetOf(game, game.bodies[lead.at]).id === b.id)) continue;
     const p = posAt(game, b, game.time + out[1].time * 0.5);
-    if (Math.hypot(p.x - here.x, p.z - here.z) + Math.hypot(p.x - there.x, p.z - there.z) > span * 1.9 + 20) continue;
+    if (Math.hypot(p.x - here.x, p.z - here.z) + Math.hypot(p.x - there.x, p.z - there.z) > span * 1.9 + 60) continue;
     for (const side of [1, -1]) {
-      const r = dryRun(game, lead, { type: 'orbit', body: bodyId, profile: 'cruise', via: b.id, side, amax: amaxOf('cruise') }, { maxT: 900 });
+      const r = dryRun(game, lead, { type: 'orbit', body: bodyId, profile: 'cruise', via: b.id, side, amax: amaxOf('cruise') }, { maxT: 3000 });
       if (r.ok && (!best || r.dv < best.dv)) best = { key: 'sling', profile: 'cruise', via: b.id, side, time: r.time, dv: r.dv, ok: r.dv <= tank, reach: true, path: r.path };
     }
   }
@@ -938,7 +940,7 @@ function combat(game, dt) {
         if (d > RULES.pdcRange) continue;
         const rel = Math.hypot(m.vx - s.vx, m.vy - s.vy, m.vz - s.vz);
         const use = Math.min(guns, 2); guns -= use;
-        if (game.rand() < 1 - Math.exp(-use * (1.2 / (1 + rel / 5)) * (m.swarm ? 0.5 : 1) * dt)) {
+        if (game.rand() < 1 - Math.exp(-use * (1.7 / (1 + rel / 6)) * (m.swarm ? 0.5 : 1) * dt)) {
           m.dead = true;
           fx(game, { type: 'pdcKill', x: m.x, y: m.y, z: m.z, fx: s.x, fy: s.y, fz: s.z, owner: s.owner });
         } else if (game.rand() < 0.5) fx(game, { type: 'pdc', x: s.x, y: s.y, z: s.z, tx: m.x, ty: m.y, tz: m.z, owner: s.owner });
@@ -1020,7 +1022,7 @@ function combat(game, dt) {
       if (Math.hypot(m.x - p.x, m.y - p.y, m.z - p.z) > RULES.pdcRange + b.size) continue;
       guns -= 1;
       const rel = Math.hypot(m.vx - v.x, m.vy - v.y, m.vz - v.z);
-      if (game.rand() < 1 - Math.exp(-(1.2 / (1 + rel / 5)) * (m.swarm ? 0.5 : 1) * dt)) { m.dead = true; fx(game, { type: 'pdcKill', x: m.x, y: m.y, z: m.z, fx: p.x, fy: p.y, fz: p.z, owner: b.owner }); }
+      if (game.rand() < 1 - Math.exp(-(1.7 / (1 + rel / 6)) * (m.swarm ? 0.5 : 1) * dt)) { m.dead = true; fx(game, { type: 'pdcKill', x: m.x, y: m.y, z: m.z, fx: p.x, fy: p.y, fz: p.z, owner: b.owner }); }
     }
     b.bcd ||= [0, 0];
     let best = null, bestD = 1e9;

@@ -11,6 +11,9 @@ timed events) are still there to lift back if testing asks for them.
 
 - **One generated system every game.** A sun, four or five planets (at least
   one gas giant with moons), a belt, a station or two. Worlds ride fixed orbits.
+  Space is mostly empty: worlds are hundreds of their own widths apart, a hop to
+  your moon takes about a minute and crossing the system several. Solo games
+  have time speeds up to 8x.
 - **Ships are real bodies.** Each has a position, a velocity and a tank. The sun
   and the planets pull on them. They change course only by burning, and every
   burn spends fuel (shown as an amber bar; in the rules it is a total speed
@@ -84,10 +87,11 @@ timed events) are still there to lift back if testing asks for them.
 
 ## Controls
 
-- Touch: tap to select, drag to turn the view, two fingers to move and zoom,
-  double-tap to follow a ship or world.
+- Touch (as in the first Perihelion): tap to select and lock the view on it,
+  drag to turn, two fingers to move and zoom (while locked, a pinch zooms about
+  the locked world or ship), double-tap to fly in.
 - Mouse: click to select, drag to move the map, right-drag to turn, wheel to zoom.
-- Keys: Space pause, 1 to 4 time speed, H whole system, R research, F follow, Esc back.
+- Keys: WASD or arrows move, Q/E turn, +/- zoom, Space pause, 1 to 4 time speed, H whole system, R research, F follow, Esc back.
 
 ## Run
 
@@ -95,7 +99,7 @@ timed events) are still there to lift back if testing asks for them.
 npm ci
 npm run dev
 npm run check           # headless rules checks (seconds)
-npm run check:matches   # 24 AI-only matches; every one must finish (about a minute)
+npm run check:matches   # 24 AI-only matches; at most two may stalemate (a few minutes)
 npm run build && npm run preview
 node tools/smoke.mjs    # phone-sized touch test (needs the preview server and Playwright)
 node tools/mp-smoke.mjs # two-browser multiplayer test (also needs a local PeerJS server)
@@ -127,6 +131,8 @@ points multiplayer at a local PeerJS server (`npx peerjs --port 9000 --host 127.
 
 ## Known gaps
 
+- Two AI admirals of equal strength can stalemate (about 1 match in 24).
+- AI-only matches run long (median about 75 minutes of game time).
 - Structures are shown as marks and icons, not as buildings on the worlds.
 - AI admirals do not use firing passes on batteries or run dark.
 - Sound has only been checked by measurement, not by ear.

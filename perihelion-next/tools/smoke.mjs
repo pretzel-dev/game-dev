@@ -31,15 +31,18 @@ const P = () => page.evaluate(() => {
 });
 let p = await P();
 await page.touchscreen.tap(p.ship.x, p.ship.y);
-await page.waitForTimeout(400);
+await page.waitForTimeout(2000); // (the view glides to lock onto what was tapped)
 const selected = await page.evaluate(() => window.__perihelion.ui.sel.size);
 p = await P();
 await page.touchscreen.tap(p.moon.x, p.moon.y);
 await page.waitForSelector('[data-a="go"]');
 await shot('routes');
 const routes = await page.evaluate(() => window.__perihelion.ui.routes.map((r) => r.key));
-await page.tap('[data-a="go"][data-v="hard"]');
-await page.waitForTimeout(600);
+for (let i = 0; i < 4; i++) {
+  await page.tap('[data-a="go"][data-v="hard"]');
+  await page.waitForTimeout(500);
+  if (await page.evaluate(() => window.__perihelion.game.ships.some((x) => x.owner === 0 && x.order))) break;
+}
 const ordered = await page.evaluate((id) => window.__perihelion.game.ships.filter((s) => s.owner === 0 && s.order && s.order.body === id).length, p.moonId);
 await page.tap('[data-a="clear"]');
 await page.evaluate(() => { window.__perihelion.game.credits[0] = 3000; });
@@ -52,7 +55,12 @@ await page.waitForSelector('[data-a="slot"]');
 await page.tap('[data-a="slot"]');
 await page.tap('[data-a="build"][data-v="mine"]');
 await page.waitForTimeout(500);
-await page.tap('[data-a="ship"][data-v="corvette"]');
+// (A synthetic click can land on a button the panel has just redrawn: try again if nothing was ordered.)
+for (let i = 0; i < 4; i++) {
+  await page.tap('[data-a="ship"][data-v="corvette"]');
+  await page.waitForTimeout(400);
+  if (await page.evaluate(() => window.__perihelion.game.homes[0].queue.length)) break;
+}
 await page.waitForTimeout(300);
 await page.tap('#rnd');
 await page.tap('[data-a="research"][data-v="weapons"]');

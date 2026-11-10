@@ -83,9 +83,14 @@ function start(g, opts = {}) {
   for (const e of game.events) e.seen = true;
   view.build(game);
   const home = game.homes[me] || game.bodies.find((b) => b.owner === me) || game.bodies[0];
-  if (mode === 'demo') { view.orbit.follow = null; view.orbit.target.set(0, 0, 0); view.orbit.dist = 240; view.orbit.pol = 1.05; }
+  if (mode === 'demo') { view.orbit.follow = null; view.orbit.target.set(0, 0, 0); view.orbit.dist = 1100; view.orbit.pol = 1.05; }
   else if (opts.look) { view.orbit.follow = null; view.orbit.ship = null; view.orbit.target.set(opts.look.x, 0, opts.look.z); view.orbit.dist = opts.look.dist; }
-  else { view.focus(game, home.id, false); view.orbit.dist = 55; view.orbit.pol = 0.95; }
+  else {
+    // Open on the capital, close enough to see its ships and far enough to see its moon, with no fly-in.
+    const hp = S.posAt(game, home, game.time);
+    const reach = Math.max(12, ...game.bodies.filter((b) => b.parent === home.id).map((b) => b.r));
+    view.focus(game, home.id, false); view.orbit.target.set(hp.x, hp.y, hp.z); view.orbit.dist = reach * 5.5; view.orbit.pol = 0.8;
+  }
   $('hud').hidden = mode === 'demo';
   $('title').hidden = mode !== 'demo';
   $('panel').hidden = true; $('sheet').hidden = true; $('strip').hidden = true;
@@ -155,7 +160,7 @@ function tap(x, y, double) {
     if (mine(s) && !s.st.civil) {
       if (ui.sel.has(s.id) && ui.sel.size > 1) selectShips([s]);
       else selectShips(s.at !== null ? game.ships.filter((x) => mine(x) && !x.st.civil && x.at === s.at) : game.ships.filter((x) => mine(x) && !x.st.civil && x.at === null && x.grp === s.grp));
-      if (double) view.followShip(s.id, true);
+      view.followShip(s.id, double);
     } else if (!mine(s)) { ui.targetShip = s.id; ui.target = null; ui.routes = null; if (!ui.sel.size) ui.selBody = null; sfx('tap'); if (double) view.followShip(s.id, true); }
     return;
   }
@@ -165,6 +170,7 @@ function tap(x, y, double) {
     if (double) view.focus(game, b.id, true);
     if (ships.length && !ships.every((s) => s.at === b.id)) { setTarget(b.id); return; }
     clearSel(); ui.selBody = b.id; sfx('select');
+    if (!double) view.focus(game, b.id, false);
     return;
   }
   if (ui.target != null || ui.targetShip != null) { ui.target = null; ui.targetShip = null; ui.routes = null; return; }
@@ -177,6 +183,8 @@ function chip(s, on = true) {
   const dots = ['drive', 'reactor', 'weapons', 'sensors'].map((k) => `<i class="${s.out[k] > 0 ? 'out' : ''}"></i>`).join('');
   return `<button class="chip ${on ? 'on' : ''}" data-a="chip" data-v="${s.id}" title="${esc(s.name)}">${glyph(s.cls, ui.colors[s.owner])}<span class="bars"><i class="${s.hull < s.st.hull * 0.35 ? 'low' : ''}" ${bar(s.hull / s.st.hull)}></i><i class="f" ${bar(s.dv / s.st.dv)}></i></span><span class="dots">${dots}</span></button>`;
 }
+const L = (ic, word) => `${ic}<em>${word}</em>`;
+const ROUTE_NAME = { hard: 'Hard burn', cruise: 'Cruise', dark: 'Dark', sling: 'Slingshot' };
 const tile = (a, v, ic, small, cls = '', extra = '') => `<button class="tile ${cls}" data-a="${a}" data-v="${v}">${ic}${small ? `<small>${small}</small>` : ''}${extra}</button>`;
 function stripHTML() {
   if (!live()) return '';
@@ -197,9 +205,9 @@ function stripHTML() {
       h += `<div class="sub">${icon('arrived')} ${esc(b.name)}</div><div class="row">`;
       for (const r of ui.routes || []) {
         const over = r.dv > tank;
-        h += tile('go', r.key, icon(r.key), mmss(Math.round(r.time / 5) * 5), `wide ${over ? 'no' : ''}`, `<span class="fuel"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, Math.round((r.dv / Math.max(0.01, tank)) * 20) * 5)}%"></i></span>`);
+        h += tile('go', r.key, L(icon(r.key), ROUTE_NAME[r.key]), mmss(Math.round(r.time / 5) * 5), `wide ${over ? 'no' : ''}`, `<span class="fuel"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, Math.round((r.dv / Math.max(0.01, tank)) * 20) * 5)}%"></i></span>`);
       }
-      if (b.owner !== me && S.batteryMax(b) > 0 && b.bhp > 0) h += tile('strike', b.id, icon('strike'), '', 'wide');
+      if (b.owner !== me && S.batteryMax(b) > 0 && b.bhp > 0) h += tile('strike', b.id, L(icon('strike'), 'Firing pass'), '', 'wide');
       if (!(ui.routes || []).length) h += `<span class="hint">no course</span>`;
       h += '</div>';
     } else if (ui.targetShip != null) {
@@ -207,22 +215,22 @@ function stripHTML() {
       if (T && (ui.dev || T.seen[me])) {
         const known = T.seen[me] === 2;
         h += `<div class="sub" style="color:${HOSTILE}">${icon('contact')} ${known ? `${esc(T.name)} · ${CLASSES[T.cls].name}` : 'Unknown contact'}</div><div class="row">`;
-        h += tile('pass', T.id, icon('strike'), '', 'wide') + tile('match', T.id, icon('match'), '', 'wide');
-        if (ships.some((s) => s.torps > 0)) h += tile('salvo', T.id, icon('salvo'), '', 'wide');
+        h += tile('pass', T.id, L(icon('strike'), 'Pass'), '', 'wide') + tile('match', T.id, L(icon('match'), 'Match'), '', 'wide');
+        if (ships.some((s) => s.torps > 0)) h += tile('salvo', T.id, L(icon('salvo'), 'Salvo'), '', 'wide');
         h += '</div>';
       } else ui.targetShip = null;
     } else {
       const all = (k) => ships.every((s) => s[k]);
       h += '<div class="row">';
-      if (ships.some((s) => s.st.tubes)) h += tile('torps', '', icon('torp'), `${ships.reduce((n, s) => n + s.torps, 0)}`, all('torpsFree') ? 'on' : '');
-      h += tile('fire', '', icon('fire'), '', all('fireFree') ? 'on' : '');
-      h += tile('evade', '', icon('evade'), '', all('evade') ? 'on' : '');
-      h += tile('plot', '', icon('plot'), '', ui.plotMode ? 'on' : '');
-      if (ships.some((s) => s.order)) h += tile('cut', '', icon('cut'), '');
-      h += tile('retreat', '', icon('retreat'), '');
-      h += tile('follow', '', icon('focus'), '');
+      if (ships.some((s) => s.st.tubes)) h += tile('torps', '', L(icon('torp'), all('torpsFree') ? 'Torpedoes free' : 'Torpedoes held'), `${ships.reduce((n, s) => n + s.torps, 0)} left`, all('torpsFree') ? 'on' : '');
+      h += tile('fire', '', L(icon('fire'), all('fireFree') ? 'Guns free' : 'Guns held'), '', all('fireFree') ? 'on' : '');
+      h += tile('evade', '', L(icon('evade'), 'Evade'), '', all('evade') ? 'on' : '');
+      h += tile('plot', '', L(icon('plot'), 'Plot burn'), '', ui.plotMode ? 'on' : '');
+      if (ships.some((s) => s.order)) h += tile('cut', '', L(icon('cut'), 'Stop'), '');
+      h += tile('retreat', '', L(icon('retreat'), 'Retreat'), '');
+      h += tile('follow', '', L(icon('focus'), 'Follow'), '');
       h += '</div>';
-      if (ui.plotMode) h += `<div class="hint">drag from the ship to set a burn</div>`;
+      if (ui.plotMode) h += `<div class="hint">Drag from the ship</div>`;
     }
     return h;
   }
@@ -244,16 +252,16 @@ function stripHTML() {
       for (const x of b.structures) {
         const S0 = RULES.structures[x.type];
         const can = S.working(x) && x.level < S0.maxLevel;
-        h += tile(can ? 'upgrade' : 'none', x.type, icon(x.type), can ? `${icon('up')}` : '', `${can && game.credits[me] < S.upgradeCost(x) ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}${can ? `<small>${S.upgradeCost(x)}</small>` : ''}`);
+        h += tile(can ? 'upgrade' : 'none', x.type, L(icon(x.type), S0.name), '', `${can && game.credits[me] < S.upgradeCost(x) ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}${can ? `<small>Upgrade ${S.upgradeCost(x)}</small>` : ''}`);
       }
-      for (let i = b.structures.length; i < slots; i++) h += tile('slot', '', icon('add'), '', `empty ${ui.build ? 'on' : ''}`);
+      for (let i = b.structures.length; i < slots; i++) h += tile('slot', '', L(icon('add'), 'Build'), '', `empty ${ui.build ? 'on' : ''}`);
       h += '</div>';
       if (ui.build) {
         h += '<div class="row">';
         for (const type in RULES.structures) {
           const why = S.cantBuild(game, b, type);
           if (why && why !== 'Not enough credits') continue;
-          h += tile('build', type, icon(type), RULES.structures[type].cost, why ? 'no' : '');
+          h += tile('build', type, L(icon(type), RULES.structures[type].name), RULES.structures[type].cost, why ? 'no' : '');
         }
         h += '</div>';
       }
@@ -261,8 +269,8 @@ function stripHTML() {
         h += '<div class="row">';
         for (const cls of BUILDABLE) {
           const why = S.cantOrderShip(game, b, cls);
-          if (why && why.startsWith('Needs') && cls === 'battleship' && game.tech[me].weapons < 2) { h += tile('none', '', glyph(cls, DIMC), icon('research'), 'no'); continue; }
-          h += tile('ship', cls, glyph(cls, ui.colors[me]), S.shipCost(game, me, cls), why ? 'no' : '').replace('<button', `<button title="${CLASSES[cls].name}"`);
+          if (why && why.startsWith('Needs') && cls === 'battleship' && game.tech[me].weapons < 2) { h += tile('none', '', L(glyph(cls, DIMC), CLASSES[cls].name), 'research', 'no'); continue; }
+          h += tile('ship', cls, L(glyph(cls, ui.colors[me]), CLASSES[cls].name), S.shipCost(game, me, cls), why ? 'no' : '').replace('<button', `<button title="${CLASSES[cls].name}"`);
         }
         h += '</div>';
         if (b.queue.length) h += `<div class="row">${b.queue.map((qq, i) => tile('cancel', i, glyph(qq.cls, AMBER), i === 0 ? mmss(Math.ceil(qq.left / 5) * 5) : '', 'on', i === 0 ? `<span class="prog" style="width:${Math.round((1 - qq.left / qq.total) * 20) * 5}%"></span>` : '')).join('')}</div>`;
@@ -271,7 +279,7 @@ function stripHTML() {
     } else if (b.structures.length) {
       h += `<div class="sub">${b.structures.filter(S.working).map((x) => icon(x.type)).join('')}</div>`;
     }
-    if (here.length) h += `<div class="row">${here.map((s) => chip(s, false)).join('')}${tile('fleet', b.id, icon('check'), 'all')}</div>`;
+    if (here.length) h += `<div class="row">${here.map((s) => chip(s, false)).join('')}${tile('fleet', b.id, L(icon('check'), 'Select all'), '')}</div>`;
     return h;
   }
   return '';
@@ -378,19 +386,19 @@ function drainEvents() {
     const toPoint = e.x !== undefined ? () => { view.orbit.follow = null; view.orbit.ship = null; view.orbit.target.set(e.x, e.y, e.z); } : null;
     const mineC = ui.colors[me];
     switch (e.type) {
-      case 'contact': if (e.owner === me && game.time - lastContact > 4) { lastContact = game.time; notice('contact', AMBER, '', toShip); sfx('contact'); } break;
-      case 'salvo': if (e.owner !== me && s && s.seen[me] && game.time - lastAlarm > 6) { lastAlarm = game.time; notice('torp', HOSTILE, '', toShip); sfx('alarm'); } break;
-      case 'system': if (e.owner === me && s) { notice('bolt', HOSTILE, s.name, toShip); sfx('system'); } break;
+      case 'contact': if (e.owner === me && game.time - lastContact > 4) { lastContact = game.time; notice('contact', AMBER, 'Contact', toShip); sfx('contact'); } break;
+      case 'salvo': if (e.owner !== me && s && s.seen[me] && game.time - lastAlarm > 6) { lastAlarm = game.time; notice('torp', HOSTILE, 'Torpedoes', toShip); sfx('alarm'); } break;
+      case 'system': if (e.owner === me && s) { notice('bolt', HOSTILE, `${s.name}: ${e.sys} out`, toShip); sfx('system'); } break;
       case 'repaired': if (e.owner === me) sfx('repaired'); break;
-      case 'lost': if (e.owner === me) { notice('lost', HOSTILE, e.name, toPoint); sfx('lost'); } else if (e.by === me) notice('lost', INK, e.name, toPoint); break;
-      case 'raided': case 'seized': if ((e.owner === me && e.type === 'raided') || e.from === me) { notice('raided', HOSTILE, '', toPoint); sfx('deny'); } else if (e.by === me || (e.type === 'seized' && e.owner === me)) { notice('freight', AMBER, e.n ? `+${e.n}` : '', toPoint); sfx('freight'); } break;
-      case 'captured': if (e.owner === me) { notice('captured', mineC, b.name, toBody); sfx('captured'); } else if (e.from === me) { notice('captured', HOSTILE, b.name, toBody); sfx('lostWorld'); } break;
-      case 'silenced': if (e.by === me) sfx('silenced'); else if (e.owner === me) { notice('battery', HOSTILE, b.name, toBody); sfx('silenced'); } break;
+      case 'lost': if (e.owner === me) { notice('lost', HOSTILE, `${e.name} lost`, toPoint); sfx('lost'); } else if (e.by === me) notice('lost', INK, `${e.name} destroyed`, toPoint); break;
+      case 'raided': case 'seized': if ((e.owner === me && e.type === 'raided') || e.from === me) { notice('raided', HOSTILE, 'Freighter lost', toPoint); sfx('deny'); } else if (e.by === me || (e.type === 'seized' && e.owner === me)) { notice('freight', AMBER, e.n ? `+${e.n}` : '', toPoint); sfx('freight'); } break;
+      case 'captured': if (e.owner === me) { notice('captured', mineC, `${b.name} taken`, toBody); sfx('captured'); } else if (e.from === me) { notice('captured', HOSTILE, `${b.name} lost`, toBody); sfx('lostWorld'); } break;
+      case 'silenced': if (e.by === me) sfx('silenced'); else if (e.owner === me) { notice('battery', HOSTILE, `${b.name}: battery down`, toBody); sfx('silenced'); } break;
       case 'built': if (e.owner === me) { notice(e.what, mineC, b.name, toBody); sfx('built'); } break;
-      case 'launched': if (e.owner === me && s) { notice('yard', mineC, s.name, toShip); sfx('launched'); } break;
+      case 'launched': if (e.owner === me && s) { notice('yard', mineC, `${s.name} launched`, toShip); sfx('launched'); } break;
       case 'research': if (e.owner === me) { notice(e.key, AMBER, TECH[e.key].levels[e.level - 1], null); sfx('research'); } break;
       case 'freight': if (e.owner === me) sfx('freight', { gain: 0.5 }); break;
-      case 'fuel': if (e.owner === me && s) { notice('fuel', AMBER, s.name, toShip); sfx('fuel'); } break;
+      case 'fuel': if (e.owner === me && s) { notice('fuel', AMBER, `${s.name}: low fuel`, toShip); sfx('fuel'); } break;
       case 'boarded': if (e.owner === me) { notice('flag', mineC, e.name, toShip); sfx('captured'); } else if (e.from === me) { notice('flag', HOSTILE, e.name, toShip); sfx('lost'); } break;
       case 'eliminated': if (e.owner !== me) notice('skull', ui.colors[e.owner], game.names[e.owner], null); break;
       default:
@@ -418,7 +426,7 @@ function refreshUI() {
   $('pause').innerHTML = icon(paused ? 'play' : 'pause');
   $('pause').hidden = mode === 'guest';
   for (const b of game.bodies) {
-    if (b.owner === me && b.yt > 1 && !b.warnedYield) { b.warnedYield = true; notice('captured', HOSTILE, b.name, () => view.focus(game, b.id, false)); sfx('alarm'); }
+    if (b.owner === me && b.yt > 1 && !b.warnedYield) { b.warnedYield = true; notice('captured', HOSTILE, `${b.name} under siege`, () => view.focus(game, b.id, false)); sfx('alarm'); }
     else if (b.yt <= 0) b.warnedYield = false;
   }
   const sh = stripHTML();
@@ -450,12 +458,12 @@ const seg = (a, list, cur, lab = (x) => x) => `<div class="seg">${list.map((x) =
 
 function titleNav() {
   const day = S.dailySeed().key.slice(5);
-  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="scenarios">Scenarios${prefs.done.first ? '' : '<small>start here</small>'}</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
+  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="scenarios">Scenarios</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
   $('fine').innerHTML = `<button data-a="sound">Sound ${prefs.sound ? 'on' : 'off'}</button><button data-a="text">Text ${prefs.ui === 1 ? 'standard' : prefs.ui > 1 ? 'large' : 'small'}</button><button data-a="gfx">Graphics ${prefs.gfx}</button>`;
 }
 function setupPanel(daily = false) {
-  showPanel(`${head(daily ? 'Daily system' : 'Engage')}<p class="lbl">Your power</p>${factionOpts(prefs.faction)}`
-    + `<p class="lbl">Rivals</p>${seg('rivals', [1, 2], prefs.rivals)}<p class="lbl">Opposition</p>${seg('level', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}`
+  showPanel(`${head(daily ? 'Daily system' : 'Engage')}<p class="lbl">Side</p>${factionOpts(prefs.faction)}`
+    + `<p class="lbl">Rivals</p>${seg('rivals', [1, 2], prefs.rivals)}<p class="lbl">AI</p>${seg('level', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}`
     + `<button class="cta" data-a="${daily ? 'launchDaily' : 'launch'}">Launch</button>`);
   panel.dataset.screen = daily ? 'daily' : 'setup';
 }
@@ -528,8 +536,8 @@ function pauseMenu() {
 let lobby = null;
 function mpPanel(msg = '') {
   showPanel(`${head('Multiplayer')}<p class="lbl">Name</p><input id="mpname" maxlength="16" value="${esc(prefs.name)}" placeholder="Your name" autocomplete="off" />`
-    + `<p class="lbl">Your power</p>${factionOpts(prefs.faction)}<button class="cta" data-a="host">Host a game</button>`
-    + `<p class="lbl">Or join with a code</p><input id="mpcode" maxlength="5" placeholder="Code" autocomplete="off" autocapitalize="characters" /><button class="cta ghost" data-a="join">Join</button><p class="hint">${esc(msg)}</p>`);
+    + `<p class="lbl">Side</p>${factionOpts(prefs.faction)}<button class="cta" data-a="host">Host a game</button>`
+    + `<p class="lbl">Join with a code</p><input id="mpcode" maxlength="5" placeholder="Code" autocomplete="off" autocapitalize="characters" /><button class="cta ghost" data-a="join">Join</button><p class="hint">${esc(msg)}</p>`);
   panel.dataset.screen = 'mp';
 }
 function lobbyPanel() {
@@ -621,38 +629,13 @@ function clickPanel(a, v) {
 delegate(panel, clickPanel);
 delegate($('title'), clickPanel);
 
-// ---- Input ---------------------------------------------------------------------------------
+// ---- Input: one finger turns, two pan and pinch, a tap selects and locks on, double-tap flies in ----
+// (The same handling as the first Perihelion.)
 const canvas = $('scene');
-const pts = new Map();
-let moved = 0, lastTap = 0, lastTapX = 0, lastTapY = 0, pinch = 0, mid = null;
+const pointers = new Map();
+let gesture = null;
+let lastTap = { t: 0, key: null };
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-canvas.addEventListener('pointerdown', (e) => {
-  canvas.setPointerCapture(e.pointerId);
-  pts.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, btn: e.button, type: e.pointerType });
-  if (pts.size === 1) { moved = 0; if (ui.plotMode && selShips().length) ui.plot = { ship: selShips()[0].id, x: e.clientX, y: e.clientY, path: null }; }
-  if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; ui.plot = null; }
-});
-canvas.addEventListener('pointermove', (e) => {
-  const p = pts.get(e.pointerId);
-  if (!p) return;
-  const dx = e.clientX - p.x, dy = e.clientY - p.y;
-  p.x = e.clientX; p.y = e.clientY;
-  moved += Math.abs(dx) + Math.abs(dy);
-  if (pts.size === 1) {
-    if (ui.plot) { ui.plot.x = p.x; ui.plot.y = p.y; plotPreview(); return; }
-    if (moved < 6) return;
-    ui.dragging = true;
-    const o = view.orbit;
-    if (p.type === 'mouse' && p.btn === 0 && !e.altKey) view.pan(dx, dy);
-    else { o.az -= dx * 0.006; o.pol -= dy * 0.006; o.vaz = -dx * 0.006; o.vpol = -dy * 0.006; }
-  } else if (pts.size === 2) {
-    const [a, b] = [...pts.values()];
-    const d = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    if (pinch > 0 && d > 0) view.zoomToward(m.x, m.y, pinch / d);
-    if (!view.following()) view.pan(m.x - mid.x, m.y - mid.y);
-    pinch = d; mid = m; moved += 10;
-  }
-});
 const plotBurn = () => {
   const s = S.shipById(game, ui.plot.ship);
   const w = view.worldAt(ui.plot.x, ui.plot.y);
@@ -661,7 +644,7 @@ const plotBurn = () => {
   const px = Math.hypot(ui.plot.x - a.x, ui.plot.y - a.y);
   if (px < 14) return null;
   const dx = w.x - s.x, dz = w.z - s.z, l = Math.hypot(dx, dz) || 1;
-  return { type: 'burn', x: dx / l, y: 0, z: dz / l, left: Math.min(40, px / 6) };
+  return { type: 'burn', x: dx / l, y: 0, z: dz / l, left: Math.min(60, px / 4) };
 };
 let lastPreview = 0;
 function plotPreview() {
@@ -670,43 +653,149 @@ function plotPreview() {
   lastPreview = now;
   const o = plotBurn();
   const s = S.shipById(game, ui.plot.ship);
-  ui.plot.path = o && s ? S.dryRun(game, s, o, { coast: 240, maxT: 320, h: 1, every: 3 }).path : null;
+  ui.plot.path = o && s ? S.dryRun(game, s, o, { coast: 600, maxT: 700, h: 2, every: 3 }).path : null;
 }
-function pointerEnd(e) {
-  const p = pts.get(e.pointerId);
-  pts.delete(e.pointerId);
-  if (!p) return;
-  if (pts.size === 0) {
-    ui.dragging = false;
-    if (ui.plot) {
-      const o = plotBurn();
-      if (o) { act({ t: 'order', ids: selShips().map((s) => s.id), order: o }); sfx('confirm'); ui.plotMode = false; }
-      ui.plot = null;
-      refreshUI();
-      return;
-    }
-    if (moved < 8 && e.type === 'pointerup') {
-      const now = performance.now();
-      const dbl = now - lastTap < 320 && Math.hypot(p.x - lastTapX, p.y - lastTapY) < 30;
-      lastTap = now; lastTapX = p.x; lastTapY = p.y;
-      tap(p.x, p.y, dbl);
-      refreshUI();
-    }
+const startPlot = (e) => {
+  if (!ui.plotMode || !selShips().length) return false;
+  ui.plot = { ship: selShips()[0].id, x: e.clientX, y: e.clientY, path: null };
+  gesture = { kind: 'plot', mouse: e.pointerType === 'mouse' };
+  return true;
+};
+const endPlot = (cancel) => {
+  const o = !cancel && plotBurn();
+  if (o) { act({ t: 'order', ids: selShips().map((s) => s.id), order: o }); sfx('confirm'); ui.plotMode = false; }
+  ui.plot = null; gesture = null; ui.dragging = false;
+  refreshUI();
+};
+const doTap = (x, y) => {
+  const hit = view.pick(x, y);
+  const key = hit ? JSON.stringify(hit) : null;
+  const now = performance.now();
+  const dbl = key !== null && lastTap.key === key && now - lastTap.t < 350;
+  lastTap = dbl ? { t: 0, key: null } : { t: now, key };
+  tap(x, y, dbl);
+  refreshUI();
+};
+canvas.addEventListener('pointerdown', (e) => {
+  if (!game) return;
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  view.orbit.vaz = view.orbit.vpol = 0;
+  if (e.pointerType === 'mouse') {
+    if (e.button === 0 && startPlot(e)) return;
+    // Mouse: left drags pan, right or middle drags turn the view around whatever is under the cursor.
+    const turn = e.button === 2 || e.button === 1 || e.altKey;
+    gesture = { kind: turn ? 'turn' : 'click', mouse: true, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
+      pivot: turn && !view.following() ? view.pivotAt(e.clientX, e.clientY) : null };
+    ui.dragging = true;
+    return;
   }
+  // The first finger down starts afresh: a finger whose lift was never reported would
+  // otherwise linger and turn every one-finger drag into a pinch.
+  if (e.isPrimary) pointers.clear();
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1) { if (!startPlot(e)) gesture = { kind: 'tap', x0: e.clientX, y0: e.clientY }; }
+  else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    ui.plot = null;
+    gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, mx0: (a.x + b.x) / 2, my0: (a.y + b.y) / 2 };
+  }
+  ui.dragging = true;
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (gesture?.kind === 'plot') { ui.plot.x = e.clientX; ui.plot.y = e.clientY; plotPreview(); const p = pointers.get(e.pointerId); if (p) { p.x = e.clientX; p.y = e.clientY; } return; }
+  if (gesture?.mouse) {
+    const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+    gesture.x = e.clientX; gesture.y = e.clientY;
+    if (gesture.kind === 'click' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) gesture.kind = 'pan';
+    if (gesture.kind === 'pan') view.pan(dx, dy);
+    if (gesture.kind === 'turn') {
+      if (gesture.pivot) view.rotateAround(gesture.pivot, -dx * 0.006, -dy * 0.006);
+      else { view.orbit.az -= dx * 0.006; view.orbit.pol -= dy * 0.006; }
+    }
+    return;
+  }
+  if (e.pointerType === 'mouse' && game) canvas.style.cursor = view.pick(e.clientX, e.clientY) ? 'pointer' : 'grab';
+  const p = pointers.get(e.pointerId);
+  if (!p || !gesture) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (gesture.kind === 'pinch') {
+    if (pointers.size < 2) return;
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    // Two fingers drag the map and zoom toward themselves. While locked onto a world or ship,
+    // a pinch just zooms about it, until the fingers clearly drag the map away.
+    if (view.following() && Math.hypot(mx - gesture.mx0, my - gesture.my0) < 40) view.zoomBy(gesture.d / Math.max(1, d));
+    else { view.pan(mx - gesture.mx, my - gesture.my); view.zoomAt(mx, my, gesture.d / Math.max(1, d)); }
+    gesture.d = d; gesture.mx = mx; gesture.my = my;
+    return;
+  }
+  if (gesture.kind === 'tap' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 10) gesture.kind = 'orbit';
+  if (gesture.kind === 'orbit') {
+    const k = 4 / window.innerHeight;
+    view.orbit.az -= dx * k; view.orbit.pol -= dy * k;
+    view.orbit.vaz = -dx * k; view.orbit.vpol = -dy * k;
+  }
+});
+function endPointer(e) {
+  if (gesture?.kind === 'plot') { pointers.delete(e.pointerId); endPlot(e.type === 'pointercancel'); return; }
+  if (gesture?.mouse) {
+    const g = gesture;
+    gesture = null; ui.dragging = false;
+    if (g.kind === 'click' && e.type !== 'pointercancel') doTap(e.clientX, e.clientY);
+    return;
+  }
+  if (!pointers.delete(e.pointerId)) return;
+  if (gesture?.kind === 'tap' && pointers.size === 0 && e.type !== 'pointercancel') doTap(e.clientX, e.clientY);
+  if (pointers.size === 0) { gesture = null; ui.dragging = false; } else gesture = { kind: 'orbit' };
 }
-canvas.addEventListener('pointerup', pointerEnd);
-canvas.addEventListener('pointercancel', pointerEnd);
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.zoomToward(e.clientX, e.clientY, Math.exp(e.deltaY * 0.0012)); }, { passive: false });
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', (e) => { endPointer(e); gesture = null; ui.dragging = false; });
+// Lifts the canvas doesn't hear about (released over a panel, capture lost) still end that finger.
+const dropPointer = (e) => {
+  if (!pointers.delete(e.pointerId)) return;
+  if (gesture?.kind === 'plot') { endPlot(true); return; }
+  if (pointers.size === 0) { gesture = null; ui.dragging = false; } else gesture = { kind: 'orbit' };
+};
+window.addEventListener('pointerup', dropPointer);
+window.addEventListener('pointercancel', dropPointer);
+canvas.addEventListener('lostpointercapture', dropPointer);
+const resetPointers = () => { pointers.clear(); gesture = null; ui.dragging = false; ui.plot = null; pressed = null; };
+window.addEventListener('blur', resetPointers);
+document.addEventListener('visibilitychange', resetPointers);
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
+  view.zoomToward(e.clientX, e.clientY, Math.exp(Math.max(-0.5, Math.min(0.5, dy * (e.ctrlKey ? 0.01 : 0.0015)))));
+}, { passive: false });
+const keys = new Set();
+window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if (e.key === 'Escape') { if (!$('sheet').hidden) $('sheet').hidden = true; else if (!panel.hidden && panel.dataset.screen === 'pause') { paused = false; hidePanel(); } else if (ui.sel.size || ui.selBody != null || ui.targetShip != null) { clearSel(); ui.selBody = null; } else pauseMenu(); refreshUI(); return; }
   if (!live()) return;
+  const k = e.key.toLowerCase();
+  if ('wasdqe'.includes(k) || k.startsWith('arrow') || k === '+' || k === '=' || k === '-') { keys.add(k); e.preventDefault(); return; }
   if (e.key === ' ') { e.preventDefault(); $('pause').click(); }
   else if (e.key >= '1' && e.key <= '4' && mode === 'solo') { warp = 2 ** (+e.key - 1); refreshUI(); }
-  else if (e.key === 'h' || e.key === 'H') $('sys').click();
-  else if (e.key === 'r' || e.key === 'R') $('rnd').click();
-  else if (e.key === 'f' || e.key === 'F') { const s = selShips()[0]; if (s) view.followShip(s.id, true); else if (ui.selBody != null) view.focus(game, ui.selBody, true); }
+  else if (k === 'h') $('sys').click();
+  else if (k === 'r') $('rnd').click();
+  else if (k === 'f') { const s = selShips()[0]; if (s) view.followShip(s.id, true); else if (ui.selBody != null) view.focus(game, ui.selBody, true); }
 });
+function keyNav(dt) {
+  if (!keys.size) return;
+  const has = (...ks) => ks.some((k) => keys.has(k));
+  const sp = 600 * dt;
+  if (has('a', 'arrowleft')) view.pan(sp, 0);
+  if (has('d', 'arrowright')) view.pan(-sp, 0);
+  if (has('w', 'arrowup')) view.pan(0, sp);
+  if (has('s', 'arrowdown')) view.pan(0, -sp);
+  if (has('q')) view.orbit.az += dt * 1.2;
+  if (has('e')) view.orbit.az -= dt * 1.2;
+  if (has('+', '=')) view.zoomBy(Math.exp(-dt * 1.5));
+  if (has('-')) view.zoomBy(Math.exp(dt * 1.5));
+}
 
 // ---- The loop ---------------------------------------------------------------------------------
 let last = performance.now(), uiT = 0, pathT = 0, routeT = 0, audioT = 0;
@@ -716,6 +805,7 @@ function frame(nowMs) {
   last = nowMs;
   const t = nowMs / 1000;
   if (!game) return;
+  keyNav(dt);
   const hold = paused || ended || (!panel.hidden && mode === 'solo' && panel.dataset.screen === 'pause');
   let gdt = 0;
   if (mode === 'guest') { if (!paused) game.acc = Math.min(0.6, (game.acc || 0) + dt); }
@@ -741,10 +831,10 @@ function frame(nowMs) {
     if (nowMs - pathT > 900) {
       pathT = nowMs;
       ui.paths = new Map();
-      for (const s of selShips().slice(0, 6)) if (s.order && s.at === null) ui.paths.set(s.id, S.dryRun(game, s, s.order, { maxT: 400, h: 1.5, every: 2, coast: s.order.type === 'burn' ? 200 : 0 }).path);
-      for (const s of selShips().slice(0, 6)) if (!s.order && s.at === null) ui.paths.set(s.id, S.dryRun(game, s, { type: 'burn', x: 1, y: 0, z: 0, left: 0 }, { maxT: 240, h: 2, every: 2, coast: 220 }).path);
+      for (const s of selShips().slice(0, 6)) if (s.order && s.at === null) ui.paths.set(s.id, S.dryRun(game, s, s.order, { maxT: 2400, h: 2, every: 3, coast: s.order.type === 'burn' ? 600 : 0 }).path);
+      for (const s of selShips().slice(0, 6)) if (!s.order && s.at === null) ui.paths.set(s.id, S.dryRun(game, s, { type: 'burn', x: 1, y: 0, z: 0, left: 0 }, { maxT: 700, h: 3, every: 2, coast: 660 }).path);
     }
-    if (ui.target != null && nowMs - routeT > 1500) { routeT = nowMs; refreshRoutes(); }
+    if (ui.target != null && nowMs - routeT > 3000) { routeT = nowMs; refreshRoutes(); }
     if (scn) { const st = scn.state(game, me); if (st.done) endPanel(st.done === 'win', st.why); }
     if (!ended && game.over) endPanel(game.over.winner === me, '');
     else if (!ended && !game.alive[me]) endPanel(false, '');

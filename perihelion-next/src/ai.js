@@ -11,9 +11,9 @@ import {
 } from './sim.js';
 
 export const LEVELS = {
-  cadet: { name: 'Cadet', think: 9, skill: 0.35, eco: 0.6, calm: 360, margin: 1.6 },
-  easy: { name: 'Easy', think: 6, skill: 0.6, eco: 0.8, calm: 200, margin: 1.4 },
-  normal: { name: 'Normal', think: 3.5, skill: 0.8, eco: 1, calm: 90, margin: 1.25 },
+  cadet: { name: 'Cadet', think: 9, skill: 0.35, eco: 0.6, calm: 720, margin: 1.6 },
+  easy: { name: 'Easy', think: 6, skill: 0.6, eco: 0.8, calm: 400, margin: 1.4 },
+  normal: { name: 'Normal', think: 3.5, skill: 0.8, eco: 1, calm: 180, margin: 1.25 },
   hard: { name: 'Hard', think: 2, skill: 0.95, eco: 1.3, calm: 0, margin: 1.15, smart: true },
   brutal: { name: 'Brutal', think: 1.2, skill: 1, eco: 1.7, calm: 0, margin: 1.1, smart: true },
 };
@@ -60,7 +60,7 @@ function think(game, ai) {
     if (s.owner === o || s.st.civil || !s.seen[o]) continue;
     ai.known.set(s.id, { owner: s.owner, str: s.seen[o] === 2 ? strength(s) : 2, t, x: s.x, y: s.y, z: s.z, at: s.at });
   }
-  for (const [id, k] of ai.known) if (t - k.t > 120 || !game.ships.some((s) => s.id === id)) ai.known.delete(id);
+  for (const [id, k] of ai.known) if (t - k.t > 300 || !game.ships.some((s) => s.id === id)) ai.known.delete(id);
   const enemyStr = (owner) => { let v = 0; for (const k of ai.known.values()) if (owner === undefined || k.owner === owner) v += k.str; return v; };
 
   spend(game, ai, home, mine, fleet, will);
@@ -72,7 +72,7 @@ function think(game, ai) {
     let best = home, bd = 1e9;
     for (const b of mine) {
       if (b.blockaded) continue;
-      const p = game.bp[b.id], dd = dist2(p, s) + (has(b, 'yard') || b.home ? 0 : 60);
+      const p = game.bp[b.id], dd = dist2(p, s) + (has(b, 'yard') || b.home ? 0 : 200);
       if (dd < bd) { bd = dd; best = b; }
     }
     return best;
@@ -84,7 +84,7 @@ function think(game, ai) {
     // Out of fuel: send a tender if there is one free, else after a while abandon her.
     s.dry = s.dry || t;
     const tn = tenders.find((x) => x.dv > 20 && (!x.order || x.order.ship === s.id));
-    if (tn) { if (!tn.order) setOrder(game, o, [tn.id], { type: 'attack', ship: s.id, mode: 'match', d0: 1.5, profile: 'cruise' }); } else if (t - s.dry > 75) scuttle(game, o, [s.id]);
+    if (tn) { if (!tn.order) setOrder(game, o, [tn.id], { type: 'attack', ship: s.id, mode: 'match', d0: 1.5, profile: 'cruise' }); } else if (t - s.dry > 180) scuttle(game, o, [s.id]);
   }
   for (const s of fleet) {
     if (adrift.includes(s)) continue;
@@ -114,7 +114,7 @@ function think(game, ai) {
   if (will()) {
     for (const s of raiders) {
       if (s.order && s.order.type === 'attack') continue;
-      let prey = null, pd = 90;
+      let prey = null, pd = 320;
       for (const f of game.ships) {
         if (f.owner === o || !f.st.civil || !f.seen[o]) continue;
         const dd = dist2(f, s);
@@ -130,8 +130,8 @@ function think(game, ai) {
     if (t - k.t > 12) continue;
     for (const b of mine) {
       const p = game.bp[b.id];
-      if (dist2(p, k) < (b.home ? 70 : 40)) {
-        const here = [...ai.known.values()].filter((q) => t - q.t < 12 && dist2(q, k) < 15).reduce((v, q) => v + q.str, 0);
+      if (dist2(p, k) < (b.home ? 200 : 110)) {
+        const here = [...ai.known.values()].filter((q) => t - q.t < 12 && dist2(q, k) < 40).reduce((v, q) => v + q.str, 0);
         if (here > threatStr) { threatStr = here; threat = { id, k, b }; }
       }
     }
@@ -141,7 +141,7 @@ function think(game, ai) {
   if (threat && will()) {
     // Send a detachment big enough for the job (the nearest ships), not the whole fleet.
     const T = game.ships.find((s) => s.id === threat.id);
-    const cand = line.filter((s) => dist2(s, threat.k) < 160 && !(s.order && s.order.type === 'attack') && !(s.at !== null && game.bodies[s.at].owner !== o) && !(s.order && s.order.body === ai.siege))
+    const cand = line.filter((s) => dist2(s, threat.k) < 600 && !(s.order && s.order.type === 'attack') && !(s.at !== null && game.bodies[s.at].owner !== o) && !(s.order && s.order.body === ai.siege))
       .sort((x, y) => dist2(x, threat.k) - dist2(y, threat.k));
     const det = [];
     let v = 0;
@@ -176,7 +176,7 @@ function think(game, ai) {
   }
   const str = myStr(main);
   // Pressure rises as the game goes on, so matches end.
-  const push = t > 2400 ? 0.2 : t > 1800 ? 0.4 : t > 1200 ? 0.6 : t > 600 ? 0.85 : 1;
+  const push = t > 4800 ? 0.2 : t > 3600 ? 0.4 : t > 2400 ? 0.6 : t > 1200 ? 0.85 : 1;
   const margin = d.margin * push;
   // Go as one fleet: wait until most of the line has gathered.
   if (str < myStr(line) * 0.7) return;
@@ -194,16 +194,16 @@ function think(game, ai) {
     // Against another navy, go in strength: most of the line together, and not while badly outnumbered.
     if (enemy && str < enemyStr(b.owner) * 0.7 * push) continue;
     if (b.home && enemy) {
-      const ahead = mine.length >= 2 * worldsOf(game, b.owner).length && t > 600;
+      const ahead = mine.length >= 2 * worldsOf(game, b.owner).length && t > 1200;
       const need = (b.bhp / 100 + Math.max(2, enemyStr(b.owner))) * margin * (ahead ? 0.6 : 1);
       if (str < need) continue;
-      const v = (ahead ? 500 : 50) / (1 + dist2(p, here) / 200);
+      const v = (ahead ? 500 : 50) / (1 + dist2(p, here) / 800);
       if (v > bestV) { bestV = v; best = b; }
       continue;
     }
     if (str < def * margin + 0.5) continue;
     const worth = incomeOf(b) + (b.kind === 'planet' ? 1.2 : b.kind === 'station' ? 0.8 : 0.3) + (enemy ? 0.4 : 0) + (structure(b, 'yard') ? 1 : 0);
-    const v = worth / (1 + dist2(p, here) / 60 + def * 0.6);
+    const v = worth / (1 + dist2(p, here) / 220 + def * 0.6);
     if (v > bestV) { bestV = v; best = b; }
   }
   if (!best) return;

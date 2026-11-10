@@ -17,7 +17,7 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   for (let seed = 1; seed <= 40; seed++) {
     const g = S.createGame({ seed, players: seed % 2 ? two : [...two, { faction: 'holds' }], empty: true });
     const outer = Math.max(...g.planets.map((p) => p.r));
-    ok(outer < 260, `system ${seed} too wide (${outer.toFixed(0)})`);
+    ok(outer < 1300, `system ${seed} too wide (${outer.toFixed(0)})`);
     ok(g.homes.every((h) => h && g.bodies.some((m) => m.parent === h.id && m.kind === 'moon')), `system ${seed}: every capital has a moon`);
     ok(g.planets.some((p) => p.giant), `system ${seed}: has a gas giant`);
   }
@@ -61,19 +61,19 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
 // Seeing: a cold ship is hidden beyond short range, a burning one shows anywhere, a world blocks the view.
 {
   const g = S.createGame({ seed: 5, players: two, empty: true });
-  const watcher = free(g, 0, 'frigate', 300, 300);
-  const cold = free(g, 1, 'frigate', 300 + 60, 300);
+  const watcher = free(g, 0, 'frigate', 3000, 3000);
+  const cold = free(g, 1, 'frigate', 3000 + 60, 3000);
   run(g, 2);
   ok(cold.seen[0] === 0, 'a cold ship 60 away is unseen');
-  cold.x = 300 + 8; run(g, 2);
+  cold.x = 3000 + 8; run(g, 2);
   ok(cold.seen[0] === 2, 'a cold ship close by is identified');
-  cold.x = 300 + 120; cold.seen[0] = 0;
+  cold.x = 3000 + 250; cold.seen[0] = 0;
   S.setOrder(g, 1, [cold.id], { type: 'burn', x: 0, y: 0, z: 1, left: 30 });
   run(g, 2);
   ok(cold.seen[0] === 1, 'a burning ship far off is a contact');
-  const p = g.planets[1], pp = S.posAt(g, p, g.time);
-  Object.assign(watcher, { x: pp.x - p.size - 6, z: pp.z, vx: 0, vz: 0 });
-  Object.assign(cold, { x: pp.x + p.size + 6, z: pp.z, vx: 0, vz: 0, seen: [0, 2] });
+  const p = g.planets.find((x) => x.owner === S.NEUTRAL), pp = S.posAt(g, p, g.time);
+  Object.assign(watcher, { x: pp.x - p.size - 6, y: pp.y, z: pp.z, vx: 0, vz: 0 });
+  Object.assign(cold, { x: pp.x + p.size + 6, y: pp.y, z: pp.z, vx: 0, vz: 0, seen: [0, 2], order: null, burn: 0, lit: 0 });
   S.step(g, 0.4);
   ok(cold.seen[0] === 0, 'a world blocks the line of sight');
   void watcher;
@@ -82,8 +82,8 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
 {
   const duel = (v, d, clsB = 'frigate', nB = 1, seed = 1) => {
     const g = S.createGame({ seed, players: [{ faction: 'boreal' }, { faction: 'boreal' }], empty: true });
-    const a = free(g, 0, 'frigate', 300, 300, v / 2, 0);
-    const bs = Array.from({ length: nB }, (_, i) => free(g, 1, i ? 'escort' : clsB, 300 + d, 300 + i * 1.5, -v / 2, 0));
+    const a = free(g, 0, 'frigate', 3000, 3000, v / 2, 0);
+    const bs = Array.from({ length: nB }, (_, i) => free(g, 1, i ? 'escort' : clsB, 3000 + d, 3000 + i * 1.5, -v / 2, 0));
     let t = 0;
     while (t < 200 && g.ships.includes(a) && bs.every((b) => g.ships.includes(b))) { for (const s of g.ships) s.seen = [2, 2]; S.step(g, 1); t++; }
     return { t, a: g.ships.includes(a) ? a.hull : 0, b: bs.map((b) => (g.ships.includes(b) ? b.hull : 0)) };
@@ -109,7 +109,7 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   for (const cls of ['battleship', 'battleship', 'frigate', 'frigate']) S.spawnShip(g, 0, cls, cap);
   run(g, 20);
   ok(cap.owner === 1, 'a capital with a live battery does not yield at once');
-  run(g, 400);
+  run(g, 600);
   ok(g.over && g.over.winner === 0, 'taking the capital wins the game');
   void s;
 }
@@ -124,7 +124,7 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   ok(S.orderShip(g, home, 'frigate'), 'a frigate can be ordered');
   ok(S.research(g, 0, 'weapons') && !S.research(g, 0, 'drives'), 'one project at a time');
   const c0 = g.credits[0];
-  run(g, 200);
+  run(g, 400);
   ok(g.ships.some((s) => s.owner === 0 && s.cls === 'frigate'), 'the yard launches the frigate');
   ok(g.tech[0].weapons === 1, 'research completes');
   ok(g.stats[0].hauled >= 1 && g.credits[0] > c0 + 300, 'freighters carry the moon\'s earnings home');
@@ -165,7 +165,7 @@ for (const k of SCENARIO_KEYS) {
   const moon = g.bodies[g.scn.moon];
   S.setOrder(g, 0, g.ships.filter((s) => s.owner === 0).map((s) => s.id), { type: 'orbit', body: moon.id, profile: 'hard' });
   let done = null;
-  for (let t = 0; t < 600 && !done; t++) {
+  for (let t = 0; t < 2400 && !done; t++) {
     S.step(g, 1);
     const st = sc.state(g, 0);
     if (g.scn.step === 2 && moon.owner === 0 && !moon.structures.length) S.buildStructure(g, moon, 'mine');
@@ -178,8 +178,8 @@ for (const k of SCENARIO_KEYS) {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];
   const g = S.createGame({ seed: 2, players });
   const ais = players.map((p, i) => createAI(g, i, p.ai, 2));
-  while (!g.over && g.time < 3600) { S.step(g, 1); for (const a of ais) stepAI(g, a, 1); }
-  ok(g.over, 'an AI match finishes inside an hour');
+  while (!g.over && g.time < 9000) { S.step(g, 1); for (const a of ais) stepAI(g, a, 1); }
+  ok(g.over, 'an AI match finishes in good time');
 }
 console.log(failed ? `${failed} check(s) failed` : 'All checks passed');
 process.exit(failed ? 1 : 0);
