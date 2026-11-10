@@ -85,6 +85,14 @@ timed events) are still there to lift back if testing asks for them.
 - **Multiplayer.** Host in the browser, up to three powers, AI seats. Guests
   send orders and receive only what their sensors see, four times a second.
 
+## Reading the screen
+
+- **Planet families.** From far out a planet shows alone, with a dot for each
+  moon or station it has (in the holder's colour). Come in on it, or tap it,
+  and its family and their orbits appear.
+- **What a button does.** On touch, the first tap on a button shows one line
+  saying what it does and the second tap does it. With a mouse, hover.
+
 ## Controls
 
 - Touch (as in the first Perihelion): tap to select and lock the view on it,

@@ -107,6 +107,12 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   are spread by `SPREAD` in `sim.js`; don't shrink it to shorten games.
 - Touch and mouse handling in `main.js` is a port of the first game's; keep
   the two in step.
+- Explaining without clutter: on touch the first tap on a button shows a
+  one-line hint (`HINT` in `main.js`) and the second tap does it; mouse users
+  hover. Add a hint for every new button rather than text on screen.
+- Moons and stations are hidden until the view comes in on their planet
+  (`v.show` in `render.js`), as in NASA's solar system viewer. Ship scale,
+  drive plumes and attitude jets follow the first game, which the owner liked.
 - Panels redraw several times a second: keep their HTML steady (round times
   and bars) or taps get lost.
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.
