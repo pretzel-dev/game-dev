@@ -201,11 +201,18 @@ const HINT = {
   plot: 'Drag from the ship to burn that way, then coast.',
   cut: 'Drive off. The ship coasts.',
   retreat: 'Hard burn to your nearest world.',
-  upgrade: 'Raise this to the next level.',
+  'upgrade:yard': 'Builds ships half as fast again.',
+  'upgrade:habitat': 'Crews for one more ship.',
+  'upgrade:mine': 'More income again.',
+  'upgrade:refinery': 'More income again.',
+  'upgrade:battery': 'More guns, tougher.',
   'build:yard': 'Builds, repairs and rearms ships.',
   'build:mine': 'More income from this world.',
   'build:refinery': 'More income. Refuels ships quickly.',
   'build:battery': 'Guns and point defence on the ground.',
+  'build:habitat': 'Crews for one more ship. Upgrade for another.',
+  'build:array': 'This world sees much further.',
+  'build:depot': 'Refuels ships here three times as fast.',
   'ship:corvette': 'Small, fast, hard to see. Scout and raider.',
   'ship:frigate': 'The workhorse. Torpedoes and a rail.',
   'ship:escort': 'Point defence for the ships beside her.',
@@ -536,7 +543,7 @@ function manualPanel() {
     ${k('cruise', '<b>Cruise</b>: a measured burn and a coast. The everyday choice.')}
     ${k('dark', '<b>Dark</b>: short burns, a long cold coast. Slow, but a cold ship is only seen up close.')}
     ${k('sling', '<b>Slingshot</b>: swing past a heavy world and let it bend your path. Offered when it saves fuel.')}
-    ${k('fuel', 'Every burn spends <b>fuel</b> (the amber bar). Your worlds refill it; a refinery or your capital does so quickly. A dry ship drifts until a tender reaches her.')}
+    ${k('fuel', 'Every burn spends <b>fuel</b> (the amber bar). Your worlds refill it, and you pay for it, as you do for torpedoes and repairs. A refinery, depot or your capital refuels quickly. A dry ship drifts until a tender reaches her.')}
     ${k('strike', '<b>Pass</b>: charge through at speed. Slugs and torpedoes hit far harder the faster you close, but the pass is over in seconds.')}
     ${k('match', '<b>Match</b>: come alongside and fight it out slowly. Match a crippled ship or a freighter to board her.')}
     ${k('torp', '<b>Torpedoes</b> free or held. Point defence stops slow torpedoes easily and fast ones rarely; escorts cover the ships beside them.')}
@@ -544,6 +551,7 @@ function manualPanel() {
     ${k('plot', '<b>Plot a burn</b> by hand: drag from the ship; the dashed line shows where she will coast.')}
     ${k('bolt', 'Hits knock out <b>systems</b> (drive, reactor, weapons, sensors). Crews repair them in time; a badly hurt ship needs a yard or a tender.')}
     ${k('freight', '<b>Freighters</b> carry each world\'s earnings home. Raid the enemy\'s, guard your own. A ship in orbit of a world blockades it.')}
+    ${k('habitat', '<b>Habitat</b>: crews for one more ship per level. This is how the fleet grows. <b>Sensor array</b>: the world sees much further. <b>Fuel depot</b>: quick refuelling.')}
     ${k('yard', '<b>Yard</b>: builds, repairs and rearms ships. <b>Mine</b> and <b>refinery</b> (gas giants) raise a world\'s earnings; a refinery also refuels quickly. <b>Battery</b>: guns and point defence on the ground.')}
     ${k('battery', 'Silence a world\'s <b>battery</b>, clear its defenders, and it yields to whoever holds the orbit.')}
     <p>Mouse: drag to pan, right-drag to turn, wheel to zoom. Keys: Space pause, 1 to 4 speed, H system, R research, Esc back.</p></div>`);

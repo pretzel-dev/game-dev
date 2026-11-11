@@ -3,7 +3,7 @@
 // plotted routes, contact markers and the few words the game shows.
 // Reads game state every frame; owns the camera.
 import * as THREE from 'three';
-import { NEUTRAL, RULES, posAt, rng, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, has } from './sim.js';
+import { NEUTRAL, RULES, posAt, rng, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, worldSight } from './sim.js';
 import { createPost } from './gfx/post.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
@@ -758,7 +758,7 @@ export function createView(canvas, plot, opts = {}) {
     // A selected world of yours: how far its sensors and battery reach.
     if (ui.selBody != null && game.bodies[ui.selBody].owner === me && !zoomedOut) {
       const b = game.bodies[ui.selBody], p = bodyPos[b.id];
-      ringOn(p.x, p.y, p.z, RULES.cold * RULES.worldSensor, INK, 0.2, [1, 5]);
+      ringOn(p.x, p.y, p.z, RULES.cold * worldSight(b), INK, 0.2, [1, 5]);
       if (batteryMax(b)) ringOn(p.x, p.y, p.z, RULES.railRange + b.size, INK, 0.35, null);
     }
     // A burn being plotted by hand: the arrow from the ship.
