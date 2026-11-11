@@ -77,14 +77,49 @@ timed events) are still there to lift back if testing asks for them.
 - **Economy.** A capital banks its income. Every other world sets its earnings
   aside until a freighter carries them home; freighters can be destroyed or
   boarded, and a hostile ship in orbit blockades the world (no income, no yard).
-  Seven structures: yard (level two builds half as fast again), mine,
-  refinery (gas giants), battery, habitat, sensor array (the world sees two and
-  a half times as far), fuel depot. A capital has five slots, a planet three,
-  a moon or station two, an asteroid one.
+  Nine structures, and what a world can take depends on what it is:
+
+  | Structure | Where | Does |
+  |---|---|---|
+  | Yard (2 levels) | Planets, stations | Builds, repairs and rearms ships |
+  | Mine (2) | Rocky planets, moons, asteroids | Income |
+  | Refinery (2) | Gas giants | Income; quick refuelling |
+  | Battery (2) | Anywhere | Guns and point defence |
+  | Habitat (2) | Rocky planets, stations | One more ship per level |
+  | Laboratory (2) | Rocky planets, stations | Research half as fast again per level |
+  | Exchange (2) | Stations, capitals | Income paid straight in |
+  | Sensor array | Moons, stations, asteroids | The world sees much further |
+  | Fuel depot | Moons, stations | Quick refuelling |
+
+  A capital has five slots, a planet three, a moon or station two, an asteroid one.
+- **Special worlds.** Most independent worlds have a trait (a gold diamond on
+  the plot; tap the gold tile to read it): rich seam (mines double), old
+  relay (sees four times as far), deuterium sea (quick refuelling, better
+  refinery), fortress rock (battery twice as tough), ancient archive (research
+  a third faster; laboratory counts double), drydock hulk (comes with a yard;
+  its ships are veterans), tidal forge (everything builds twice as fast),
+  garden world (earns more; habitats count double), listening post (identifies
+  burning ships across most of the system).
 - **Fleet limit.** Four ships (five for the Holds), plus one for every habitat
   level you build, up to twelve. Pips under the credits show it.
-- **Research.** Three short lines (drives, weapons, sensors), three steps
-  each. One project at a time.
+- **Research.** Five lines (drives, weapons, sensors, industry, intelligence)
+  of four steps, costing 250, 450, 750 and 1200. The second and fourth step of
+  every line is a choice between two doctrines, and taking one closes the
+  other for the rest of the game (spinal mounts or wolfpack tubes; swarm
+  warheads or flak curtain; cold running or a deep-space network; and so on).
+  One project at a time; laboratories and the archive speed it up.
+- **Agents** (Intelligence). Send one to a world that is not yours (200
+  credits, 45 seconds). She shows you the place and the ships over it. With
+  research she can sabotage a battery or stall a yard, skim a third of the
+  world's earnings, or make it yield to your ships twice as fast. An
+  independent world with your agent on it can be bought outright. Every second
+  there is a chance she is caught; counter-intelligence doubles it.
+- **Veterans.** Ships earn rank from hits scored (three steps, a gold bar
+  each): better aim, harder to hit.
+- **Derelicts and convoys.** Every several minutes a derelict warship turns up
+  adrift, or an independent convoy crosses the system, and everyone is told.
+  Match a derelict to board her: she joins you as a veteran. Match a convoy to
+  take its cargo.
 - **Scenarios.** First command (the tutorial), Blockade run, Raider hunt,
   Hold until relief, Convoy.
 - **Daily.** Everyone gets the same system that day.

@@ -122,6 +122,14 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   and wants less on screen from far out. Orbits are fading trails, not rings.
 - Systems follow our solar system (rocky worlds in, belt, giants out,
   eccentric orbits: `b.e`). Each power starts on its own kind of world.
+- The owner wants an epic with things to do now, in the mid term and in the
+  long term, and worlds that feel like places, not only ships. So: world
+  traits (`TRAITS`) and per-kind structures make each world different;
+  research (`TECH`) is five lines with either/or doctrine choices; agents
+  (`sendAgent`, `sabotage`, `buyWorld`) are the espionage side; derelicts and
+  convoys (`stepEvents`) turn up to chase; ships earn rank (`rankOf`).
+  The owner said to have fun and not be conservative: prefer adding a system
+  with real choices over tuning numbers.
 - Panels redraw several times a second: keep their HTML steady (round times
   and bars) or taps get lost.
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.

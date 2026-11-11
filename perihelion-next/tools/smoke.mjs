@@ -71,10 +71,10 @@ for (let i = 0; i < 4; i++) {
 }
 await page.waitForTimeout(300);
 await page.tap('#rnd');
-await page.tap('[data-a="research"][data-v="weapons"]');
+await page.tap('[data-a="research"][data-v="weapons:guided"]');
 await page.waitForTimeout(500);
 await shot('research');
-const state = await page.evaluate(() => { const { game, S } = window.__perihelion; const h = game.homes[0]; return { why: S.cantOrderShip(game, h, 'corvette'), credits: game.credits[0], sel: window.__perihelion.ui.selBody, mine: h.structures.some((x) => x.type === 'mine'), queue: h.queue.length, project: game.tech[0].project?.key }; });
+const state = await page.evaluate(() => { const { game, S } = window.__perihelion; const h = game.homes[0]; return { why: S.cantOrderShip(game, h, 'corvette'), credits: game.credits[0], sel: window.__perihelion.ui.selBody, mine: h.structures.some((x) => x.type === 'mine'), queue: h.queue.length, project: game.tech[0].project?.line }; });
 await page.tap('[data-a="closeSheet"]');
 await page.tap('#menuBtn');
 await page.tap('[data-a="quit"]');
