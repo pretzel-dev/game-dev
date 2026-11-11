@@ -3,7 +3,7 @@
 // plotted routes, contact markers and the few words the game shows.
 // Reads game state every frame; owns the camera.
 import * as THREE from 'three';
-import { NEUTRAL, RULES, posAt, rng, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, worldSight } from './sim.js';
+import { NEUTRAL, RULES, posAt, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, worldSight } from './sim.js';
 import { createPost } from './gfx/post.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
@@ -11,7 +11,7 @@ import * as shipLib from './gfx/ships.js';
 import { stationMesh, STATION_CORES } from './gfx/stations.js';
 import { asteroidMesh, createBelt } from './gfx/rocks.js';
 import { createFx } from './gfx/fx.js';
-import { BIOMES, createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
+import { createBaker, lookOf, surfaceMaterial, cloudMaterial, atmosphereMesh, ringMesh, starLights } from './gfx/planets.js';
 
 export const INK = '#e9e4d6'; // the plot's white
 export const AMBER = '#e0a13a';
@@ -56,7 +56,7 @@ function orbitLine(b) {
   geo.setIndex(idx);
   const moon = b.parent !== null;
   const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-    uniforms: { uTh: { value: 0 }, uRes: screenRes, uWidth: { value: moon ? 1.1 : 1.4 }, uColor: { value: new THREE.Color(moon ? '#6b6452' : '#8f8468') }, uOpacity: { value: moon ? 0.5 : 0.6 } },
+    uniforms: { uTh: { value: 0 }, uRes: screenRes, uWidth: { value: moon ? 1.4 : 2.2 }, uColor: { value: new THREE.Color(moon ? '#6b6452' : '#8f8468') }, uOpacity: { value: moon ? 0.55 : 0.75 } },
     vertexShader: `attribute vec3 nextPos; attribute float ang; attribute float side;
       uniform float uTh; uniform vec2 uRes; uniform float uWidth;
       varying float vF; varying float vSide;
@@ -65,13 +65,14 @@ function orbitLine(b) {
         vec4 n = projectionMatrix * modelViewMatrix * vec4(nextPos, 1.0);
         vec2 dir = normalize((n.xy / n.w - c.xy / c.w) * uRes + 1e-6);
         vF = fract((uTh - ang) / 6.2831853);
-        c.xy += vec2(-dir.y, dir.x) * side * uWidth / uRes * c.w;
+        float w = uWidth * pow(max(1.0 - vF, 0.0), 0.9);
+        c.xy += vec2(-dir.y, dir.x) * side * w / uRes * c.w;
         vSide = side;
         gl_Position = c;
       }`,
     fragmentShader: `uniform vec3 uColor; uniform float uOpacity; varying float vF; varying float vSide;
       void main() {
-        float a = uOpacity * (0.22 + 0.78 * pow(max(1.0 - vF, 0.0), 2.2)) * smoothstep(1.0, 0.35, abs(vSide));
+        float a = uOpacity * pow(max(1.0 - vF, 0.0), 1.3) * smoothstep(1.0, 0.35, abs(vSide));
         gl_FragColor = vec4(uColor, a);
       }`,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -83,13 +84,13 @@ function orbitLine(b) {
 export function createView(canvas, plot, opts = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   let quality = opts.quality || 'high';
-  const maxPR = () => Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2 : 1.25);
+  const maxPR = () => Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2.5 : 1.5);
   let pixelRatio = maxPR();
   renderer.setPixelRatio(1);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.02, 20000);
   const post = createPost(renderer);
-  post.setSamples(quality === 'high' ? 4 : 2);
+  post.setSamples(4);
   post.setLevel(quality);
   const ctx = plot.getContext('2d');
 
@@ -154,19 +155,6 @@ export function createView(canvas, plot, opts = {}) {
   const hullType = (faction, cls, id) => (shipLib.hullIndex ? shipLib.hullIndex(faction, cls) : id % shipR.hulls);
 
   function build(game) {
-    {
-      // A homeworld's climate follows its distance from the sun.
-      const r = rng((game.seed || 1) + 77);
-      const outer = Math.max(...game.bodies.filter((b) => b.kind === 'planet').map((b) => b.r));
-      const band = (x) => (x < 0.3 ? ['desert', 'steppe'] : x < 0.55 ? ['temperate', 'ocean', 'jungle'] : x < 0.68 ? ['steppe', 'temperate'] : ['ice', 'steppe']);
-      const used = new Set();
-      for (const h of game.bodies.filter((b) => b.home || b.fallen)) {
-        const o = band(h.r / outer).filter((k) => !used.has(k));
-        const pick = o.length ? o[Math.floor(r() * o.length)] : BIOMES.find((k) => !used.has(k)) || 'temperate';
-        used.add(pick);
-        h.biome = pick;
-      }
-    }
     sky.bake((game.seed || 1) + 1);
     scene.background = sky.background;
     scene.environment = sky.env;
@@ -225,6 +213,7 @@ export function createView(canvas, plot, opts = {}) {
       v.occ = fam.slice(0, 4).map((x) => x.id);
     }
     const outer = Math.max(...game.bodies.filter((b) => b.kind === 'planet').map((b) => b.r));
+    sysR = outer;
     orbit.maxDist = outer * 4;
     farClip = outer * 30;
   }
@@ -240,7 +229,7 @@ export function createView(canvas, plot, opts = {}) {
     canvas.style.height = h + 'px';
     post.setSize(w, h, pixelRatio);
     screenRes.value.set(w, h);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
     plot.width = Math.round(w * dpr); plot.height = Math.round(h * dpr);
     plot.style.width = w + 'px'; plot.style.height = h + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -404,7 +393,7 @@ export function createView(canvas, plot, opts = {}) {
   }
   const hexA = (hex, a) => { const c = new THREE.Color(hex); return `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${a})`; };
 
-  let tNow = 0;
+  let tNow = 0, sysR = 500, far = false;
   const report = { battle: 0, burn: 0, zoom: 0 };
 
   function render(game, ui, dt, t) {
@@ -492,7 +481,7 @@ export function createView(canvas, plot, opts = {}) {
         const span = b.r * ppuAt(tmp2.set(pp.x, pp.y, pp.z));
         v.show = ui.selBody === b.id || ui.target === b.id || orbit.follow === b.id ? 1 : THREE.MathUtils.smoothstep(span, 16, 34);
         v.lineHolder.visible = v.show > 0.05;
-        v.line.material.uniforms.uOpacity.value = 0.5 * v.show;
+        v.line.material.uniforms.uOpacity.value = 0.55 * v.show;
       } else v.show = 1;
       const q = proj(p.x, p.y, p.z);
       v.on = q.ok; v.sx = q.x; v.sy = q.y; v.sr = b.size * ppuAt(tmp2.set(p.x, p.y, p.z));
@@ -548,6 +537,8 @@ export function createView(canvas, plot, opts = {}) {
     ctx.clearRect(0, 0, W, H);
     const sel = ui.sel || new Set();
     const zoomedOut = orbit.dist > 260;
+    // Seen from far out the plot keeps to the essentials: who holds what, and where the fleets are.
+    far = orbit.dist > sysR * 0.45;
 
     // Routes on offer for the chosen destination.
     if (ui.routes) {
@@ -564,6 +555,10 @@ export function createView(canvas, plot, opts = {}) {
       if (!v.on) continue;
       const b = v.b;
       if (v.show < 0.05) continue;
+      if (far && b.kind === 'asteroid' && ui.selBody !== b.id && ui.target !== b.id) {
+        if (b.owner !== NEUTRAL) { ctx.fillStyle = colorOf(b.owner); ctx.fillRect(v.sx - 1.5, v.sy - 1.5, 3, 3); }
+        continue;
+      }
       const R = Math.max(v.sr * 1.25 + 4, b.kind === 'planet' ? 9 : 6);
       // From afar a planet carries a dot for each world of its family, in the holder's colour.
       if (b.kind === 'planet') {
@@ -584,7 +579,7 @@ export function createView(canvas, plot, opts = {}) {
       if (aimed) { ctx.setLineDash([2, 4]); ctx.strokeStyle = AMBER; ctx.beginPath(); ctx.arc(v.sx, v.sy, R + 7, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
       ctx.globalAlpha = 1;
       const bm = batteryMax(b);
-      if (bm > 0) {
+      if (bm > 0 && !far) {
         // The battery: ticks round the top, lit while it can still fire.
         const n = Math.round(bm / RULES.batteryHp) * 3, lit = Math.ceil((b.bhp / bm) * n);
         for (let i = 0; i < n; i++) {
@@ -598,7 +593,7 @@ export function createView(canvas, plot, opts = {}) {
         ctx.strokeStyle = colorOf(b.yo); ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(v.sx, v.sy, R + (b.home ? 11 : 8), -Math.PI / 2, -Math.PI / 2 + (b.yt / yieldTime(b)) * Math.PI * 2); ctx.stroke();
       }
-      if (b.owner === me && b.queue.length) {
+      if (b.owner === me && b.queue.length && !far) {
         const q = b.queue[0];
         ctx.strokeStyle = INK; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(v.sx, v.sy, Math.max(3, R - 3), Math.PI / 2, Math.PI / 2 + (1 - q.left / q.total) * Math.PI * 2); ctx.stroke();
@@ -669,7 +664,7 @@ export function createView(canvas, plot, opts = {}) {
       const v = views[bid];
       const R = Math.max(v.sr * 1.25 + 4, v.b.kind === 'planet' ? 9 : 6) + (batteryMax(v.b) ? 9 : 3) + (v.b.home ? 4 : 0);
       list.sort((a, b) => a.s.owner - b.s.owner || a.s.id - b.s.id);
-      const step = 15, x0 = v.sx - ((list.length - 1) * step) / 2;
+      const step = far ? 10 : 15, x0 = v.sx - ((list.length - 1) * step) / 2;
       list.forEach((it, i) => drawShipMark(it.s, x0 + i * step, v.sy - R - 9, -Math.PI / 2, 0, it.known, it.c, 0, true));
     }
     function drawShipMark(s, sx, sy, ang, hullPx, known, c, ppu, docked = false) {
@@ -679,17 +674,10 @@ export function createView(canvas, plot, opts = {}) {
       shipScreen.set(s.id, { x: sx, y: sy, r: Math.max(16, hullPx * 0.6) });
       // The mark fades as the real hull grows on screen.
       const ga = docked ? 1 : 1 - THREE.MathUtils.smoothstep(hullPx, 18, 40);
-      if (ga > 0.02) glyph(cls, sx, sy, ang, gs, c, !mine && !known, ga * (crippled(s) ? 0.6 : 1));
-      if (!docked && s.at === null) {
-        // Velocity: a tick along the direction of travel, longer when faster.
-        const sp2 = Math.hypot(s.vx, s.vy, s.vz);
-        if (sp2 > 0.05 && ppu) {
-          const q3 = proj(s.x + s.vx * 3.5, s.y + s.vy * 3.5, s.z + s.vz * 3.5);
-          if (q3.ok) { ctx.strokeStyle = c; ctx.globalAlpha = 0.4; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(q3.x, q3.y); ctx.stroke(); ctx.globalAlpha = 1; }
-        }
-      }
+      if (far && cls === 'freighter' && !picked && !aimed) return; // freighters are left off the far view
+      if (ga > 0.02) glyph(cls, sx, sy, ang, far ? gs * 0.75 : gs, c, !mine && !known, ga * (crippled(s) ? 0.6 : 1));
       if (picked || aimed) {
-        ctx.strokeStyle = aimed ? HOSTILE : INK; ctx.lineWidth = 1.2;
+        ctx.strokeStyle = aimed && !mine ? HOSTILE : INK; ctx.lineWidth = 1.2;
         const r = Math.max(11, hullPx * 0.7);
         // Corner brackets rather than a full ring.
         for (let k = 0; k < 4; k++) { const a0 = k * Math.PI / 2 + Math.PI / 4; ctx.beginPath(); ctx.arc(sx, sy, r, a0 - 0.35, a0 + 0.35); ctx.stroke(); }
@@ -697,7 +685,7 @@ export function createView(canvas, plot, opts = {}) {
       if (mine && cls !== 'freighter') {
         // Fuel (amber) and hull (white) as two short bars; a cross if she's adrift.
         const w = 14, y0 = sy + (docked ? -13 : Math.max(10, hullPx * 0.7) + 3);
-        if (picked || s.dv < s.st.dv * 0.3 || s.hull < s.st.hull * 0.6) {
+        if (picked || (!far && (s.dv < s.st.dv * 0.3 || s.hull < s.st.hull * 0.6))) {
           ctx.globalAlpha = 0.9;
           ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx - w / 2, y0, w, 5);
           ctx.fillStyle = s.hull < s.st.hull * 0.35 ? HOSTILE : INK; ctx.fillRect(sx - w / 2, y0, w * Math.max(0, s.hull / s.st.hull), 2);
@@ -874,7 +862,7 @@ export function createView(canvas, plot, opts = {}) {
   function setQuality(q) {
     quality = q;
     pixelRatio = maxPR();
-    post.setSamples(q === 'high' ? 4 : 2);
+    post.setSamples(4);
     post.setLevel(q);
     resize();
   }
@@ -887,7 +875,7 @@ export function createView(canvas, plot, opts = {}) {
     const avg = perfAcc / perfN;
     perfAcc = 0; perfN = 0;
     const max = maxPR();
-    const min = max >= 1.5 ? Math.max(1, max * 0.65) : max * 0.85;
+    const min = max >= 1.5 ? Math.max(1.25, max * 0.8) : max * 0.9;
     if (trial) { if (avg > trial.avg * 0.9) { pixelRatio = trial.pr; capped = true; resize(); } trial = null; return; }
     if (!capped && avg > 1 / 45 && pixelRatio > min) { trial = { pr: pixelRatio, avg }; pixelRatio = Math.max(min, pixelRatio - 0.25); holdUntil = t + 20; resize(); }
     else if (avg < 1 / 57 && pixelRatio < max && t > holdUntil) { pixelRatio = Math.min(max, pixelRatio + 0.25); resize(); }

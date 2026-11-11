@@ -36,7 +36,7 @@ await guest.waitForTimeout(1500);
 // The guest orders its ships to its capital's moon, through act().
 const moon = await guest.evaluate(() => {
   const { game, act } = window.__perihelion;
-  const home = game.homes[1], m = game.bodies.find((b) => b.parent === home.id);
+  const home = game.homes[1], m = game.bodies.find((b) => b !== home && b.parent === (home.kind === 'station' ? home.parent : home.id));
   act({ t: 'order', ids: game.ships.filter((s) => s.owner === 1).map((s) => s.id), order: { type: 'orbit', body: m.id, profile: 'hard' } });
   return m.id;
 });
