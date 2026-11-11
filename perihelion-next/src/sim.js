@@ -23,10 +23,13 @@ export const RULES = {
   load: 120, // a freighter sails once this much is waiting
   stockCap: 400,
   structures: {
-    yard: { name: 'Yard', cost: 350, time: 60, where: ['planet', 'station'], maxLevel: 1 },
+    yard: { name: 'Yard', cost: 350, time: 60, where: ['planet', 'station'], maxLevel: 2 },
     mine: { name: 'Mine', cost: 200, time: 40, where: ['planet', 'moon', 'asteroid'], rocky: true, maxLevel: 2, income: 1 },
     refinery: { name: 'Refinery', cost: 300, time: 50, where: ['planet'], giant: true, maxLevel: 2, income: 1.5 },
     battery: { name: 'Battery', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], maxLevel: 2 },
+    habitat: { name: 'Habitat', cost: 300, time: 60, where: ['planet', 'moon', 'station'], rocky: true, maxLevel: 2 },
+    array: { name: 'Sensor array', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], maxLevel: 1 },
+    depot: { name: 'Fuel depot', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], rocky: true, maxLevel: 1 },
   },
   batteryHp: 100, // per level
   batteryRegen: 1.5,
@@ -44,7 +47,9 @@ export const RULES = {
   ident: 90, // range at which a burning ship is identified, not just seen
   worldSensor: 1.4, // a held world sees this much further than a ship
   board: { freighter: 6, warship: 20, range: 2.4, speed: 0.5 },
-  capBase: 4, capMax: 9,
+  capBase: 4, capMax: 12, // ships you may field: the base, plus one per habitat level
+  price: { fuel: 3, torp: 15, hull: 0.5 }, // credits per unit of fuel, per torpedo, per point of hull repaired
+  arraySensor: 2.5, // a sensor array sees this much further than a bare world
 };
 
 // Ship classes. accel in units/s^2, dv is the tank as a total speed change.
@@ -290,12 +295,14 @@ export const working = (x) => x.left <= 0;
 export const structure = (b, type) => b.structures.find((x) => x.type === type);
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
 const levelOf = (b, type) => { const x = structure(b, type); return x && working(x) ? x.level : 0; };
+/** How far a held world sees, against a ship's sensors. */
+export const worldSight = (b) => RULES.worldSensor * (levelOf(b, 'array') ? RULES.arraySensor : 1);
 export const batteryMax = (b) => RULES.batteryHp * levelOf(b, 'battery');
 export function slotsOf(b) {
-  if (b.home) return 4;
-  if (b.kind === 'planet') return b.giant ? 3 : 2;
-  if (b.kind === 'station') return 2;
-  return b.homeMoon ? 2 : 1;
+  if (b.home) return 5;
+  if (b.kind === 'planet') return 3;
+  if (b.kind === 'station' || b.kind === 'moon') return 2;
+  return 1;
 }
 export const kindOf = (b) => (b.home ? 'home' : b.giant ? 'giant' : b.kind);
 /** Credits per second a world makes (a capital banks it; the rest wait for a freighter). */
@@ -308,11 +315,12 @@ export const worldsOf = (game, owner) => game.bodies.filter((b) => b.owner === o
 export const warshipsOf = (game, owner) => game.ships.filter((s) => s.owner === owner && !CLASSES[s.cls].civil);
 export function fleetCap(game, owner) {
   const f = FACTIONS[game.factions[owner]];
-  return Math.min(RULES.capMax, RULES.capBase + (f.cap || 0) + Math.floor((worldsOf(game, owner).length - 1) / 2));
+  // Crews come from habitats: each level lets you field one more ship.
+  return Math.min(RULES.capMax, RULES.capBase + (f.cap || 0) + worldsOf(game, owner).reduce((n, b) => n + levelOf(b, 'habitat'), 0));
 }
 export const fleetSize = (game, owner) => warshipsOf(game, owner).length + game.bodies.reduce((k, b) => k + (b.owner === owner ? b.queue.length : 0), 0);
 export const shipCost = (game, owner, cls) => Math.round((CLASSES[cls].cost * (FACTIONS[game.factions[owner]].cost || 1)) / 10) * 10;
-export const shipTime = (game, owner, cls) => CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1);
+export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / (b && levelOf(b, 'yard') >= 2 ? 1.5 : 1);
 
 export function cantBuild(game, b, type) {
   const S = RULES.structures[type];
@@ -358,7 +366,7 @@ export function cantOrderShip(game, b, cls) {
 export function orderShip(game, b, cls) {
   if (cantOrderShip(game, b, cls)) return false;
   game.credits[b.owner] -= shipCost(game, b.owner, cls);
-  const t = shipTime(game, b.owner, cls);
+  const t = shipTime(game, b.owner, cls, b);
   b.queue.push({ cls, left: t, total: t });
   return true;
 }
@@ -780,7 +788,7 @@ function detect(game) {
   for (const b of game.bodies) {
     if (b.owner < 0) continue;
     const p = game.bp[b.id];
-    eyes[b.owner].push({ x: p.x, y: p.y, z: p.z, cold: RULES.cold * RULES.worldSensor, ident: RULES.ident * RULES.worldSensor, skip: b.id });
+    eyes[b.owner].push({ x: p.x, y: p.y, z: p.z, cold: RULES.cold * worldSight(b), ident: RULES.ident * worldSight(b), skip: b.id });
   }
   for (const s of game.ships) {
     const lit = s.burn || s.lit > game.time;
@@ -1104,11 +1112,11 @@ function stepWorlds(game, dt) {
         }
       }
       // Ships in orbit of a friendly world take on fuel, and at a yard, repairs and torpedoes.
-      const fast = b.home || has(b, 'refinery') ? 3 : 1, yard = has(b, 'yard');
+      const fast = b.home || has(b, 'refinery') || has(b, 'depot') ? 3 : 1, yard = has(b, 'yard');
       if (!enemyHere) {
         for (const s of game.ships) {
           if (s.at !== b.id || s.owner !== o) continue;
-          resupply(s, dt, RULES.refuel * fast, RULES.repair * (yard ? 1 : 0.33), yard || b.home ? 1 / RULES.rearm : 0, yard);
+          resupply(game, s, dt, RULES.refuel * fast, RULES.repair * (yard ? 1 : 0.33), yard || b.home ? 1 / RULES.rearm : 0, yard);
         }
       }
     }
@@ -1120,11 +1128,16 @@ function stepWorlds(game, dt) {
     } else if (b.yt > 0) b.yt = Math.max(0, b.yt - dt * 0.5);
   }
 }
-function resupply(s, dt, fuel, hull, torps, deep) {
-  s.dv = Math.min(s.st.dv, s.dv + fuel * dt);
-  s.hull = Math.min(s.st.hull, s.hull + hull * dt);
-  if (torps && s.torps < s.st.mag) { s.rearm = (s.rearm || 0) + torps * dt; if (s.rearm >= 1) { s.rearm -= 1; s.torps += 1; } }
-  if (s.st.stores && deep) s.stores = Math.min(s.st.stores, s.stores + torps * dt);
+/** Fuel, repairs and torpedoes at a world. All of it is paid for: a fleet at war drains the treasury. */
+function resupply(game, s, dt, fuel, hull, torps, deep) {
+  const P = RULES.price, o = s.owner;
+  const pay = (n) => { if (game.credits[o] < n) return false; game.credits[o] -= n; game.stats[o].spentWar = (game.stats[o].spentWar || 0) + n; return true; };
+  const f = Math.min(fuel * dt, s.st.dv - s.dv);
+  if (f > 0 && pay(f * P.fuel)) s.dv += f;
+  const h = Math.min(hull * dt, s.st.hull - s.hull);
+  if (h > 0 && pay(h * P.hull)) s.hull += h;
+  if (torps && s.torps < s.st.mag) { s.rearm = (s.rearm || 0) + torps * dt; if (s.rearm >= 1 && pay(P.torp)) { s.rearm -= 1; s.torps += 1; } else if (s.rearm > 1) s.rearm = 1; }
+  if (s.st.stores && deep && s.stores < s.st.stores) { const k = Math.min(torps * dt, s.st.stores - s.stores); if (pay(k * P.torp)) s.stores += k; }
   for (const k in s.out) if (s.out[k] > 0 && (deep || s.out[k] < 1e8)) s.out[k] = Math.min(s.out[k], deep ? 8 : RULES.selfRepair);
 }
 function capture(game, b, to) {

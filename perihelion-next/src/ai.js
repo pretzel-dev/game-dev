@@ -245,6 +245,15 @@ function spend(game, ai, home, mine, fleet, will) {
     if (y.queue.length < 2 && !cantOrderShip(game, y, cls) && (size < 4 || credits() > shipCost(game, o, cls) + 100)) { orderShip(game, y, cls); return; }
   }
   if (!will()) return;
+  // At the limit with money to spare: habitats let the fleet grow.
+  if (size >= cap && credits() > 450) {
+    for (const b of mine) {
+      if (b.blockaded) continue;
+      if (!cantBuild(game, b, 'habitat')) { buildStructure(game, b, 'habitat'); return; }
+      const h = structure(b, 'habitat');
+      if (h && !cantUpgrade(game, b, h)) { upgrade(game, b, h); return; }
+    }
+  }
   // Mines and refineries pay for themselves quickly.
   for (const b of mine) {
     if (b.blockaded) continue;
@@ -271,6 +280,9 @@ function spend(game, ai, home, mine, fleet, will) {
     for (const b of mine) {
       if (!b.home && b.kind === 'planet' && !cantBuild(game, b, 'yard') && yards.length < 2) { buildStructure(game, b, 'yard'); return; }
       if (!cantBuild(game, b, 'battery') && (b.kind === 'planet' || b.kind === 'station')) { buildStructure(game, b, 'battery'); return; }
+      const y = structure(b, 'yard');
+      if (y && !cantUpgrade(game, b, y)) { upgrade(game, b, y); return; }
+      if (b.home && !cantBuild(game, b, 'array')) { buildStructure(game, b, 'array'); return; }
     }
   }
 }

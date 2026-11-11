@@ -48,8 +48,13 @@ timed events) are still there to lift back if testing asks for them.
     will coast.
 
   Ships ordered together fly together at the slowest one's pace.
-- **Fuel.** Worlds you hold refill ships in orbit; a refinery or your capital
-  does it three times as fast. A dry ship is adrift until a tender matches her.
+- **Fuel.** Worlds you hold refill ships in orbit; a refinery, a fuel depot or
+  your capital does it three times as fast. A dry ship is adrift until a tender
+  matches her.
+- **War costs money.** Fuel, torpedoes and hull repairs are bought as ships
+  resupply (3 credits per unit of fuel, 15 per torpedo, half a credit per point
+  of hull). A fleet in orbit is cheap; a fleet that burns hard and fires salvos
+  drains the treasury, and with no credits nothing is resupplied.
 - **Seeing.** A burning drive (or a firing ship) shows anywhere there is a
   clear line of sight. A cold ship is seen only up close. The sun, planets and
   moons block sight and fire. A contact too far to identify is an amber diamond;
@@ -74,9 +79,12 @@ timed events) are still there to lift back if testing asks for them.
 - **Economy.** A capital banks its income. Every other world sets its earnings
   aside until a freighter carries them home; freighters can be destroyed or
   boarded, and a hostile ship in orbit blockades the world (no income, no yard).
-  Four structures: yard, mine, refinery (gas giants), battery.
-- **Fleet limit.** Four ships, plus one for every two more worlds, up to nine.
-  Pips under the credits show it.
+  Seven structures: yard (level two builds half as fast again), mine,
+  refinery (gas giants), battery, habitat, sensor array (the world sees two and
+  a half times as far), fuel depot. A capital has five slots, a planet three,
+  a moon or station two, an asteroid one.
+- **Fleet limit.** Four ships (five for the Holds), plus one for every habitat
+  level you build, up to twelve. Pips under the credits show it.
 - **Research.** Three short lines (drives, weapons, sensors), three steps
   each. One project at a time.
 - **Scenarios.** First command (the tutorial), Blockade run, Raider hunt,

@@ -113,6 +113,10 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Moons and stations are hidden until the view comes in on their planet
   (`v.show` in `render.js`), as in NASA's solar system viewer. Ship scale,
   drive plumes and attitude jets follow the first game, which the owner liked.
+- Money must always have somewhere to go (the owner's complaint about both
+  games was "everything built, credits pile up"). Fuel, torpedoes and repairs
+  are paid for (`RULES.price`), and the ship limit grows only by building
+  habitats. Don't add free resupply or a limit that grows by itself.
 - Panels redraw several times a second: keep their HTML steady (round times
   and bars) or taps get lost.
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.

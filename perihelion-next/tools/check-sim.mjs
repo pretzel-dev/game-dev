@@ -141,6 +141,25 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
     ok(g.credits[1] > before + 100, 'boarding a freighter takes the cargo');
   }
 }
+// War costs money, and habitats raise the ship limit.
+{
+  const g = S.createGame({ seed: 8, players: two, empty: true });
+  const home = g.homes[0];
+  const s = S.spawnShip(g, 0, 'frigate', home);
+  s.dv = 2; s.torps = 0; g.credits[0] = 1000;
+  run(g, 60);
+  ok(s.dv > 10 && s.torps > 0 && g.credits[0] < 1000 + 60 * S.RULES.homeIncome - 50, 'fuel and torpedoes are paid for');
+  s.dv = 2; g.credits[0] = 0; g.eco[0] = 0;
+  run(g, 10);
+  ok(s.dv < 2.5, 'no credits, no fuel');
+  g.credits[0] = 2000;
+  const cap0 = S.fleetCap(g, 0);
+  S.buildStructure(g, home, 'habitat'); run(g, 70);
+  ok(S.fleetCap(g, 0) === cap0 + 1, 'a habitat raises the ship limit by one');
+  S.upgrade(g, home, S.structure(home, 'habitat')); run(g, 70);
+  ok(S.fleetCap(g, 0) === cap0 + 2, 'and its upgrade by one more');
+  ok(S.buildStructure(g, home, 'array') && S.buildStructure(g, home, 'depot'), 'array and depot build on the capital');
+}
 // Multiplayer: a snapshot hides what the player cannot see and survives a round trip.
 {
   const g = S.createGame({ seed: 6, players: two });
