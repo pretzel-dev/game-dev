@@ -3,7 +3,7 @@
 // plotted routes, contact markers and the few words the game shows.
 // Reads game state every frame; owns the camera.
 import * as THREE from 'three';
-import { NEUTRAL, RULES, posAt, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, worldSight } from './sim.js';
+import { NEUTRAL, RULES, posAt, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, worldSight, rankOf } from './sim.js';
 import { createPost } from './gfx/post.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
@@ -600,6 +600,9 @@ export function createView(canvas, plot, opts = {}) {
         ctx.globalAlpha = 1;
       }
       if (b.blockaded && b.owner === me) { ctx.strokeStyle = HOSTILE; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(v.sx, v.sy, R + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+      // A special world carries a small gold diamond; a world with one of your agents on it, a small eye.
+      if (b.trait && !far) { ctx.fillStyle = AMBER; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.moveTo(v.sx + R + 6, v.sy - 3); ctx.lineTo(v.sx + R + 9, v.sy); ctx.lineTo(v.sx + R + 6, v.sy + 3); ctx.lineTo(v.sx + R + 3, v.sy); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; }
+      if (game.agents && game.agents.some((a) => a.owner === me && a.body === b.id)) { ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(v.sx - R - 7, v.sy, 4, 2.5, 0, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = INK; ctx.fillRect(v.sx - R - 8, v.sy - 1, 2, 2); }
       // Names: planets always; moons and the rest once there is room.
       const parent = b.parent !== null ? views[b.parent] : null;
       const crowded = parent && Math.hypot(parent.sx - v.sx, parent.sy - v.sy) < 46;
@@ -676,6 +679,9 @@ export function createView(canvas, plot, opts = {}) {
       const ga = docked ? 1 : 1 - THREE.MathUtils.smoothstep(hullPx, 18, 40);
       if (far && cls === 'freighter' && !picked && !aimed) return; // freighters are left off the far view
       if (ga > 0.02) glyph(cls, sx, sy, ang, far ? gs * 0.75 : gs, c, !mine && !known, ga * (crippled(s) ? 0.6 : 1));
+      // Rank: a short gold bar per step, over the mark.
+      const rk = known && !far ? rankOf(s) : 0;
+      for (let k = 0; k < rk; k++) { ctx.fillStyle = AMBER; ctx.fillRect(sx - (rk * 4 - 1) / 2 + k * 4, sy - gs - 5, 3, 1.5); }
       if (picked || aimed) {
         ctx.strokeStyle = aimed && !mine ? HOSTILE : INK; ctx.lineWidth = 1.2;
         const r = Math.max(11, hullPx * 0.7);
@@ -746,7 +752,7 @@ export function createView(canvas, plot, opts = {}) {
     // A selected world of yours: how far its sensors and battery reach.
     if (ui.selBody != null && game.bodies[ui.selBody].owner === me && !zoomedOut) {
       const b = game.bodies[ui.selBody], p = bodyPos[b.id];
-      ringOn(p.x, p.y, p.z, RULES.cold * worldSight(b), INK, 0.2, [1, 5]);
+      ringOn(p.x, p.y, p.z, RULES.cold * worldSight(b, game), INK, 0.2, [1, 5]);
       if (batteryMax(b)) ringOn(p.x, p.y, p.z, RULES.railRange + b.size, INK, 0.35, null);
     }
     // A burn being plotted by hand: the arrow from the ship.

@@ -182,3 +182,11 @@ input { text-transform: none; }
 #purse { align-items: flex-start; text-align: left; }
 #rate { font-family: var(--mono); font-size: 0.7rem; color: var(--dim); }
 .line .num { font-size: 0.85rem; }
+
+#sheet { max-height: 78vh; overflow-y: auto; touch-action: pan-y; }
+.tl { padding: 0.4rem 0; border-bottom: 1px solid var(--faint); display: flex; flex-direction: column; gap: 0.3rem; }
+.th { display: flex; align-items: center; gap: 0.5rem; }
+.th b { flex: 1; font-weight: 600; font-size: 0.95rem; }
+.had { color: var(--dim); font-size: 0.74rem; }
+.pipsv i.fork { border-radius: 50%; }
+.chip .rk { font-family: var(--mono); font-size: 0.5rem; color: var(--amber); line-height: 1; }

@@ -123,14 +123,16 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   ok(S.buildStructure(g, moon, 'mine') && !S.buildStructure(g, moon, 'mine'), 'a mine builds once');
   ok(S.cantOrderShip(g, home, 'battleship'), 'the battleship needs research');
   ok(S.orderShip(g, home, 'frigate'), 'a frigate can be ordered');
-  ok(S.research(g, 0, 'weapons') && !S.research(g, 0, 'drives'), 'one project at a time');
+  ok(S.research(g, 0, 'weapons', 'guided') && !S.research(g, 0, 'drives', 'nozzles'), 'one project at a time');
   const c0 = g.credits[0];
   run(g, 400);
   ok(g.ships.some((s) => s.owner === 0 && s.cls === 'frigate'), 'the yard launches the frigate');
-  ok(g.tech[0].weapons === 1, 'research completes');
+  ok(g.tech[0].weapons === 1 && S.knows(g, 0, 'guided'), 'research completes');
   ok(g.stats[0].hauled >= 1 && g.credits[0] > c0 + 300, 'freighters carry the moon\'s earnings home');
-  S.research(g, 0, 'weapons'); run(g, 90);
+  ok(!S.research(g, 0, 'weapons', 'swarm'), 'a later step cannot be taken early');
+  S.research(g, 0, 'weapons', 'spinal'); run(g, 90);
   ok(!S.cantOrderShip(g, home, 'battleship'), 'spinal mounts unlock the battleship');
+  ok(g.tech[0].weapons === 2 && !S.knows(g, 0, 'wolfpack') && S.cantResearch(g, 0, 'weapons', 'wolfpack'), 'choosing one doctrine closes the other');
   // A raider alongside a freighter takes her cargo.
   moon.stock = 200; moon.hauler = 0; run(g, 2);
   const f = g.ships.find((s) => s.st.civil);
@@ -158,7 +160,49 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   ok(S.fleetCap(g, 0) === cap0 + 1, 'a habitat raises the ship limit by one');
   S.upgrade(g, home, S.structure(home, 'habitat')); run(g, 70);
   ok(S.fleetCap(g, 0) === cap0 + 2, 'and its upgrade by one more');
-  ok(S.buildStructure(g, home, 'array') && S.buildStructure(g, home, 'depot'), 'array and depot build on the capital');
+  ok(S.buildStructure(g, home, 'lab') && S.buildStructure(g, home, 'exchange'), 'a laboratory and an exchange build on the capital');
+}
+// World traits, laboratories, agents, veterans.
+{
+  const g = S.createGame({ seed: 12, players: two, empty: true });
+  const home = g.homes[0];
+  g.credits[0] = 9000;
+  ok(g.bodies.filter((b) => b.trait).length >= 5, 'most systems have several special worlds');
+  const seam = g.bodies.find((b) => b.trait === 'seam');
+  if (seam) { seam.owner = 0; S.buildStructure(g, seam, 'mine'); run(g, 50); ok(S.incomeOf(seam, g) >= S.RULES.income[seam.kind] + 2, 'a mine on a rich seam pays double'); }
+  ok(S.cantBuild(g, home, 'array') && !S.cantBuild(g, home, 'lab') && !S.cantBuild(g, home, 'exchange'), 'what can be built depends on the world');
+  const sp0 = S.researchSpeed(g, 0);
+  S.buildStructure(g, home, 'lab'); run(g, 70);
+  ok(S.researchSpeed(g, 0) > sp0, 'a laboratory speeds research');
+  const foe = g.homes[1], indie = g.bodies.find((b) => b.owner === S.NEUTRAL && !S.batteryMax(b));
+  ok(S.cantSendAgent(g, 0, foe), 'agents need Signals intercept');
+  S.research(g, 0, 'intel', 'signals'); run(g, 60);
+  ok(S.sendAgent(g, 0, indie) && S.cantBuyWorld(g, 0, indie), 'an agent takes time to arrive');
+  run(g, 50);
+  ok(S.buyWorld(g, 0, indie) && indie.owner === 0 && !g.agents.length, 'an independent world can be bought through an agent');
+  ok(S.sendAgent(g, 0, foe), 'and one sent to an enemy world');
+  run(g, 50);
+  const spy = S.spawnShip(g, 1, 'frigate', foe);
+  S.step(g, 1);
+  ok(spy.seen[0] === 2, 'an agent sees the ships over her world');
+  ok(!S.setAgentOp(g, 0, foe, 'steal') && S.cantSabotage(g, 0, foe, 'battery'), 'stealing and sabotage need their research');
+  const v = S.spawnShip(g, 0, 'frigate', home);
+  v.xp = 20;
+  ok(S.rankOf(v) === 2, 'ships earn ranks');
+}
+// Derelicts and convoys turn up, and a derelict can be boarded.
+{
+  const g = S.createGame({ seed: 14, players: two, empty: true });
+  run(g, 400);
+  const d = g.ships.find((x) => x.derelict);
+  ok(d && d.seen[0] === 2 && d.seen[1] === 2, 'a derelict turns up and everyone sees her');
+  if (d) {
+    const b = free(g, 0, 'frigate', d.x + 1, d.z, d.vx, d.vz);
+    for (let i = 0; i < 25; i++) { b.x = d.x + 1; b.y = d.y; b.z = d.z; b.vx = d.vx; b.vy = d.vy; b.vz = d.vz; S.step(g, 1); }
+    ok(d.owner === 0 && !d.derelict && S.rankOf(d) >= 2, 'boarding a derelict makes her yours, a veteran');
+  }
+  run(g, 700);
+  ok(g.events.some((e) => e.type === 'event' && e.kind === 'convoy'), 'an independent convoy sails');
 }
 // Multiplayer: a snapshot hides what the player cannot see and survives a round trip.
 {
@@ -187,7 +231,7 @@ for (const k of SCENARIO_KEYS) {
   for (let t = 0; t < 2400 && !done; t++) {
     S.step(g, 1);
     const st = sc.state(g, 0);
-    if (g.scn.step === 2 && moon.owner === 0 && !moon.structures.length) S.buildStructure(g, moon, 'mine');
+    if (g.scn.step === 2 && moon.owner === 0 && !S.structure(moon, 'mine')) S.buildStructure(g, moon, 'mine');
     done = st.done;
   }
   ok(done === 'win', `the first scenario can be won (${done}, step ${g.scn.step})`);

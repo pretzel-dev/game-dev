@@ -12,6 +12,7 @@ const give = (b, owner, battery = 0) => {
 const base = (seed, mine = 'concord', theirs = 'holds') => {
   const players = [{ faction: mine, name: 'You' }, { faction: theirs, name: 'Raiders' }];
   const game = createGame({ seed, players, empty: true });
+  game.noEvents = true; // nothing turns up to distract from the set piece
   const home = game.homes[0], foe = game.homes[1];
   const moon = game.bodies.find((b) => b.parent === home.id && b.kind === 'moon');
   return { players, game, home, foe, moon };
@@ -28,6 +29,7 @@ export const SCENARIOS = {
       spawnShip(s.game, 0, 'frigate', s.home);
       spawnShip(s.game, 0, 'corvette', s.home);
       s.game.credits[0] = 500;
+      s.moon.trait = undefined; s.moon.structures = []; s.moon.bhp = 0; // a plain moon to learn on
       s.game.scn = { step: 0, moon: s.moon.id };
       return s;
     },

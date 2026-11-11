@@ -5,7 +5,7 @@
 // Difficulty is how often it thinks, how reliably it follows through (skill),
 // and how well its economy runs (eco).
 import {
-  NEUTRAL, RULES, CLASSES, TECH, rng, posAt, setOrder, scuttle, routes, strength, armed, crippled, shipsAt, has, structure, working,
+  NEUTRAL, RULES, CLASSES, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, scuttle, routes, strength, armed, crippled, shipsAt, has, structure, working,
   cantBuild, buildStructure, cantUpgrade, upgrade, upgradeCost, cantOrderShip, orderShip, shipCost, cantResearch, research,
   fleetCap, fleetSize, incomeOf, batteryMax, warshipsOf, worldsOf,
 } from './sim.js';
@@ -25,16 +25,22 @@ const MIX = {
   boreal: { frigate: 0.45, corvette: 0.2, battleship: 0.2, escort: 0.15 },
   holds: { corvette: 0.45, frigate: 0.4, escort: 0.15, battleship: 0 },
 };
-const TECH_ORDER = {
-  concord: ['weapons', 'weapons', 'drives', 'sensors', 'drives', 'weapons', 'sensors', 'drives', 'sensors'],
-  boreal: ['drives', 'weapons', 'weapons', 'drives', 'sensors', 'weapons', 'drives', 'sensors', 'sensors'],
-  holds: ['sensors', 'sensors', 'weapons', 'drives', 'drives', 'weapons', 'sensors', 'weapons', 'drives'],
+// Research: each power works its lines in its own order, and has its own taste in doctrines.
+const LINE_ORDER = {
+  concord: ['weapons', 'industry', 'drives', 'sensors', 'intel'],
+  boreal: ['drives', 'weapons', 'industry', 'sensors', 'intel'],
+  holds: ['sensors', 'weapons', 'industry', 'intel', 'drives'],
+};
+const DOCTRINE = {
+  concord: ['spinal', 'flak', 'tanks', 'torch', 'network', 'longwatch', 'deepmine', 'wareco', 'sabot', 'fifth'],
+  boreal: ['flash', 'torch', 'spinal', 'swarm', 'coldrun', 'longwatch', 'bulk', 'wareco', 'rings', 'cipher'],
+  holds: ['wolfpack', 'swarm', 'tanks', 'coldjets', 'coldrun', 'jammers', 'deepmine', 'arcology', 'rings', 'cipher'],
 };
 
 export function createAI(game, owner, level = 'normal', seed = 1) {
   const d = LEVELS[level] || LEVELS.normal;
   game.eco[owner] = d.eco;
-  return { owner, level, d, clock: 2 + owner, rand: rng(seed * 31 + owner * 977), known: new Map(), techI: 0 };
+  return { owner, level, d, clock: 2 + owner, rand: rng(seed * 31 + owner * 977), known: new Map() };
 }
 
 const dist2 = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -117,7 +123,7 @@ function think(game, ai) {
       let prey = null, pd = 320;
       for (const f of game.ships) {
         if (f.owner === o || !f.st.civil || !f.seen[o]) continue;
-        const dd = dist2(f, s);
+        const dd = dist2(f, s) * (f.owner < 0 ? 3 : 1); // an independent convoy is only worth a short chase
         if (dd < pd) { pd = dd; prey = f; }
       }
       if (prey && t > d.calm) setOrder(game, o, [s.id], { type: 'attack', ship: prey.id, mode: 'match', d0: 1.2, profile: 'hard' });
@@ -233,7 +239,7 @@ function spend(game, ai, home, mine, fleet, will) {
     for (const cls in mix) {
       if (!mix[cls]) continue;
       const C = CLASSES[cls];
-      if (C.needs && game.tech[o][C.needs[0]] < C.needs[1]) continue;
+      if (C.needs && !knows(game, o, C.needs)) continue;
       const v = mix[cls] - (counts[cls] || 0) / Math.max(1, size);
       if (v > bv) { bv = v; best = cls; }
     }
@@ -263,16 +269,39 @@ function spend(game, ai, home, mine, fleet, will) {
       if (x && size >= 3 && !cantUpgrade(game, b, x) && credits() > upgradeCost(x) + 150) { upgrade(game, b, x); return; }
     }
   }
-  // Research, in the order this power favours.
+  // Research: the line that is furthest behind, in this power's order, and its favoured doctrine.
   const tech = game.tech[o];
   if (!tech.project && size >= 3) {
-    const order = TECH_ORDER[f];
-    while (ai.techI < order.length) {
-      const key = order[ai.techI];
-      const done = order.slice(0, ai.techI + 1).filter((k) => k === key).length;
-      if (tech[key] >= done) { ai.techI++; continue; }
-      if (!cantResearch(game, o, key) && credits() > TECH[key].cost[tech[key]] + 120) research(game, o, key);
-      break;
+    const line = LINE_ORDER[f].filter((l) => tech[l] < TECH[l].tiers.length).sort((x, y) => tech[x] - tech[y])[0];
+    if (line) {
+      const opts = TECH[line].tiers[tech[line]];
+      const pick = opts.find((x) => DOCTRINE[f].includes(x.key)) || opts[0];
+      if (!cantResearch(game, o, line, pick.key) && credits() > TECH_COST[tech[line]] + 120) { research(game, o, line, pick.key); return; }
+    }
+  }
+  // Laboratories and an exchange once the basics are up.
+  if (credits() > 500 && size >= 3) {
+    for (const b of mine) {
+      if (b.blockaded) continue;
+      for (const type of ['lab', 'exchange']) if (!cantBuild(game, b, type) && b.structures.length < 4) { buildStructure(game, b, type); return; }
+    }
+  }
+  // Agents: one to watch the nearest enemy capital, the rest to bring independent worlds over.
+  if (ai.d.skill > 0.5) {
+    for (const a of game.agents) {
+      if (a.owner !== o || a.at > game.time) continue;
+      const b = game.bodies[a.body];
+      if (b.owner === NEUTRAL) { if (!cantBuyWorld(game, o, b) && credits() > worldPrice(game, b) + 250) { buyWorld(game, o, b); return; } continue; }
+      const mineHere = game.ships.some((x) => x.at === b.id && x.owner === o);
+      if (mineHere && b.bhp > 0 && !cantSabotage(game, o, b, 'battery')) { sabotage(game, o, b, 'battery'); return; }
+      const want = mineHere && knows(game, o, 'fifth') ? 'incite' : knows(game, o, 'rings') ? 'steal' : 'watch';
+      if (a.op !== want) setAgentOp(game, o, b, want);
+    }
+    if (credits() > 600) {
+      const foe = game.homes.find((h, i) => h && i !== o && game.alive[i] && !agentAt(game, o, h));
+      if (foe && !cantSendAgent(game, o, foe) && !game.agents.some((a) => a.owner === o && game.bodies[a.body].owner !== NEUTRAL)) { sendAgent(game, o, foe); return; }
+      const targets = game.bodies.filter((b) => b.owner === NEUTRAL && !cantSendAgent(game, o, b) && credits() > worldPrice(game, b) + 400).sort((x, y) => worldPrice(game, x) - worldPrice(game, y));
+      if (targets.length) { sendAgent(game, o, targets[0]); return; }
     }
   }
   // A second yard and frontier batteries once the money is there.
