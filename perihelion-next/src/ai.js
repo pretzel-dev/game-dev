@@ -146,7 +146,7 @@ function think(game, ai) {
     const det = [];
     let v = 0;
     for (const s of cand) { if (v >= threatStr * 1.5 + 0.5) break; det.push(s); v += strength(s); }
-    if (T && det.length && (v >= threatStr * 0.8 || threat.b.home)) setOrder(game, o, det.map((s) => s.id), { type: 'attack', ship: T.id, mode: 'match', d0: 5, profile: 'hard' });
+    if (T && det.length && (v >= threatStr * 0.8 || threat.b.home)) setOrder(game, o, det.map((s) => s.id), { type: 'attack', ship: T.id, mode: 'match', d0: 3, profile: 'hard' });
   }
 
   // The main group: the biggest stack sitting idle together in one orbit.

@@ -9,11 +9,13 @@ timed events) are still there to lift back if testing asks for them.
 
 ## The game in one page
 
-- **One generated system every game.** A sun, four or five planets (at least
-  one gas giant with moons), a belt, a station or two. Worlds ride fixed orbits.
-  Space is mostly empty: worlds are hundreds of their own widths apart, a hop to
-  your moon takes about a minute and crossing the system several. Solo games
-  have time speeds up to 8x.
+- **One generated system every game**, laid out like our own: two to four
+  rocky worlds close in, a belt, then gas giants far apart, sometimes a small
+  cold world beyond. Each orbit is roughly half as far out again as the last,
+  and none is a perfect circle. Space is mostly empty: a hop to a moon takes
+  about a minute, crossing the system many. Solo games have time speeds to 8x.
+- **Where you start suits your power.** The Concord on a living world, the
+  Republic on a dry one, the Holds on a station over a gas giant.
 - **Ships are real bodies.** Each has a position, a velocity and a tank. The sun
   and the planets pull on them. They change course only by burning, and every
   burn spends fuel (shown as an amber bar; in the rules it is a total speed
@@ -51,10 +53,6 @@ timed events) are still there to lift back if testing asks for them.
 - **Fuel.** Worlds you hold refill ships in orbit; a refinery, a fuel depot or
   your capital does it three times as fast. A dry ship is adrift until a tender
   matches her.
-- **War costs money.** Fuel, torpedoes and hull repairs are bought as ships
-  resupply (3 credits per unit of fuel, 15 per torpedo, half a credit per point
-  of hull). A fleet in orbit is cheap; a fleet that burns hard and fires salvos
-  drains the treasury, and with no credits nothing is resupplied.
 - **Seeing.** A burning drive (or a firing ship) shows anywhere there is a
   clear line of sight. A cold ship is seen only up close. The sun, planets and
   moons block sight and fire. A contact too far to identify is an amber diamond;
@@ -94,6 +92,15 @@ timed events) are still there to lift back if testing asks for them.
   send orders and receive only what their sensors see, four times a second.
 
 ## Reading the screen
+
+- **Credits** show with the rate they come in. Tap them for where the income
+  comes from, world by world, and what is at sea in freighters.
+- **Freighters.** Tap one to see whose she is, where she is going, what she
+  carries and when she is due.
+- **Orbits** are drawn as a trail behind each world that fades away, not as
+  full rings. From far out the plot keeps to the essentials: who holds what
+  and where the fleets are.
+- **Ships keep clear of each other**, in orbit and in formation.
 
 - **Planet families.** From far out a planet shows alone, with a dot for each
   moon or station it has (in the holder's colour). Come in on it, or tap it,
@@ -148,6 +155,9 @@ points multiplayer at a local PeerJS server (`npx peerjs --port 9000 --host 127.
 ## Known gaps
 
 - Two AI admirals of equal strength can stalemate (about 1 match in 24).
+- With giants far out, a slingshot that saves fuel is rare.
+- Weapons reach a few ship-lengths (rails 7, torpedoes 20, against worlds
+  hundreds apart); ships sharing an orbit can always engage each other.
 - AI-only matches run long (median about 75 minutes of game time).
 - Structures are shown as marks and icons, not as buildings on the worlds.
 - AI admirals do not use firing passes on batteries or run dark.
