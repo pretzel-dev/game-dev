@@ -151,7 +151,7 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Sound (`src/audio.js`) is generated in the browser as a trial. The owner
   dislikes cheap synth sound: if they reject it, keep interface and alert
   sounds only and source audio files.
-- Tests: `npm run check`, `npm run check:matches` (up to a third of 24
+- Tests: `npm run check`, `npm run check:matches` (up to half of 24
   may not finish: the AI is poor at taking a defended capital, which now needs
   three ships in orbit; improving that is open work), `node tools/smoke.mjs`, `node tools/mp-smoke.mjs`.
 

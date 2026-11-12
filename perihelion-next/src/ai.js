@@ -155,6 +155,16 @@ function think(game, ai) {
     if (T && det.length && (v >= threatStr * 0.8 || threat.b.home)) setOrder(game, o, det.map((s) => s.id), { type: 'attack', ship: T.id, mode: 'match', d0: 3, profile: 'hard' });
   }
 
+  // Well ahead: stop waiting. Every ship that can fight goes for the nearest enemy capital together, and stays.
+  if (ai.siege == null && t > 900 && t > (ai.allInT || 0) && line.length >= 4 && will()) {
+    const foe = game.homes.filter((h, i) => h && i !== o && game.alive[i]).sort((x, y) => dist2(game.bp[x.id], game.bp[home.id]) - dist2(game.bp[y.id], game.bp[home.id]))[0];
+    if (foe && mine.length >= 2 * worldsOf(game, foe.owner).length && myStr(line) >= 6) {
+      const ids = [...line, ...tenders].map((s) => s.id);
+      setOrder(game, o, ids, { type: 'orbit', body: foe.id, profile: 'cruise' });
+      ai.siege = foe.id; ai.siegeGrp = line[0].grp; ai.allIn = true; ai.allInT = t + 420;
+      return;
+    }
+  }
   // The main group: the biggest stack sitting idle together in one orbit.
   const stacks = new Map();
   for (const s of line) if (s.at !== null && !s.order) stacks.set(s.at, [...(stacks.get(s.at) || []), s]);
@@ -164,7 +174,7 @@ function think(game, ai) {
   if (ai.siege != null) {
     const sb = game.bodies[ai.siege];
     const there = line.filter((s) => s.at === sb.id || (s.order && s.order.body === sb.id));
-    if (sb.owner === o || !there.length) ai.siege = null;
+    if (sb.owner === o || !there.length) { ai.siege = null; ai.allIn = false; }
   }
   // Where to gather: the siege, else wherever the main group sits if that's a world of mine, else home.
   const rally = ai.siege != null ? game.bodies[ai.siege] : main && game.bodies[main[0].at].owner === o ? game.bodies[main[0].at] : home;
@@ -179,7 +189,7 @@ function think(game, ai) {
     const foes = shipsAt(game, at).filter((s) => s.owner !== o && armed(s)).reduce((v, s) => v + strength(s), 0) + at.bhp / 60;
     // (Count the ships still closing in behind the leader: a formation arrives a few seconds apart.)
     const mineHere = line.filter((s) => s.at === at.id || (s.order && s.order.body === at.id));
-    if (foes > myStr(mineHere) * 1.6) setOrder(game, o, mineHere.map((s) => s.id), { type: 'orbit', body: home.id, profile: 'hard' });
+    if (foes > myStr(mineHere) * 1.6 && !(ai.allIn && at.id === ai.siege)) setOrder(game, o, mineHere.map((s) => s.id), { type: 'orbit', body: home.id, profile: 'hard' });
     return;
   }
   const str = myStr(main);

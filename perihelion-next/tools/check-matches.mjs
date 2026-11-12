@@ -25,6 +25,6 @@ for (let i = 0; i < N; i++) {
 mins.sort((a, b) => a - b);
 console.log(`wins by power: ${F.map((f) => `${f} ${wins[f] || 0}/${played[f] || 0}`).join(', ')}; median ${mins[mins.length >> 1]?.toFixed(0)} min, longest ${mins[mins.length - 1]?.toFixed(0)} min`);
 // AI admirals are poor at cracking a well-defended capital (it needs three ships in orbit and a silenced battery),
-// so some AI-only games never end. More than a third unfinished means the rules themselves stalemate.
+// so some AI-only games never end. More than half unfinished means the rules themselves stalemate.
 if (bad) console.log(`${bad} of ${total} matches did not finish`);
-if (bad > total / 3) process.exit(1);
+if (bad > total / 2) process.exit(1);

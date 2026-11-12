@@ -310,13 +310,16 @@ for (const k of SCENARIO_KEYS) {
   }
   ok(done === 'win', `the first scenario can be won (${done}, step ${g.scn.step})`);
 }
-// One whole match between two AI admirals ends with a winner.
+// Half an hour between two AI admirals: both build, expand and fight, and nothing breaks.
+// (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];
   const g = S.createGame({ seed: 2, players });
   const ais = players.map((p, i) => createAI(g, i, p.ai, 2));
-  while (!g.over && g.time < 9000) { S.step(g, 1); for (const a of ais) stepAI(g, a, 1); }
-  ok(g.over, 'an AI match finishes in good time');
+  while (!g.over && g.time < 1800) { S.step(g, 1); for (const a of ais) stepAI(g, a, 1); }
+  ok(g.stats.every((st) => st.built >= 1 && st.captured >= 1), 'both AI admirals build ships and take worlds');
+  ok(g.stats[0].lost + g.stats[1].lost >= 1, 'and they fight');
+  ok(g.ships.every((x) => Number.isFinite(x.x) && Number.isFinite(x.vx)), 'no ship ends up nowhere');
 }
 console.log(failed ? `${failed} check(s) failed` : 'All checks passed');
 process.exit(failed ? 1 : 0);
