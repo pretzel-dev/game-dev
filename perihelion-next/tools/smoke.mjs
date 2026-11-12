@@ -71,6 +71,7 @@ for (let i = 0; i < 4; i++) {
 }
 await page.waitForTimeout(300);
 await page.tap('#rnd');
+await page.tap('[data-a="node"][data-v="weapons:guided"]');
 await page.tap('[data-a="research"][data-v="weapons:guided"]');
 await page.waitForTimeout(500);
 await shot('research');

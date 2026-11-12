@@ -59,6 +59,27 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   run(g, 60);
   ok(s.dv <= 0 && s.at === null && S.crippled(s) && s.phase === 'adrift', 'a ship that runs dry is adrift');
 }
+// Formation: ships ordered together stay together; loose, the fast ones run ahead. One ship can join another.
+{
+  const spread = (loose) => {
+    const g = S.createGame({ seed: 3, players: two, empty: true });
+    const ships = ['corvette', 'escort', 'battleship'].map((c) => S.spawnShip(g, 0, c, g.homes[0]));
+    const far = g.planets.filter((p) => p.owner === S.NEUTRAL).sort((a, b) => b.r - a.r)[0];
+    S.setOrder(g, 0, ships.map((x) => x.id), { type: 'orbit', body: far.id, profile: 'hard', loose });
+    run(g, 150);
+    return Math.max(...ships.map((a) => Math.max(...ships.map((b) => S.dist(a, b)))));
+  };
+  const tight = spread(false), wide = spread(true);
+  ok(tight < 6, `a formation holds together (${tight.toFixed(1)} apart)`);
+  ok(wide > tight * 3, `loose ships string out (${wide.toFixed(1)} apart)`);
+  const g = S.createGame({ seed: 3, players: two, empty: true });
+  const adrift = free(g, 0, 'frigate', 600, 0, 0, 0.4);
+  adrift.dv = 0;
+  const tender = S.spawnShip(g, 0, 'tender', g.homes[0]);
+  ok(S.setOrder(g, 0, [tender.id], { type: 'form', lead: adrift.id }), 'a ship can be told to join another');
+  for (let i = 0; i < 900 && adrift.dv < 5; i++) S.step(g, 1);
+  ok(S.dist(tender, adrift) < 4 && adrift.dv >= 5, `a tender sent to a dry ship reaches it and refuels it (${S.dist(tender, adrift).toFixed(1)} apart)`);
+}
 // Seeing: a cold ship is hidden beyond short range, a burning one shows anywhere, a world blocks the view.
 {
   const g = S.createGame({ seed: 5, players: two, empty: true });

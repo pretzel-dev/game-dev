@@ -701,7 +701,7 @@ export function createView(canvas, plot, opts = {}) {
         if (crippled(s)) { ctx.strokeStyle = HOSTILE; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(sx - 9, sy - 9); ctx.lineTo(sx - 4, sy - 4); ctx.moveTo(sx - 4, sy - 9); ctx.lineTo(sx - 9, sy - 4); ctx.stroke(); }
       }
       if (s.board > 0) { ctx.strokeStyle = colorOf(s.boardBy); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, 14, -Math.PI / 2, -Math.PI / 2 + Math.min(1, s.board / (s.st.civil ? RULES.board.freighter : RULES.board.warship)) * Math.PI * 2); ctx.stroke(); }
-      if ((picked || aimed) && known && cls !== 'freighter') label(s.name || '', sx, sy - (docked ? 22 : Math.max(16, hullPx * 0.7) + 8), aimed ? HOSTILE : INK, 0.95, 10);
+      if ((picked || aimed) && known && cls !== 'freighter') label(s.name || '', sx, sy - (docked ? 22 : Math.max(16, hullPx * 0.7) + 8), aimed && !mine ? HOSTILE : INK, 0.95, 10);
     }
     report.burn = Math.min(1, burnSum / 2);
 
