@@ -135,6 +135,12 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   in short plain words ("Mines earn double.", "Pick one of the two."). No
   "she" for ships, no colons-for-effect, no stakes language ("for good",
   "may cost the agent"). If a line can go, remove it.
+- Text must still let the player decide: every description carries the
+  numbers (`hintOf`, `structText`, `shipText` in `main.js` compute them from
+  the rules, so they stay true). Never write "more income"; write how much.
+- The strip ends in a fixed bar (`.bar`): numbers for the selection, or what
+  the picked button does, with OK and cancel for `TWO_STEP` actions. Keep it
+  a fixed height so the panel does not jump.
 - Ships ordered together fly in formation (`type: 'form'` orders keep station
   on a leader); `loose` turns it off. `form` is also how one ship joins another.
 - Research is drawn as a board (rows are lines, columns are steps, forks are
@@ -145,8 +151,9 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Sound (`src/audio.js`) is generated in the browser as a trial. The owner
   dislikes cheap synth sound: if they reject it, keep interface and alert
   sounds only and source audio files.
-- Tests: `npm run check`, `npm run check:matches` (at most two of 24
-  may stalemate), `node tools/smoke.mjs`, `node tools/mp-smoke.mjs`.
+- Tests: `npm run check`, `npm run check:matches` (up to a third of 24
+  may not finish: the AI is poor at taking a defended capital, which now needs
+  three ships in orbit; improving that is open work), `node tools/smoke.mjs`, `node tools/mp-smoke.mjs`.
 
 ## Owner's preferences
 

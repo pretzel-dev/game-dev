@@ -123,7 +123,7 @@ function apply(owner, c) {
       const profile = PROFILES[o.profile] ? o.profile : 'cruise';
       if (o.type === 'orbit' && game.bodies[o.body]) S.setOrder(game, owner, ids, { type: 'orbit', body: o.body, profile, loose: !!o.loose, ...(game.bodies[o.via] && game.bodies[o.via].kind === 'planet' ? { via: o.via, side: o.side < 0 ? -1 : 1 } : {}) });
       else if (o.type === 'strike' && game.bodies[o.body]) S.setOrder(game, owner, ids, { type: 'strike', body: o.body, profile, loose: !!o.loose });
-      else if (o.type === 'attack') { const T = S.shipById(game, o.ship); if (T && T.seen[owner]) S.setOrder(game, owner, ids, { type: 'attack', loose: !!o.loose, ship: o.ship, mode: o.mode === 'pass' ? 'pass' : 'match', d0: T.st.civil || S.crippled(T) ? 1.2 : 3, profile }); }
+      else if (o.type === 'attack') { const T = S.shipById(game, o.ship); if (T && T.seen[owner]) S.setOrder(game, owner, ids, { type: 'attack', loose: !!o.loose, ship: o.ship, mode: o.mode === 'pass' || o.mode === 'board' ? o.mode : 'match', d0: T.st.civil || S.crippled(T) ? 1.2 : 3, profile }); }
       else if (o.type === 'form') { const Ld = S.shipById(game, o.lead); if (Ld && Ld.owner === owner) S.setOrder(game, owner, ids, { type: 'form', lead: Ld.id }); }
       else if (o.type === 'burn') { const l = Math.hypot(o.x, o.y, o.z) || 1; S.setOrder(game, owner, ids, { type: 'burn', x: o.x / l, y: o.y / l, z: o.z / l, left: Math.min(60, Math.max(1, +o.left || 1)) }); }
       return;
@@ -134,6 +134,7 @@ function apply(owner, c) {
     case 'upgrade': { const x = b && S.structure(b, c.type); return x && S.upgrade(game, b, x); }
     case 'ship': return b && S.orderShip(game, b, c.cls);
     case 'cancel': return b && S.cancelShip(game, b, c.i);
+    case 'demolish': return b && S.demolish(game, b, c.type);
     case 'research': return S.research(game, owner, c.line, c.key);
     case 'agent': { const w = game.bodies[c.at]; return w && S.sendAgent(game, owner, w); }
     case 'recall': { const w = game.bodies[c.at]; return w && S.recallAgent(game, owner, w); }
@@ -145,7 +146,12 @@ function apply(owner, c) {
 }
 
 // ---- Selection -------------------------------------------------------------------
-function clearSel() { ui.armed = null; ui.sel = new Set(); ui.target = null; ui.targetShip = null; ui.routes = null; ui.routeKey = null; ui.build = false; ui.plotMode = false; ui.plot = null; }
+/** Every ship flying with this one: its formation (leader and followers) and anything sent off with it. */
+function fleetOf(s) {
+  const root = s.order && s.order.type === 'form' ? S.shipById(game, s.order.lead) || s : s;
+  return game.ships.filter((x) => mine(x) && !x.st.civil && x.at === null && (x === root || x === s || x.grp === root.grp || (x.order && x.order.type === 'form' && x.order.lead === root.id)));
+}
+function clearSel() { ui.armed = null; ui.struct = null; ui.sel = new Set(); ui.target = null; ui.targetShip = null; ui.routes = null; ui.routeKey = null; ui.build = false; ui.plotMode = false; ui.plot = null; }
 function selectShips(list) { clearSel(); ui.selBody = null; for (const s of list) ui.sel.add(s.id); sfx('select'); }
 function setTarget(bodyId) { ui.target = bodyId; ui.targetShip = null; ui.routeKey = null; refreshRoutes(); sfx('tap'); }
 function refreshRoutes() {
@@ -166,7 +172,7 @@ function tap(x, y, double) {
     if (mine(s) && !s.st.civil && ui.sel.size && !ui.sel.has(s.id) && !(s.at !== null && selShips().every((x) => x.at === s.at))) { ui.targetShip = s.id; ui.target = null; ui.routes = null; sfx('tap'); }
     else if (mine(s) && !s.st.civil) {
       if (ui.sel.has(s.id) && ui.sel.size > 1) selectShips([s]);
-      else selectShips(s.at !== null ? game.ships.filter((x) => mine(x) && !x.st.civil && x.at === s.at) : game.ships.filter((x) => mine(x) && !x.st.civil && x.at === null && x.grp === s.grp));
+      else selectShips(s.at !== null ? game.ships.filter((x) => mine(x) && !x.st.civil && x.at === s.at) : fleetOf(s));
       view.followShip(s.id, double);
     } else if (mine(s)) { clearSel(); ui.selBody = null; ui.targetShip = s.id; sfx('tap'); view.followShip(s.id, double); }
     else { ui.targetShip = s.id; ui.target = null; ui.routes = null; if (!ui.sel.size) ui.selBody = null; sfx('tap'); if (double) view.followShip(s.id, true); }
@@ -203,6 +209,7 @@ const HINT = {
   pass: 'Fly past at speed and shoot. More damage, but brief.',
   match: 'Pull alongside and fight. Also how you board.',
   salvo: 'Fire all torpedoes at this target.',
+  cancel: 'Stop building this ship. You get 80% back.',
   join: 'Fly to this ship and stay with it.',
   pick: 'Select this ship instead.',
   formation: 'On: ships stay together. Off: each ship goes at its own speed.',
@@ -232,7 +239,7 @@ const HINT = {
   'ship:frigate': 'All-round warship with torpedoes.',
   'ship:escort': 'Shoots down torpedoes aimed at nearby ships.',
   'ship:battleship': 'Big guns, heavy armour, slow.',
-  'ship:tender': 'No weapons. Refuels and rearms ships next to it.',
+  'ship:tender': 'No weapons. Gives fuel and torpedoes to ships flying next to it. Refills at a yard or your capital.',
   agent: 'Shows you this world and the ships near it. Can be caught.',
   recall: 'Remove the agent so you can use one elsewhere.',
   buy: 'Pay this world to join you.',
@@ -242,10 +249,65 @@ const HINT = {
   'op:incite': 'This world yields to your ships twice as fast. More likely to be caught.',
   'op:watch': 'Only watch.',
 };
-const hintOf = (a, v) => (a === 'trait' ? TRAITS[v]?.text : HINT[`${a}:${v}`] || HINT[a]) || '';
+const num = (x) => (Math.round(x * 10) / 10).toString();
+/** What a structure does on this world at a level, in numbers. */
+function structText(type, b, level = 1) {
+  const K = (k) => S.knows(game, me, k), t = b.trait, R = RULES.structures[type];
+  const pays = (rate, cost) => `+${num(rate)} credits a second. Pays for itself in ${Math.max(1, Math.round(cost / rate / 60))} min.`;
+  const cost = level === 1 ? R.cost : S.upgradeCost({ type });
+  switch (type) {
+    case 'mine': return pays(R.income * (t === 'seam' ? 2 : 1) * (K('deepmine') ? 1.5 : 1), cost);
+    case 'refinery': return `${pays(R.income * (t === 'deut' ? 1.5 : 1), cost)}${level === 1 ? ' Refuels ships 3 times as fast.' : ''}`;
+    case 'exchange': return pays(R.income, cost);
+    case 'habitat': { const n = (t === 'garden' ? 2 : 1) * (K('arcology') ? 2 : 1); return `${n} more ship${n > 1 ? 's' : ''} in your fleet.`; }
+    case 'lab': return `Research ${t === 'archive' ? 100 : 50}% faster.`;
+    case 'battery': { const hp = RULES.batteryHp * level * (t === 'fortress' ? 2 : 1) * (b.home ? 2 : 1), g = level + (b.home ? 1 : 0); return `Strength ${hp}, ${g} gun${g > 1 ? 's' : ''}. Shoots enemy ships in orbit and torpedoes.`; }
+    case 'yard': return level === 1 ? `Builds ships${t === 'hulk' ? ' 50% faster' : ''}. Repairs and rearms ships in orbit.` : 'Builds ships 50% faster.';
+    case 'array': return `This world sees ${num(RULES.arraySensor * (t === 'listening' ? 2 : 1))} times as far.`;
+    case 'depot': return 'Refuels ships 3 times as fast.';
+    default: return '';
+  }
+}
+function shipText(cls) {
+  const st = S.statsFor(game, me, cls), C = CLASSES[cls];
+  const parts = [`Hull ${st.hull}`, st.rails.length ? `${st.rails.length} rail${st.rails.length > 1 ? 's' : ''}` : '', st.mag ? `${st.mag} torpedoes` : '', `${st.pdc} point defence`, `thrust ${Math.round(st.accel * 1000)}`, `fuel ${Math.round(st.dv)}`].filter(Boolean).join(', ');
+  return `${HINT[`ship:${cls}`]} ${parts}. Takes ${mmss(S.shipTime(game, me, cls, ui.selBody != null ? game.bodies[ui.selBody] : null))}.${C.stores ? ` Carries ${C.stores} spare torpedoes.` : ''}`;
+}
+function hintOf(a, v) {
+  const b = ui.selBody != null && game ? game.bodies[ui.selBody] : null;
+  if (a === 'trait') return TRAITS[v]?.text || '';
+  if (a === 'build' && b) return structText(v, b, 1);
+  if (a === 'upgrade' && b) return structText(v, b, (S.structure(b, v)?.level || 1) + 1);
+  if (a === 'demolish' && b) { const x = S.structure(b, v); return x ? `Remove it and get ${S.scrapValue(x)} credits back.` : ''; }
+  if (a === 'struct' && b) { const x = S.structure(b, v); return x ? structText(v, b, x.level).replace(/ Pays for itself.*$/, '') : ''; }
+  if (a === 'ship') return shipText(v);
+  if (a === 'torps') return `${HINT.torps} Rearm at a yard, at your capital, or next to a tender.`;
+  if (a === 'board') { const T = S.shipById(game, +v); return T ? `Pull alongside and try to take the ship. ${Math.round(S.boardChance(T, selShips()) * 100)}% chance each try. A failed try damages your ships.` : ''; }
+  return HINT[`${a}:${v}`] || HINT[a] || '';
+}
+// Buttons that spend something or cannot be undone ask for a second tap. The rest act at once and just say what they did.
+const TWO_STEP = new Set(['go', 'strike', 'pass', 'match', 'board', 'salvo', 'join', 'retreat', 'cut', 'build', 'ship', 'upgrade', 'demolish', 'agent', 'recall', 'buy', 'sab', 'op', 'cancel']);
 let touchInput = false;
 window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; }, true);
-const tile = (a, v, ic, small, cls = '', extra = '') => `<button class="tile ${cls} ${ui.armed === `${a}:${v}` ? 'arm' : ''}" title="${hintOf(a, v)}" data-a="${a}" data-v="${v}">${ic}${small ? `<small>${small}</small>` : ''}${extra}</button>`;
+const tile = (a, v, ic, small, cls = '', extra = '') => `<button class="tile ${cls} ${ui.armed === `${a}:${v}` && ui.armedLabel ? 'arm' : ''}" title="${esc(hintOf(a, v))}" data-a="${a}" data-v="${v}">${ic}${small ? `<small>${small}</small>` : ''}${extra}</button>`;
+/** The bar's line when no button is picked: the numbers for what is selected. */
+function barText() {
+  const ships = selShips();
+  if (ships.length === 1) {
+    const s = ships[0];
+    return [`Hull ${Math.round(s.hull)}/${s.st.hull}`, `fuel ${Math.round((s.dv / s.st.dv) * 100)}%`, s.st.mag ? `torpedoes ${s.torps}/${s.st.mag}` : '', s.st.stores ? `spare torpedoes ${Math.floor(s.stores)}/${s.st.stores}` : ''].filter(Boolean).join(', ');
+  }
+  if (ships.length) return `Torpedoes ${ships.reduce((n, s) => n + s.torps, 0)}/${ships.reduce((n, s) => n + s.st.mag, 0)}. Tap a world to go there, or a ship to attack or join it.`;
+  if (ui.selBody != null) {
+    const b = game.bodies[ui.selBody], bm = S.batteryMax(b);
+    const parts = [];
+    if (b.owner === me) parts.push(`Earns ${num(S.incomeOf(b, game))} a second${b.home ? '' : ', sent by freighter'}`);
+    if (bm) parts.push(`battery ${Math.round(b.bhp)}/${bm}, ${S.batteryGuns(b)} gun${S.batteryGuns(b) > 1 ? 's' : ''}`);
+    if (b.owner !== me) parts.push(`yields after ${Math.round(S.yieldTime(b))} s with ${b.home ? `${S.CAPITAL_SHIPS} of your ships` : 'only your ships'} in orbit${bm ? ' and the battery down' : ''}`);
+    return parts.join('. ').replace(/^./, (c) => c.toUpperCase());
+  }
+  return '';
+}
 function stripHTML() {
   if (!live()) return '';
   const ships = selShips();
@@ -278,6 +340,7 @@ function stripHTML() {
         const known = T.seen[me] === 2;
         h += `<div class="sub" style="color:${T.owner < 0 ? AMBER : HOSTILE}">${icon('contact')} ${T.derelict ? `Derelict ${CLASSES[T.cls].name.toLowerCase()}. Match to board.` : T.owner < 0 ? 'Convoy. Match to board.' : known ? `${esc(T.name)} · ${CLASSES[T.cls].name}` : 'Unknown contact'}</div><div class="row">`;
         h += tile('pass', T.id, L(icon('strike'), 'Pass'), '', 'wide') + tile('match', T.id, L(icon('match'), 'Match'), '', 'wide');
+        if (known && T.owner >= 0 && !T.st.civil) h += tile('board', T.id, L(icon('flag'), 'Board'), '', 'wide');
         if (ships.some((s) => s.torps > 0)) h += tile('salvo', T.id, L(icon('salvo'), 'Salvo'), '', 'wide');
         h += '</div>';
       } else ui.targetShip = null;
@@ -332,19 +395,24 @@ function stripHTML() {
     if (own) {
       const slots = S.slotsOf(b);
       h += '<div class="row">';
+      const boost = b.trait ? TRAITS[b.trait].boost : null;
       for (const x of b.structures) {
         const S0 = RULES.structures[x.type];
-        const can = S.working(x) && x.level < S0.maxLevel;
-        h += tile(can ? 'upgrade' : 'none', x.type, L(icon(x.type), S0.name), '', `${can && game.credits[me] < S.upgradeCost(x) ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}${can ? `<small>Upgrade ${S.upgradeCost(x)}</small>` : ''}`);
+        h += tile('struct', x.type, L(icon(x.type), S0.name), '', `${ui.struct === x.type ? 'on' : ''} ${boost === x.type ? 'boost' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}`);
       }
       for (let i = b.structures.length; i < slots; i++) h += tile('slot', '', L(icon('add'), 'Build'), '', `empty ${ui.build ? 'on' : ''}`);
       h += '</div>';
+      const px = ui.struct ? S.structure(b, ui.struct) : null;
+      if (px) {
+        const S0 = RULES.structures[px.type], can = S.working(px) && px.level < S0.maxLevel;
+        h += `<div class="row">${can ? tile('upgrade', px.type, L(icon('up'), 'Upgrade'), S.upgradeCost(px), S.cantUpgrade(game, b, px) ? 'no' : '') : ''}${tile('demolish', px.type, L(icon('close'), 'Remove'), `+${S.scrapValue(px)}`, S.cantDemolish(game, b, px.type) ? 'no' : '')}</div>`;
+      } else ui.struct = null;
       if (ui.build) {
         h += '<div class="row">';
         for (const type in RULES.structures) {
           const why = S.cantBuild(game, b, type);
           if (why && why !== 'Not enough credits') continue;
-          h += tile('build', type, L(icon(type), RULES.structures[type].name), RULES.structures[type].cost, why ? 'no' : '');
+          h += tile('build', type, L(icon(type), RULES.structures[type].name), RULES.structures[type].cost, `${why ? 'no' : ''} ${boost === type ? 'boost' : ''}`);
         }
         h += '</div>';
       }
@@ -384,8 +452,11 @@ function freighterHTML(T) {
 function clickStrip(a, v) {
   // Touch: the first tap on a button says what it does; the second does it.
   const key = `${a}:${v}`;
-  if (touchInput && hintOf(a, v) && ui.armed !== key) { ui.armed = key; ui.armedText = hintOf(a, v); sfx('tap'); refreshUI(); return; }
-  ui.armed = null;
+  if (a === 'disarm') { ui.armed = null; sfx('close'); refreshUI(); return; }
+  if (a === 'confirm') { if (!ui.armed) return; const [a2, ...r] = ui.armed.split(':'); ui.confirmed = true; clickStrip(a2, r.join(':')); return; }
+  if (touchInput && TWO_STEP.has(a) && ui.armed !== key && !ui.confirmed) { ui.armed = key; ui.armedText = hintOf(a, v); ui.armedLabel = arguments[2] || 'OK'; sfx('tap'); refreshUI(); return; }
+  ui.confirmed = false;
+  ui.armed = TWO_STEP.has(a) ? null : key; ui.armedText = hintOf(a, v); ui.armedLabel = '';
   const ships = selShips(), ids = ships.map((s) => s.id);
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
   const order = (o) => { act({ t: 'order', ids, order: o && ui.loose ? { ...o, loose: true } : o }); sfx('confirm'); };
@@ -410,6 +481,7 @@ function clickStrip(a, v) {
     case 'strike': order({ type: 'strike', body: +v, profile: 'hard' }); ui.target = null; ui.routes = null; break;
     case 'pass': order({ type: 'attack', ship: +v, mode: 'pass', profile: 'hard' }); ui.targetShip = null; break;
     case 'match': order({ type: 'attack', ship: +v, mode: 'match', profile: 'hard' }); ui.targetShip = null; break;
+    case 'board': order({ type: 'attack', ship: +v, mode: 'board', profile: 'hard' }); ui.targetShip = null; break;
     case 'salvo': act({ t: 'salvo', ids, ship: +v }); sfx('confirm'); break;
     case 'torps': act({ t: 'stance', ids, st: { torpsFree: !ships.every((s) => s.torpsFree) } }); sfx('tap'); break;
     case 'fire': act({ t: 'stance', ids, st: { fireFree: !ships.every((s) => s.fireFree) } }); sfx('tap'); break;
@@ -431,7 +503,9 @@ function clickStrip(a, v) {
       }
       break;
     }
-    case 'slot': ui.build = !ui.build; sfx('tap'); break;
+    case 'slot': ui.build = !ui.build; ui.struct = null; sfx('tap'); break;
+    case 'struct': ui.struct = ui.struct === v ? null : v; ui.build = false; sfx('tap'); break;
+    case 'demolish': if (b && !S.cantDemolish(game, b, v)) { act({ t: 'demolish', body: b.id, type: v }); ui.struct = null; sfx('close'); } else sfx('deny'); break;
     case 'trait': break;
     case 'agent': if (b && !S.cantSendAgent(game, me, b)) { act({ t: 'agent', at: b.id }); sfx('confirm'); } else sfx('deny'); break;
     case 'recall': if (b) { act({ t: 'recall', at: b.id }); sfx('close'); } break;
@@ -447,7 +521,7 @@ function clickStrip(a, v) {
   refreshUI();
 }
 const delegate = (el, fn) => el.addEventListener('click', (e) => { const t = e.target.closest('[data-a]'); if (t) { e.stopPropagation(); fn(t.dataset.a, t.dataset.v, t); } });
-delegate($('strip'), clickStrip);
+delegate($('strip'), (a, v, el) => clickStrip(a, v, el.querySelector('em')?.textContent));
 
 // ---- Research sheet ------------------------------------------------------------------
 function incomeHTML() {
@@ -467,7 +541,7 @@ function sheetHTML() {
   if (ui.sheet === 'income') return incomeHTML();
   const tech = game.tech[me], sp = S.researchSpeed(game, me), pr = tech.project;
   let h = `<div class="head"><b>Research</b><small>${sp > 1 ? `Speed ${Math.round(sp * 100)}%` : ''}</small><button class="x" data-a="closeSheet">${icon('close')}</button></div><div class="tree">`;
-  const state = (line, i, o) => (tech.picks[o.key] ? 'done' : pr && pr.key === o.key ? 'now' : i < tech[line] || (pr && pr.line === line && i === tech[line]) ? 'skip' : i === tech[line] ? 'open' : 'lock');
+  const state = (line, i, o) => (tech.picks[o.key] ? 'done' : pr && pr.key === o.key ? 'now' : i < tech[line] || (pr && pr.line === line && i === tech[line]) ? 'skip' : i === tech[line] ? (game.credits[me] < TECH_COST[i] ? 'open poor' : 'open') : 'lock');
   for (const line of TECH_KEYS) {
     h += `<div class="tr"><div class="tn">${icon(line)}<span>${TECH[line].name}</span></div>`;
     TECH[line].tiers.forEach((t, i) => {
@@ -476,8 +550,9 @@ function sheetHTML() {
     h += '</div>';
   }
   h += '</div>';
+  if (!ui.techSel) { const l0 = TECH_KEYS.find((l) => tech[l] < TECH[l].tiers.length) || TECH_KEYS[0]; ui.techSel = `${l0}:${TECH[l0].tiers[Math.min(tech[l0], 3)][0].key}`; }
   if (ui.techSel) {
-    const [line, key] = ui.techSel.split(':'), i = TECH[line].tiers.findIndex((t) => t.some((o) => o.key === key)), o = S.techOption(key), st = state(line, i, o);
+    const [line, key] = ui.techSel.split(':'), i = TECH[line].tiers.findIndex((t) => t.some((o) => o.key === key)), o = S.techOption(key), st = state(line, i, o).split(' ')[0];
     const fork = TECH[line].tiers[i].length > 1;
     const right = st === 'done' ? 'Done' : st === 'now' ? mmss(Math.ceil(pr.left / sp / 5) * 5) : st === 'skip' ? 'Not chosen' : st === 'lock' ? 'Later' : `<button class="tile ${S.cantResearch(game, me, line, key) ? 'no' : 'go'}" data-a="research" data-v="${line}:${key}"><em>Research</em><small>${TECH_COST[i]}</small></button>`;
     h += `<div class="td"><div class="what"><b>${o.name}</b><span>${o.text}${fork && st === 'open' ? ' You can pick only one of the two.' : ''}</span></div><span class="num">${right}</span></div>`;
@@ -535,6 +610,7 @@ function drainEvents() {
       case 'promoted': if (e.owner === me && s) { notice('star', AMBER, `${s.name}: ${RANKS[e.rank].toLowerCase()}`, toShip); sfx('research'); } break;
       case 'freight': if (e.owner === me) sfx('freight', { gain: 0.5 }); break;
       case 'fuel': if (e.owner === me && s) { notice('fuel', AMBER, `${s.name}: low fuel`, toShip); sfx('fuel'); } break;
+      case 'repelled': if (e.owner === me) { notice('flag', HOSTILE, `Boarding of ${e.name} failed`, toShip); sfx('deny'); } else if (e.from === me) notice('flag', mineC, `${e.name} fought off boarders`, toShip); break;
       case 'boarded': if (e.owner === me) { notice('flag', mineC, e.name, toShip); sfx('captured'); } else if (e.from === me) { notice('flag', HOSTILE, e.name, toShip); sfx('lost'); } break;
       case 'eliminated': if (e.owner !== me) notice('skull', ui.colors[e.owner], game.names[e.owner], null); break;
       default:
@@ -567,7 +643,11 @@ function refreshUI() {
     else if (b.yt <= 0) b.warnedYield = false;
   }
   let sh = stripHTML();
-  if (sh && ui.armed && !ui.armed.startsWith('research')) sh += `<div class="hint">${esc(ui.armedText)}${ui.armed.startsWith('trait') ? '' : ' Tap again.'}</div>`;
+  // The bar: always there, so the panel does not jump. It says what the picked button does, with OK and cancel when it needs them.
+  if (sh) {
+    const ask = ui.armed && ui.armedLabel;
+    sh += `<div class="bar"><span class="bt">${esc(ui.armed ? ui.armedText : barText())}</span>${ask ? `<button class="bx" data-a="disarm">${icon('close')}</button><button class="bok" data-a="confirm">${esc(ui.armedLabel)}</button>` : ''}</div>`;
+  }
   $('strip').hidden = !sh || !$('sheet').hidden;
   setHTML($('strip'), sh);
   if (!$('sheet').hidden) setHTML($('sheet'), sheetHTML());
@@ -646,10 +726,19 @@ function endPanel(won, why) {
   ended = true;
   $('strip').hidden = true; $('sheet').hidden = true; $('hud').hidden = true; $('brief').hidden = true;
   sfx(won ? 'won' : 'defeat');
-  const st = game.stats[me] || {};
-  const row = (label, a) => `<span>${label}</span><b>${a}</b><b></b><b></b>`;
+  const N = game.players, cols = Array.from({ length: N }, (_, o) => o);
+  const row = (label, k) => `<span>${label}</span>${cols.map((o) => `<b style="color:${ui.colors[o]}">${Math.round(game.stats[o][k] || 0)}</b>`).join('')}`;
+  // One small line chart per measure, a line for each side.
+  const chart = (label, k) => {
+    const ser = game.series || [];
+    if (ser.length < 2) return '';
+    const top = Math.max(1, ...ser.map((p) => Math.max(...p[k]))), t1 = ser[ser.length - 1].t || 1;
+    const line = (o) => `<polyline fill="none" stroke="${ui.colors[o]}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${ser.map((p) => `${((p.t / t1) * 100).toFixed(1)},${(40 - (p[k][o] / top) * 38).toFixed(1)}`).join(' ')}"/>`;
+    return `<div class="chart"><span>${label}</span><svg viewBox="0 0 100 41" preserveAspectRatio="none">${cols.map(line).join('')}</svg></div>`;
+  };
   showPanel(`<div class="mast"><h1 style="font-size:2rem;color:${won ? AMBER : HOSTILE}">${won ? 'Victory' : 'Defeat'}</h1><p class="tag">${[why || (game.daily ? `Daily ${game.daily}` : ''), mmss(game.time)].filter(Boolean).map(esc).join(' · ')}</p></div>`
-    + `<div class="tally">${row('Ships commissioned', st.built || 0)}${row('Ships lost', st.lost || 0)}${row('Ships destroyed', st.killed || 0)}${row('Worlds taken', st.captured || 0)}${row('Freight delivered', st.hauled || 0)}${row('Freighters raided', st.raided || 0)}</div>`
+    + `<div class="tally" style="grid-template-columns:1fr ${'auto '.repeat(N)}"><span></span>${cols.map((o) => `<b style="color:${ui.colors[o]}">${esc(game.names[o])}</b>`).join('')}${row('Ships built', 'built')}${row('Ships lost', 'lost')}${row('Ships destroyed', 'killed')}${row('Worlds taken', 'captured')}${row('Worlds lost', 'worldsLost')}${row('Freighters home', 'hauled')}${row('Freighters raided', 'raided')}</div>`
+    + chart('Fleet strength', 'pow') + chart('Worlds', 'worlds') + chart('Income', 'inc')
     + `<button class="cta" data-a="again">Again</button><button class="cta ghost" data-a="quit">Title</button>`);
   if (scn && won) { prefs.done[scn.key] = true; save(); }
 }

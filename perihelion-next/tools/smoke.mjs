@@ -30,6 +30,8 @@ await shot('title');
 await page.tap('[data-a="setup"]');
 await page.tap('[data-a="launch"]');
 await page.waitForFunction(() => window.__perihelion && window.__perihelion.me === 0);
+// (wait until the first frames have drawn the player's ships)
+await page.waitForFunction(() => { const { game, view } = window.__perihelion; const s = game.ships.find((x) => x.owner === 0); return s && view.screenOfShip(s.id); });
 await page.waitForTimeout(1500);
 const P = () => page.evaluate(() => {
   const { game, view } = window.__perihelion;
@@ -43,6 +45,15 @@ await page.waitForTimeout(2000); // (the view glides to lock onto what was tappe
 const selected = await page.evaluate(() => window.__perihelion.ui.sel.size);
 p = await P();
 await page.touchscreen.tap(p.moon.x, p.moon.y);
+await page.waitForTimeout(500);
+// (If the moon sits under the panel the tap cannot reach it: turn the view until it is clear, then tap.)
+for (let i = 0; i < 6 && !(await page.evaluate(() => window.__perihelion.ui.target != null)); i++) {
+  await page.evaluate(() => { window.__perihelion.view.orbit.az += 1; });
+  await page.waitForTimeout(700);
+  p = await P();
+  if (p.moon.y < 480 && p.moon.y > 80) await page.touchscreen.tap(p.moon.x, p.moon.y);
+  await page.waitForTimeout(400);
+}
 await page.waitForSelector('[data-a="go"]');
 await shot('routes');
 const routes = await page.evaluate(() => window.__perihelion.ui.routes.map((r) => r.key));

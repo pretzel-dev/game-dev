@@ -7,7 +7,7 @@
 import {
   NEUTRAL, RULES, CLASSES, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, scuttle, routes, strength, armed, crippled, shipsAt, has, structure, working,
   cantBuild, buildStructure, cantUpgrade, upgrade, upgradeCost, cantOrderShip, orderShip, shipCost, cantResearch, research,
-  fleetCap, fleetSize, incomeOf, batteryMax, warshipsOf, worldsOf,
+  fleetCap, fleetSize, incomeOf, batteryMax, batteryGuns, warshipsOf, worldsOf,
 } from './sim.js';
 
 export const LEVELS = {
@@ -84,7 +84,7 @@ function think(game, ai) {
     return best;
   };
   const free = [];
-  const adrift = fleet.filter((s) => s.at === null && s.dv <= 0.01);
+  const adrift = fleet.filter((s) => s.at === null && (s.dv <= 0.01 || s.out.drive > 1e8 || s.out.reactor > 1e8)); // dry, or too badly hurt to mend herself
   const tenders = fleet.filter((s) => s.st.stores && s.out.drive <= 0 && s.out.reactor <= 0);
   for (const s of adrift) {
     // Out of fuel: send a tender if there is one free, else after a while abandon her.
@@ -147,7 +147,7 @@ function think(game, ai) {
   if (threat && will()) {
     // Send a detachment big enough for the job (the nearest ships), not the whole fleet.
     const T = game.ships.find((s) => s.id === threat.id);
-    const cand = line.filter((s) => dist2(s, threat.k) < 600 && !(s.order && s.order.type === 'attack') && !(s.at !== null && game.bodies[s.at].owner !== o) && !(s.order && s.order.body === ai.siege))
+    const cand = line.filter((s) => dist2(s, threat.k) < 600 && !(s.order && s.order.type === 'attack') && !(s.at !== null && game.bodies[s.at].owner !== o) && !(s.order && (s.order.body === ai.siege || s.order.type === 'form')) && !(ai.siege != null && s.grp === ai.siegeGrp))
       .sort((x, y) => dist2(x, threat.k) - dist2(y, threat.k));
     const det = [];
     let v = 0;
@@ -177,12 +177,14 @@ function think(game, ai) {
   // Sitting on a world that hasn't yielded yet: stay and finish the job (or pull out if it's going badly).
   if (at.owner !== o) {
     const foes = shipsAt(game, at).filter((s) => s.owner !== o && armed(s)).reduce((v, s) => v + strength(s), 0) + at.bhp / 60;
-    if (foes > myStr(main) * 1.6) setOrder(game, o, main.map((s) => s.id), { type: 'orbit', body: home.id, profile: 'hard' });
+    // (Count the ships still closing in behind the leader: a formation arrives a few seconds apart.)
+    const mineHere = line.filter((s) => s.at === at.id || (s.order && s.order.body === at.id));
+    if (foes > myStr(mineHere) * 1.6) setOrder(game, o, mineHere.map((s) => s.id), { type: 'orbit', body: home.id, profile: 'hard' });
     return;
   }
   const str = myStr(main);
   // Pressure rises as the game goes on, so matches end.
-  const push = t > 4800 ? 0.2 : t > 3600 ? 0.4 : t > 2400 ? 0.6 : t > 1200 ? 0.85 : 1;
+  const push = t > 3000 ? 0.25 : t > 2100 ? 0.4 : t > 1500 ? 0.6 : t > 900 ? 0.85 : 1;
   const margin = d.margin * push;
   // Go as one fleet: wait until most of the line has gathered.
   if (str < myStr(line) * 0.7) return;
@@ -199,9 +201,10 @@ function think(game, ai) {
     const def = b.bhp / 60 + [...ai.known.values()].filter((k) => k.at === b.id && t - k.t < 60).reduce((v, k) => v + k.str, 0);
     // Against another navy, go in strength: most of the line together, and not while badly outnumbered.
     if (enemy && str < enemyStr(b.owner) * 0.7 * push) continue;
+    if (b.home && enemy && main.length < 3) continue; // a capital only yields to three ships or more
     if (b.home && enemy) {
       const ahead = mine.length >= 2 * worldsOf(game, b.owner).length && t > 1200;
-      const need = (b.bhp / 100 + Math.max(2, enemyStr(b.owner))) * margin * (ahead ? 0.6 : 1);
+      const need = (b.bhp / 150 + batteryGuns(b) * 0.4 + Math.max(2, enemyStr(b.owner))) * margin * (ahead ? 0.7 : 1);
       if (str < need) continue;
       const v = (ahead ? 500 : 50) / (1 + dist2(p, here) / 800);
       if (v > bestV) { bestV = v; best = b; }
@@ -219,7 +222,7 @@ function think(game, ai) {
   if (!opts.length) return;
   const pick = (d.smart && opts.find((r) => r.key === 'sling')) || opts.find((r) => r.key === (best.home ? 'hard' : 'cruise')) || opts[0];
   setOrder(game, o, ids, { type: 'orbit', body: best.id, profile: pick.profile, via: pick.via, side: pick.side });
-  if (best.owner !== NEUTRAL) ai.siege = best.id;
+  if (best.owner !== NEUTRAL) { ai.siege = best.id; ai.siegeGrp = main[0].grp; } // (ships on their way to a siege are not called off to chase raiders)
 }
 
 /** Money: ships first until there's a fleet, then mines, research and more ships in turn. */
