@@ -190,3 +190,16 @@ input { text-transform: none; }
 .had { color: var(--dim); font-size: 0.74rem; }
 .pipsv i.fork { border-radius: 50%; }
 .chip .rk { font-family: var(--mono); font-size: 0.5rem; color: var(--amber); line-height: 1; }
+
+.tree { display: flex; flex-direction: column; gap: 0.3rem; }
+.tr { display: grid; grid-template-columns: 3.6rem repeat(4, 1fr); gap: 0.3rem; align-items: center; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
+.tn { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.66rem; color: var(--dim); background: var(--bg); padding-right: 0.2rem; }
+.tc { display: flex; flex-direction: column; gap: 3px; }
+.nd { font-size: 0.62rem; line-height: 1.05; min-height: 1.75rem; padding: 0.15rem 0.2rem; border: 1px solid var(--line); background: #08080b; color: var(--dim); }
+.nd.open { color: var(--ink); border-color: var(--ink); }
+.nd.done { background: var(--amber); border-color: var(--amber); color: var(--bg); }
+.nd.now { border-color: var(--amber); color: var(--amber); }
+.nd.skip { opacity: 0.35; text-decoration: line-through; }
+.nd.sel { outline: 1px solid var(--ink); outline-offset: 1px; }
+.td { display: flex; align-items: center; gap: 0.6rem; min-height: 3.6rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
+.td .what { flex: 1; } .td .what b { display: block; font-size: 0.95rem; font-weight: 600; } .td .what span { display: block; color: var(--dim); font-size: 0.82rem; }

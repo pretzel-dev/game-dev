@@ -29,7 +29,7 @@ export const RULES = {
     refinery: { name: 'Refinery', cost: 300, time: 50, where: ['planet'], giant: true, maxLevel: 2, income: 1.5 },
     battery: { name: 'Battery', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], maxLevel: 2 },
     habitat: { name: 'Habitat', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
-    lab: { name: 'Laboratory', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
+    lab: { name: 'Lab', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
     exchange: { name: 'Exchange', cost: 400, time: 70, where: ['station'], home: true, maxLevel: 2, income: 1.5 },
     array: { name: 'Sensor array', cost: 250, time: 45, where: ['moon', 'station', 'asteroid'], maxLevel: 1 },
     depot: { name: 'Fuel depot', cost: 250, time: 45, where: ['moon', 'station'], maxLevel: 1 },
@@ -67,9 +67,9 @@ export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender
 
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Armoured and tough. Costs more, turns slower.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, start: ['frigate', 'escort', 'corvette'] },
-  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast drives, hard-hitting rails, more fuel.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap, hard to spot, fragile. One extra ship.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, start: ['frigate', 'frigate', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.25, start: ['frigate', 'escort', 'corvette'] },
+  boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast ships, strong rails. Starts with four ships.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.75, start: ['frigate', 'frigate', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
@@ -77,34 +77,34 @@ export const FACTION_KEYS = Object.keys(FACTIONS);
 // between two doctrines; taking one closes the other for the rest of the game.
 export const TECH = {
   drives: { name: 'Drives', tiers: [
-    [{ key: 'nozzles', name: 'High-thrust nozzles', text: 'Every ship accelerates a fifth harder.' }],
-    [{ key: 'tanks', name: 'Drop tanks', text: 'A third more fuel in every tank.' }, { key: 'flash', name: 'Flash burn', text: 'Hard burns are far more violent: faster passes, quicker escapes.' }],
-    [{ key: 'cruise', name: 'Efficient cruise', text: 'Cruising speed up by a third.' }],
-    [{ key: 'coldjets', name: 'Cold thrusters', text: 'A dark run shows no plume at all.' }, { key: 'torch', name: 'Torch drive', text: 'A quarter more thrust again.' }],
+    [{ key: 'nozzles', name: 'High-thrust nozzles', text: "+20% thrust." }],
+    [{ key: 'tanks', name: 'Drop tanks', text: "+35% fuel." }, { key: 'flash', name: 'Flash burn', text: "Hard burn has 40% more thrust." }],
+    [{ key: 'cruise', name: 'Efficient cruise', text: "Cruise is 33% faster." }],
+    [{ key: 'coldjets', name: 'Cold thrusters', text: "Dark runs show no drive plume." }, { key: 'torch', name: 'Torch drive', text: "+25% thrust." }],
   ] },
   weapons: { name: 'Weapons', tiers: [
-    [{ key: 'guided', name: 'Guided slugs', text: 'Rails hit more often.' }],
-    [{ key: 'spinal', name: 'Spinal mounts', text: 'Unlocks the battleship.' }, { key: 'wolfpack', name: 'Wolfpack tubes', text: 'Corvettes and frigates carry half as many torpedoes again and reload faster.' }],
-    [{ key: 'plate', name: 'Layered plate', text: 'A quarter more hull on every warship.' }],
-    [{ key: 'swarm', name: 'Swarm warheads', text: 'Your torpedoes slip past point defence.' }, { key: 'flak', name: 'Flak curtain', text: 'Your point defence is twice as deadly.' }],
+    [{ key: 'guided', name: 'Guided slugs', text: "Rails hit 25% more often." }],
+    [{ key: 'spinal', name: 'Spinal mounts', text: "Lets you build battleships." }, { key: 'wolfpack', name: 'Wolfpack tubes', text: "Corvettes and frigates carry 50% more torpedoes and reload faster." }],
+    [{ key: 'plate', name: 'Layered plate', text: "+25% hull." }],
+    [{ key: 'swarm', name: 'Swarm warheads', text: "Point defence stops half as many of your torpedoes." }, { key: 'flak', name: 'Flak curtain', text: "Your point defence is twice as strong." }],
   ] },
   sensors: { name: 'Sensors', tiers: [
-    [{ key: 'passive', name: 'Passive arrays', text: 'Spot cold ships further out.' }],
-    [{ key: 'coldrun', name: 'Cold running', text: 'Your own ships are much harder to spot.' }, { key: 'network', name: 'Deep-space network', text: 'Every world you hold sees twice as far.' }],
-    [{ key: 'firecon', name: 'Fire-control link', text: 'Rails reach a quarter further.' }],
-    [{ key: 'jammers', name: 'Jammers', text: 'Three in ten torpedoes fired at your ships lose their lock.' }, { key: 'longwatch', name: 'Long watch', text: 'Identify ships from much further away.' }],
+    [{ key: 'passive', name: 'Passive arrays', text: "See coasting ships 40% further away." }],
+    [{ key: 'coldrun', name: 'Cold running', text: "Your ships are 40% harder to see." }, { key: 'network', name: 'Deep-space network', text: "Your worlds see twice as far." }],
+    [{ key: 'firecon', name: 'Fire-control link', text: "Rails reach 25% further." }],
+    [{ key: 'jammers', name: 'Jammers', text: "30% of torpedoes fired at your ships miss." }, { key: 'longwatch', name: 'Long watch', text: "Identify ships 60% further away." }],
   ] },
   industry: { name: 'Industry', tiers: [
-    [{ key: 'fabs', name: 'Orbital fabricators', text: 'Structures and ships build a fifth faster.' }],
-    [{ key: 'deepmine', name: 'Deep mining', text: 'Mines pay half as much again.' }, { key: 'bulk', name: 'Bulk freight', text: 'Freighters are faster and twice as tough.' }],
-    [{ key: 'modular', name: 'Modular yards', text: 'Ships cost less.' }],
-    [{ key: 'arcology', name: 'Arcologies', text: 'Every habitat crews twice as many ships.' }, { key: 'wareco', name: 'War economy', text: 'Your capital earns twice as much.' }],
+    [{ key: 'fabs', name: 'Orbital fabricators', text: "Build 20% faster." }],
+    [{ key: 'deepmine', name: 'Deep mining', text: "Mines earn 50% more." }, { key: 'bulk', name: 'Bulk freight', text: "Freighters are faster and twice as tough." }],
+    [{ key: 'modular', name: 'Modular yards', text: "Ships cost 15% less." }],
+    [{ key: 'arcology', name: 'Arcologies', text: "Habitats give twice as many ships." }, { key: 'wareco', name: 'War economy', text: "Your capital earns twice as much." }],
   ] },
   intel: { name: 'Intelligence', tiers: [
-    [{ key: 'signals', name: 'Signals intercept', text: 'Recruit agents. See where identified enemy ships are bound.' }],
-    [{ key: 'sabot', name: 'Saboteurs', text: 'Agents can knock out a battery or stall a yard.' }, { key: 'rings', name: 'Spy rings', text: 'Agents can skim a third of a world\'s earnings.' }],
-    [{ key: 'counter', name: 'Counter-intelligence', text: 'Enemy agents on your worlds are caught twice as fast.' }],
-    [{ key: 'fifth', name: 'Fifth column', text: 'A world with your agent yields to your ships twice as fast.' }, { key: 'cipher', name: 'Broken cipher', text: 'Every enemy ship that burns is identified, wherever it is.' }],
+    [{ key: 'signals', name: 'Signals intercept', text: "Lets you use agents. Shows where enemy ships are going." }],
+    [{ key: 'sabot', name: 'Saboteurs', text: "Agents can turn off a battery or delay a yard." }, { key: 'rings', name: 'Spy rings', text: "Agents can take a third of a world's income." }],
+    [{ key: 'counter', name: 'Counter-intelligence', text: "Catch enemy agents twice as fast." }],
+    [{ key: 'fifth', name: 'Fifth column', text: "Worlds with your agent yield twice as fast." }, { key: 'cipher', name: 'Broken cipher', text: "Identify any enemy ship while its drive burns." }],
   ] },
 };
 export const TECH_KEYS = Object.keys(TECH);
@@ -115,15 +115,15 @@ export const knows = (game, owner, key) => owner >= 0 && !!game.tech[owner].pick
 
 // What makes a world worth having. Most independent worlds have one of these.
 export const TRAITS = {
-  seam: { name: 'Rich seam', text: 'Mines here pay double.', kinds: ['asteroid', 'moon'] },
-  relay: { name: 'Old relay', text: 'Whoever holds it sees four times as far from here.', kinds: ['asteroid', 'moon', 'station'] },
-  deut: { name: 'Deuterium sea', text: 'Ships refuel quickly here; a refinery pays half as much again.', kinds: ['giant', 'moon'] },
-  fortress: { name: 'Fortress rock', text: 'Its battery is twice as tough.', kinds: ['asteroid', 'moon'] },
-  archive: { name: 'Ancient archive', text: 'Research runs a third faster for whoever holds it; a laboratory here counts double.', kinds: ['planet', 'moon'] },
-  hulk: { name: 'Drydock hulk', text: 'Comes with a yard. Ships built here are veterans.', kinds: ['station', 'moon'] },
-  forge: { name: 'Tidal forge', text: 'Everything builds twice as fast here.', kinds: ['moon'] },
-  garden: { name: 'Garden world', text: 'Earns more; habitats here crew twice as many ships.', kinds: ['planet'] },
-  listening: { name: 'Listening post', text: 'Identifies burning ships across most of the system. Agents here are caught quickly.', kinds: ['asteroid', 'moon', 'station'] },
+  seam: { name: 'Rich seam', text: "Mines earn double.", kinds: ['asteroid', 'moon'] },
+  relay: { name: 'Old relay', text: "Sees four times as far.", kinds: ['asteroid', 'moon', 'station'] },
+  deut: { name: 'Deuterium sea', text: "Fast refuelling. A refinery earns 50% more.", kinds: ['giant', 'moon'] },
+  fortress: { name: 'Fortress rock', text: "Its battery is twice as strong.", kinds: ['asteroid', 'moon'] },
+  archive: { name: 'Ancient archive', text: "Research is 30% faster. Labs here count double.", kinds: ['planet', 'moon'] },
+  hulk: { name: 'Drydock hulk', text: "Has a yard. Ships built here start with a rank.", kinds: ['station', 'moon'] },
+  forge: { name: 'Tidal forge', text: "Builds twice as fast.", kinds: ['moon'] },
+  garden: { name: 'Garden world', text: "Earns more. Habitats here count double.", kinds: ['planet'] },
+  listening: { name: 'Listening post', text: "Identifies ships far away while their drives burn. Catches agents fast.", kinds: ['asteroid', 'moon', 'station'] },
 };
 export const AGENT = { cost: 200, travel: 45, caught: 1 / 360, opCost: 150, opRisk: 0.3, skim: 0.33 };
 
@@ -307,7 +307,7 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
       });
     }
     if (sp.station) {
-      const st = add({ kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.stationR, period: moonPeriod(sp.stationR, sp.gm), phase: rand() * Math.PI * 2, incl: 0.2, size: sp.stationHome ? 0.7 : 0.45, baseSize: 0.45, hue: 0 });
+      const st = add({ kind: 'station', name: pick(STATION_NAMES, names), parent: planet.id, r: sp.stationR, period: moonPeriod(sp.stationR, sp.gm), phase: rand() * Math.PI * 2, incl: 0.2, size: sp.stationHome ? 1.8 : 0.45, baseSize: 0.45, hue: 0 });
       if (sp.stationHome) homes[sp.owner] = { body: st, planet };
     }
   }
@@ -385,7 +385,7 @@ export const kindOf = (b) => (b.home ? 'home' : b.giant ? 'giant' : b.kind);
 /** Credits per second a world makes (a capital banks it; the rest wait for a freighter). */
 export function incomeOf(b, game = null) {
   const o = b.owner, K = (k) => !!game && knows(game, o, k);
-  const base = b.home ? RULES.homeIncome * (K('wareco') ? 2 : 1) : RULES.income[b.giant ? 'giant' : b.kind] + (b.trait === 'garden' ? 0.6 : 0);
+  const base = b.home ? RULES.homeIncome * (o >= 0 && game ? FACTIONS[game.factions[o]].income || 1 : 1) * (K('wareco') ? 2 : 1) : RULES.income[b.giant ? 'giant' : b.kind] + (b.trait === 'garden' ? 0.6 : 0);
   return base + levelOf(b, 'mine') * RULES.structures.mine.income * (b.trait === 'seam' ? 2 : 1) * (K('deepmine') ? 1.5 : 1)
     + levelOf(b, 'refinery') * RULES.structures.refinery.income * (b.trait === 'deut' ? 1.5 : 1) + levelOf(b, 'exchange') * RULES.structures.exchange.income;
 }
@@ -646,13 +646,32 @@ export function setOrder(game, owner, ids, order) {
   if (order && order.type === 'attack' && !shipById(game, order.ship)) return false;
   const grp = game.nextId++;
   const prof = PROFILES[(order && order.profile) || 'cruise'];
-  // Ships ordered together fly together: the slowest sets the pace.
   const amax = Math.min(...list.map((s) => s.st.accel * prof.a * (order && order.profile === 'hard' ? s.st.flash : 1)));
-  for (const s of list) {
-    s.order = order ? { ...order, amax } : null;
+  const set = (s, o) => {
+    s.order = o;
     s.grp = grp; s.tau = 0; s.coast = false; s.inSoi = false; s.term = false; s.av = 0;
-    if (s.at !== null && order) { s.depart = planetOf(game, game.bodies[s.at]).id; s.at = null; }
+    if (s.at !== null && o) { s.depart = planetOf(game, game.bodies[s.at]).id; s.at = null; }
+  };
+  // Places beside a leader: pairs to either side, each pair a little further back. Escorts take the nearest.
+  const slot = (i) => { const row = Math.floor(i / 2) + 1; return { side: (i % 2 ? 1 : -1) * row * 1.3, back: row * 0.9 }; };
+  const byCover = (a, b) => b.st.pdc - a.st.pdc || a.id - b.id;
+  if (order && order.type === 'form') {
+    // Join another of your ships: fly to it, match it, and keep station beside it.
+    const lead = shipById(game, order.lead);
+    if (!lead || lead.owner !== owner) return false;
+    const taken = game.ships.filter((x) => x.order && x.order.type === 'form' && x.order.lead === lead.id && !list.includes(x)).length;
+    list.filter((x) => x !== lead).sort(byCover).forEach((x, i) => set(x, { type: 'form', lead: lead.id, profile: 'hard', ...slot(taken + i) }));
+    return true;
   }
+  if (order && !order.loose && list.length > 1 && order.type !== 'burn') {
+    // In formation: the slowest ship leads at a pace the rest can hold, and the others keep station on it.
+    const lead = list.reduce((a, b) => (b.st.accel < a.st.accel ? b : a));
+    set(lead, { ...order, amax: amax * 0.85 });
+    list.filter((x) => x !== lead).sort(byCover).forEach((x, i) => set(x, { type: 'form', lead: lead.id, profile: 'hard', then: { ...order, amax }, ...slot(i) }));
+    return true;
+  }
+  // Loose: every ship at its own best pace.
+  for (const s of list) set(s, order ? { ...order, amax: order.loose ? undefined : amax } : null);
   return true;
 }
 export function setStance(game, owner, ids, st) {
@@ -785,6 +804,15 @@ function guide(game, s, t, G, lookup) {
     P = { x: T.x, y: T.y, z: T.z }; V = { x: T.vx, y: T.vy, z: T.vz };
     if (o.mode === 'pass') { brake = false; if (cap === Infinity) cap = 1e9; } else d0 = o.d0 || 3;
     if (T.at !== null) skip = planetOf(game, game.bodies[T.at]).id;
+  } else if (o.type === 'form') {
+    const Ld = lookup(o.lead);
+    if (!Ld || Ld.owner !== s.owner) { s.order = o.then || null; s.tau = 0; s.phase = 'coast'; return; }
+    const sp = Math.hypot(Ld.vx, Ld.vz) || 1;
+    const fx = Ld.vx / sp, fz = Ld.vz / sp;
+    P = { x: Ld.x - fz * o.side - fx * o.back, y: Ld.y, z: Ld.z + fx * o.side - fz * o.back };
+    V = { x: Ld.vx, y: Ld.vy, z: Ld.vz };
+    if (cap === Infinity) cap = 1e9;
+    if (Ld.at !== null) skip = planetOf(game, game.bodies[Ld.at]).id;
   } else { s.order = null; return; }
 
   let rx = P.x - s.x, ry = P.y - s.y, rz = P.z - s.z;
@@ -1362,6 +1390,12 @@ function stepShips(game, dt) {
       ride(game, s, game.time + dt);
       s.burn = 0; s.tx = s.ty = s.tz = 0; s.phase = 'orbit';
       continue;
+    }
+    if (s.order && s.order.type === 'form') {
+      // The leader has made orbit: follow it in. The leader is gone: carry on with the fleet's orders.
+      const Ld = lookup(s.order.lead);
+      if (!Ld || Ld.owner !== s.owner) { s.order = s.order.then || null; s.tau = 0; }
+      else if (Ld.at !== null) { s.order = { type: 'orbit', body: Ld.at, profile: 'cruise', amax: s.st.accel * 0.7 }; s.tau = 0; s.term = false; }
     }
     advance(game, s, game.time, dt, G, lookup);
     if (s.arrived) {

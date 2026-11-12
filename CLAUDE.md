@@ -130,6 +130,15 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   convoys (`stepEvents`) turn up to chase; ships earn rank (`rankOf`).
   The owner said to have fun and not be conservative: prefer adding a system
   with real choices over tuning numbers.
+- **Wording.** The owner dislikes "Claude speak": intense or dramatic
+  phrasing, flavour, and more text than needed. Write every on-screen string
+  in short plain words ("Mines earn double.", "Pick one of the two."). No
+  "she" for ships, no colons-for-effect, no stakes language ("for good",
+  "may cost the agent"). If a line can go, remove it.
+- Ships ordered together fly in formation (`type: 'form'` orders keep station
+  on a leader); `loose` turns it off. `form` is also how one ship joins another.
+- Research is drawn as a board (rows are lines, columns are steps, forks are
+  two stacked boxes); tapping a box shows one line about it and the button.
 - Panels redraw several times a second: keep their HTML steady (round times
   and bars) or taps get lost.
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.

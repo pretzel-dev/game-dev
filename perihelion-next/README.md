@@ -14,8 +14,10 @@ timed events) are still there to lift back if testing asks for them.
   cold world beyond. Each orbit is roughly half as far out again as the last,
   and none is a perfect circle. Space is mostly empty: a hop to a moon takes
   about a minute, crossing the system many. Solo games have time speeds to 8x.
-- **Where you start suits your power.** The Concord on a living world, the
-  Republic on a dry one, the Holds on a station over a gas giant.
+- **Where you start suits your power.** The Concord on a living world (its
+  capital earns a quarter more), the Republic on a dry one (it starts with
+  four ships), the Holds on a large station over a gas giant with moons close
+  by (its capital earns a quarter less).
 - **Ships are real bodies.** Each has a position, a velocity and a tank. The sun
   and the planets pull on them. They change course only by burning, and every
   burn spends fuel (shown as an amber bar; in the rules it is a total speed
@@ -49,7 +51,11 @@ timed events) are still there to lift back if testing asks for them.
   - Or plot a burn by hand: drag from the ship; the dashed line is where she
     will coast.
 
-  Ships ordered together fly together at the slowest one's pace.
+  Ships ordered together fly in formation: the slowest leads and the rest keep
+  station beside it, escorts closest, so point defence covers the group. Turn
+  Formation off to let each ship go at its own pace. With ships selected, tap
+  another of your ships and choose Join to fly to it and stay with it (this is
+  how a tender reaches a ship that has run dry).
 - **Fuel.** Worlds you hold refill ships in orbit; a refinery, a fuel depot or
   your capital does it three times as fast. A dry ship is adrift until a tender
   matches her.
