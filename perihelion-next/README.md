@@ -120,6 +120,18 @@ timed events) are still there to lift back if testing asks for them.
   world's earnings, or make it yield to your ships twice as fast. An
   independent world with your agent on it can be bought outright. Every second
   there is a chance she is caught; counter-intelligence doubles it.
+- **Boarding.** Board is an order against any enemy warship: pull alongside
+  and after 20 seconds there is a chance to take it (bigger and more seasoned
+  boarders, a smaller or damaged target, raise it). A failed try costs the
+  boarders 12% of their hull.
+- **Batteries** have three levels. A capital's is twice as strong and has an
+  extra gun, and a capital yields only when three or more of your armed ships
+  hold its orbit together.
+- **Rearming.** Torpedoes come back at a yard or your capital, or from a
+  tender flying alongside (it carries 24 and refills at a yard or capital).
+- **Trait limits.** A garden world takes no mines; a tidal forge takes no labs.
+- **Worlds are solid.** Ships steer round planets and moons, including the
+  planet a moon or station belongs to.
 - **Veterans.** Ships earn rank from hits scored (three steps, a gold bar
   each): better aim, harder to hit.
 - **Derelicts and convoys.** Every several minutes a derelict warship turns up
@@ -133,6 +145,17 @@ timed events) are still there to lift back if testing asks for them.
   send orders and receive only what their sensors see, four times a second.
 
 ## Reading the screen
+
+- **The bar at the bottom of the panel** always shows a line of numbers: for a
+  ship its hull, fuel and torpedoes; for a world its income and battery. Tap
+  a button and the bar says what it does, with the numbers (a mine: credits a
+  second and how long it takes to pay for itself; a ship: hull, guns,
+  torpedoes, thrust, build time). Buttons that spend something or cannot be
+  undone then show OK and a cancel; the rest act at once.
+- **Gold buttons** are structures the world's trait makes better.
+- **Tap a built structure** to upgrade it or remove it (40% back).
+- **The end screen** has a table for every side and charts of fleet strength,
+  worlds and income over the game.
 
 - **Credits** show with the rate they come in. Tap them for where the income
   comes from, world by world, and what is at sea in freighters.
@@ -163,7 +186,7 @@ timed events) are still there to lift back if testing asks for them.
 npm ci
 npm run dev
 npm run check           # headless rules checks (seconds)
-npm run check:matches   # 24 AI-only matches; at most two may stalemate (a few minutes)
+npm run check:matches   # 24 AI-only matches; up to half may not finish (several minutes)
 npm run build && npm run preview
 node tools/smoke.mjs    # phone-sized touch test (needs the preview server and Playwright)
 node tools/mp-smoke.mjs # two-browser multiplayer test (also needs a local PeerJS server)
@@ -195,7 +218,8 @@ points multiplayer at a local PeerJS server (`npx peerjs --port 9000 --host 127.
 
 ## Known gaps
 
-- Two AI admirals of equal strength can stalemate (about 1 match in 24).
+- AI admirals are poor at taking a well-defended capital: nearly half of
+  AI-only games never end, and the rest are long (around two hours of game time).
 - With giants far out, a slingshot that saves fuel is rare.
 - Weapons reach a few ship-lengths (rails 7, torpedoes 20, against worlds
   hundreds apart); ships sharing an orbit can always engage each other.

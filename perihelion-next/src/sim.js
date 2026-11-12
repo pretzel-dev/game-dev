@@ -27,7 +27,7 @@ export const RULES = {
     yard: { name: 'Yard', cost: 350, time: 60, where: ['planet', 'station'], maxLevel: 2 },
     mine: { name: 'Mine', cost: 200, time: 40, where: ['planet', 'moon', 'asteroid'], rocky: true, maxLevel: 2, income: 1 },
     refinery: { name: 'Refinery', cost: 300, time: 50, where: ['planet'], giant: true, maxLevel: 2, income: 1.5 },
-    battery: { name: 'Battery', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], maxLevel: 2 },
+    battery: { name: 'Battery', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], maxLevel: 3 },
     habitat: { name: 'Habitat', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
     lab: { name: 'Lab', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
     exchange: { name: 'Exchange', cost: 400, time: 70, where: ['station'], home: true, maxLevel: 2, income: 1.5 },
@@ -69,7 +69,7 @@ export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender
 export const FACTIONS = {
   concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.25, start: ['frigate', 'escort', 'corvette'] },
   boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast ships, strong rails. Starts with four ships.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.75, start: ['frigate', 'frigate', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
@@ -115,15 +115,15 @@ export const knows = (game, owner, key) => owner >= 0 && !!game.tech[owner].pick
 
 // What makes a world worth having. Most independent worlds have one of these.
 export const TRAITS = {
-  seam: { name: 'Rich seam', text: "Mines earn double.", kinds: ['asteroid', 'moon'] },
+  seam: { name: 'Rich seam', text: "Mines earn double.", kinds: ['asteroid', 'moon'], boost: 'mine' },
   relay: { name: 'Old relay', text: "Sees four times as far.", kinds: ['asteroid', 'moon', 'station'] },
-  deut: { name: 'Deuterium sea', text: "Fast refuelling. A refinery earns 50% more.", kinds: ['giant', 'moon'] },
-  fortress: { name: 'Fortress rock', text: "Its battery is twice as strong.", kinds: ['asteroid', 'moon'] },
-  archive: { name: 'Ancient archive', text: "Research is 30% faster. Labs here count double.", kinds: ['planet', 'moon'] },
-  hulk: { name: 'Drydock hulk', text: "Has a yard. Ships built here start with a rank.", kinds: ['station', 'moon'] },
-  forge: { name: 'Tidal forge', text: "Builds twice as fast.", kinds: ['moon'] },
-  garden: { name: 'Garden world', text: "Earns more. Habitats here count double.", kinds: ['planet'] },
-  listening: { name: 'Listening post', text: "Identifies ships far away while their drives burn. Catches agents fast.", kinds: ['asteroid', 'moon', 'station'] },
+  deut: { name: 'Deuterium sea', text: "Fast refuelling. A refinery earns 50% more.", kinds: ['giant', 'moon'], boost: 'refinery' },
+  fortress: { name: 'Fortress rock', text: "A battery here is twice as strong.", kinds: ['asteroid', 'moon'], boost: 'battery' },
+  archive: { name: 'Ancient archive', text: "Research is 30% faster. A lab here counts double.", kinds: ['planet', 'moon'], boost: 'lab' },
+  hulk: { name: 'Drydock hulk', text: "Has a yard that builds 50% faster. Its ships start with a rank.", kinds: ['station', 'moon'], boost: 'yard' },
+  forge: { name: 'Tidal forge', text: "Everything builds twice as fast. No labs.", kinds: ['moon'], no: ['lab'] },
+  garden: { name: 'Garden world', text: "Earns 0.6 more. A habitat here gives 2 ships a level. No mines.", kinds: ['planet'], boost: 'habitat', no: ['mine'] },
+  listening: { name: 'Listening post', text: "Identifies ships far away while their drives burn. A sensor array here sees twice as far again.", kinds: ['asteroid', 'moon', 'station'], boost: 'array' },
 };
 export const AGENT = { cost: 200, travel: 45, caught: 1 / 360, opCost: 150, opRisk: 0.3, skim: 0.33 };
 
@@ -369,8 +369,13 @@ export const structure = (b, type) => b.structures.find((x) => x.type === type);
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
 const levelOf = (b, type) => { const x = structure(b, type); return x && working(x) ? x.level : 0; };
 /** How far a held world sees, against a ship's sensors. */
-export const worldSight = (b, game = null) => RULES.worldSensor * (levelOf(b, 'array') ? RULES.arraySensor : 1) * (b.trait === 'relay' ? 4 : 1) * (game && knows(game, b.owner, 'network') ? 2 : 1);
-export const batteryMax = (b) => RULES.batteryHp * levelOf(b, 'battery') * (b.trait === 'fortress' ? 2 : 1);
+export const worldSight = (b, game = null) => RULES.worldSensor * (levelOf(b, 'array') ? RULES.arraySensor : 1) * (b.trait === 'relay' ? 4 : 1) * (b.trait === 'listening' && levelOf(b, 'array') ? 2 : 1) * (game && knows(game, b.owner, 'network') ? 2 : 1);
+export const batteryMax = (b) => RULES.batteryHp * levelOf(b, 'battery') * (b.trait === 'fortress' ? 2 : 1) * (b.home ? 2 : 1);
+/** Rail guns a battery fires: one per level, and one more at a capital. */
+export const batteryGuns = (b) => (levelOf(b, 'battery') ? levelOf(b, 'battery') + (b.home ? 1 : 0) : 0);
+export const BATTERY_DMG = 5;
+/** Armed ships that must hold a capital's orbit together before it will yield. */
+export const CAPITAL_SHIPS = 3;
 /** How fast things are built at a world, against the standard. */
 export const buildSpeed = (game, owner, b) => (knows(game, owner, 'fabs') ? 1.2 : 1) * (b && b.trait === 'forge' ? 2 : 1);
 /** How fast a power's research runs: laboratories, and the archive. */
@@ -404,12 +409,13 @@ export function fleetCap(game, owner) {
 }
 export const fleetSize = (game, owner) => warshipsOf(game, owner).length + game.bodies.reduce((k, b) => k + (b.owner === owner ? b.queue.length : 0), 0);
 export const shipCost = (game, owner, cls) => Math.round((CLASSES[cls].cost * (FACTIONS[game.factions[owner]].cost || 1) * (knows(game, owner, 'modular') ? 0.85 : 1)) / 10) * 10;
-export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && levelOf(b, 'yard') >= 2 ? 1.5 : 1) * buildSpeed(game, owner, b));
+export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && levelOf(b, 'yard') >= 2 ? 1.5 : 1) * (b && b.trait === 'hulk' ? 1.5 : 1) * buildSpeed(game, owner, b));
 
 export function cantBuild(game, b, type) {
   const S = RULES.structures[type];
   if (!S) return 'Unknown';
   if (!S.where.includes(b.kind) && !(S.home && b.home)) return 'Not here';
+  if (b.trait && (TRAITS[b.trait].no || []).includes(type)) return 'Not here';
   if (S.giant && !b.giant) return 'Gas giants only';
   if (S.rocky && b.giant) return 'Not on a gas giant';
   if (structure(b, type)) return 'Already built';
@@ -423,6 +429,23 @@ export function buildStructure(game, b, type) {
   game.credits[b.owner] -= S.cost;
   const t = S.time / buildSpeed(game, b.owner, b);
   b.structures.push({ type, level: 1, left: t, total: t });
+  return true;
+}
+/** What you get back for taking a structure down: 40% of what it cost. */
+export const scrapValue = (x) => Math.round((RULES.structures[x.type].cost + (x.level - 1) * upgradeCost(x)) * 0.4 / 10) * 10;
+export function cantDemolish(game, b, type) {
+  const x = structure(b, type);
+  if (!x) return 'Not built';
+  if (b.blockaded) return 'Under blockade';
+  return null;
+}
+export function demolish(game, b, type) {
+  if (cantDemolish(game, b, type)) return false;
+  const x = structure(b, type);
+  game.credits[b.owner] += working(x) ? scrapValue(x) : RULES.structures[type].cost;
+  if (type === 'yard') while (b.queue.length) cancelShip(game, b);
+  b.structures = b.structures.filter((y) => y !== x);
+  if (type === 'battery') b.bhp = 0;
   return true;
 }
 export const upgradeCost = (x) => Math.round(RULES.structures[x.type].cost * 0.8);
@@ -571,6 +594,12 @@ function stepAgents(game, dt) {
 }
 const inciting = (game, owner, b) => { const a = agentIn(game, owner, b); return !!a && a.op === 'incite'; };
 const skimming = (game, b) => game.agents.find((a) => a.body === b.id && a.op === 'steal' && a.at <= game.time && a.owner !== b.owner) || null;
+/** The chance a boarding takes a ship that can still fight: bigger, more seasoned boarders against a smaller, weaker, damaged ship. */
+export function boardChance(s, boarders) {
+  const A = boarders.reduce((n, T) => n + T.st.size * (1 + 0.3 * rankOf(T)), 0);
+  const D = s.st.size * (1 + 0.3 * rankOf(s)) * (0.3 + 0.7 * Math.max(0, s.hull / s.st.hull)) * (crippled(s) || s.out.weapons > 0 ? 0.5 : 1);
+  return clamp(A / (A + D) - 0.25, 0.05, 0.85);
+}
 export const rankOf = (s) => ((s.xp || 0) >= 40 ? 3 : (s.xp || 0) >= 18 ? 2 : (s.xp || 0) >= 6 ? 1 : 0);
 function gainXp(game, s, n) {
   const was = rankOf(s);
@@ -647,9 +676,9 @@ export function setOrder(game, owner, ids, order) {
   const grp = game.nextId++;
   const prof = PROFILES[(order && order.profile) || 'cruise'];
   const amax = Math.min(...list.map((s) => s.st.accel * prof.a * (order && order.profile === 'hard' ? s.st.flash : 1)));
-  const set = (s, o) => {
+  const set = (s, o, g = grp) => {
     s.order = o;
-    s.grp = grp; s.tau = 0; s.coast = false; s.inSoi = false; s.term = false; s.av = 0;
+    s.grp = g; s.tau = 0; s.coast = false; s.inSoi = false; s.term = false; s.av = 0;
     if (s.at !== null && o) { s.depart = planetOf(game, game.bodies[s.at]).id; s.at = null; }
   };
   // Places beside a leader: pairs to either side, each pair a little further back. Escorts take the nearest.
@@ -660,7 +689,7 @@ export function setOrder(game, owner, ids, order) {
     const lead = shipById(game, order.lead);
     if (!lead || lead.owner !== owner) return false;
     const taken = game.ships.filter((x) => x.order && x.order.type === 'form' && x.order.lead === lead.id && !list.includes(x)).length;
-    list.filter((x) => x !== lead).sort(byCover).forEach((x, i) => set(x, { type: 'form', lead: lead.id, profile: 'hard', ...slot(taken + i) }));
+    list.filter((x) => x !== lead).sort(byCover).forEach((x, i) => set(x, { type: 'form', lead: lead.id, profile: 'hard', ...slot(taken + i) }, lead.grp));
     return true;
   }
   if (order && !order.loose && list.length > 1 && order.type !== 'burn') {
@@ -711,12 +740,18 @@ export function wells(game, t) {
   const G = [{ x: 0, y: 0, z: 0, gm: GM_SUN, soft: SUN_R * 1.5, clear: SUN_R * 2.8, id: -1 }];
   for (const b of game.planets) {
     const p = posAt(game, b, t);
-    G.push({ x: p.x, y: p.y, z: p.z, gm: b.gm, soft: b.size * 1.3, clear: b.size * 1.6 + 1, id: b.id });
+    G.push({ x: p.x, y: p.y, z: p.z, gm: b.gm, soft: b.size * 1.3, clear: b.size * 1.25 + 0.6, hollow: b.size * 1.6 + 1, size: b.size, id: b.id });
+  }
+  // Moons have no pull worth counting, but they are solid: ships steer round them too.
+  for (const b of game.moons) {
+    const p = posAt(game, b, t);
+    G.push({ x: p.x, y: p.y, z: p.z, gm: 0, soft: 1, clear: b.size * 1.3 + 0.5, hollow: 0, size: b.size, id: b.id });
   }
   return G;
 }
 function refreshBodies(game) {
   game.planets = game.bodies.filter((b) => b.kind === 'planet');
+  game.moons = game.bodies.filter((b) => b.kind === 'moon');
   game.blockers = game.bodies.filter((b) => b.kind === 'planet' || b.kind === 'moon');
 }
 const sunG = (x, y, z, k, out) => {
@@ -754,9 +789,9 @@ function guide(game, s, t, G, lookup) {
   }
   const prof = PROFILES[o.profile] || PROFILES.cruise;
   const A = Math.min(o.amax || 1, st.accel * prof.a * (o.profile === 'hard' ? st.flash : 1));
-  const Ab = 0.8 * A;
+  const Ab = 0.7 * A;
   let cap = prof.cap * (o.profile === 'cruise' ? st.cruise || 1 : 1), brake = true, d0 = 0, skip = -2, tau = s.tau > 0 ? s.tau : 0;
-  let P, V;
+  let P, V, ff = null; // ff: the thrust of a ship being matched, added to our own so we keep up with it
   // Everything is flown relative to the target as it is now: both ship and target
   // fall round the sun together, so that frame is close to a quiet one.
   const bodyRef = (b) => {
@@ -768,7 +803,7 @@ function guide(game, s, t, G, lookup) {
     // A moon or station: fly to where it will be round its planet when the ship
     // gets there; once close, chase the moon itself and match its orbit.
     const m0 = posAt(game, b, t);
-    if (!s.term && (tau < 15 || Math.hypot(m0.x - s.x, m0.y - s.y, m0.z - s.z) < 8)) s.term = true;
+    if (!s.term && (tau < 30 || Math.hypot(m0.x - s.x, m0.y - s.y, m0.z - s.z) < 20)) s.term = true;
     if (s.term) { P = m0; V = velAt(game, b, t); return; }
     const m1 = posAt(game, b, t + tau), p1 = posAt(game, pl, t + tau);
     P = { x: pp.x + m1.x - p1.x, y: pp.y + m1.y - p1.y, z: pp.z + m1.z - p1.z };
@@ -792,7 +827,7 @@ function guide(game, s, t, G, lookup) {
     const b = game.bodies[o.body];
     if (!tau) { const p = posAt(game, b, t); tau = Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z) / 1.2 + 5; }
     bodyRef(b);
-    skip = planetOf(game, b).id;
+    skip = b.id;
     if (o.type === 'orbit') d0 = parkRadius(b);
     else { brake = false; offset(parkRadius(b) + 2, 1); if (cap === Infinity) cap = 1e9; } // a firing pass: skim it at speed
   } else if (o.type === 'attack') {
@@ -802,8 +837,7 @@ function guide(game, s, t, G, lookup) {
     if (T.owner !== s.owner && !T.seen[s.owner]) { o.blind = (o.blind || 0) + 1; if (o.blind > 150) s.order = null; s.phase = 'coast'; return; }
     o.blind = 0;
     P = { x: T.x, y: T.y, z: T.z }; V = { x: T.vx, y: T.vy, z: T.vz };
-    if (o.mode === 'pass') { brake = false; if (cap === Infinity) cap = 1e9; } else d0 = o.d0 || 3;
-    if (T.at !== null) skip = planetOf(game, game.bodies[T.at]).id;
+    if (o.mode === 'pass') { brake = false; if (cap === Infinity) cap = 1e9; } else { d0 = o.mode === 'board' ? 1.2 : o.d0 || 3; if (T.at === null) ff = T; }
   } else if (o.type === 'form') {
     const Ld = lookup(o.lead);
     if (!Ld || Ld.owner !== s.owner) { s.order = o.then || null; s.tau = 0; s.phase = 'coast'; return; }
@@ -811,8 +845,8 @@ function guide(game, s, t, G, lookup) {
     const fx = Ld.vx / sp, fz = Ld.vz / sp;
     P = { x: Ld.x - fz * o.side - fx * o.back, y: Ld.y, z: Ld.z + fx * o.side - fz * o.back };
     V = { x: Ld.vx, y: Ld.vy, z: Ld.vz };
+    if (Ld.at === null) ff = Ld;
     if (cap === Infinity) cap = 1e9;
-    if (Ld.at !== null) skip = planetOf(game, game.bodies[Ld.at]).id;
   } else { s.order = null; return; }
 
   let rx = P.x - s.x, ry = P.y - s.y, rz = P.z - s.z;
@@ -822,7 +856,7 @@ function guide(game, s, t, G, lookup) {
   // Steer round the sun and any planet in the way (whichever comes first along the line).
   let hit = null, hitT = 2, hitClear = 0, hx = 0, hz = 0;
   for (const w of G) {
-    if (w.id === skip || w.id === s.depart) continue;
+    if (w.id === skip) continue;
     const wx = w.x - s.x, wy = w.y - s.y, wz = w.z - s.z;
     const tt = clamp((wx * rx + wy * ry + wz * rz) / (d * d), 0, 1);
     if (tt < 0.02 || tt >= hitT) continue;
@@ -852,9 +886,14 @@ function guide(game, s, t, G, lookup) {
     else if (sdes - c < 0.04 && lat < prof.lat * 0.3) s.coast = true;
   } else s.coast = false;
   s.tau = clamp(tgo(dd, c, A, Ab, cap, brake), 0.4, 900);
-  if (s.coast) { s.phase = 'coast'; return; }
+  if (s.coast && !(ff && ff.burn)) { s.phase = 'coast'; return; }
   const a = Math.min(A, e / 1.2);
   if (e > 1e-6) { s.tx = (ex / e) * a; s.ty = (ey / e) * a; s.tz = (ez / e) * a; }
+  if (ff && ff.burn) {
+    s.tx += ff.tx; s.ty += ff.ty; s.tz += ff.tz;
+    const m = Math.hypot(s.tx, s.ty, s.tz), top = st.accel * st.flash;
+    if (m > top) { s.tx *= top / m; s.ty *= top / m; s.tz *= top / m; }
+  }
   s.phase = over > 0.02 ? 'brake' : 'burn';
 }
 
@@ -872,19 +911,24 @@ export function advance(game, s, t, h, G, lookup) {
   const final = o && (o.type === 'orbit' || o.type === 'strike') && (o.via == null || o.done) ? planetOf(game, game.bodies[o.body]).id : -2;
   for (const w of G) {
     if (w.id === final || w.id === s.depart) {
-      if (w.id === s.depart && Math.hypot(w.x - s.x, w.y - s.y, w.z - s.z) > w.clear * 3) s.depart = undefined;
+      if (w.id === s.depart && Math.hypot(w.x - s.x, w.y - s.y, w.z - s.z) > (w.hollow || 1) * 2) s.depart = undefined;
       continue;
     }
     const dx = w.x - s.x, dy = w.y - s.y, dz = w.z - s.z;
     const dr = Math.hypot(dx, dy, dz);
     // Close in to a planet is thruster work, not modelled, unless the ship is there to slingshot.
-    if (w.id >= 0 && dr < w.clear && !(o && o.via === w.id && !o.done)) continue;
+    if (w.id >= 0 && dr < w.hollow && !(o && o.via === w.id && !o.done)) continue;
     const r = Math.max(w.soft, dr);
     const f = w.gm / (r * r * r);
     gx += dx * f; gy += dy * f; gz += dz * f;
   }
   s.vx += (s.tx + gx) * h; s.vy += (s.ty + gy) * h; s.vz += (s.tz + gz) * h;
   s.x += s.vx * h; s.y += s.vy * h; s.z += s.vz * h;
+  for (const w of G) {
+    if (w.id < 0 || !w.size) continue;
+    const dx = s.x - w.x, dy = s.y - w.y, dz = s.z - w.z, dr = Math.hypot(dx, dy, dz);
+    if (dr < w.size * 1.05) { const k = (w.size * 1.05) / (dr || 1); s.x = w.x + dx * k; s.y = w.y + dy * k; s.z = w.z + dz * k; }
+  }
   // Never inside the sun.
   const rs = Math.hypot(s.x, s.y, s.z);
   if (rs < SUN_R * 1.3) { const k = (SUN_R * 1.3) / (rs || 1); s.x *= k; s.y *= k; s.z *= k; }
@@ -1042,7 +1086,7 @@ function detect(game) {
 // ---- Battle ---------------------------------------------------------------------------
 
 function hurt(game, s, dmg, by) {
-  const d = Math.max(1, dmg - s.st.armour);
+  const d = Math.max(1, dmg * 0.4, dmg - s.st.armour); // armour stops most of a light hit, never all of it
   s.hull -= d;
   s.lit = game.time + 3;
   // A solid hit can knock a system out.
@@ -1145,7 +1189,7 @@ function batteryHates(game, b, s) {
   return !s.st.civil && (s.at === b.id || (s.order && s.order.body === b.id) || s.hitWorld === b.id);
 }
 /** One rail shot: the chance falls with range and crossing speed; the damage grows with closing speed. */
-function railShot(game, from, fromV, T, dmg, hitMul, range, owner, evade) {
+function railShot(game, from, fromV, T, dmg, hitMul, range, owner, evade, fixed = 0) {
   const rx = T.x - from.x, ry = T.y - from.y, rz = T.z - from.z, d = Math.hypot(rx, ry, rz) || 1e-6;
   const wx = T.vx - fromV.x, wy = T.vy - fromV.y, wz = T.vz - fromV.z;
   const rate = (rx * wx + ry * wy + rz * wz) / d; // range rate: negative when closing
@@ -1155,7 +1199,7 @@ function railShot(game, from, fromV, T, dmg, hitMul, range, owner, evade) {
   if (evade) p *= 0.7;
   const hit = game.rand() < clamp(p, 0.03, 0.95);
   fx(game, { type: 'rail', x: from.x, y: from.y, z: from.z, tx: T.x, ty: T.y, tz: T.z, hit, owner });
-  if (hit) hurt(game, T, dmg * clamp(0.5 + (Math.max(0, -rate) / 1.6) ** 2, 0.5, 5), owner);
+  if (hit) hurt(game, T, dmg * (fixed || clamp(0.5 + (Math.max(0, -rate) / 1.6) ** 2, 0.5, 5)), owner);
   return hit;
 }
 function combat(game, dt) {
@@ -1261,7 +1305,7 @@ function combat(game, dt) {
       const rel = Math.hypot(m.vx - v.x, m.vy - v.y, m.vz - v.z);
       if (game.rand() < 1 - Math.exp(-(1.7 / (1 + rel / 6)) * (m.swarm ? 0.5 : 1) * dt)) { m.dead = true; fx(game, { type: 'pdcKill', x: m.x, y: m.y, z: m.z, fx: p.x, fy: p.y, fz: p.z, owner: b.owner }); }
     }
-    b.bcd ||= [0, 0];
+    b.bcd ||= [0, 0, 0, 0];
     let best = null, bestD = 1e9;
     for (const T of ships) {
       if (T.dead || T.derelict || !batteryHates(game, b, T) || T.st.civil) continue;
@@ -1269,10 +1313,10 @@ function combat(game, dt) {
       if (d < RULES.railRange + b.size && d < bestD && !blocked(game, p, T, b.id, T.at ?? -1)) { best = T; bestD = d; }
     }
     if (best) {
-      for (let i = 0; i < lv; i++) {
+      for (let i = 0; i < batteryGuns(b); i++) {
         if (b.bcd[i] > t || best.dead) continue;
         b.bcd[i] = t + RULES.railCool * (0.9 + game.rand() * 0.2);
-        railShot(game, p, v, best, 9, 1, RULES.railRange + b.size, b.owner, false);
+        railShot(game, p, v, best, BATTERY_DMG, 1, RULES.railRange + b.size, b.owner, false, 1);
       }
     }
   }
@@ -1307,11 +1351,11 @@ function stepWorlds(game, dt) {
       }
     }
     // Who is in orbit?
-    let occ = NEUTRAL, contested = false, defended = false, enemyHere = false;
+    let occ = NEUTRAL, contested = false, defended = false, enemyHere = false, occN = 0;
     for (const s of game.ships) {
       if (s.at !== b.id || !armed(s)) continue;
       if (s.owner === b.owner) defended = true;
-      else { enemyHere = true; if (occ === NEUTRAL) occ = s.owner; else if (occ !== s.owner) contested = true; }
+      else { enemyHere = true; occN++; if (occ === NEUTRAL) occ = s.owner; else if (occ !== s.owner) contested = true; }
     }
     b.blockaded = enemyHere;
     if (b.owner !== NEUTRAL) {
@@ -1353,7 +1397,7 @@ function stepWorlds(game, dt) {
       }
     }
     // Yielding: one side alone in orbit, the battery silent, nobody defending.
-    if (occ !== NEUTRAL && !contested && !defended && b.bhp <= 0) {
+    if (occ !== NEUTRAL && !contested && !defended && b.bhp <= 0 && (!b.home || occN >= CAPITAL_SHIPS)) {
       if (b.yo !== occ) { b.yo = occ; b.yt = 0; }
       b.yt += dt * (inciting(game, occ, b) ? 2 : 1);
       if (b.yt >= yieldTime(b)) capture(game, b, occ);
@@ -1447,29 +1491,34 @@ function stepShips(game, dt) {
       }
     }
     const takeable = s.st.civil || s.out.reactor > 0 || (s.out.drive > 0 && s.out.weapons > 0);
-    if (!takeable) { s.board = 0; continue; }
-    let by = NEUTRAL;
-    for (const T of game.ships) {
-      if (T.owner === s.owner || !armed(T) || T.dead) continue;
-      if (Math.hypot(T.x - s.x, T.y - s.y, T.z - s.z) < B.range && Math.hypot(T.vx - s.vx, T.vy - s.vy, T.vz - s.vz) < B.speed) { by = T.owner; break; }
-    }
-    if (by === NEUTRAL) { s.board = Math.max(0, s.board - dt); continue; }
+    // Who is alongside? Anyone may take a helpless ship; a ship that can still fight must be boarded on purpose.
+    const near = game.ships.filter((T) => T.owner !== s.owner && T.owner >= 0 && armed(T) && !T.dead
+      && Math.hypot(T.x - s.x, T.y - s.y, T.z - s.z) < B.range && Math.hypot(T.vx - s.vx, T.vy - s.vy, T.vz - s.vz) < B.speed
+      && (takeable || (T.order && T.order.type === 'attack' && T.order.ship === s.id && T.order.mode === 'board')));
+    if (!near.length || s.derelict && !takeable) { s.board = Math.max(0, s.board - dt); continue; }
+    const by = near[0].owner;
     if (s.boardBy !== by) { s.boardBy = by; s.board = 0; }
     s.board += dt;
-    if (s.board >= (s.st.civil ? B.freighter : B.warship)) {
-      if (s.st.civil) {
-        game.credits[by] += s.cargo; tally(game, by, 'raided');
-        note(game, { type: 'seized', owner: by, from: s.owner, n: Math.round(s.cargo), x: s.x, y: s.y, z: s.z });
-        freeHauler(game, s); s.dead = true;
-      } else {
-        note(game, { type: 'boarded', owner: by, from: s.owner, ship: s.id, name: s.name });
-        tally(game, s.owner, 'lost');
-        if (s.derelict) { s.derelict = false; s.beacon = false; s.xp = Math.max(s.xp || 0, 18); s.name = shipName(game, by); }
-        s.owner = by; s.st = statsFor(game, by, s.cls); s.order = null; s.board = 0;
-        for (const k in s.out) if (s.out[k] > 30) s.out[k] = 30;
-        s.seen = s.seen.map(() => 0);
-      }
+    if (s.board < (s.st.civil ? B.freighter : B.warship)) continue;
+    if (s.st.civil) {
+      game.credits[by] += s.cargo; tally(game, by, 'raided');
+      note(game, { type: 'seized', owner: by, from: s.owner, n: Math.round(s.cargo), x: s.x, y: s.y, z: s.z });
+      freeHauler(game, s); s.dead = true;
+      continue;
     }
+    if (!takeable && game.rand() > boardChance(s, near.filter((T) => T.owner === by))) {
+      // Thrown back: the boarders pay for it and must start again.
+      s.board = 0;
+      for (const T of near) if (T.owner === by) { T.hull -= T.st.hull * 0.12; if (T.hull <= 0) destroy(game, T, s.owner); }
+      note(game, { type: 'repelled', owner: by, from: s.owner, ship: s.id, name: s.name });
+      continue;
+    }
+    note(game, { type: 'boarded', owner: by, from: s.owner, ship: s.id, name: s.name });
+    tally(game, s.owner, 'lost');
+    if (s.derelict) { s.derelict = false; s.beacon = false; s.xp = Math.max(s.xp || 0, 18); s.name = shipName(game, by); }
+    s.owner = by; s.st = statsFor(game, by, s.cls); s.order = null; s.board = 0;
+    for (const k in s.out) if (s.out[k] > 30) s.out[k] = 30;
+    s.seen = s.seen.map(() => 0);
   }
   if (game.ships.some((s) => s.dead)) game.ships = game.ships.filter((s) => !s.dead);
 }
@@ -1522,6 +1571,12 @@ function tick(game) {
   stepWorlds(game, DT);
   stepResearch(game, DT);
   stepAgents(game, DT);
+  if (game.k % 100 === 0) {
+    game.series ||= [];
+    const of = (f) => Array.from({ length: game.players }, (_, o) => Math.round(f(o) * 10) / 10);
+    game.series.push({ t: Math.round(game.time), pow: of((o) => game.ships.reduce((n, x) => n + (x.owner === o ? strength(x) : 0), 0)), worlds: of((o) => game.bodies.filter((b) => b.owner === o).length), inc: of((o) => incomeBreakdown(game, o).total) });
+    if (game.series.length > 600) game.series.splice(0, 1);
+  }
   stepEvents(game);
 }
 
@@ -1561,7 +1616,7 @@ function stepEvents(game) {
 export function snapshot(game, owner) {
   const r2 = (v) => Math.round(v * 100) / 100;
   return {
-    time: game.time, over: game.over, credits: game.credits[owner], tech: game.tech[owner], alive: game.alive, stats: game.stats, agents: game.agents.filter((a) => a.owner === owner),
+    time: game.time, over: game.over, credits: game.credits[owner], tech: game.tech[owner], alive: game.alive, stats: game.stats, series: game.over ? game.series : undefined, agents: game.agents.filter((a) => a.owner === owner),
     bodies: game.bodies.map((b) => ({ owner: b.owner, structures: b.structures, queue: b.owner === owner ? b.queue : [], stock: b.owner === owner ? r2(b.stock) : 0, bhp: r2(b.bhp), yt: r2(b.yt), yo: b.yo, home: !!b.home, blockaded: !!b.blockaded })),
     ships: game.ships.filter((s) => s.seen[owner]).map((s) => {
       const mine = s.owner === owner, id2 = s.seen[owner] === 2;
@@ -1577,7 +1632,7 @@ export function snapshot(game, owner) {
 }
 /** Guest side: fold a snapshot into the local game, keeping body objects in place. */
 export function applySnapshot(game, snap, owner) {
-  game.time = snap.time; game.over = snap.over; game.credits[owner] = snap.credits; game.tech[owner] = snap.tech; game.agents = snap.agents || []; game.alive = snap.alive; game.stats = snap.stats;
+  game.time = snap.time; game.over = snap.over; game.credits[owner] = snap.credits; game.tech[owner] = snap.tech; game.agents = snap.agents || []; if (snap.series) game.series = snap.series; game.alive = snap.alive; game.stats = snap.stats;
   snap.bodies.forEach((sb, i) => Object.assign(game.bodies[i], sb));
   const old = new Map(game.ships.map((s) => [s.id, s]));
   game.ships = snap.ships.map((ss) => {
