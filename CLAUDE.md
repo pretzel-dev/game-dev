@@ -135,9 +135,16 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   in short plain words ("Mines earn double.", "Pick one of the two."). No
   "she" for ships, no colons-for-effect, no stakes language ("for good",
   "may cost the agent"). If a line can go, remove it.
-- Text must still let the player decide: every description carries the
-  numbers (`hintOf`, `structText`, `shipText` in `main.js` compute them from
-  the rules, so they stay true). Never write "more income"; write how much.
+- **Stats are stats, not sentences.** The owner has asked for this many times
+  and is tired of repeating it. Anything that is a number or a state is shown
+  as a short label and a value (`stat()` in `main.js`: "Income +2.5/s",
+  "Battery 40/60", "Yields in 30s"). No explainers on screen ("A freighter
+  carries it home", "Tap a world to go there"). A description appears only
+  when a button is picked, before you commit: a few plain words (`HINT`) plus
+  its numbers as stats (`infoOf`, `structStats`, `shipStats`, computed from
+  the rules). Follow the first game's world panel (chips, cells) for economy
+  of space; nothing that looks like a button may do nothing. Check new panels
+  with phone-sized screenshots before sending them.
 - The strip ends in a fixed bar (`.bar`): numbers for the selection, or what
   the picked button does, with OK and cancel for `TWO_STEP` actions. Keep it
   a fixed height so the panel does not jump.
