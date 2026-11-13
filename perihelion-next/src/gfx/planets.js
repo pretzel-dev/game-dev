@@ -356,7 +356,7 @@ const GIANT_PALS = [
 export function giantPalette(b) { return GIANT_PALS[Math.floor(b.hue * GIANT_PALS.length) % GIANT_PALS.length]; }
 
 export function lookOf(b) {
-  if (b.home) return { kind: 0, type: Math.max(0, BIOMES.indexOf(b.biome || 'temperate')), atmo: BIOME_SKY[b.biome] || BIOME_SKY.temperate, atmoK: 1.0, clouds: 1, relief: 0.06 };
+  if (b.home || b.trait === 'garden') return { kind: 0, type: Math.max(0, BIOMES.indexOf(b.biome || 'temperate')), atmo: BIOME_SKY[b.biome] || BIOME_SKY.temperate, atmoK: 1.0, clouds: 1, relief: 0.06 };
   if (b.giant) return { kind: 3, type: 0, atmo: giantPalette(b)[1].map((x) => x * 0.9 + 0.1), atmoK: 0.55, clouds: 0, relief: 0 };
   if (b.kind === 'planet') {
     const type = Math.floor(b.hue * 4) % 4;

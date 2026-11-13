@@ -147,6 +147,16 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   two stacked boxes); tapping a box shows one line about it and the button.
 - Panels redraw several times a second: keep their HTML steady (round times
   and bars) or taps get lost.
+- Ships cost credits a second to run (`RULES.upkeep`); the owner asked for this
+  (not the same as paying for fuel or repairs, which stays out).
+- Orders given to some ships of a formation take only those ships; the rest
+  carry on under a new leader (`setOrder`). Tapping a ship's square picks it alone.
+- Scenarios are off the menu ("cold storage"): keep `scenarios.js` working but
+  unlisted. A tutorial waits until movement and selection stop changing.
+- New-game option `conquest`: losing the capital moves it; out only with no worlds.
+- No payback times, no comma-joined fragments ("120 credits, paid on arrival"):
+  whole short sentences, torpedoes as n/m, fuel as a percentage.
+- Rail sounds must stay unpitched (pitched thumps read as drums to the owner).
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.
 - Sound (`src/audio.js`) is generated in the browser as a trial. The owner
   dislikes cheap synth sound: if they reject it, keep interface and alert

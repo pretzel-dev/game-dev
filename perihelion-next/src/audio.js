@@ -477,22 +477,15 @@ export function createAudio(opts = {}) {
     rail(v, t) {
       // electromagnetic crack
       noise(v, { n: 'white', ft: 'bandpass', f: rnd(2500, 3300), f1: 800, ftm: 0.04, q: 0.8, t, a: 0.0006, d: 0.05, g: 2.6 });
-      // capacitor snap: a very fast downward sweep, heavily filtered so it reads as a crack, not a zap
-      tone(v, { w: 'square', f: rnd(1200, 1600), f1: 130, ft: 0.03, t, a: 0.0005, d: 0.055, g: 0.5, lp: 2400, lp1: 420, lpt: 0.05 });
-      // recoil through the frame
-      tone(v, { f: rnd(98, 116), f1: 36, ft: 0.17, t: t + 0.004, a: 0.003, d: 0.6, g: 0.55 });
+      // recoil through the frame (noise only: a pitched thump on every shot sounded like drumming)
       noise(v, { n: 'brown', ft: 'lowpass', f: 950, f1: 130, ftm: 0.3, q: 1.2, t: t + 0.004, a: 0.004, d: 0.55, g: 0.55 });
       // mid knock so it survives a phone speaker
       noise(v, { n: 'pink', ft: 'bandpass', f: rnd(400, 520), q: 2.5, t: t + 0.002, a: 0.002, d: 0.17, g: 0.7 });
       noise(v, { n: 'pink', ft: 'bandpass', f: rnd(820, 1080), q: 2, t: t + 0.001, a: 0.001, d: 0.11, g: 0.45 });
-      // the hull ringing afterwards
-      ring(v, { f: rnd(245, 325), r: [1, 1.483, 2.087, 2.71, 3.44], t: t + 0.006, d: rnd(0.9, 1.3), g: 0.36, bend: 0.985 });
     },
     railHit(v, t) {
       noise(v, { n: 'white', ft: 'bandpass', f: rnd(1700, 2300), f1: 700, ftm: 0.04, q: 0.9, t, a: 0.0006, d: 0.05, g: 2.4 });
-      tone(v, { f: rnd(125, 150), f1: 48, ft: 0.09, t, a: 0.002, d: 0.3, g: 0.55 });
       noise(v, { n: 'pink', ft: 'lowpass', f: 1400, f1: 220, ftm: 0.18, q: 1, t, a: 0.002, d: 0.3, g: 0.8 });
-      ring(v, { f: rnd(190, 260), r: [1, 1.58, 2.24, 2.92, 3.71], t: t + 0.002, d: rnd(0.45, 0.7), g: 0.3, bend: 0.97 });
       // debris rattling along the plating
       const ps = []; let x = rnd(0.05, 0.09);
       const n = 6 + Math.floor(rnd(0, 6));
@@ -821,10 +814,16 @@ export function createAudio(opts = {}) {
     if (!ctx || injected) return;
     try {
       if (document.hidden) ctx.suspend();
-      else if (enabled) ctx.resume();
+      else if (enabled) wake();
     } catch (e) { /* ignore */ }
   }
 
+  /** Start the clock again and put the volume back (after the page was hidden, the old fades are stuck in the past). */
+  function wake() {
+    const done = () => { try { G.master.gain.cancelScheduledValues(ctx.currentTime); G.master.gain.setValueAtTime(masterTarget(), ctx.currentTime); } catch (e) { /* ignore */ } };
+    const pr = ctx.resume();
+    if (pr && pr.then) pr.then(done).catch(() => {}); else done();
+  }
   function unlock() {
     if (dead) return;
     try {
@@ -849,8 +848,7 @@ export function createAudio(opts = {}) {
       }
       // 'suspended' before the first gesture, 'interrupted' after a call or a tab switch on iOS.
       if (!injected && enabled && ctx.state !== 'running' && !(typeof document !== 'undefined' && document.hidden)) {
-        const pr = ctx.resume();
-        if (pr && pr.catch) pr.catch(() => {});
+        wake();
       }
     } catch (e) {
       dead = true; ctx = null; G = null; bed = null;

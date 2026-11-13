@@ -45,15 +45,18 @@ timed events) are still there to lift back if testing asks for them.
   time and the fuel it costs:
   - *Hard burn*: fastest, seen across the system, thirsty.
   - *Cruise*: a measured burn and a coast.
-  - *Dark*: short burns and a long cold coast.
+  - *Dark*: half thrust and a long cold coast. Always the slowest.
   - *Slingshot*: skim a heavy world and let it bend the path. Offered only when
     it saves fuel over cruising.
   - Or plot a burn by hand: drag from the ship; the dashed line is where she
     will coast.
 
-  Ships ordered together fly in formation: the slowest leads and the rest keep
-  station beside it, escorts closest, so point defence covers the group. Turn
-  Formation off to let each ship go at its own pace. With ships selected, tap
+  Ships ordered together fly in formation: the slowest sets the pace and the
+  rest keep station on it, escorts closest, so point defence covers the group.
+  The Formation button cycles Wedge, Column and Off (each ship at its own
+  pace). An unarmed leader such as a tender flies behind the warships. Tap one
+  ship's square to pick it alone; an order then takes only that ship out of
+  the formation and the rest carry on. With ships selected, tap
   another of your ships and choose Join to fly to it and stay with it (this is
   how a tender reaches a ship that has run dry).
 - **Fuel.** Worlds you hold refill ships in orbit; a refinery, a fuel depot or
@@ -100,19 +103,24 @@ timed events) are still there to lift back if testing asks for them.
   A capital has five slots, a planet three, a moon or station two, an asteroid one.
 - **Special worlds.** Most independent worlds have a trait (a gold diamond on
   the plot; tap the gold tile to read it): rich seam (mines double), old
-  relay (sees four times as far), deuterium sea (quick refuelling, better
+  relay (sees four times as far), deuterium sea (gas giants only: quick refuelling, better
   refinery), fortress rock (battery twice as tough), ancient archive (research
   a third faster; laboratory counts double), drydock hulk (comes with a yard;
   its ships are veterans), tidal forge (everything builds twice as fast),
   garden world (earns more; habitats count double), listening post (identifies
   burning ships across most of the system).
+- **Running costs.** Every ship costs credits a second while it is in service
+  (corvette 0.05, frigate and escort 0.1, tender 0.08, battleship 0.35). The
+  income sheet shows it as its own line.
+- **Winning.** Take the enemy capital, or (a new-game option) take every
+  world: then a power that loses its capital moves it to its best world left.
 - **Fleet limit.** Four ships (five for the Holds), plus one for every habitat
   level you build, up to twelve. Pips under the credits show it.
 - **Research.** Five lines (drives, weapons, sensors, industry, intelligence)
-  of four steps, costing 250, 450, 750 and 1200. The second and fourth step of
-  every line is a choice between two doctrines, and taking one closes the
-  other for the rest of the game (spinal mounts or wolfpack tubes; swarm
+  of four steps, costing 250, 450, 750 and 1200. Some steps are a choice between two doctrines, and taking one closes the
+  other for the rest of the game (wolfpack tubes or layered plate; swarm
   warheads or flak curtain; cold running or a deep-space network; and so on).
+  Battleships (spinal mounts) are a plain step anyone can take.
   One project at a time; laboratories and the archive speed it up.
 - **Agents** (Intelligence). Send one to a world that is not yours (200
   credits, 45 seconds). She shows you the place and the ships over it. With
@@ -138,8 +146,7 @@ timed events) are still there to lift back if testing asks for them.
   adrift, or an independent convoy crosses the system, and everyone is told.
   Match a derelict to board her: she joins you as a veteran. Match a convoy to
   take its cargo.
-- **Scenarios.** First command (the tutorial), Blockade run, Raider hunt,
-  Hold until relief, Convoy.
+- **Scenarios** are off the menu for now (the code is kept in `src/scenarios.js`).
 - **Daily.** Everyone gets the same system that day.
 - **Multiplayer.** Host in the browser, up to three powers, AI seats. Guests
   send orders and receive only what their sensors see, four times a second.
@@ -149,13 +156,12 @@ timed events) are still there to lift back if testing asks for them.
 - **The bar at the bottom of the panel** always shows a line of numbers: for a
   ship its hull, fuel and torpedoes; for a world its income and battery. Tap
   a button and the bar says what it does, with the numbers (a mine: credits a
-  second and how long it takes to pay for itself; a ship: hull, guns,
-  torpedoes, thrust, build time). Buttons that spend something or cannot be
+  second; a ship: hull, guns, torpedoes, thrust, build time, running cost). Buttons that spend something or cannot be
   undone then show OK and a cancel; the rest act at once.
 - **Gold buttons** are structures the world's trait makes better.
 - **Tap a built structure** to upgrade it or remove it (40% back).
 - **The end screen** has a table for every side and charts of fleet strength,
-  worlds and income over the game.
+  worlds and income over the game, and a Share button that makes one picture of it.
 
 - **Credits** show with the rate they come in. Tap them for where the income
   comes from, world by world, and what is at sea in freighters.
@@ -192,7 +198,7 @@ node tools/smoke.mjs    # phone-sized touch test (needs the preview server and P
 node tools/mp-smoke.mjs # two-browser multiplayer test (also needs a local PeerJS server)
 ```
 
-`?gfx=low` or `?gfx=high` forces the graphics level. `?peer=127.0.0.1:9000`
+Graphics are high unless set to low (title screen or the in-game menu); `?gfx=low` forces it. `?peer=127.0.0.1:9000`
 points multiplayer at a local PeerJS server (`npx peerjs --port 9000 --host 127.0.0.1`).
 
 ## Code

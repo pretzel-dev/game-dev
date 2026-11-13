@@ -72,6 +72,40 @@ export function stationMesh(size, core, uT) {
     }
     // Propellant on the hub.
     for (const sx of [-1, 1]) k.strapped(S * 0.06, S * 0.18, sx * S * 0.13, sx * S * 0.13, -S * 0.3, sx > 0);
+  } else if (core === 3) {
+    // A hold: a first hull that has been added to for centuries. Nothing lines up; nothing matches.
+    cylZ(S * 0.06, S * 1.9, -S * 0.2, DARK, 10);
+    for (const [z, rad, len, x, y] of [[0.55, 0.11, 0.2, 0.01, 0.02], [0.3, 0.19, 0.24, -0.02, 0], [0.04, 0.24, 0.2, 0.03, -0.02], [-0.2, 0.14, 0.26, -0.03, 0.03], [-0.46, 0.18, 0.16, 0.02, 0.01], [-0.7, 0.1, 0.22, 0, -0.02], [-0.95, 0.13, 0.14, -0.02, 0]]) {
+      k.cyl(S * rad, S * rad * (0.9 + r() * 0.2), S * len, S * z, HULL, 14, S * x, S * y, 0.7 + r() * 0.45);
+      k.cyl(S * rad * 1.05, S * rad * 1.05, S * 0.018, S * (z + len * 0.5), DARK, 14, S * x, S * y);
+    }
+    cylZ(S * 0.245, S * 0.07, S * 0.04, PAINT);
+    // Arms run off wherever there was a free port, each ending in whatever was bolted on that decade.
+    for (const [z, a, tilt, len, rad, kink] of [[0.32, 0.5, 0.25, 0.62, 0.05, 1.3], [0.05, 2.3, -0.2, 0.86, 0.065, -0.9], [-0.2, 3.9, 0.45, 0.5, 0.045, 0.7], [-0.46, 5.3, -0.35, 0.72, 0.055, -1.5], [-0.72, 1.4, 0.1, 0.4, 0.04, 1.0]]) {
+      const d = [Math.cos(a), Math.sin(a), tilt];
+      const [ex, ey, ez] = k.boom(0, 0, S * z, d, S * len, S * rad, HULL, 0.75 + r() * 0.3);
+      k.boom(d[0] * S * len * 0.45, d[1] * S * len * 0.45, S * z + d[2] * S * len * 0.45, d, S * 0.16, S * rad * 2.1, HULL, 0.7 + r() * 0.4); // a can part way out
+      const d2 = [Math.cos(a + kink), Math.sin(a + kink), -tilt * 1.5];
+      const [fx, fy, fz] = k.boom(ex, ey, ez, d2, S * len * 0.55, S * rad * 0.8, DARK);
+      k.sphere(S * rad * 1.9, ex, ey, ez, HULL, 1, 10);
+      k.box(S * 0.13, S * 0.1, S * 0.2, fx, fy, fz, r() < 0.5 ? PAINT : HULL, 0.7 + r() * 0.4);
+      k.box(S * 0.025, S * 0.025, S * 0.07, fx + S * 0.06, fy + S * 0.04, fz, WINDOW);
+      if (r() < 0.6) k.radiator(fx, fy, fz - S * 0.08, S * 0.26, S * 0.12, a + 1.2, 2, S * 0.008);
+    }
+    // Half of an old spin ring, never finished, now used as racks.
+    for (let i = 0; i < 7; i++) {
+      const a = 0.9 + i * 0.36, x = Math.cos(a) * S * 0.62, y = Math.sin(a) * S * 0.62;
+      k.box(S * 0.2, S * 0.09, S * 0.12, x, y, S * 0.06, i % 3 === 1 ? DARK : HULL, 0.7 + r() * 0.4);
+      if (i % 2 === 0) k.strut(Math.cos(a) * S * 0.2, Math.sin(a) * S * 0.2, S * 0.05, x, y, S * 0.06, S * 0.014);
+      if (i % 3 === 0) k.box(S * 0.03, S * 0.03, S * 0.05, x * 1.06, y * 1.06, S * 0.06, WINDOW);
+    }
+    // Cargo left where it was unloaded, and tanks strapped along the keel.
+    for (let i = 0; i < 3; i++) {
+      const x = -S * (0.28 + i * 0.11), y = -S * 0.3;
+      k.frame(S * 0.1, S * 0.1, S * 0.34, x, y, -S * 0.3, S * 0.008);
+      for (let j = 0; j < 3; j++) if ((i * 2 + j) % 4 !== 1) k.box(S * 0.085, S * 0.085, S * 0.09, x, y, -S * (0.41 - j * 0.11), (i + j) % 3 === 0 ? PAINT : HULL, 0.7 + r() * 0.4);
+    }
+    for (const [x, y, z] of [[0.2, 0.16, -0.85], [-0.17, 0.2, 0.68], [0.24, -0.14, 0.62]]) k.strapped(S * 0.07, S * 0.24, S * x, S * y, S * z, x > 0);
   } else {
     // Long modular spine: cans of different sizes and ages along a spine.
     cylZ(S * 0.07, S * 1.2, -S * 0.15, DARK, 10);

@@ -32,8 +32,8 @@ const LINE_ORDER = {
   holds: ['sensors', 'weapons', 'industry', 'intel', 'drives'],
 };
 const DOCTRINE = {
-  concord: ['spinal', 'flak', 'tanks', 'torch', 'network', 'longwatch', 'deepmine', 'wareco', 'sabot', 'fifth'],
-  boreal: ['flash', 'torch', 'spinal', 'swarm', 'coldrun', 'longwatch', 'bulk', 'wareco', 'rings', 'cipher'],
+  concord: ['plate', 'flak', 'tanks', 'torch', 'network', 'longwatch', 'deepmine', 'wareco', 'sabot', 'fifth'],
+  boreal: ['flash', 'torch', 'plate', 'swarm', 'coldrun', 'longwatch', 'bulk', 'wareco', 'rings', 'cipher'],
   holds: ['wolfpack', 'swarm', 'tanks', 'coldjets', 'coldrun', 'jammers', 'deepmine', 'arcology', 'rings', 'cipher'],
 };
 
