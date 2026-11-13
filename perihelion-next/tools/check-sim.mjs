@@ -56,6 +56,8 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   const far = g.bodies.find((b) => b.kind === 'planet' && b !== g.homes[0] && b.owner === S.NEUTRAL);
   s.dv = 0.3;
   S.setOrder(g, 0, [s.id], { type: 'orbit', body: far.id, profile: 'hard' });
+  ok(s.at === moon.id && s.pending, 'a ship that has just made orbit waits before it leaves again');
+  run(g, S.RULES.turnaround + 1); s.dv = 0.3;
   run(g, 60);
   ok(s.dv <= 0 && s.at === null && S.crippled(s) && s.phase === 'adrift', 'a ship that runs dry is adrift');
 }
@@ -111,7 +113,9 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   g.credits[0] = 1000;
   S.buildStructure(g, home, 'lab'); run(g, 70);
   const c0 = g.credits[0];
-  ok(S.demolish(g, home, 'lab') && !S.structure(home, 'lab') && g.credits[0] > c0 + 100, 'a structure can be removed for part of its cost');
+  ok(S.demolish(g, home, 'lab') && S.structure(home, 'lab') && !S.has(home, 'lab'), 'a structure being removed stops working but is still there');
+  run(g, S.RULES.scrapTime + 2);
+  ok(!S.structure(home, 'lab') && g.credits[0] > c0 + 100, 'a structure can be removed for part of its cost');
   const prey = free(g, 1, 'corvette', 3000, 3000);
   prey.hull = prey.st.hull * 0.3;
   const hunters = [free(g, 0, 'battleship', 3001, 3000), free(g, 0, 'frigate', 3000, 3001)];

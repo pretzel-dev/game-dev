@@ -11,10 +11,19 @@ import { createAI, stepAI, LEVELS, LEVEL_KEYS } from './ai.js';
 import { createView, playerColors, AMBER, INK, HOSTILE, NEUTRAL_COLOR, FACTION_COLORS } from './render.js';
 import { hostRoom, joinRoom, MAX_SEATS, cleanName } from './net.js';
 import { SCENARIOS, SCENARIO_KEYS } from './scenarios.js';
+import { STEPS, firstTarget } from './tutorial.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+// Time is shown as a calendar: S.DAY game seconds to a day. Durations read in hours, days, months or years.
+const mmss = (t) => {
+  const d = t / S.DAY;
+  if (d < 1) return `${Math.max(1, Math.round(d * 24))}h`;
+  if (d < 100) return `${Math.round(d)}d`;
+  const m = d / 30.4;
+  return m < 24 ? `${m < 10 ? m.toFixed(1) : Math.round(m)}mo` : `${(d / 365).toFixed(1)}y`;
+};
+const dateOf = (t) => { const d = Math.floor(t / S.DAY); return `Year ${Math.floor(d / 365) + 1} \u00b7 Day ${(d % 365) + 1}`; };
 
 // Panels redraw a few times a second. Swapping a button out from under a
 // finger loses the tap, so a panel being pressed waits until the tap is done.
@@ -61,6 +70,7 @@ view.resize();
 window.addEventListener('resize', () => view.resize());
 
 // ---- State --------------------------------------------------------------------
+let tut = null; // the guided first game, while it runs
 let game = null, ais = [], me = 0, mode = 'demo'; // demo | solo | host | guest
 let paused = false, warp = 1, room = null, scn = null, ended = false, netFx = [], lastSnap = 0, notesT = 0;
 const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, shape: 'wedge', plotMode: false };
@@ -92,11 +102,13 @@ function start(g, opts = {}) {
     const reach = Math.max(12, ...game.bodies.filter((b) => b.parent === home.id).map((b) => b.r), home.parent !== null ? home.r * 1.6 : 0);
     view.focus(game, home.id, false); view.orbit.target.set(hp.x, hp.y, hp.z); view.orbit.dist = reach * 5.5; view.orbit.pol = 0.8;
   }
-  $('hud').hidden = mode === 'demo';
+  $('hud').hidden = mode === 'demo'; $('date').hidden = mode === 'demo';
+  tut = null; ui.tutWorld = null; $('tutglow').textContent = '';
+  if (opts.tutorial) startTutorial();
   $('title').hidden = mode !== 'demo';
   $('panel').hidden = true; $('sheet').hidden = true; $('strip').hidden = true;
   $('feed').innerHTML = '';
-  $('brief').hidden = !scn;
+  $('brief').hidden = !scn && !(tut && !tut.free);
   window.__perihelion = { game, view, ui, S, act, get me() { return me; } };
 }
 function demo() {
@@ -110,6 +122,7 @@ function act(cmd) {
   if (!live() || paused && mode !== 'solo') return;
   if (mode === 'guest') { room.send({ t: 'cmd', cmd }); return; }
   apply(me, cmd);
+  if (tut && !tut.free) { tut.did.add(cmd.t === 'order' && !cmd.order ? 'stop' : cmd.t); syncTutorial(); }
 }
 function apply(owner, c) {
   if (!game || !game.alive[owner]) return;
@@ -250,7 +263,8 @@ const HINT = {
 };
 const SHAPE = { wedge: 'Wedge', column: 'Column', loose: 'Off' };
 const num = (x) => (Math.round(x * 10) / 10).toString();
-const rate = (x) => `${x < 0 ? '−' : '+'}${num(Math.abs(x))}/s`;
+const perDay = (x) => { const v = Math.abs(x) * S.DAY; return v >= 10 ? Math.round(v).toString() : num(v); };
+const rate = (x) => `${x < 0 ? '−' : '+'}${perDay(x)}/d`;
 /** One stat: a dim label and its value. */
 const stat = (label, value, cls = '', attr = '') => `<span class="st ${cls}" ${attr}><i>${label}</i>${value}</span>`;
 /** What a structure gives on this world at a level, as [label, value] pairs. */
@@ -272,7 +286,7 @@ function structStats(type, b, level = 1) {
 function shipStats(cls) {
   const st = S.statsFor(game, me, cls), C = CLASSES[cls];
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
-  return [['Hull', st.hull], st.rails.length ? ['Rails', st.rails.length] : null, st.mag ? ['Torpedoes', st.mag] : null, C.stores ? ['Spares', C.stores] : null, ['Defence', st.pdc], ['Thrust', Math.round(st.accel * 1000)], ['Fuel', Math.round(st.dv)], ['Build', mmss(S.shipTime(game, me, cls, b))], ['Upkeep', `${RULES.upkeep[cls]}/s`]].filter(Boolean);
+  return [['Hull', st.hull], st.rails.length ? ['Rails', st.rails.length] : null, st.mag ? ['Torpedoes', st.mag] : null, C.stores ? ['Spares', C.stores] : null, ['Defence', st.pdc], ['Thrust', Math.round(st.accel * 1000)], ['Fuel', Math.round(st.dv)], ['Build', mmss(S.shipTime(game, me, cls, b))], ['Upkeep', `${perDay(RULES.upkeep[cls])}/d`]].filter(Boolean);
 }
 /** A picked button: a line of plain words and its numbers. */
 function infoOf(a, v) {
@@ -281,13 +295,13 @@ function infoOf(a, v) {
   if (a === 'trait') return { text: TRAITS[v]?.text || '', stats: [] };
   if (a === 'build' && b) return { text: HINT[v], stats: [...structStats(v, b, 1), ['Build', mmss(RULES.structures[v].time / speed)]] };
   if (a === 'upgrade' && b) { const lv = (S.structure(b, v)?.level || 1) + 1; return { text: `${RULES.structures[v].name} level ${lv}`, stats: [...structStats(v, b, lv), ['Build', mmss(RULES.structures[v].time / speed)]] }; }
-  if (a === 'demolish' && b) { const x = S.structure(b, v); return { text: HINT.demolish, stats: x ? [['Refund', S.scrapValue(x)]] : [] }; }
+  if (a === 'demolish' && b) { const x = S.structure(b, v); return { text: HINT.demolish, stats: x ? [['Refund', S.scrapValue(x)], ['Takes', mmss(RULES.scrapTime)]] : [] }; }
   if (a === 'struct' && b) { const x = S.structure(b, v); return { text: '', stats: x ? [[RULES.structures[v].name, RULES.structures[v].maxLevel > 1 ? `level ${x.level}` : ''], ...structStats(v, b, x.level)] : [] }; }
   if (a === 'ship') return { text: HINT[`ship:${v}`], stats: shipStats(v) };
   if (a === 'cancel' && b) { const q = b.queue[+v]; return { text: HINT.cancel, stats: q ? [['Refund', Math.round(S.shipCost(game, me, q.cls) * 0.8)]] : [] }; }
   if (a === 'board') { const T = S.shipById(game, +v); return { text: HINT.board, stats: T ? [['Chance', `${Math.round(S.boardChance(T, selShips()) * 100)}%`]] : [] }; }
   if (a === 'agent') return { text: HINT.agent, stats: [['Arrives', mmss(AGENT.travel)]] };
-  if (a === 'sab') return { text: HINT[`sab:${v}`], stats: [[v === 'battery' ? 'Off for' : 'Delay', v === 'battery' ? '90s' : '60s'], ['Risk', `${Math.round(AGENT.opRisk * 100)}%`]] };
+  if (a === 'sab') return { text: HINT[`sab:${v}`], stats: [[v === 'battery' ? 'Off for' : 'Delay', mmss(v === 'battery' ? 90 : 60)], ['Risk', `${Math.round(AGENT.opRisk * 100)}%`]] };
   if (a === 'op' && v === 'steal') return { text: HINT['op:steal'], stats: [['Share', `${Math.round(AGENT.skim * 100)}%`]] };
   if (a === 'op' && v === 'incite') return { text: HINT['op:incite'], stats: [['Yield', '×2']] };
   if (a === 'formation') return { text: HINT[`formation:${ui.shape}`], stats: [] };
@@ -310,18 +324,22 @@ function selStats() {
     out.push(stat('Hull', `${Math.round(s.hull)}/${s.st.hull}`, s.hull < s.st.hull * 0.35 ? 'bad' : ''), stat('Fuel', `${Math.round((s.dv / s.st.dv) * 100)}%`));
     if (s.st.mag) out.push(stat('Torpedoes', `${s.torps}/${s.st.mag}`));
     if (s.st.stores) out.push(stat('Spares', `${Math.floor(s.stores)}/${s.st.stores}`));
-    out.push(stat('Upkeep', `${RULES.upkeep[s.cls]}/s`));
+    out.push(stat('Upkeep', `${perDay(RULES.upkeep[s.cls])}/d`));
+    const wait = (s.ready || 0) - game.time;
+    if (s.at !== null && wait > 0) out.push(stat(s.pending || s.pend !== undefined ? 'Leaves in' : 'Ready in', mmss(Math.ceil(wait / 4) * 4)));
   } else if (ships.length) {
     const mag = ships.reduce((n, s) => n + s.st.mag, 0);
     out.push(stat('Fuel', `${Math.round(Math.min(...ships.map((s) => s.dv / s.st.dv)) * 100)}%`));
     if (mag) out.push(stat('Torpedoes', `${ships.reduce((n, s) => n + s.torps, 0)}/${mag}`));
-    out.push(stat('Upkeep', `${num(ships.reduce((n, s) => n + RULES.upkeep[s.cls], 0))}/s`));
+    out.push(stat('Upkeep', `${perDay(ships.reduce((n, s) => n + RULES.upkeep[s.cls], 0))}/d`));
+    const wait = Math.max(...ships.map((s) => (s.at !== null ? (s.ready || 0) - game.time : 0)));
+    if (wait > 0) out.push(stat(ships.some((s) => s.pending || s.pend !== undefined) ? 'Leaves in' : 'Ready in', mmss(Math.ceil(wait / 4) * 4)));
   } else if (ui.selBody != null) {
     const b = game.bodies[ui.selBody], bm = S.batteryMax(b);
-    if (b.owner === me) out.push(b.blockaded ? stat('Income', 'blockaded', 'bad') : stat('Income', rate(S.incomeOf(b, game))));
+    if (b.owner === me) out.push(b.blockaded ? stat('Income', 'blockaded', 'bad') : stat('Income', rate(S.incomeOf(b, game) * S.haulBonus(game, b))));
     if (b.owner === me && !b.home) out.push(stat('Waiting', Math.round(b.stock / 5) * 5));
     if (bm) out.push(stat('Battery', `${Math.round(b.bhp)}/${bm}`, b.bhp <= 0 ? 'bad' : ''), stat('Guns', S.batteryGuns(b)));
-    if (b.owner !== me) { out.push(stat('Yields in', `${Math.round(S.yieldTime(b))}s`)); if (b.home) out.push(stat('Ships needed', S.CAPITAL_SHIPS)); }
+    if (b.owner !== me) { out.push(stat('Yields in', mmss(S.yieldTime(b)))); if (b.home) out.push(stat('Ships needed', S.CAPITAL_SHIPS)); }
     if (b.trait) out.push(`<button class="st gold" data-a="trait" data-v="${b.trait}">${icon('star')}${TRAITS[b.trait].name}</button>`);
   } else if (ui.targetShip != null) {
     const T = S.shipById(game, ui.targetShip);
@@ -345,13 +363,13 @@ function stripHTML() {
     if (ui.target != null) {
       const b = game.bodies[ui.target];
       const tank = Math.min(...ships.map((s) => s.dv));
-      h += `<div class="sub">${icon('arrived')} ${esc(b.name)}<span class="cols"><i>Time</i><i>Fuel</i></span></div><div class="routes">`;
+      h += `<div class="sub">${icon('arrived')} ${esc(b.name)}<span class="cols">Time · Fuel</span></div><div class="row">`;
       const full = Math.min(...ships.map((x) => x.st.dv));
       for (const r of ui.routes || []) {
         const over = r.dv > tank;
-        h += `<button class="rt ${over ? 'no' : ''} ${ui.armed === `go:${r.key}` && ui.armedLabel ? 'arm' : ''}" title="${esc(hintOf('go', r.key))}" data-a="go" data-v="${r.key}">${icon(r.key)}<em>${ROUTE_NAME[r.key]}</em><span class="num">${mmss(Math.round(r.time / 5) * 5)}</span><span class="num ${over ? 'bad' : ''}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</span></button>`;
+        h += tile('go', r.key, L(icon(r.key), ROUTE_NAME[r.key]), `${mmss(Math.round(r.time / 5) * 5)} · <b class="${over ? 'bad' : ''}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</b>`, `wide ${over ? 'no' : ''}`);
       }
-      if (b.owner !== me && S.batteryMax(b) > 0 && b.bhp > 0) h += `<button class="rt ${ui.armed === `strike:${b.id}` && ui.armedLabel ? 'arm' : ''}" title="${esc(hintOf('strike', b.id))}" data-a="strike" data-v="${b.id}">${icon('strike')}<em>Firing pass</em></button>`;
+      if (b.owner !== me && S.batteryMax(b) > 0 && b.bhp > 0) h += tile('strike', b.id, L(icon('strike'), 'Firing pass'), '', 'wide');
       if (!(ui.routes || []).length) h += `<span class="hint">No course</span>`;
       h += '</div>';
     } else if (ui.targetShip != null) {
@@ -418,15 +436,15 @@ function stripHTML() {
       const boost = b.trait ? TRAITS[b.trait].boost : null;
       for (const x of b.structures) {
         const S0 = RULES.structures[x.type];
-        h += tile('struct', x.type, L(icon(x.type), S0.name), '', `${ui.struct === x.type ? 'on' : ''} ${boost === x.type ? 'boost' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}`);
+        h += tile('struct', x.type, L(icon(x.type), S0.name), x.scrap ? 'Removing' : '', `${ui.struct === x.type ? 'on' : ''} ${boost === x.type ? 'boost' : ''} ${x.scrap ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.scrap ? `<span class="prog" style="width:${Math.round((1 - x.scrap / RULES.scrapTime) * 20) * 5}%"></span>` : x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}`);
       }
       for (let i = b.structures.length; i < slots; i++) h += tile('slot', '', L(icon('add'), 'Build'), '', `empty ${ui.build ? 'on' : ''}`);
       h += '</div>';
       const px = ui.struct ? S.structure(b, ui.struct) : null;
-      if (px) {
+      if (px && !px.scrap) {
         const S0 = RULES.structures[px.type], can = S.working(px) && px.level < S0.maxLevel;
         h += `<div class="row">${can ? tile('upgrade', px.type, L(icon('up'), 'Upgrade'), S.upgradeCost(px), S.cantUpgrade(game, b, px) ? 'no' : '') : ''}${tile('demolish', px.type, L(icon('close'), 'Remove'), `+${S.scrapValue(px)}`, S.cantDemolish(game, b, px.type) ? 'no' : '')}</div>`;
-      } else ui.struct = null;
+      } else if (!px) ui.struct = null;
       if (ui.build) {
         h += '<div class="row">';
         for (const type in RULES.structures) {
@@ -549,12 +567,12 @@ const signed = (x) => `${x < 0 ? '\u2212' : '+'}${Math.abs(x).toFixed(1)}`;
 function incomeHTML() {
   const inc = S.incomeBreakdown(game, me);
   const how = { capital: 'Capital', freight: 'Freighter', blockaded: 'Blockaded' };
-  let h = `<div class="head"><b>Income</b><small>${signed(inc.total)}/s</small><button class="x" data-a="closeSheet">${icon('close')}</button></div>`;
+  let h = `<div class="head"><b>Income</b><small>${rate(inc.total)}</small><button class="x" data-a="closeSheet">${icon('close')}</button></div>`;
   for (const l of inc.lines.sort((a, b) => b.rate - a.rate)) {
     const b = game.bodies[l.body];
-    h += `<div class="line"><div class="what"><b>${esc(b.name)}</b><span${l.how === 'blockaded' ? ` style="color:${HOSTILE}"` : ''}>${how[l.how]}</span></div><span class="num">${l.how === 'blockaded' ? '0.0' : `+${l.rate.toFixed(1)}`}</span></div>`;
+    h += `<div class="line"><div class="what"><b>${esc(b.name)}</b><span${l.how === 'blockaded' ? ` style="color:${HOSTILE}"` : ''}>${how[l.how]}</span></div><span class="num">${l.how === 'blockaded' ? '0' : rate(l.rate)}</span></div>`;
   }
-  if (inc.upkeep) h += `<div class="line"><div class="what"><b>Ships</b><span>Upkeep</span></div><span class="num">${signed(-inc.upkeep)}</span></div>`;
+  if (inc.upkeep) h += `<div class="line"><div class="what"><b>Ships</b><span>Upkeep</span></div><span class="num">${rate(-inc.upkeep)}</span></div>`;
   const fr = game.ships.filter((x) => x.owner === me && x.st.civil);
   const waiting = game.bodies.reduce((n, b) => n + (b.owner === me ? b.stock : 0), 0);
   h += `<div class="sts pad">${stat('Freighters', fr.length)}${stat('In transit', Math.round(fr.reduce((n, x) => n + (x.cargo || 0), 0) / 10) * 10)}${stat('Waiting', Math.round(waiting / 10) * 10)}</div>`;
@@ -578,7 +596,7 @@ function sheetHTML() {
     const [line, key] = ui.techSel.split(':'), i = TECH[line].tiers.findIndex((t) => t.some((o) => o.key === key)), o = S.techOption(key), st = state(line, i, o).split(' ')[0];
     const fork = TECH[line].tiers[i].length > 1;
     const right = st === 'done' ? 'Done' : st === 'now' ? mmss(Math.ceil(pr.left / sp / 5) * 5) : st === 'skip' ? 'Not chosen' : st === 'lock' ? 'Later' : `<button class="tile ${S.cantResearch(game, me, line, key) ? 'no' : 'go'}" data-a="research" data-v="${line}:${key}"><em>Research</em><small>${TECH_COST[i]}</small></button>`;
-    h += `<div class="td"><div class="what"><b>${o.name}</b><span>${o.text}${fork && st === 'open' ? ' One of two.' : ''}</span></div><span class="num">${right}</span></div>`;
+    h += `<div class="td"><div class="what"><b>${o.name}</b><span>${o.text}</span></div><span class="num">${right}</span></div>`;
   }
   return h;
 }
@@ -616,7 +634,7 @@ function drainEvents() {
     const mineC = ui.colors[me];
     switch (e.type) {
       case 'contact': if (e.owner === me && game.time - lastContact > 20) { lastContact = game.time; notice('contact', AMBER, 'Contact', toShip); sfx('contact'); } break;
-      case 'salvo': if (e.owner !== me && s && s.seen[me] && game.time - lastAlarm > 6) { lastAlarm = game.time; notice('torp', HOSTILE, 'Torpedoes', toShip); sfx('alarm'); } break;
+      case 'salvo': if (e.owner !== me && e.to === me && s && game.time - lastAlarm > 6) { lastAlarm = game.time; notice('torp', HOSTILE, 'Torpedoes', toShip); sfx('alarm'); } break;
       case 'system': if (e.owner === me && s) { notice('bolt', HOSTILE, `${s.name}: ${e.sys} out`, toShip); sfx('system'); } break;
       case 'repaired': if (e.owner === me) sfx('repaired'); break;
       case 'lost': if (e.owner === me) { notice('lost', HOSTILE, `${e.name} lost`, toPoint); sfx('lost'); } else if (e.by === me) notice('lost', INK, `${e.name} destroyed`, toPoint); break;
@@ -649,7 +667,8 @@ $('menuBtn').innerHTML = icon('menu');
 function refreshUI() {
   if (!game || !inGame()) return;
   $('cr').textContent = Math.floor(game.credits[me] || 0);
-  $('rate').textContent = `${signed(S.incomeBreakdown(game, me).total)}/s`;
+  $('rate').textContent = rate(S.incomeBreakdown(game, me).total);
+  $('date').textContent = dateOf(game.time);
   const cap = S.fleetCap(game, me), n = S.warshipsOf(game, me).length, qd = S.fleetSize(game, me) - n;
   let pips = '';
   for (let i = 0; i < cap; i++) pips += `<i class="${i < n ? 'on' : i < n + qd ? 'q' : ''}"></i>`;
@@ -680,8 +699,52 @@ function refreshUI() {
   setHTML($('strip'), sh);
   if (!$('sheet').hidden) setHTML($('sheet'), sheetHTML());
   if (scn) setHTML($('brief'), briefHTML());
+  syncTutorial();
 }
-$('brief').onclick = () => { ui.briefShut = !ui.briefShut; refreshUI(); };
+$('brief').onclick = (e) => {
+  if (tut && !tut.free) {
+    const k = e.target.closest('[data-t]')?.dataset.t;
+    if (k === 'next') { if (STEPS[tut.i].last) endTutorial(); else { tut.i += 1; tutCamera(); syncTutorial(); } sfx('tap'); }
+    else if (k === 'end') { endTutorial(); sfx('close'); }
+    else if (k === 'show' && ui.tutWorld != null) { view.focus(game, ui.tutWorld, false); sfx('tap'); }
+    return;
+  }
+  ui.briefShut = !ui.briefShut; refreshUI();
+};
+
+// ---- Tutorial (the steps are in tutorial.js; the card and the outlines are here, as in the first game) ---------
+function startTutorial() {
+  game.credits[me] += 800;
+  tut = { i: 0, free: false, did: new Set(), target: firstTarget(game, me), held0: game.bodies.filter((b) => b.owner === me).length };
+  tutCamera();
+  $('brief').hidden = false;
+  syncTutorial();
+}
+function tutCamera() { const o = view.orbit; tut.cam = { az: o.az, pol: o.pol, dist: o.dist, x: o.target.x, y: o.target.y, z: o.target.z }; }
+function tutContext() {
+  const o = view.orbit, c0 = tut.cam;
+  const moved = 2 * (Math.abs(o.az - c0.az) + Math.abs(o.pol - c0.pol) + Math.abs(Math.log(o.dist / c0.dist))) + (3 * Math.hypot(o.target.x - c0.x, o.target.y - c0.y, o.target.z - c0.z)) / c0.dist;
+  if (!tut.target || (tut.target.owner !== NEUTRAL && tut.target.owner !== me)) tut.target = firstTarget(game, me) || tut.target;
+  return { game, ui, me, warp: ui.warp, moved, touch: touchInput, target: tut.target, home: game.homes[me], gained: game.bodies.filter((b) => b.owner === me).length - tut.held0, sheet: !$('sheet').hidden && ui.sheet !== 'income' };
+}
+function endTutorial(quiet = false) {
+  if (!tut) return;
+  tut.free = true; ui.tutWorld = null; $('tutglow').textContent = '';
+  prefs.done.tutorial = true; save();
+  if (!quiet) { $('brief').hidden = true; notice('contact', AMBER, 'Your rival is moving', null); }
+}
+function syncTutorial() {
+  if (!tut || tut.free || !live()) return;
+  let c = tutContext();
+  if (!c.home || !c.target) { endTutorial(); return; }
+  for (let st = STEPS[tut.i]; !st.last && ((st.on && tut.did.has(st.on)) || (st.done && st.done(c))); st = STEPS[tut.i]) { tut.i += 1; tutCamera(); c = tutContext(); }
+  const st = STEPS[tut.i];
+  const point = typeof st.point === 'function' ? st.point(c) : st.point;
+  // A style rule, not a class: panels redraw and the rule still applies. A steady outline; nothing pulses.
+  $('tutglow').textContent = point ? `${point} { outline: 2px solid var(--amber); outline-offset: 2px; }` : '';
+  ui.tutWorld = st.world ? st.world(c) : null;
+  setHTML($('brief'), `<b>${st.title}<span class="t">${tut.i + 1}/${STEPS.length}</span></b><p>${st.text(c)}</p><div class="tb">${ui.tutWorld != null ? '<button data-t="show">Show</button>' : ''}<button data-t="next">${st.last ? 'Play' : st.on || st.done ? 'Skip' : 'Next'}</button><button data-t="end">Close</button></div>`);
+}
 $('purse').onclick = () => { const open = !$('sheet').hidden && ui.sheet === 'income'; ui.sheet = 'income'; $('sheet').hidden = open; sfx(open ? 'close' : 'open'); refreshUI(); };
 $('rnd').onclick = () => { const open = !$('sheet').hidden && ui.sheet !== 'income'; ui.sheet = 'research'; $('sheet').hidden = open; sfx($('sheet').hidden ? 'close' : 'open'); refreshUI(); };
 $('sys').onclick = () => { view.orbit.follow = null; view.orbit.ship = null; view.orbit.target.set(0, 0, 0); view.orbit.goalDist = view.orbit.maxDist * 0.3; sfx('tap'); };
@@ -705,7 +768,7 @@ const seg = (a, list, cur, lab = (x) => x) => `<div class="seg">${list.map((x) =
 
 function titleNav() {
   const day = S.dailySeed().key.slice(5);
-  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
+  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="tutorial">Tutorial</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
   $('fine').innerHTML = `<button data-a="sound">Sound ${prefs.sound ? 'on' : 'off'}</button><button data-a="text">Text ${prefs.ui === 1 ? 'standard' : prefs.ui > 1 ? 'large' : 'small'}</button><button data-a="gfx">Graphics ${prefs.gfx === 'low' ? 'low' : 'high'}</button>`;
 }
 function setupPanel(daily = false) {
@@ -810,23 +873,40 @@ async function shareReport() {
 }
 function endPanel(won, why) {
   ended = true; endWon = won; endWhy = why || '';
-  $('strip').hidden = true; $('sheet').hidden = true; $('hud').hidden = true; $('brief').hidden = true;
+  $('strip').hidden = true; $('sheet').hidden = true; $('hud').hidden = true; $('date').hidden = true; $('brief').hidden = true; if (tut) endTutorial(true);
   sfx(won ? 'won' : 'defeat');
   const N = game.players, cols = Array.from({ length: N }, (_, o) => o);
   const row = (label, k) => `<span>${label}</span>${cols.map((o) => `<b style="color:${ui.colors[o]}">${Math.round(game.stats[o][k] || 0)}</b>`).join('')}`;
-  // One small line chart per measure, a line for each side.
-  const chart = (label, k) => {
+  // A line chart per measure (from the first game): a line for each side, a faint grid, and a touch readout.
+  const chart = (label, k, fmtV = (v) => Math.round(v)) => {
     const ser = game.series || [];
     if (ser.length < 2) return '';
-    const top = Math.max(1, ...ser.map((p) => Math.max(...p[k]))), t1 = ser[ser.length - 1].t || 1;
-    const line = (o) => `<polyline fill="none" stroke="${ui.colors[o]}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${ser.map((p) => `${((p.t / t1) * 100).toFixed(1)},${(40 - (p[k][o] / top) * 38).toFixed(1)}`).join(' ')}"/>`;
-    return `<div class="chart"><span>${label}</span><svg viewBox="0 0 100 41" preserveAspectRatio="none">${cols.map(line).join('')}</svg></div>`;
+    const W = 320, H = 120, Lm = 30, Rm = 8, T = 8, B = 18;
+    const t1 = ser[ser.length - 1].t || 1, top = Math.max(1, ...ser.map((p) => Math.max(...p[k])));
+    const x = (t) => Lm + (t / t1) * (W - Lm - Rm), y = (v) => T + (1 - v / top) * (H - T - B);
+    const lines = cols.map((o) => `<polyline fill="none" stroke="${ui.colors[o]}" stroke-width="2" stroke-linejoin="round" points="${ser.map((p) => `${x(p.t).toFixed(1)},${y(p[k][o]).toFixed(1)}`).join(' ')}"/>`).join('');
+    const grid = [0, 0.5, 1].map((f) => `<line x1="${Lm}" x2="${W - Rm}" y1="${y(top * f)}" y2="${y(top * f)}" stroke="rgba(232,226,210,0.12)"/><text x="${Lm - 4}" y="${y(top * f) + 3}" font-size="9" fill="${DIMC}" text-anchor="end">${fmtV(top * f)}</text>`).join('');
+    const axis = `<text x="${Lm}" y="${H - 4}" font-size="9" fill="${DIMC}">0</text><text x="${W - Rm}" y="${H - 4}" font-size="9" fill="${DIMC}" text-anchor="end">${mmss(t1)}</text>`;
+    return `<div class="chart" data-key="${k}"><span>${label}</span><svg viewBox="0 0 ${W} ${H}" data-l="${Lm}" data-r="${W - Rm}" data-w="${W}">${grid}${axis}${lines}<line class="cross" y1="${T}" y2="${H - B}" stroke="${INK}" stroke-opacity="0.5" visibility="hidden"/></svg><div class="readout">&nbsp;</div></div>`;
   };
   showPanel(`<div class="mast"><h1 style="font-size:2rem;color:${won ? AMBER : HOSTILE}">${won ? 'Victory' : 'Defeat'}</h1><p class="tag">${[why || (game.daily ? `Daily ${game.daily}` : ''), mmss(game.time)].filter(Boolean).map(esc).join(' · ')}</p></div>`
     + `<div class="tally" style="grid-template-columns:1fr ${'auto '.repeat(N)}"><span></span>${cols.map((o) => `<b style="color:${ui.colors[o]}">${esc(game.names[o])}</b>`).join('')}${row('Ships built', 'built')}${row('Ships lost', 'lost')}${row('Ships destroyed', 'killed')}${row('Worlds taken', 'captured')}${row('Worlds lost', 'worldsLost')}${row('Freighters home', 'hauled')}${row('Freighters raided', 'raided')}${row('Research', 'research')}</div>`
-    + chart('Fleet strength', 'pow') + chart('Worlds', 'worlds') + chart('Income', 'inc')
+    + chart('Fleet strength', 'pow') + chart('Worlds', 'worlds') + chart('Income a day', 'inc', (v) => perDay(v))
     + `<button class="cta ghost" data-a="share">Share</button><button class="cta" data-a="again">Again</button><button class="cta ghost" data-a="quit">Title</button>`);
   if (scn && won) { prefs.done[scn.key] = true; save(); }
+  // Touch or hover a chart: a line at that moment and every side's value then. All three charts move together.
+  const charts = [...panel.querySelectorAll('.chart')], ser = game.series || [];
+  const show = (e, svg0) => {
+    const r = svg0.getBoundingClientRect(), l = +svg0.dataset.l, rr = +svg0.dataset.r;
+    const f = Math.min(1, Math.max(0, (((e.clientX - r.left) / r.width) * +svg0.dataset.w - l) / (rr - l)));
+    const p = ser[Math.round(f * (ser.length - 1))], cx = l + (p.t / (ser[ser.length - 1].t || 1)) * (rr - l);
+    for (const c of charts) {
+      const cross = c.querySelector('.cross'), k = c.dataset.key;
+      cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
+      c.querySelector('.readout').innerHTML = `${dateOf(p.t)}${cols.map((o) => `<b style="color:${ui.colors[o]}">${k === 'inc' ? perDay(p[k][o]) : Math.round(p[k][o])}</b>`).join('')}`;
+    }
+  };
+  for (const c of charts) { const svg0 = c.querySelector('svg'); svg0.addEventListener('pointerdown', (e) => show(e, svg0)); svg0.addEventListener('pointermove', (e) => show(e, svg0)); }
 }
 function pauseMenu() {
   if (!live()) return;
@@ -926,6 +1006,7 @@ function clickPanel(a, v) {
     case 'sound': prefs.sound = !prefs.sound; save(); audio.setEnabled(prefs.sound); titleNav(); if (panel.dataset.screen === 'pause' && !panel.hidden) pauseMenu(); break;
     case 'text': prefs.ui = prefs.ui === 1 ? 1.15 : prefs.ui > 1 ? 0.9 : 1; save(); document.documentElement.style.setProperty('--ui-mult', prefs.ui); titleNav(); break;
     case 'gfx': prefs.gfx = prefs.gfx === 'low' ? 'high' : 'low'; save(); view.setQuality(gfx()); titleNav(); if (panel.dataset.screen === 'pause' && !panel.hidden) pauseMenu(); break;
+    case 'tutorial': { const players = [{ faction: 'concord', name: prefs.name || 'You' }, { faction: 'boreal', ai: LEVEL_KEYS[0] }]; start(S.createGame({ seed: 4, players }), { players, mode: 'solo', tutorial: true }); hidePanel(); break; }
     case 'winby': prefs.conquest = v === 'conquest'; save(); if (lobby) lobbyPanel(); else setupPanel(panel.dataset.screen === 'daily'); break;
     case 'share': shareReport(); break;
     default:
@@ -1117,7 +1198,7 @@ function frame(nowMs) {
   if (mode === 'guest') { if (!paused) game.acc = Math.min(0.6, (game.acc || 0) + dt); }
   else if (!hold) {
     gdt = dt * (mode === 'solo' || mode === 'demo' ? warp : 1);
-    if (!game.over) { S.step(game, gdt); for (const a of ais) stepAI(game, a, gdt); }
+    if (!game.over) { S.step(game, gdt); if (!tut || tut.free) for (const a of ais) stepAI(game, a, gdt); }
   }
   ui.fx = game.fx.splice(0);
   if (ui.pendingFx) { ui.fx = ui.fx.concat(ui.pendingFx); ui.pendingFx = null; }

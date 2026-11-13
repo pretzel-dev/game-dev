@@ -109,6 +109,18 @@ timed events) are still there to lift back if testing asks for them.
   its ships are veterans), tidal forge (everything builds twice as fast),
   garden world (earns more; habitats count double), listening post (identifies
   burning ships across most of the system).
+- **Time is a calendar.** Eight game seconds are a day, so a living world's
+  year is about a year. Durations read in hours, days, months and years
+  (a hop to a moon is a few days, a capital to a gas giant two months on a
+  hard burn), income and upkeep are per day, and the date shows top right.
+- **Turnaround.** A ship that has just made orbit needs 20 seconds (2 to 3
+  days) before it can leave again; an order given sooner waits.
+- **Removing a structure** takes 30 seconds. It stops working at once and the
+  refund comes when it is gone; if the world is taken first it stays.
+- **Cargo** is worth more the further it is carried: up to double.
+- **Climate** follows distance from the sun: hot worlds inside the living
+  capital's orbit, cold ones well beyond it. A garden world far out is an ice world.
+- **Tutorial.** A guided first game from the title screen (`src/tutorial.js`).
 - **Running costs.** Every ship costs credits a second while it is in service
   (corvette 0.05, frigate and escort 0.1, tender 0.08, battleship 0.35). The
   income sheet shows it as its own line.

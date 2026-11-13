@@ -150,8 +150,8 @@ const TYPES = {
   repaired:   { bus: 'ui', rev: 'hull', send: 0.10, lv: 0.59, gap: 0.30, max: 2, tune: 0.2, pri: 3 },
   fuel:       { bus: 'ui', rev: 'hull', send: 0.10, lv: 0.63, gap: 0.80, max: 1, tune: 0, pri: 3 },
 
-  rail:       { bus: 'fx', rev: 'hull', send: 0.34, lv: 0.95, gap: 0.05, max: 4, tune: 1.2, pri: 1 },
-  railHit:    { bus: 'fx', rev: 'hull', send: 0.32, lv: 0.90, gap: 0.05, max: 4, tune: 1.5, pri: 1 },
+  rail:       { bus: 'fx', rev: 'hull', send: 0.08, lv: 0.95, gap: 0.05, max: 4, tune: 0.1, pri: 1 },
+  railHit:    { bus: 'fx', rev: 'hull', send: 0.08, lv: 0.90, gap: 0.05, max: 4, tune: 0.1, pri: 1 },
   pdc:        { bus: 'fx', rev: 'hull', send: 0.22, lv: 0.70, gap: 0.09, max: 3, tune: 1.0, pri: 0 },
   pdcKill:    { bus: 'fx', rev: 'hull', send: 0.55, lv: 0.60, gap: 0.05, max: 4, tune: 2.0, pri: 0 },
   torpLaunch: { bus: 'fx', rev: 'hull', send: 0.30, lv: 0.64, gap: 0.12, max: 3, tune: 1.0, pri: 1 },
@@ -475,26 +475,23 @@ export function createAudio(opts = {}) {
 
     // ---- weapons: through the hull
     rail(v, t) {
-      // electromagnetic crack
-      noise(v, { n: 'white', ft: 'bandpass', f: rnd(2500, 3300), f1: 800, ftm: 0.04, q: 0.8, t, a: 0.0006, d: 0.05, g: 2.6 });
-      // recoil through the frame (noise only: a pitched thump on every shot sounded like drumming)
-      noise(v, { n: 'brown', ft: 'lowpass', f: 950, f1: 130, ftm: 0.3, q: 1.2, t: t + 0.004, a: 0.004, d: 0.55, g: 0.55 });
-      // mid knock so it survives a phone speaker
-      noise(v, { n: 'pink', ft: 'bandpass', f: rnd(400, 520), q: 2.5, t: t + 0.002, a: 0.002, d: 0.17, g: 0.7 });
-      noise(v, { n: 'pink', ft: 'bandpass', f: rnd(820, 1080), q: 2, t: t + 0.001, a: 0.001, d: 0.11, g: 0.45 });
+      // A coil gun, not a cannon: the charge runs up the rail, a dry crack, then a hiss of gas. Nothing low and
+      // nothing that rings (low knocks at a different pitch each shot were heard as drums).
+      noise(v, { n: 'white', ft: 'bandpass', f: 700, f1: 5200, ftm: 0.07, q: 5, t, a: 0.03, d: 0.05, g: 0.7 });
+      noise(v, { n: 'white', ft: 'highpass', f: 3200, q: 0.7, t: t + 0.07, a: 0.0005, d: 0.035, g: 2.2 });
+      noise(v, { n: 'white', ft: 'bandpass', f: 5200, f1: 1800, ftm: 0.22, q: 0.7, t: t + 0.075, a: 0.002, d: 0.3, g: 0.5 });
     },
     railHit(v, t) {
-      noise(v, { n: 'white', ft: 'bandpass', f: rnd(1700, 2300), f1: 700, ftm: 0.04, q: 0.9, t, a: 0.0006, d: 0.05, g: 2.4 });
-      noise(v, { n: 'pink', ft: 'lowpass', f: 1400, f1: 220, ftm: 0.18, q: 1, t, a: 0.002, d: 0.3, g: 0.8 });
-      // debris rattling along the plating
+      // metal struck hard: a bright crack and grit, no thump
+      noise(v, { n: 'white', ft: 'highpass', f: 2400, q: 0.7, t, a: 0.0005, d: 0.045, g: 2.2 });
+      noise(v, { n: 'pink', ft: 'bandpass', f: 2600, f1: 1500, ftm: 0.1, q: 0.6, t, a: 0.001, d: 0.14, g: 0.7 });
       const ps = []; let x = rnd(0.05, 0.09);
-      const n = 6 + Math.floor(rnd(0, 6));
+      const n = 5 + Math.floor(rnd(0, 5));
       for (let i = 0; i < n; i++) {
-        ps.push({ t: x, g: rnd(0.3, 1) * Math.exp(-x * 3.2), a: 0.001, d: rnd(0.012, 0.035) });
+        ps.push({ t: x, g: rnd(0.3, 1) * Math.exp(-x * 3.2), a: 0.001, d: rnd(0.01, 0.025) });
         x += rnd(0.02, 0.11);
       }
-      noise(v, { n: 'white', ft: 'bandpass', f: rnd(1100, 1700), q: 2.2, t, g: 0.3, pulses: ps });
-      noise(v, { n: 'pink', ft: 'bandpass', f: rnd(480, 640), q: 3, t, g: 0.3, pulses: ps });
+      noise(v, { n: 'white', ft: 'bandpass', f: 3000, q: 0.8, t, g: 0.3, pulses: ps });
     },
     pdc(v, t) { // a rotary cannon heard through a bulkhead: one voice, a pulse per round
       const n = 8 + Math.floor(rnd(0, 7)), rate = rnd(27, 36);
