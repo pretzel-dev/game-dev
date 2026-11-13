@@ -35,6 +35,7 @@ const SUN_RADIUS = 6;
 const SHIP_SCALE = 0.45; // ships against worlds, as in the first game
 const MAX_SHIPS = 160;
 const UP = new THREE.Vector3(0, 1, 0);
+const CLASS_SIZE = { corvette: 0.8, frigate: 1, escort: 1, battleship: 1.35, tender: 1.1, freighter: 1 }; // on top of the size built into each hull
 const CLASS_SCALE = { corvette: 0.6, frigate: 1, escort: 0.95, battleship: 1.7, tender: 1.2, freighter: 1.3 };
 
 const screenRes = { value: new THREE.Vector2(1, 1) };
@@ -579,6 +580,7 @@ export function createView(canvas, plot, opts = {}) {
       ctx.globalAlpha = (b.owner === NEUTRAL ? 0.45 : 0.9) * (big ? 0.35 : 1);
       ctx.beginPath(); ctx.arc(v.sx, v.sy, R, 0, Math.PI * 2); ctx.stroke();
       if (b.home) { ctx.beginPath(); ctx.arc(v.sx, v.sy, R + 3, 0, Math.PI * 2); ctx.stroke(); }
+      if (ui.tutWorld === b.id) { ctx.setLineDash([6, 5]); ctx.lineWidth = 2; ctx.strokeStyle = AMBER; ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(v.sx, v.sy, R + 13, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
       if (aimed) { ctx.setLineDash([2, 4]); ctx.strokeStyle = AMBER; ctx.beginPath(); ctx.arc(v.sx, v.sy, R + 7, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
       ctx.globalAlpha = 1;
       const bm = batteryMax(b);
@@ -648,7 +650,7 @@ export function createView(canvas, plot, opts = {}) {
         const fade = 1 - THREE.MathUtils.smoothstep(hullPx, 4, 16);
         const glint = fade <= 0 ? null : [s.burn ? 7 : 4.5, (s.burn ? 0.9 : 0.5) * fade, !!s.burn];
         const hull = 0.85 + ((s.id * 37) % 20) / 100 - (crippled(s) ? 0.3 : 0);
-        const sc = shipLib.hullIndex ? SHIP_SCALE : scale; // the new hulls carry their class size in the model
+        const sc = shipLib.hullIndex ? SHIP_SCALE * (CLASS_SIZE[s.cls] || 1) : scale; // the new hulls carry their class size in the model
         shipR.add(hullType(game.factions[s.owner], s.cls, s.id), p, h, [sc, sc, sc], c, hull, s.id, !!s.burn, (0.45 + 0.55 * Math.min(1, thrust / (s.st.accel || 0.1))) * (0.8 + Math.sin(t * 40 + s.id) * 0.05), glint, hullPx, sunlit(p));
         attitudeJets(s.id, p, h, sc * (CLASS_SCALE[s.cls] || 1), now, t, hullPx);
       } else if (s.burn) shipR.add(0, p, h, [0.01, 0.01, 0.01], c, 1, s.id, true, 1.4, [7, 0.9, true], 0, 1);
@@ -668,10 +670,12 @@ export function createView(canvas, plot, opts = {}) {
     }
     for (const [bid, list] of rows) {
       const v = views[bid];
-      const R = Math.max(v.sr * 1.25 + 4, v.b.kind === 'planet' ? 9 : 6) + (batteryMax(v.b) ? 9 : 3) + (v.b.home ? 4 : 0);
+      // Just outside whatever is drawn round the world at this zoom, so the marks never drift away from it.
+      const rock = far && v.b.kind === 'asteroid' && ui.selBody !== v.b.id && ui.target !== v.b.id;
+      const ring = rock ? 1 : Math.max(v.sr * 1.25 + 4, v.b.kind === 'planet' ? 9 : 6) + (v.b.home ? 3 : 0);
+      const up = ring + (batteryMax(v.b) && !far ? (v.b.home ? 7 : 4) + 2 : 0) + 6;
       list.sort((a, b) => a.s.owner - b.s.owner || a.s.id - b.s.id);
       const step = far ? 10 : 15, x0 = v.sx - ((list.length - 1) * step) / 2;
-      const up = v.b.kind === 'asteroid' && !batteryMax(v.b) ? Math.max(v.sr, 2) + 8 : R + 9; // a rock has no ring round it: sit right on it
       list.forEach((it, i) => drawShipMark(it.s, x0 + i * step, v.sy - up, -Math.PI / 2, 0, it.known, it.c, 0, true));
     }
     function drawShipMark(s, sx, sy, ang, hullPx, known, c, ppu, docked = false) {

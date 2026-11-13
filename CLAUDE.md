@@ -163,6 +163,15 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - New-game option `conquest`: losing the capital moves it; out only with no worlds.
 - No payback times, no comma-joined fragments ("120 credits, paid on arrival"):
   whole short sentences, torpedoes as n/m, fuel as a percentage.
+- Time is shown as a calendar (`S.DAY` = 8 game seconds; `mmss` and `rate` in
+  `main.js` do the conversion). Never show raw seconds or "/s".
+- Before inventing a feature the first game had, read how `perihelion/` did it
+  and port that (the owner asked: demolish timer, turnaround, chart scrub and
+  the tutorial all came across this way). Tutorial steps live in
+  `src/tutorial.js`; keep them in step when buttons or flows change.
+- Planet looks follow `b.zone` (hot, mild, cold by distance from the sun).
+- Course choices are tiles like the other buttons (the owner tried a table and
+  preferred the tiles).
 - Rail sounds must stay unpitched (pitched thumps read as drums to the owner).
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.
 - Sound (`src/audio.js`) is generated in the browser as a trial. The owner

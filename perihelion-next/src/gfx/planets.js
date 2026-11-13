@@ -359,7 +359,8 @@ export function lookOf(b) {
   if (b.home || b.trait === 'garden') return { kind: 0, type: Math.max(0, BIOMES.indexOf(b.biome || 'temperate')), atmo: BIOME_SKY[b.biome] || BIOME_SKY.temperate, atmoK: 1.0, clouds: 1, relief: 0.06 };
   if (b.giant) return { kind: 3, type: 0, atmo: giantPalette(b)[1].map((x) => x * 0.9 + 0.1), atmoK: 0.55, clouds: 0, relief: 0 };
   if (b.kind === 'planet') {
-    const type = Math.floor(b.hue * 4) % 4;
+    // By distance from the sun: scorched rock or thick cloud close in, rust in the middle, ice far out.
+    const type = b.zone === 'hot' ? (b.hue < 0.5 ? 2 : 1) : b.zone === 'cold' ? 3 : b.zone === 'mild' ? 0 : Math.floor(b.hue * 4) % 4;
     const atmo = [[1.0, 0.6, 0.4], null, [1.0, 0.85, 0.55], [0.6, 0.75, 1.0]][type];
     return { kind: 1, type, atmo, atmoK: type === 2 ? 1.2 : 0.45, clouds: 0, relief: type === 2 ? 0 : 0.09, airless: type === 1 };
   }
