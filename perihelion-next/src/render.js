@@ -165,7 +165,7 @@ export function createView(canvas, plot, opts = {}) {
     views = game.bodies.map((b) => {
       const g = new THREE.Group();
       let body, ring = null, atmo = null;
-      if (b.kind === 'station') body = stationMesh(b.size * 0.8, b.id % STATION_CORES, shipR.uT);
+      if (b.kind === 'station') body = stationMesh(b.size * 0.8, b.home && game.factions[b.owner] === 'holds' ? 3 : b.id % STATION_CORES, shipR.uT);
       else if (b.kind === 'asteroid') body = asteroidMesh(b);
       else {
         const look = lookOf(b);
@@ -668,7 +668,8 @@ export function createView(canvas, plot, opts = {}) {
       const R = Math.max(v.sr * 1.25 + 4, v.b.kind === 'planet' ? 9 : 6) + (batteryMax(v.b) ? 9 : 3) + (v.b.home ? 4 : 0);
       list.sort((a, b) => a.s.owner - b.s.owner || a.s.id - b.s.id);
       const step = far ? 10 : 15, x0 = v.sx - ((list.length - 1) * step) / 2;
-      list.forEach((it, i) => drawShipMark(it.s, x0 + i * step, v.sy - R - 9, -Math.PI / 2, 0, it.known, it.c, 0, true));
+      const up = v.b.kind === 'asteroid' && !batteryMax(v.b) ? Math.max(v.sr, 2) + 8 : R + 9; // a rock has no ring round it: sit right on it
+      list.forEach((it, i) => drawShipMark(it.s, x0 + i * step, v.sy - up, -Math.PI / 2, 0, it.known, it.c, 0, true));
     }
     function drawShipMark(s, sx, sy, ang, hullPx, known, c, ppu, docked = false) {
       const mine = s.owner === me, picked = sel.has(s.id), aimed = ui.targetShip === s.id;

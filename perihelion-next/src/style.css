@@ -189,7 +189,10 @@ input { text-transform: none; }
 .th b { flex: 1; font-weight: 600; font-size: 0.95rem; }
 .had { color: var(--dim); font-size: 0.74rem; }
 .pipsv i.fork { border-radius: 50%; }
-.chip .rk { font-family: var(--mono); font-size: 0.5rem; color: var(--amber); line-height: 1; }
+.chip { position: relative; }
+.chip .rk { position: absolute; top: 3px; right: 3px; display: flex; flex-direction: column; gap: 1px; }
+.chip .rk i { display: block; width: 5px; height: 2px; background: var(--amber); }
+.tile small.over { color: var(--hostile); }
 
 .tree { display: flex; flex-direction: column; gap: 0.3rem; }
 .tr { display: grid; grid-template-columns: 3.6rem repeat(4, 1fr); gap: 0.3rem; align-items: center; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }

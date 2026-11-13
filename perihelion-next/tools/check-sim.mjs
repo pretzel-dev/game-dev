@@ -34,7 +34,7 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
       const r = S.routes(g, ids, b.id);
       n++;
       ok(r.find((x) => x.key === 'hard').reach, `seed ${seed}: hard burn reaches ${b.name}`);
-      if (r.find((x) => x.key === 'cruise').reach) cruise++;
+      if (r.some((x) => (x.key === 'cruise' || x.key === 'dark') && x.reach)) cruise++;
       const sl = r.find((x) => x.key === 'sling');
       if (sl) { sling++; ok(sl.dv < r.find((x) => x.key === 'cruise').dv, 'a slingshot on offer saves fuel'); }
     }
@@ -206,7 +206,8 @@ const free = (g, owner, cls, x, z, vx = 0, vz = 0) => { const s = S.spawnShip(g,
   ok(!S.research(g, 0, 'weapons', 'swarm'), 'a later step cannot be taken early');
   S.research(g, 0, 'weapons', 'spinal'); run(g, 90);
   ok(!S.cantOrderShip(g, home, 'battleship'), 'spinal mounts unlock the battleship');
-  ok(g.tech[0].weapons === 2 && !S.knows(g, 0, 'wolfpack') && S.cantResearch(g, 0, 'weapons', 'wolfpack'), 'choosing one doctrine closes the other');
+  g.credits[0] = 5000; S.research(g, 0, 'weapons', 'wolfpack'); run(g, 200);
+  ok(g.tech[0].weapons === 3 && S.knows(g, 0, 'wolfpack') && !S.knows(g, 0, 'plate') && S.cantResearch(g, 0, 'weapons', 'plate'), 'choosing one doctrine closes the other');
   // A raider alongside a freighter takes her cargo.
   moon.stock = 200; moon.hauler = 0; run(g, 2);
   const f = g.ships.find((s) => s.st.civil);
@@ -311,6 +312,40 @@ for (const k of SCENARIO_KEYS) {
   ok(done === 'win', `the first scenario can be won (${done}, step ${g.scn.step})`);
 }
 // Half an hour between two AI admirals: both build, expand and fight, and nothing breaks.
+// This round: dark is the slowest course; one ship can leave a formation; ships cost money to run; conquest moves the capital.
+{
+  let n = 0, slow = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const g = S.createGame({ seed, players: two });
+    const ids = g.ships.filter((x) => x.owner === 0 && !x.st.civil).map((x) => x.id);
+    for (const b of g.bodies.filter((x) => x.kind !== 'station' && x !== g.homes[0]).slice(0, 6)) {
+      const r = S.routes(g, ids, b.id), c = r.find((x) => x.key === 'cruise'), d = r.find((x) => x.key === 'dark');
+      if (d && d.reach) { n++; if (!c || !c.reach || d.time >= c.time) slow++; }
+    }
+  }
+  ok(n > 20 && slow === n, `dark is never quicker than cruise (${slow}/${n})`);
+  const g = S.createGame({ seed: 5, players: two });
+  const mine = g.ships.filter((x) => x.owner === 0 && !x.st.civil);
+  const far = g.planets.filter((p) => p !== g.homes[0]).sort((a, b) => b.r - a.r)[0], near = g.planets.filter((p) => p !== g.homes[0] && p !== far)[0];
+  S.setOrder(g, 0, mine.map((x) => x.id), { type: 'orbit', body: far.id, profile: 'hard' });
+  run(g, 20);
+  const lead = mine.find((x) => x.order.type === 'orbit');
+  S.setOrder(g, 0, [lead.id], { type: 'orbit', body: near.id, profile: 'hard' });
+  const rest = mine.filter((x) => x !== lead);
+  ok(lead.order.body === near.id && rest.filter((x) => x.order.type === 'orbit' && x.order.body === far.id).length === 1 && rest.every((x) => x.order.type === 'orbit' || rest.some((y) => y.id === x.order.lead)), 'ordering the leader away leaves the others on course under a new leader');
+  const c0 = g.credits[0]; g.credits[1] = 0;
+  const inc = S.incomeBreakdown(g, 0);
+  ok(inc.upkeep > 0 && Math.abs(inc.total - (inc.gross - inc.upkeep)) < 1e-9, 'ships cost money to run');
+  ok(S.TRAITS.deut.kinds.every((k) => k === 'giant'), 'a deuterium sea is only found where a refinery can be built');
+  void c0;
+  const q = S.createGame({ seed: 5, players: two, conquest: true });
+  const other = q.bodies.find((b) => b.owner === S.NEUTRAL && b.kind !== 'station');
+  S.capture(q, other, 1);
+  S.capture(q, q.homes[1], 0);
+  ok(q.alive[1] && q.homes[1] === other && other.home, 'conquest: a power that loses its capital moves to another world');
+  S.capture(q, other, 0);
+  ok(!q.alive[1], 'conquest: with no worlds left it is out');
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];

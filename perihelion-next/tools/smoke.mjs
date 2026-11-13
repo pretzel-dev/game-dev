@@ -1,5 +1,5 @@
 // Phone-sized touch test of the built game: title, setup, select ships, plot a
-// course, launch it, build, research, and play a scenario's first step.
+// course, launch it, build, research, the menu and the new-game options.
 // Needs `npm run preview` (port 4173, or pass a URL). Usage: node tools/smoke.mjs [baseUrl] [outDir]
 import { createRequire } from 'module';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -89,13 +89,12 @@ await shot('research');
 const state = await page.evaluate(() => { const { game, S } = window.__perihelion; const h = game.homes[0]; return { why: S.cantOrderShip(game, h, 'corvette'), credits: game.credits[0], sel: window.__perihelion.ui.selBody, mine: h.structures.some((x) => x.type === 'mine'), queue: h.queue.length, project: game.tech[0].project?.line }; });
 await page.tap('[data-a="closeSheet"]');
 await page.tap('#menuBtn');
+const brief = (await page.$('[data-a="gfx"]')) ? 'graphics in the menu' : '';
+await shot('menu');
 await page.tap('[data-a="quit"]');
-await page.tap('[data-a="scenarios"]');
-await page.tap('[data-v="first"]');
-await page.waitForFunction(() => window.__perihelion.game.scn);
-const brief = (await page.textContent('#brief')).slice(0, 40);
-await shot('scenario');
+await page.tap('[data-a="setup"]');
+const winby = !!(await page.$('[data-a="winby"][data-v="conquest"]'));
 const result = { selected, routes, ordered, ...state, brief, errors };
 console.log(JSON.stringify(result));
 await browser.close();
-process.exit(selected > 0 && ordered > 0 && state.mine && state.queue === 1 && state.project === 'weapons' && brief && !errors.length ? 0 : 1);
+process.exit(selected > 0 && ordered > 0 && state.mine && state.queue === 1 && state.project === 'weapons' && brief && winby && !errors.length ? 0 : 1);

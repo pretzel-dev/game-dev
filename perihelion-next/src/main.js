@@ -31,7 +31,7 @@ window.addEventListener('pointerup', () => setTimeout(flush, 300), true);
 window.addEventListener('pointercancel', flush, true);
 
 const prefs = (() => {
-  const d = { faction: 'concord', rivals: 1, level: 'normal', sound: true, ui: 1, gfx: 'auto', dev: false, name: '', done: {} };
+  const d = { faction: 'concord', rivals: 1, level: 'normal', sound: true, ui: 1, gfx: 'high', conquest: false, dev: false, name: '', done: {} };
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion2') || '{}') }; } catch { return d; }
 })();
 const save = () => { try { localStorage.setItem('perihelion2', JSON.stringify(prefs)); } catch { /* private mode */ } };
@@ -51,7 +51,7 @@ window.addEventListener('pointerdown', () => audio.unlock(), { once: false, capt
 
 const q = new URLSearchParams(location.search);
 const lowEnd = (navigator.deviceMemory && navigator.deviceMemory <= 4 && Math.min(screen.width, screen.height) < 500);
-const gfx = () => q.get('gfx') || (prefs.gfx === 'auto' ? (lowEnd ? 'low' : 'high') : prefs.gfx);
+const gfx = () => q.get('gfx') || (prefs.gfx === 'low' ? 'low' : 'high');
 const view = createView($('scene'), $('plot'), {
   quality: gfx(),
   onSound: (type, pan, gain) => sfx(type, { pan, gain }),
@@ -62,7 +62,7 @@ window.addEventListener('resize', () => view.resize());
 // ---- State --------------------------------------------------------------------
 let game = null, ais = [], me = 0, mode = 'demo'; // demo | solo | host | guest
 let paused = false, warp = 1, room = null, scn = null, ended = false, netFx = [], lastSnap = 0, notesT = 0;
-const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, plotMode: false };
+const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, shape: 'wedge', plotMode: false };
 const inGame = () => mode === 'solo' || mode === 'host' || mode === 'guest';
 const live = () => inGame() && game && !ended;
 const mine = (s) => s.owner === me;
@@ -121,9 +121,9 @@ function apply(owner, c) {
       if (o === null) return S.setOrder(game, owner, ids, null);
       if (!o || typeof o !== 'object') return;
       const profile = PROFILES[o.profile] ? o.profile : 'cruise';
-      if (o.type === 'orbit' && game.bodies[o.body]) S.setOrder(game, owner, ids, { type: 'orbit', body: o.body, profile, loose: !!o.loose, ...(game.bodies[o.via] && game.bodies[o.via].kind === 'planet' ? { via: o.via, side: o.side < 0 ? -1 : 1 } : {}) });
-      else if (o.type === 'strike' && game.bodies[o.body]) S.setOrder(game, owner, ids, { type: 'strike', body: o.body, profile, loose: !!o.loose });
-      else if (o.type === 'attack') { const T = S.shipById(game, o.ship); if (T && T.seen[owner]) S.setOrder(game, owner, ids, { type: 'attack', loose: !!o.loose, ship: o.ship, mode: o.mode === 'pass' || o.mode === 'board' ? o.mode : 'match', d0: T.st.civil || S.crippled(T) ? 1.2 : 3, profile }); }
+      if (o.type === 'orbit' && game.bodies[o.body]) S.setOrder(game, owner, ids, { type: 'orbit', body: o.body, profile, loose: !!o.loose, shape: o.shape === 'column' ? 'column' : 'wedge', ...(game.bodies[o.via] && game.bodies[o.via].kind === 'planet' ? { via: o.via, side: o.side < 0 ? -1 : 1 } : {}) });
+      else if (o.type === 'strike' && game.bodies[o.body]) S.setOrder(game, owner, ids, { type: 'strike', body: o.body, profile, loose: !!o.loose, shape: o.shape === 'column' ? 'column' : 'wedge' });
+      else if (o.type === 'attack') { const T = S.shipById(game, o.ship); if (T && T.seen[owner]) S.setOrder(game, owner, ids, { type: 'attack', loose: !!o.loose, shape: o.shape === 'column' ? 'column' : 'wedge', ship: o.ship, mode: o.mode === 'pass' || o.mode === 'board' ? o.mode : 'match', d0: T.st.civil || S.crippled(T) ? 1.2 : 3, profile }); }
       else if (o.type === 'form') { const Ld = S.shipById(game, o.lead); if (Ld && Ld.owner === owner) S.setOrder(game, owner, ids, { type: 'form', lead: Ld.id }); }
       else if (o.type === 'burn') { const l = Math.hypot(o.x, o.y, o.z) || 1; S.setOrder(game, owner, ids, { type: 'burn', x: o.x / l, y: o.y / l, z: o.z / l, left: Math.min(60, Math.max(1, +o.left || 1)) }); }
       return;
@@ -195,7 +195,7 @@ function tap(x, y, double) {
 const bar = (v) => `style="--v:${Math.round(Math.max(0, Math.min(1, v)) * 25) * 4}%"`;
 function chip(s, on = true) {
   const dots = ['drive', 'reactor', 'weapons', 'sensors'].map((k) => `<i class="${s.out[k] > 0 ? 'out' : ''}"></i>`).join('');
-  return `<button class="chip ${on ? 'on' : ''}" data-a="chip" data-v="${s.id}" title="${esc(s.name)}">${glyph(s.cls, ui.colors[s.owner])}<span class="bars"><i class="${s.hull < s.st.hull * 0.35 ? 'low' : ''}" ${bar(s.hull / s.st.hull)}></i><i class="f" ${bar(s.dv / s.st.dv)}></i></span><span class="dots">${dots}</span>${S.rankOf(s) ? `<span class="rk">${'I'.repeat(S.rankOf(s))}</span>` : ''}</button>`;
+  return `<button class="chip ${on ? 'on' : ''}" data-a="chip" data-v="${s.id}" title="${esc(s.name)}">${glyph(s.cls, ui.colors[s.owner])}<span class="bars"><i class="${s.hull < s.st.hull * 0.35 ? 'low' : ''}" ${bar(s.hull / s.st.hull)}></i><i class="f" ${bar(s.dv / s.st.dv)}></i></span><span class="dots">${dots}</span>${S.rankOf(s) ? `<span class="rk">${'<i></i>'.repeat(S.rankOf(s))}</span>` : ''}</button>`;
 }
 const L = (ic, word) => `${ic}<em>${word}</em>`;
 const ROUTE_NAME = { hard: 'Hard burn', cruise: 'Cruise', dark: 'Dark', sling: 'Slingshot' };
@@ -212,7 +212,7 @@ const HINT = {
   cancel: 'Stop building this ship. You get 80% back.',
   join: 'Fly to this ship and stay with it.',
   pick: 'Select this ship instead.',
-  formation: 'On: ships stay together. Off: each ship goes at its own speed.',
+
   torps: 'Free: ships fire torpedoes when they can. Held: they do not.',
   fire: 'Held: ships do not shoot, so they are harder to see.',
   evade: 'Harder to hit. Uses fuel. Your own aim is worse.',
@@ -253,15 +253,14 @@ const num = (x) => (Math.round(x * 10) / 10).toString();
 /** What a structure does on this world at a level, in numbers. */
 function structText(type, b, level = 1) {
   const K = (k) => S.knows(game, me, k), t = b.trait, R = RULES.structures[type];
-  const pays = (rate, cost) => `+${num(rate)} credits a second. Pays for itself in ${Math.max(1, Math.round(cost / rate / 60))} min.`;
-  const cost = level === 1 ? R.cost : S.upgradeCost({ type });
+  const pays = (rate) => `Earns ${num(rate)} credits a second.`;
   switch (type) {
-    case 'mine': return pays(R.income * (t === 'seam' ? 2 : 1) * (K('deepmine') ? 1.5 : 1), cost);
-    case 'refinery': return `${pays(R.income * (t === 'deut' ? 1.5 : 1), cost)}${level === 1 ? ' Refuels ships 3 times as fast.' : ''}`;
-    case 'exchange': return pays(R.income, cost);
+    case 'mine': return pays(R.income * (t === 'seam' ? 2 : 1) * (K('deepmine') ? 1.5 : 1));
+    case 'refinery': return `${pays(R.income * (t === 'deut' ? 1.5 : 1))}${level === 1 ? ' Refuels ships 3 times as fast.' : ''}`;
+    case 'exchange': return pays(R.income);
     case 'habitat': { const n = (t === 'garden' ? 2 : 1) * (K('arcology') ? 2 : 1); return `${n} more ship${n > 1 ? 's' : ''} in your fleet.`; }
     case 'lab': return `Research ${t === 'archive' ? 100 : 50}% faster.`;
-    case 'battery': { const hp = RULES.batteryHp * level * (t === 'fortress' ? 2 : 1) * (b.home ? 2 : 1), g = level + (b.home ? 1 : 0); return `Strength ${hp}, ${g} gun${g > 1 ? 's' : ''}. Shoots enemy ships in orbit and torpedoes.`; }
+    case 'battery': { const hp = RULES.batteryHp * level * (t === 'fortress' ? 2 : 1) * (b.home ? 2 : 1), g = level + (b.home ? 1 : 0); return `Strength ${hp}. ${g} gun${g > 1 ? 's' : ''}. Shoots enemy ships in orbit and torpedoes.`; }
     case 'yard': return level === 1 ? `Builds ships${t === 'hulk' ? ' 50% faster' : ''}. Repairs and rearms ships in orbit.` : 'Builds ships 50% faster.';
     case 'array': return `This world sees ${num(RULES.arraySensor * (t === 'listening' ? 2 : 1))} times as far.`;
     case 'depot': return 'Refuels ships 3 times as fast.';
@@ -270,16 +269,19 @@ function structText(type, b, level = 1) {
 }
 function shipText(cls) {
   const st = S.statsFor(game, me, cls), C = CLASSES[cls];
-  const parts = [`Hull ${st.hull}`, st.rails.length ? `${st.rails.length} rail${st.rails.length > 1 ? 's' : ''}` : '', st.mag ? `${st.mag} torpedoes` : '', `${st.pdc} point defence`, `thrust ${Math.round(st.accel * 1000)}`, `fuel ${Math.round(st.dv)}`].filter(Boolean).join(', ');
-  return `${HINT[`ship:${cls}`]} ${parts}. Takes ${mmss(S.shipTime(game, me, cls, ui.selBody != null ? game.bodies[ui.selBody] : null))}.${C.stores ? ` Carries ${C.stores} spare torpedoes.` : ''}`;
+  const parts = [`Hull ${st.hull}`, st.rails.length ? `Rails ${st.rails.length}` : '', st.mag ? `Torpedoes ${st.mag}` : '', `Point defence ${st.pdc}`, `Thrust ${Math.round(st.accel * 1000)}`, `Fuel ${Math.round(st.dv)}`, C.stores ? `Spare torpedoes ${C.stores}` : ''].filter(Boolean).join('. ');
+  return `${HINT[`ship:${cls}`]} ${parts}. Takes ${mmss(S.shipTime(game, me, cls, ui.selBody != null ? game.bodies[ui.selBody] : null))} to build. Costs ${RULES.upkeep[cls]} credits a second to run.`;
 }
+const SHAPE = { wedge: 'Wedge', column: 'Column', loose: 'Off' };
+const SHAPE_TEXT = { wedge: 'Wedge. Ships fly side by side behind the leader.', column: 'Column. Ships fly one behind another.', loose: 'Off. Each ship goes at its own speed.' };
 function hintOf(a, v) {
+  if (a === 'formation') return `${SHAPE_TEXT[ui.shape]} Tap to change.`;
   const b = ui.selBody != null && game ? game.bodies[ui.selBody] : null;
   if (a === 'trait') return TRAITS[v]?.text || '';
   if (a === 'build' && b) return structText(v, b, 1);
   if (a === 'upgrade' && b) return structText(v, b, (S.structure(b, v)?.level || 1) + 1);
   if (a === 'demolish' && b) { const x = S.structure(b, v); return x ? `Remove it and get ${S.scrapValue(x)} credits back.` : ''; }
-  if (a === 'struct' && b) { const x = S.structure(b, v); return x ? structText(v, b, x.level).replace(/ Pays for itself.*$/, '') : ''; }
+  if (a === 'struct' && b) { const x = S.structure(b, v); return x ? structText(v, b, x.level) : ''; }
   if (a === 'ship') return shipText(v);
   if (a === 'torps') return `${HINT.torps} Rearm at a yard, at your capital, or next to a tender.`;
   if (a === 'board') { const T = S.shipById(game, +v); return T ? `Pull alongside and try to take the ship. ${Math.round(S.boardChance(T, selShips()) * 100)}% chance each try. A failed try damages your ships.` : ''; }
@@ -295,16 +297,16 @@ function barText() {
   const ships = selShips();
   if (ships.length === 1) {
     const s = ships[0];
-    return [`Hull ${Math.round(s.hull)}/${s.st.hull}`, `fuel ${Math.round((s.dv / s.st.dv) * 100)}%`, s.st.mag ? `torpedoes ${s.torps}/${s.st.mag}` : '', s.st.stores ? `spare torpedoes ${Math.floor(s.stores)}/${s.st.stores}` : ''].filter(Boolean).join(', ');
+    return [`Hull ${Math.round(s.hull)}/${s.st.hull}`, `Fuel ${Math.round((s.dv / s.st.dv) * 100)}%`, s.st.mag ? `Torpedoes ${s.torps}/${s.st.mag}` : '', s.st.stores ? `Spare torpedoes ${Math.floor(s.stores)}/${s.st.stores}` : '', `Costs ${RULES.upkeep[s.cls]}/s`].filter(Boolean).join('\u2003');
   }
   if (ships.length) return `Torpedoes ${ships.reduce((n, s) => n + s.torps, 0)}/${ships.reduce((n, s) => n + s.st.mag, 0)}. Tap a world to go there, or a ship to attack or join it.`;
   if (ui.selBody != null) {
     const b = game.bodies[ui.selBody], bm = S.batteryMax(b);
     const parts = [];
-    if (b.owner === me) parts.push(`Earns ${num(S.incomeOf(b, game))} a second${b.home ? '' : ', sent by freighter'}`);
-    if (bm) parts.push(`battery ${Math.round(b.bhp)}/${bm}, ${S.batteryGuns(b)} gun${S.batteryGuns(b) > 1 ? 's' : ''}`);
-    if (b.owner !== me) parts.push(`yields after ${Math.round(S.yieldTime(b))} s with ${b.home ? `${S.CAPITAL_SHIPS} of your ships` : 'only your ships'} in orbit${bm ? ' and the battery down' : ''}`);
-    return parts.join('. ').replace(/^./, (c) => c.toUpperCase());
+    if (b.owner === me) parts.push(`Earns ${num(S.incomeOf(b, game))} a second.${b.home ? '' : ' A freighter carries it home.'}`);
+    if (bm) parts.push(`Battery ${Math.round(b.bhp)}/${bm}. Guns ${S.batteryGuns(b)}.`);
+    if (b.owner !== me) parts.push(`Yields after ${Math.round(S.yieldTime(b))} s with ${b.home ? `${S.CAPITAL_SHIPS} of your ships` : 'only your ships'} in orbit${bm ? ' and the battery down' : ''}.`);
+    return parts.join(' ');
   }
   return '';
 }
@@ -327,7 +329,7 @@ function stripHTML() {
       h += `<div class="sub">${icon('arrived')} ${esc(b.name)}</div><div class="row">`;
       for (const r of ui.routes || []) {
         const over = r.dv > tank;
-        h += tile('go', r.key, L(icon(r.key), ROUTE_NAME[r.key]), mmss(Math.round(r.time / 5) * 5), `wide ${over ? 'no' : ''}`, `<span class="fuel"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, Math.round((r.dv / Math.max(0.01, tank)) * 20) * 5)}%"></i></span>`);
+        h += tile('go', r.key, L(icon(r.key), ROUTE_NAME[r.key]), mmss(Math.round(r.time / 5) * 5), `wide ${over ? 'no' : ''}`, `<small class="${over ? 'over' : ''}">Fuel ${Math.round((r.dv / Math.max(0.01, Math.min(...ships.map((x) => x.st.dv)))) * 20) * 5}%</small>`);
       }
       if (b.owner !== me && S.batteryMax(b) > 0 && b.bhp > 0) h += tile('strike', b.id, L(icon('strike'), 'Firing pass'), '', 'wide');
       if (!(ui.routes || []).length) h += `<span class="hint">no course</span>`;
@@ -347,13 +349,13 @@ function stripHTML() {
     } else {
       const all = (k) => ships.every((s) => s[k]);
       h += '<div class="row">';
-      if (ships.some((s) => s.st.tubes)) h += tile('torps', '', L(icon('torp'), all('torpsFree') ? 'Torpedoes free' : 'Torpedoes held'), `${ships.reduce((n, s) => n + s.torps, 0)} left`, all('torpsFree') ? 'on' : '');
+      if (ships.some((s) => s.st.tubes)) h += tile('torps', '', L(icon('torp'), all('torpsFree') ? 'Torpedoes free' : 'Torpedoes held'), `${ships.reduce((n, s) => n + s.torps, 0)}/${ships.reduce((n, s) => n + s.st.mag, 0)}`, all('torpsFree') ? 'on' : '');
       h += tile('fire', '', L(icon('fire'), all('fireFree') ? 'Guns free' : 'Guns held'), '', all('fireFree') ? 'on' : '');
       h += tile('evade', '', L(icon('evade'), 'Evade'), '', all('evade') ? 'on' : '');
       h += tile('plot', '', L(icon('plot'), 'Plot burn'), '', ui.plotMode ? 'on' : '');
       if (ships.some((s) => s.order)) h += tile('cut', '', L(icon('cut'), 'Stop'), '');
       h += tile('retreat', '', L(icon('retreat'), 'Retreat'), '');
-      if (ships.length > 1) h += tile('formation', '', L(icon('match'), 'Formation'), '', ui.loose ? '' : 'on');
+      if (ships.length > 1) h += tile('formation', '', L(icon('match'), 'Formation'), SHAPE[ui.shape], ui.shape === 'loose' ? '' : 'on');
       h += tile('follow', '', L(icon('focus'), 'Follow'), '');
       h += '</div>';
       if (ui.plotMode) h += `<div class="hint">Drag from the ship.</div>`;
@@ -440,12 +442,12 @@ const RANKS = ['', 'Seasoned', 'Veteran', 'Elite'];
 /** A freighter, in a few words: whose, where from, where to, what she carries, when she's due. */
 function freighterHTML(T) {
   const own = T.owner === me;
-  if (T.owner < 0) return `<div class="head"><b>Convoy</b><small>Independent</small><button class="x" data-a="clear">${icon('close')}</button></div><div class="sub">${icon('freight')} ${Math.round(T.cargo || 0)} credits${T.order && T.order.body != null ? `, going to ${esc(game.bodies[T.order.body].name)}` : ''}. Match it to take them.</div>`;
+  if (T.owner < 0) return `<div class="head"><b>Convoy</b><small>Independent</small><button class="x" data-a="clear">${icon('close')}</button></div><div class="sub">${icon('freight')} Carrying ${Math.round(T.cargo || 0)} credits${T.order && T.order.body != null ? ` to ${esc(game.bodies[T.order.body].name)}` : ''}. Match it to take them.</div>`;
   let h = `<div class="head"><b style="color:${ui.colors[T.owner]}">Freighter</b><small>${esc(game.names[T.owner])}</small><button class="x" data-a="clear">${icon('close')}</button></div>`;
   if (own && T.order && T.order.body != null) {
     const from = T.src != null ? game.bodies[T.src].name : '';
     h += `<div class="sub">${icon('freight')} ${from ? `${esc(from)} to ` : 'To '}${esc(game.bodies[T.order.body].name)}<span class="num">${T.tau ? mmss(Math.ceil(T.tau / 5) * 5) : ''}</span></div>`;
-    h += `<div class="sub">${Math.round(T.cargo || 0)} credits, paid on arrival.</div>`;
+    h += `<div class="sub">Carrying ${Math.round(T.cargo || 0)} credits.</div>`;
   } else if (!own) h += `<div class="sub">Carrying their income. Destroy it, or match it to take the credits.</div>`;
   return h;
 }
@@ -459,14 +461,14 @@ function clickStrip(a, v) {
   ui.armed = TWO_STEP.has(a) ? null : key; ui.armedText = hintOf(a, v); ui.armedLabel = '';
   const ships = selShips(), ids = ships.map((s) => s.id);
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
-  const order = (o) => { act({ t: 'order', ids, order: o && ui.loose ? { ...o, loose: true } : o }); sfx('confirm'); };
+  const order = (o) => { act({ t: 'order', ids, order: o ? { ...o, loose: ui.shape === 'loose', shape: ui.shape } : o }); sfx('confirm'); };
   switch (a) {
     case 'clear': clearSel(); ui.selBody = null; sfx('close'); break;
     case 'chip': {
       const id = +v;
       const s = S.shipById(game, id);
       if (!s || !mine(s)) break;
-      if (ui.sel.has(id)) { if (ui.sel.size > 1) { ui.sel.delete(id); refreshRoutes(); } } else selectShips([s]);
+      if (ui.sel.size > 1 || !ui.sel.has(id)) { selectShips([s]); view.followShip(s.id); }
       sfx('tap');
       break;
     }
@@ -489,7 +491,15 @@ function clickStrip(a, v) {
     case 'cut': order(null); break;
     case 'plot': ui.plotMode = !ui.plotMode; ui.plot = null; sfx('tap'); break;
     case 'follow': if (ships[0]) view.followShip(ships[0].id, true); break;
-    case 'formation': ui.loose = !ui.loose; sfx('tap'); break;
+    case 'formation': {
+      ui.shape = ui.shape === 'wedge' ? 'column' : ui.shape === 'column' ? 'loose' : 'wedge';
+      ui.armedText = hintOf(a, v);
+      // Ships already under way together take the new shape now.
+      const lead = ships.find((x) => x.at === null && x.order && ['orbit', 'strike', 'attack'].includes(x.order.type));
+      if (lead && ships.length > 1) act({ t: 'order', ids, order: { ...lead.order, loose: ui.shape === 'loose', shape: ui.shape } });
+      sfx('tap');
+      break;
+    }
     case 'join': order({ type: 'form', lead: +v }); ui.targetShip = null; break;
     case 'pick': { const T = S.shipById(game, +v); if (T) { selectShips([T]); view.followShip(T.id); } break; }
     case 'retreat': {
@@ -524,14 +534,16 @@ const delegate = (el, fn) => el.addEventListener('click', (e) => { const t = e.t
 delegate($('strip'), (a, v, el) => clickStrip(a, v, el.querySelector('em')?.textContent));
 
 // ---- Research sheet ------------------------------------------------------------------
+const signed = (x) => `${x < 0 ? '\u2212' : '+'}${Math.abs(x).toFixed(1)}`;
 function incomeHTML() {
   const inc = S.incomeBreakdown(game, me);
   const how = { capital: 'Paid directly', freight: 'By freighter', blockaded: 'Blockaded' };
-  let h = `<div class="head"><b>Income</b><small>+${inc.total.toFixed(1)} a second</small><button class="x" data-a="closeSheet">${icon('close')}</button></div>`;
+  let h = `<div class="head"><b>Income</b><small>${signed(inc.total)} a second</small><button class="x" data-a="closeSheet">${icon('close')}</button></div>`;
   for (const l of inc.lines.sort((a, b) => b.rate - a.rate)) {
     const b = game.bodies[l.body];
     h += `<div class="line"><div class="what"><b>${esc(b.name)}</b><span${l.how === 'blockaded' ? ` style="color:${HOSTILE}"` : ''}>${how[l.how]}</span></div><span class="num">${l.how === 'blockaded' ? '0.0' : `+${l.rate.toFixed(1)}`}</span></div>`;
   }
+  if (inc.upkeep) h += `<div class="line"><div class="what"><b>Ships</b><span>Running costs</span></div><span class="num">${signed(-inc.upkeep)}</span></div>`;
   const fr = game.ships.filter((x) => x.owner === me && x.st.civil);
   const waiting = game.bodies.reduce((n, b) => n + (b.owner === me ? b.stock : 0), 0);
   h += `<div class="sub">${icon('freight')} ${fr.length} freighter${fr.length === 1 ? '' : 's'} carrying ${Math.round(fr.reduce((n, x) => n + (x.cargo || 0), 0) / 10) * 10}. ${Math.round(waiting / 10) * 10} waiting.</div>`;
@@ -592,7 +604,7 @@ function drainEvents() {
     const toPoint = e.x !== undefined ? () => { view.orbit.follow = null; view.orbit.ship = null; view.orbit.target.set(e.x, e.y, e.z); } : null;
     const mineC = ui.colors[me];
     switch (e.type) {
-      case 'contact': if (e.owner === me && game.time - lastContact > 4) { lastContact = game.time; notice('contact', AMBER, 'Contact', toShip); sfx('contact'); } break;
+      case 'contact': if (e.owner === me && game.time - lastContact > 20) { lastContact = game.time; notice('contact', AMBER, 'Contact', toShip); sfx('contact'); } break;
       case 'salvo': if (e.owner !== me && s && s.seen[me] && game.time - lastAlarm > 6) { lastAlarm = game.time; notice('torp', HOSTILE, 'Torpedoes', toShip); sfx('alarm'); } break;
       case 'system': if (e.owner === me && s) { notice('bolt', HOSTILE, `${s.name}: ${e.sys} out`, toShip); sfx('system'); } break;
       case 'repaired': if (e.owner === me) sfx('repaired'); break;
@@ -600,6 +612,7 @@ function drainEvents() {
       case 'raided': case 'seized': if ((e.owner === me && e.type === 'raided') || e.from === me) { notice('raided', HOSTILE, 'Freighter lost', toPoint); sfx('deny'); } else if (e.by === me || (e.type === 'seized' && e.owner === me)) { notice('freight', AMBER, e.n ? `+${e.n}` : '', toPoint); sfx('freight'); } break;
       case 'captured': if (e.owner === me) { notice('captured', mineC, `${b.name} taken`, toBody); sfx('captured'); } else if (e.from === me) { notice('captured', HOSTILE, `${b.name} lost`, toBody); sfx('lostWorld'); } break;
       case 'silenced': if (e.by === me) sfx('silenced'); else if (e.owner === me) { notice('battery', HOSTILE, `${b.name}: battery down`, toBody); sfx('silenced'); } break;
+      case 'moved': if (e.owner === me) { notice('captured', HOSTILE, `Capital moved to ${b.name}`, toBody); sfx('lostWorld'); } else notice('captured', ui.colors[e.owner], `${game.names[e.owner]} moved to ${b.name}`, toBody); break;
       case 'built': if (e.owner === me) { notice(e.what, mineC, b.name, toBody); sfx('built'); } break;
       case 'launched': if (e.owner === me && s) { notice('yard', mineC, `${s.name} launched`, toShip); sfx('launched'); } break;
       case 'research': if (e.owner === me) { notice(e.line, AMBER, S.techOption(e.key).name, null); sfx('research'); } break;
@@ -625,7 +638,7 @@ $('menuBtn').innerHTML = icon('menu');
 function refreshUI() {
   if (!game || !inGame()) return;
   $('cr').textContent = Math.floor(game.credits[me] || 0);
-  $('rate').textContent = `+${S.incomeBreakdown(game, me).total.toFixed(1)}/s`;
+  $('rate').textContent = `${signed(S.incomeBreakdown(game, me).total)}/s`;
   const cap = S.fleetCap(game, me), n = S.warshipsOf(game, me).length, qd = S.fleetSize(game, me) - n;
   let pips = '';
   for (let i = 0; i < cap; i++) pips += `<i class="${i < n ? 'on' : i < n + qd ? 'q' : ''}"></i>`;
@@ -677,12 +690,13 @@ const seg = (a, list, cur, lab = (x) => x) => `<div class="seg">${list.map((x) =
 
 function titleNav() {
   const day = S.dailySeed().key.slice(5);
-  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="scenarios">Scenarios</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
-  $('fine').innerHTML = `<button data-a="sound">Sound ${prefs.sound ? 'on' : 'off'}</button><button data-a="text">Text ${prefs.ui === 1 ? 'standard' : prefs.ui > 1 ? 'large' : 'small'}</button><button data-a="gfx">Graphics ${prefs.gfx}</button>`;
+  $('nav').innerHTML = `<button data-a="setup">Engage</button><button data-a="daily">Daily<small>${day}</small></button><button data-a="mp">Multiplayer</button><button data-a="manual">Manual</button>`;
+  $('fine').innerHTML = `<button data-a="sound">Sound ${prefs.sound ? 'on' : 'off'}</button><button data-a="text">Text ${prefs.ui === 1 ? 'standard' : prefs.ui > 1 ? 'large' : 'small'}</button><button data-a="gfx">Graphics ${prefs.gfx === 'low' ? 'low' : 'high'}</button>`;
 }
 function setupPanel(daily = false) {
   showPanel(`${head(daily ? 'Daily system' : 'Engage')}<p class="lbl">Side</p>${factionOpts(prefs.faction)}`
     + `<p class="lbl">Rivals</p>${seg('rivals', [1, 2], prefs.rivals)}<p class="lbl">AI</p>${seg('level', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}`
+    + (daily ? '' : `<p class="lbl">Win by</p>${seg('winby', ['capital', 'conquest'], prefs.conquest ? 'conquest' : 'capital', (k) => (k === 'capital' ? 'Taking the capital' : 'Taking every world'))}`)
     + `<button class="cta" data-a="${daily ? 'launchDaily' : 'launch'}">Launch</button>`);
   panel.dataset.screen = daily ? 'daily' : 'setup';
 }
@@ -692,7 +706,7 @@ function launch(seed, daily = false) {
   if (r() < 0.5) others.reverse();
   const players = [{ faction: prefs.faction, name: prefs.name || 'You' }];
   for (let i = 0; i < prefs.rivals; i++) players.push({ faction: others[i], ai: prefs.level });
-  start(S.createGame({ seed, players }), { players, mode: 'solo' });
+  start(S.createGame({ seed, players, conquest: !daily && prefs.conquest }), { players, mode: 'solo' });
   game.daily = daily ? S.dailySeed().key : null;
 }
 function scenariosPanel() {
@@ -722,8 +736,67 @@ function manualPanel() {
     ${k('agent', 'Agents (Intelligence research) show you a world. Later they can sabotage, steal or buy an independent world.')}
     <p>Mouse: drag to move, right-drag to turn, wheel to zoom. Keys: WASD move, Q/E turn, Space pause, 1 to 4 speed, H system, R research, Esc back.</p></div>`);
 }
+const END_ROWS = [['Ships built', 'built'], ['Ships lost', 'lost'], ['Ships destroyed', 'killed'], ['Worlds taken', 'captured'], ['Worlds lost', 'worldsLost'], ['Freighters home', 'hauled'], ['Freighters raided', 'raided'], ['Research', 'research']];
+let endWon = false, endWhy = '';
+/** The end screen as one tall picture, to send to someone. */
+function reportImage() {
+  const W = 1080, H = 1560, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d'), N = game.players, cols = Array.from({ length: N }, (_, o) => o);
+  const font = (w, px) => `${w} ${px}px Rajdhani, system-ui, sans-serif`;
+  g.fillStyle = '#050506'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(232,226,210,0.25)'; g.lineWidth = 2; g.strokeRect(28, 28, W - 56, H - 56);
+  g.textAlign = 'left';
+  g.fillStyle = DIMC; g.font = font(500, 34); g.fillText('Perihelion', 80, 110);
+  g.fillStyle = endWon ? AMBER : HOSTILE; g.font = font(600, 104); g.fillText(endWon ? 'Victory' : 'Defeat', 80, 220);
+  g.fillStyle = INK; g.font = font(500, 34);
+  g.fillText([FACTIONS[game.factions[me]]?.name, endWhy || (game.daily ? `Daily ${game.daily}` : ''), mmss(game.time)].filter(Boolean).join('  ·  '), 80, 276);
+  const x0 = 80, colW = 190, x1 = W - 80;
+  let y = 370;
+  g.font = font(600, 30); g.textAlign = 'right';
+  cols.forEach((o, i) => { g.fillStyle = ui.colors[o]; g.fillText(String(game.names[o]).slice(0, 12), x1 - colW * (N - 1 - i), y, colW - 20); });
+  for (const [label, k] of END_ROWS) {
+    y += 56;
+    g.strokeStyle = 'rgba(232,226,210,0.14)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, y - 38); g.lineTo(x1, y - 38); g.stroke();
+    g.textAlign = 'left'; g.fillStyle = DIMC; g.font = font(500, 30); g.fillText(label, x0, y);
+    g.textAlign = 'right'; g.font = font(500, 32);
+    cols.forEach((o, i) => { g.fillStyle = ui.colors[o]; g.fillText(String(Math.round(game.stats[o][k] || 0)), x1 - colW * (N - 1 - i), y); });
+  }
+  const ser = game.series || [];
+  if (ser.length > 1) {
+    const cw = (W - 160 - 60) / 3, ch = 330, cy = y + 110, t1 = ser[ser.length - 1].t || 1;
+    [['Fleet strength', 'pow'], ['Worlds', 'worlds'], ['Income', 'inc']].forEach(([title, k], i) => {
+      const cx = 80 + i * (cw + 30), top = cy + 24, bot = top + ch;
+      const max = Math.max(1, ...ser.map((p) => Math.max(...p[k])));
+      g.textAlign = 'left'; g.fillStyle = INK; g.font = font(500, 30); g.fillText(title, cx, cy);
+      g.strokeStyle = 'rgba(232,226,210,0.14)'; g.lineWidth = 1;
+      for (const f of [0, 1]) { g.beginPath(); g.moveTo(cx, bot - f * ch); g.lineTo(cx + cw, bot - f * ch); g.stroke(); }
+      for (const o of cols) {
+        g.strokeStyle = ui.colors[o]; g.lineWidth = 3; g.lineJoin = 'round'; g.beginPath();
+        ser.forEach((p, j) => { const px = cx + (p.t / t1) * cw, py = bot - (p[k][o] / max) * ch; if (j) g.lineTo(px, py); else g.moveTo(px, py); });
+        g.stroke();
+      }
+    });
+  }
+  g.textAlign = 'left'; g.fillStyle = DIMC; g.font = font(500, 26);
+  g.fillText('pretzel-dev.github.io/game-dev/perihelion-next', 80, H - 70);
+  return c;
+}
+async function shareReport() {
+  if (!game) return;
+  try { await document.fonts.load('600 30px Rajdhani'); await document.fonts.load('500 30px Rajdhani'); } catch { /* draw with the fallback */ }
+  const blob = await new Promise((r) => reportImage().toBlob(r, 'image/png'));
+  if (!blob) return;
+  const file = new File([blob], 'perihelion.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
 function endPanel(won, why) {
-  ended = true;
+  ended = true; endWon = won; endWhy = why || '';
   $('strip').hidden = true; $('sheet').hidden = true; $('hud').hidden = true; $('brief').hidden = true;
   sfx(won ? 'won' : 'defeat');
   const N = game.players, cols = Array.from({ length: N }, (_, o) => o);
@@ -737,15 +810,15 @@ function endPanel(won, why) {
     return `<div class="chart"><span>${label}</span><svg viewBox="0 0 100 41" preserveAspectRatio="none">${cols.map(line).join('')}</svg></div>`;
   };
   showPanel(`<div class="mast"><h1 style="font-size:2rem;color:${won ? AMBER : HOSTILE}">${won ? 'Victory' : 'Defeat'}</h1><p class="tag">${[why || (game.daily ? `Daily ${game.daily}` : ''), mmss(game.time)].filter(Boolean).map(esc).join(' · ')}</p></div>`
-    + `<div class="tally" style="grid-template-columns:1fr ${'auto '.repeat(N)}"><span></span>${cols.map((o) => `<b style="color:${ui.colors[o]}">${esc(game.names[o])}</b>`).join('')}${row('Ships built', 'built')}${row('Ships lost', 'lost')}${row('Ships destroyed', 'killed')}${row('Worlds taken', 'captured')}${row('Worlds lost', 'worldsLost')}${row('Freighters home', 'hauled')}${row('Freighters raided', 'raided')}</div>`
+    + `<div class="tally" style="grid-template-columns:1fr ${'auto '.repeat(N)}"><span></span>${cols.map((o) => `<b style="color:${ui.colors[o]}">${esc(game.names[o])}</b>`).join('')}${row('Ships built', 'built')}${row('Ships lost', 'lost')}${row('Ships destroyed', 'killed')}${row('Worlds taken', 'captured')}${row('Worlds lost', 'worldsLost')}${row('Freighters home', 'hauled')}${row('Freighters raided', 'raided')}${row('Research', 'research')}</div>`
     + chart('Fleet strength', 'pow') + chart('Worlds', 'worlds') + chart('Income', 'inc')
-    + `<button class="cta" data-a="again">Again</button><button class="cta ghost" data-a="quit">Title</button>`);
+    + `<button class="cta ghost" data-a="share">Share</button><button class="cta" data-a="again">Again</button><button class="cta ghost" data-a="quit">Title</button>`);
   if (scn && won) { prefs.done[scn.key] = true; save(); }
 }
 function pauseMenu() {
   if (!live()) return;
   if (mode === 'solo') paused = true;
-  showPanel(`<div class="ph"><h2>Paused</h2></div><button class="cta" data-a="resume">Resume</button><button class="cta ghost" data-a="sound">Sound ${prefs.sound ? 'on' : 'off'}</button><button class="cta ghost" data-a="manual2">Manual</button><button class="cta ghost" data-a="quit">${mode === 'solo' ? 'Abandon' : 'Leave'}</button>`);
+  showPanel(`<div class="ph"><h2>Paused</h2></div><button class="cta" data-a="resume">Resume</button><button class="cta ghost" data-a="sound">Sound ${prefs.sound ? 'on' : 'off'}</button><button class="cta ghost" data-a="gfx">Graphics ${prefs.gfx === 'low' ? 'low' : 'high'}</button><button class="cta ghost" data-a="manual2">Manual</button><button class="cta ghost" data-a="quit">${mode === 'solo' ? 'Abandon' : 'Leave'}</button>`);
   panel.dataset.screen = 'pause';
   refreshUI();
 }
@@ -763,7 +836,7 @@ function lobbyPanel() {
   const host = mode === 'hostLobby';
   showPanel(`${head('Lobby', 'leaveLobby')}<p class="lbl">Room code</p><div class="code">${lobby.code || '·····'}</div><div class="opts">`
     + lobby.seats.map((s, i) => `<div class="opt" style="--c:${FACTION_COLORS[s.faction] || '#888'}"><i class="sw"></i><div><b>${esc(s.name)}${i === lobby.you ? ' (you)' : ''}</b><span>${FACTIONS[s.faction]?.name || ''}${s.online ? '' : ' · away'}</span></div>${host && i > 0 ? `<button class="mark" style="visibility:visible" data-a="kick" data-v="${i}">${icon('close')}</button>` : ''}</div>`).join('')
-    + `</div>${host ? `<p class="lbl">Add an AI</p>${seg('lobbyLevel', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}<button class="cta ghost" data-a="addAI">Add AI</button><button class="cta" data-a="startMP">Start</button>` : '<p class="hint">Waiting for the host to start</p>'}`);
+    + `</div>${host ? `<p class="lbl">Win by</p>${seg('winby', ['capital', 'conquest'], prefs.conquest ? 'conquest' : 'capital', (k) => (k === 'capital' ? 'Taking the capital' : 'Taking every world'))}<p class="lbl">Add an AI</p>${seg('lobbyLevel', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}<button class="cta ghost" data-a="addAI">Add AI</button><button class="cta" data-a="startMP">Start</button>` : '<p class="hint">Waiting for the host to start</p>'}`);
 }
 function hostGame() {
   prefs.name = cleanName($('mpname').value); save();
@@ -803,7 +876,7 @@ function startMP() {
   if (players.length < 2) return;
   room.start();
   const seed = (Math.random() * 1e9) | 0;
-  const g = S.createGame({ seed, players, mp: true });
+  const g = S.createGame({ seed, players, mp: true, conquest: prefs.conquest });
   g.mpPlayers = players;
   room.seats.forEach((s, i) => { if (s.kind === 'human' && i > 0) room.sendTo(i, { t: 'start', seed, players, you: i }); });
   start(g, { players, mode: 'host', me: 0 });
@@ -839,7 +912,9 @@ function clickPanel(a, v) {
     case 'quit': closeRoom(); hidePanel(); demo(); break;
     case 'sound': prefs.sound = !prefs.sound; save(); audio.setEnabled(prefs.sound); titleNav(); if (panel.dataset.screen === 'pause' && !panel.hidden) pauseMenu(); break;
     case 'text': prefs.ui = prefs.ui === 1 ? 1.15 : prefs.ui > 1 ? 0.9 : 1; save(); document.documentElement.style.setProperty('--ui-mult', prefs.ui); titleNav(); break;
-    case 'gfx': prefs.gfx = prefs.gfx === 'auto' ? 'high' : prefs.gfx === 'high' ? 'low' : 'auto'; save(); view.setQuality(gfx()); titleNav(); break;
+    case 'gfx': prefs.gfx = prefs.gfx === 'low' ? 'high' : 'low'; save(); view.setQuality(gfx()); titleNav(); if (panel.dataset.screen === 'pause' && !panel.hidden) pauseMenu(); break;
+    case 'winby': prefs.conquest = v === 'conquest'; save(); if (lobby) lobbyPanel(); else setupPanel(panel.dataset.screen === 'daily'); break;
+    case 'share': shareReport(); break;
     default:
   }
   sfx('tap');
