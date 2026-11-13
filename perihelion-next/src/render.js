@@ -222,8 +222,10 @@ export function createView(canvas, plot, opts = {}) {
   const bodyPos = [];
   const ppuAt = (p) => window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.max(1e-3, camera.position.distanceTo(p)));
 
+  let sizedW = 0, sizedH = 0;
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
+    sizedW = w; sizedH = h;
     renderer.setSize(Math.round(w * pixelRatio), Math.round(h * pixelRatio), false);
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
@@ -400,6 +402,7 @@ export function createView(canvas, plot, opts = {}) {
     const realDt = Math.min(0.1, Math.max(0, t - tNow));
     tNow = t;
     W = window.innerWidth; H = window.innerHeight;
+    if (W !== sizedW || H !== sizedH) resize(); // phone browsers change the page height without always saying so
     colors = ui.colors || playerColors(game);
     const me = ui.me;
     const now = game.time + (game.acc || 0);

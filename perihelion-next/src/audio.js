@@ -813,9 +813,20 @@ export function createAudio(opts = {}) {
   function onVisibility() {
     if (!ctx || injected) return;
     try {
-      if (document.hidden) ctx.suspend();
-      else if (enabled) wake();
+      if (document.hidden) { ctx.suspend(); return; }
+      // Back on screen. After a switch to another app, iOS can report the sound as running while it is silent,
+      // so do not trust the state: restart it now, again shortly, and once more on the next touch.
+      stale = true;
+      if (enabled) { cycle(); setTimeout(() => { if (ctx && enabled && !document.hidden) cycle(); }, 400); }
     } catch (e) { /* ignore */ }
+  }
+  let stale = false;
+  /** Stop and start the sound clock: what a tab switch does, and what brings iOS sound back. */
+  function cycle() {
+    try {
+      const pr = ctx.suspend();
+      if (pr && pr.then) pr.then(() => wake()).catch(() => wake()); else wake();
+    } catch (e) { wake(); }
   }
 
   /** Start the clock again and put the volume back (after the page was hidden, the old fades are stuck in the past). */
@@ -844,11 +855,17 @@ export function createAudio(opts = {}) {
           s.connect(ctx.destination); s.start(0);
           s.onended = () => s.disconnect();
           if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
+          if (typeof window !== 'undefined') { window.addEventListener('pageshow', onVisibility); window.addEventListener('focus', () => { stale = true; }); }
         }
       }
       // 'suspended' before the first gesture, 'interrupted' after a call or a tab switch on iOS.
-      if (!injected && enabled && ctx.state !== 'running' && !(typeof document !== 'undefined' && document.hidden)) {
-        wake();
+      if (!injected && enabled && !(typeof document !== 'undefined' && document.hidden)) {
+        if (stale) {
+          stale = false;
+          const b = ctx.createBufferSource(); b.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+          b.connect(ctx.destination); b.start(0); b.onended = () => b.disconnect();
+          cycle();
+        } else if (ctx.state !== 'running') wake();
       }
     } catch (e) {
       dead = true; ctx = null; G = null; bed = null;

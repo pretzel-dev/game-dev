@@ -153,11 +153,12 @@ timed events) are still there to lift back if testing asks for them.
 
 ## Reading the screen
 
-- **The bar at the bottom of the panel** always shows a line of numbers: for a
-  ship its hull, fuel and torpedoes; for a world its income and battery. Tap
-  a button and the bar says what it does, with the numbers (a mine: credits a
-  second; a ship: hull, guns, torpedoes, thrust, build time, running cost). Buttons that spend something or cannot be
-  undone then show OK and a cancel; the rest act at once.
+- **The bar at the bottom of the panel** shows stats for what is selected
+  (a ship: hull, fuel, torpedoes, upkeep; a world: income, battery, guns, and
+  a gold chip for its trait). Tap a button and the bar shows a few words about
+  it and its numbers; buttons that spend something then show OK and a cancel.
+  Nothing else on screen is an explanation.
+- **Courses** are a table: one row each, with time and fuel.
 - **Gold buttons** are structures the world's trait makes better.
 - **Tap a built structure** to upgrade it or remove it (40% back).
 - **The end screen** has a table for every side and charts of fleet strength,
