@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#040406" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Perihelion</title>
+    <link rel="icon" href="favicon.svg" />
+    <script type="module" crossorigin src="./assets/index-C6R1SxI4.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-LbYm5DMo.css">
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <canvas id="plot"></canvas>
+
+    <!-- In play: almost everything is an icon; words are kept for names. -->
+    <div id="hud" hidden>
+      <button id="purse" title="Credits, income and fleet. Tap for where the income comes from."><span><span id="cr">0</span> <span id="rate"></span></span><span id="pips"></span></button>
+      <button id="rnd" class="sq" aria-label="Research" title="Research (R)"></button>
+      <span class="grow"></span>
+      <button id="sys" class="sq" aria-label="Whole system" title="Whole system (H)"></button>
+      <button id="warp" class="sq" aria-label="Time speed" title="Time speed (1-4)">1×</button>
+      <button id="pause" class="sq" aria-label="Pause" title="Pause (Space)"></button>
+      <button id="menuBtn" class="sq" aria-label="Menu" title="Menu (Esc)"></button>
+    </div>
+    <div id="date"><span id="dateT"></span><span class="day"><i id="dayBar"></i></span></div>
+    <style id="tutglow"></style>
+    <div id="feed"></div>
+    <div id="brief" hidden></div>
+    <div id="strip" hidden></div>
+    <div id="sheet" hidden></div>
+
+    <div id="title" class="screen">
+      <div class="mast">
+        <h1>Perihelion</h1>
+      </div>
+      <nav id="nav"></nav>
+      <p class="fine" id="fine"></p>
+    </div>
+    <div id="panel" class="screen" hidden></div>
+
+  </body>
+</html>
