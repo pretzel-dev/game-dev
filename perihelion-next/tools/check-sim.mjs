@@ -387,6 +387,48 @@ for (const k of SCENARIO_KEYS) {
   ok(S.placesOf('battleship') === 2 && S.placesOf('frigate') === 1, 'a battleship takes two places');
   S.TUNE.bigShips = false;
 }
+{
+  // Megaprojects: unlocked by the last research step, once per game, the race loser gets half back.
+  const g = S.createGame({ seed: 6, players: [{ faction: 'concord' }, { faction: 'holds' }, { faction: 'boreal' }] });
+  const [h0, h1, h2] = g.homes;
+  for (const o of [0, 1, 2]) { g.credits[o] = 1e6; g.tech[o].picks.spire = true; g.tech[o].picks.strike = true; g.tech[o].picks.blackout = true; g.tech[o].picks.ansible = true; g.tech[o].picks.fuelnet = true; }
+  ok(S.cantMega(g, h0, 'ark') === 'Ark games only', 'no Ark outside the Ark mode');
+  const cap0 = S.fleetCap(g, 0);
+  ok(S.startMega(g, h0, 'spire') && S.startMega(g, h1, 'spire'), 'two powers race for the same megaproject');
+  const c1 = g.credits[1];
+  for (let t = 0; t < S.MEGA.spire.time + 2; t++) S.step(g, 1);
+  ok(h0.mega.done && !h1.mega && g.credits[1] > c1 + S.MEGA.spire.cost / 2 - 500 && g.events.some((e) => e.type === 'megaLost' && e.owner === 1), 'the first to finish wins it; the other gets half back');
+  ok(S.fleetCap(g, 0) === cap0 + 4, 'the Arcology spire adds four ships');
+  ok(S.cantMega(g, h2, 'spire') === 'Already built', 'once per game');
+  // Strike: flies, then wrecks an undefended capital.
+  h2.mega = { key: 'strike', by: 2, left: 0, total: 1, done: true };
+  const target = h1; g.ships = g.ships.filter((s) => s.owner !== 1); target.bhp = 0; target.structures = target.structures.filter((x) => x.type !== 'battery');
+  ok(S.fireStrike(g, 2, target) && g.strikes.length === 1, 'a strike is fired at an enemy capital');
+  ok(S.cantStrike(g, 2, h0) === 'Not ready', 'and has to reload');
+  for (let t = 0; t < S.MEGA.strike.flight + 2; t++) S.step(g, 1);
+  ok(!g.strikes.length && target.structures.every((x) => x.type === 'yard') && target.stun > g.time, 'an undefended capital loses its structures and its income');
+  // Blackout hides every ship; an Ansible array sees every ship.
+  h1.mega = { key: 'blackout', by: 1, left: 0, total: 1, done: true };
+  const sh0 = g.ships.find((s) => s.owner === 0 && !s.st.civil);
+  ok(S.startBlackout(g, 0) === false && S.cantBlackout(g, 1) === null, 'Blackout needs the megaproject');
+  h0.mega = { key: 'ansible', by: 0, left: 0, total: 1, done: true };
+  S.step(g, 1);
+  ok(g.ships.filter((s) => s.owner === 2 && !s.st.civil).every((s) => s.seen[0] === 2), 'the Ansible array sees every ship');
+  h0.mega = { key: 'blackout', by: 0, left: 0, total: 1, done: true }; h1.mega = null;
+  S.startBlackout(g, 0); S.step(g, 1);
+  ok(sh0.seen[2] === 0 && S.cantBlackout(g, 0) === 'On', 'Blackout hides your ships');
+  for (let t = 0; t < S.MEGA.blackout.last + 2; t++) S.step(g, 1);
+  ok(S.cantBlackout(g, 0) === 'Not ready', 'then it has to recharge');
+}
+{
+  // The Ark mode: build the Ark at your capital and hold it until it leaves.
+  const g = S.createGame({ seed: 7, players: [{ faction: 'boreal' }, { faction: 'concord' }], winBy: 'ark' });
+  g.credits[0] = 1e6;
+  ok(!S.cantMega(g, g.homes[0], 'ark') && S.cantMega(g, g.bodies.find((b) => b.owner === S.NEUTRAL), 'ark'), 'the Ark is built at a capital');
+  g.homes[0].mega = { key: 'ark', by: 0, left: 0, total: 1, done: true, hold: 5 };
+  for (let t = 0; t < 8 && !g.over; t++) S.step(g, 1);
+  ok(g.over && g.over.winner === 0 && g.over.how === 'ark', 'holding the Ark wins');
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];

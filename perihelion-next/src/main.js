@@ -413,7 +413,7 @@ function stripHTML() {
     if (!T || !(ui.dev || T.seen[me])) { ui.targetShip = null; return ''; }
     if (T.st.civil) return freighterHTML(T);
     if (T.derelict) return `<div class="head"><b>${esc(T.name)}</b><small>Derelict ${CLASSES[T.cls].name.toLowerCase()}</small><button class="x" data-a="clear">${icon('close')}</button></div><div class="sub">No power. Match it to board. It joins your fleet.</div>`;
-    const bound = T.owner !== me && S.knows(game, me, 'signals') ? (T.dest ?? (T.order && T.order.body != null ? T.order.body : null)) : null;
+    const bound = T.owner !== me && (S.knows(game, me, 'signals') || S.megaOf(game, me, 'ansible')) ? (T.dest ?? (T.order && T.order.body != null ? T.order.body : null)) : null;
     if (bound != null && T.seen[me] === 2) return `<div class="head"><b style="color:${ui.colors[T.owner]}">${esc(T.name)}</b><small>${CLASSES[T.cls].name}</small><button class="x" data-a="clear">${icon('close')}</button></div><div class="row">${chip(T, false)}</div><div class="sub">${icon('arrived')} Bound for ${esc(game.bodies[bound].name)}</div>`;
     const known = T.seen[me] === 2 || ui.dev;
     return `<div class="head"><b style="color:${ui.colors[T.owner]}">${known ? esc(T.name) : 'Contact'}</b><small>${known ? CLASSES[T.cls].name : 'unidentified'}</small><button class="x" data-a="clear">${icon('close')}</button></div>${known ? `<div class="row">${chip(T, false)}</div>` : ''}`;
