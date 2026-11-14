@@ -288,7 +288,7 @@ function structStats(type, b, level = 1) {
 function shipStats(cls) {
   const st = S.statsFor(game, me, cls), C = CLASSES[cls];
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
-  return [['Hull', st.hull], st.rails.length ? ['Rails', st.rails.length] : null, st.mag ? ['Torpedoes', st.mag] : null, C.stores ? ['Spares', C.stores] : null, ['Defence', st.pdc], ['Thrust', Math.round(st.accel * 1000)], ['Fuel', Math.round(st.dv)], ['Build', mmss(S.shipTime(game, me, cls, b))], ['Upkeep', `${perDay(RULES.upkeep[cls])}/d`]].filter(Boolean);
+  return [['Hull', st.hull], st.rails.length ? ['Rails', st.rails.length] : null, st.mag ? ['Torpedoes', st.mag] : null, C.stores ? ['Spares', C.stores] : null, ['Defence', st.pdc], ['Thrust', Math.round(st.accel * 1000)], ['Fuel', Math.round(st.dv)], ['Build', mmss(S.shipTime(game, me, cls, b))], ['Upkeep', `${perDay(RULES.upkeep[cls])}/d`], S.placesOf(cls) > 1 ? ['Fleet places', S.placesOf(cls)] : null].filter(Boolean);
 }
 // Structure buttons carry "type.index" so two of a kind on one world stay apart.
 const stype = (v) => String(v).split('.')[0];
@@ -679,7 +679,7 @@ function refreshUI() {
   $('rate').textContent = rate(S.incomeBreakdown(game, me).total);
   $('dateT').textContent = dateOf(game.time);
   $('dayBar').style.width = `${Math.floor(((game.time / S.DAY) % 1) * 20) * 5}%`;
-  const cap = S.fleetCap(game, me), n = S.warshipsOf(game, me).length, qd = S.fleetSize(game, me) - n;
+  const cap = S.fleetCap(game, me), n = S.warshipsOf(game, me).reduce((k, s) => k + S.placesOf(s.cls), 0), qd = S.fleetSize(game, me) - n;
   let pips = '';
   for (let i = 0; i < cap; i++) pips += `<i class="${i < n ? 'on' : i < n + qd ? 'q' : ''}"></i>`;
   setHTML($('pips'), pips);

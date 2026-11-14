@@ -5,7 +5,7 @@
 // Difficulty is how often it thinks, how reliably it follows through (skill),
 // and how well its economy runs (eco).
 import {
-  NEUTRAL, RULES, CLASSES, FACTIONS, statsFor, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, scuttle, routes, strength, armed, crippled, shipsAt, has, structure, working,
+  NEUTRAL, RULES, CLASSES, FACTIONS, statsFor, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, placesOf, routes, strength, armed, crippled, shipsAt, has, structure, working,
   cantBuild, buildStructure, cantUpgrade, upgrade, upgradeCost, cantOrderShip, orderShip, shipCost, cantResearch, research,
   fleetCap, fleetSize, incomeOf, batteryMax, batteryGuns, warshipsOf, worldsOf,
 } from './sim.js';
@@ -41,7 +41,6 @@ const DOCTRINE = {
 export const AITUNE = {
   generic: true, // work out fleet, research and doctrine from the power's own numbers instead of the tables above
   claim: true, // lone fast ships go and take undefended independent worlds
-  refit: true, // at the ship limit with money to spare, retire the weakest ship for the strongest that can be built
 };
 // What each doctrine leans on. A power picks the one that suits what it already is.
 const LEANS = {
@@ -120,10 +119,10 @@ function think(game, ai) {
   const adrift = fleet.filter((s) => s.at === null && (s.dv <= 0.01 || s.out.drive > 1e8 || s.out.reactor > 1e8)); // dry, or too badly hurt to mend herself
   const tenders = fleet.filter((s) => s.st.stores && s.out.drive <= 0 && s.out.reactor <= 0);
   for (const s of adrift) {
-    // Out of fuel: send a tender if there is one free, else after a while abandon her.
+    // Out of fuel: send a tender if there is one free. (No scuttling: players cannot either.)
     s.dry = s.dry || t;
     const tn = tenders.find((x) => x.dv > 20 && (!x.order || x.order.ship === s.id));
-    if (tn) { if (!tn.order) setOrder(game, o, [tn.id], { type: 'attack', ship: s.id, mode: 'match', d0: 1.5, profile: 'cruise' }); } else if (t - s.dry > 180) scuttle(game, o, [s.id]);
+    if (tn && !tn.order) setOrder(game, o, [tn.id], { type: 'attack', ship: s.id, mode: 'match', d0: 1.5, profile: 'cruise' });
   }
   for (const s of fleet) {
     if (adrift.includes(s)) continue;
@@ -323,7 +322,7 @@ function spend(game, ai, home, mine, fleet, will) {
         if (C.needs && !knows(game, o, C.needs)) continue;
         const share = (counts[cls] || 0) / Math.max(1, size);
         const w = worth(game, o, cls);
-        const v = (tight ? w : (w / shipCost(game, o, cls)) * 300) * (share > 0.45 ? 0.2 : 1 - share * 0.8);
+        const v = (tight ? w / placesOf(cls) : (w / shipCost(game, o, cls)) * 300) * (share > 0.45 ? 0.2 : 1 - share * 0.8);
         if (v > bv) { bv = v; best = cls; }
       }
       return best;
@@ -349,12 +348,6 @@ function spend(game, ai, home, mine, fleet, will) {
     if (y.queue.length < 2 && !cantOrderShip(game, y, cls) && (size < 4 || credits() > shipCost(game, o, cls) + 100)) { orderShip(game, y, cls); return; }
   }
   if (!will()) return;
-  // At the limit and rich: retire the weakest ship sitting at a yard for the strongest that can be built.
-  if (AITUNE.refit && size >= cap && credits() > 2500 && yards.length && !yards.some((y) => y.queue.length)) {
-    const best = ['battleship', 'frigate', 'escort'].filter((c) => !CLASSES[c].needs || knows(game, o, CLASSES[c].needs)).sort((a, b) => worth(game, o, b) - worth(game, o, a))[0];
-    const idle = fleet.filter((s) => armed(s) && s.at !== null && !s.order && game.bodies[s.at].owner === o).sort((a, b) => worth(game, o, a.cls) - worth(game, o, b.cls))[0];
-    if (best && idle && worth(game, o, best) > worth(game, o, idle.cls) * 1.8 && credits() > shipCost(game, o, best) + 500) { scuttle(game, o, [idle.id]); orderShip(game, yards[0], best); return; }
-  }
   // At the limit with money to spare: habitats let the fleet grow.
   if (size >= cap && credits() > 450) {
     for (const b of mine) {
