@@ -209,7 +209,7 @@ timed events) are still there to lift back if testing asks for them.
 npm ci
 npm run dev
 npm run check           # headless rules checks (seconds)
-npm run check:matches   # 24 AI-only matches; up to half may not finish (several minutes)
+npm run check:matches   # 24 AI-only matches; a couple may not finish (ten minutes or more)
 npm run build && npm run preview
 node tools/smoke.mjs    # phone-sized touch test (needs the preview server and Playwright)
 node tools/mp-smoke.mjs # two-browser multiplayer test (also needs a local PeerJS server)
@@ -241,8 +241,7 @@ points multiplayer at a local PeerJS server (`npx peerjs --port 9000 --host 127.
 
 ## Known gaps
 
-- AI admirals are poor at taking a well-defended capital: nearly half of
-  AI-only games never end, and the rest are long (around two hours of game time).
+- AI-only games mostly end now (about 2 in 24 do not); the Concord wins most of them and the Holds few.
 - With giants far out, a slingshot that saves fuel is rare.
 - Weapons reach a few ship-lengths (rails 7, torpedoes 20, against worlds
   hundreds apart); ships sharing an orbit can always engage each other.
