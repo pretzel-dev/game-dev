@@ -383,7 +383,8 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
 // ---- Economy ----------------------------------------------------------------------
 
 export const working = (x) => x.left <= 0 && !x.scrap;
-export const structure = (b, type) => b.structures.find((x) => x.type === type);
+/** A structure of this type on a world: the one at index `i` when given (a world can hold more than one), else the first. */
+export const structure = (b, type, i = null) => (i != null && b.structures[i] && b.structures[i].type === type ? b.structures[i] : b.structures.find((x) => x.type === type));
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
 const levelOf = (b, type) => { let n = 0; for (const x of b.structures) if (x.type === type && working(x)) n += x.level; return n; }; // (all of that kind, when more than one is allowed)
 /** How far a held world sees, against a ship's sensors. */
@@ -437,7 +438,7 @@ export function fleetCap(game, owner) {
 }
 export const fleetSize = (game, owner) => warshipsOf(game, owner).length + game.bodies.reduce((k, b) => k + (b.owner === owner ? b.queue.length : 0), 0);
 export const shipCost = (game, owner, cls) => Math.round((CLASSES[cls].cost * (FACTIONS[game.factions[owner]].cost || 1) * (knows(game, owner, 'modular') ? 0.85 : 1)) / 10) * 10;
-export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && levelOf(b, 'yard') >= 2 ? 1.5 : 1) * (b && b.trait === 'hulk' ? 1.5 : 1) * buildSpeed(game, owner, b));
+export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && b.structures.some((x) => x.type === 'yard' && working(x) && x.level >= 2) ? 1.5 : 1) * (b && b.trait === 'hulk' ? 1.5 : 1) * buildSpeed(game, owner, b));
 
 export function cantBuild(game, b, type) {
   const S = RULES.structures[type];
@@ -461,18 +462,18 @@ export function buildStructure(game, b, type) {
 }
 /** What you get back for taking a structure down: 40% of what it cost. */
 export const scrapValue = (x) => Math.round((RULES.structures[x.type].cost + (x.level - 1) * upgradeCost(x)) * 0.4 / 10) * 10;
-export function cantDemolish(game, b, type) {
-  const x = structure(b, type);
+export function cantDemolish(game, b, type, i = null) {
+  const x = structure(b, type, i);
   if (!x) return 'Not built';
   if (b.blockaded) return 'Under blockade';
   if (x.scrap) return 'Being removed';
   return null;
 }
 /** Take a structure down. One still being built goes at once for its full price; a finished one stops working now and is gone, with its refund, after `scrapTime`. */
-export function demolish(game, b, type) {
-  if (cantDemolish(game, b, type)) return false;
-  const x = structure(b, type);
-  if (type === 'yard') while (b.queue.length) cancelShip(game, b);
+export function demolish(game, b, type, i = null) {
+  if (cantDemolish(game, b, type, i)) return false;
+  const x = structure(b, type, i);
+  if (type === 'yard' && !b.structures.some((y) => y !== x && y.type === 'yard' && !y.scrap)) while (b.queue.length) cancelShip(game, b);
   if (x.left > 0 && !x.next) { game.credits[b.owner] += RULES.structures[type].cost; b.structures = b.structures.filter((y) => y !== x); return true; }
   if (x.next) { delete x.next; x.left = 0; }
   x.scrap = RULES.scrapTime;
