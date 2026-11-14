@@ -72,7 +72,7 @@ await page.waitForTimeout(300);
 await page.evaluate(() => { const { game, ui } = window.__perihelion; if (ui.selBody !== game.homes[0].id) { ui.sel = new Set(); ui.selBody = game.homes[0].id; } });
 await page.waitForSelector('[data-a="slot"]');
 await page.tap('[data-a="slot"]');
-await page.tap('[data-a="build"][data-v="mine"]');
+await page.tap('[data-a="build"][data-v="lab"]');
 await page.waitForTimeout(500);
 // (A synthetic click can land on a button the panel has just redrawn: try again if nothing was ordered.)
 for (let i = 0; i < 4; i++) {
@@ -86,7 +86,7 @@ await page.tap('[data-a="node"][data-v="weapons:guided"]');
 await page.tap('[data-a="research"][data-v="weapons:guided"]');
 await page.waitForTimeout(500);
 await shot('research');
-const state = await page.evaluate(() => { const { game, S } = window.__perihelion; const h = game.homes[0]; return { why: S.cantOrderShip(game, h, 'corvette'), credits: game.credits[0], sel: window.__perihelion.ui.selBody, mine: h.structures.some((x) => x.type === 'mine'), queue: h.queue.length, project: game.tech[0].project?.line }; });
+const state = await page.evaluate(() => { const { game, S } = window.__perihelion; const h = game.homes[0]; return { why: S.cantOrderShip(game, h, 'corvette'), credits: game.credits[0], sel: window.__perihelion.ui.selBody, built: h.structures.some((x) => x.type === 'lab'), queue: h.queue.length, project: game.tech[0].project?.line }; });
 await page.tap('[data-a="closeSheet"]');
 await page.tap('#menuBtn');
 const brief = (await page.$('[data-a="gfx"]')) ? 'graphics in the menu' : '';
@@ -97,4 +97,4 @@ const winby = !!(await page.$('[data-a="winby"][data-v="conquest"]'));
 const result = { selected, routes, ordered, ...state, brief, errors };
 console.log(JSON.stringify(result));
 await browser.close();
-process.exit(selected > 0 && ordered > 0 && state.mine && state.queue === 1 && state.project === 'weapons' && brief && winby && !errors.length ? 0 : 1);
+process.exit(selected > 0 && ordered > 0 && state.built && state.queue === 1 && state.project === 'weapons' && brief && winby && !errors.length ? 0 : 1);

@@ -192,9 +192,10 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Balance is measured with `node tools/tune.mjs <variant>[+variant] 96 normal 4 9000`
   (variants in `tools/variants.mjs`; 9000 plays matches out, since calling them
   early favours the Holds). About 13 minutes per 96 matches; noise is about ±6
-  points per power. November 2026 result: Concord 36, Republic 53, Holds 44
+  points per power. November 2026 result: Concord 36, Republic 50, Holds 47
   (share of games won). The Republic still leads; trimming its rails or drives
-  did not help.
+  did not help. Battleships taking two fleet places (`TUNE.bigShips`) left a
+  fifth of matches without a winner, so it is off.
 - One of each structure per world. The owner tried allowing repeats
   (`TUNE.dup`, still a switch) and turned it off: it let players pile up habitats.
   UI addresses a structure as `type.index` all the same.

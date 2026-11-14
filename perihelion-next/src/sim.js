@@ -79,9 +79,9 @@ export const TUNE = {
 const DUP_OK = ['mine', 'refinery', 'yard', 'lab', 'habitat', 'exchange'];
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.4, start: ['frigate', 'escort', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.6, start: ['frigate', 'escort', 'corvette'] },
   boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast ships, strong rails. Starts with four ships.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
