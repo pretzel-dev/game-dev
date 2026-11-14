@@ -350,6 +350,27 @@ for (const k of SCENARIO_KEYS) {
   S.capture(q, other, 0);
   ok(!q.alive[1], 'conquest: with no worlds left it is out');
 }
+{
+  // The same structure more than once: two yards build two ships at the same time; two mines earn twice.
+  const g = S.createGame({ seed: 3, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
+  const h = g.homes[0]; g.credits[0] = 1e5;
+  h.structures = h.structures.filter((x) => x.type !== 'yard');
+  h.structures.push({ type: 'yard', level: 1, left: 0 }, { type: 'yard', level: 1, left: 0 }, { type: 'habitat', level: 1, left: 0 });
+  ok(S.slipsOf(h) === 2, 'two yards, two ships at once');
+  S.orderShip(g, h, 'corvette'); S.orderShip(g, h, 'corvette');
+  const n0 = g.ships.filter((x) => x.owner === 0).length;
+  for (let t = S.shipTime(g, 0, 'corvette', h) + 2; t > 0; t--) S.step(g, 1);
+  ok(g.ships.filter((x) => x.owner === 0).length === n0 + 2, 'both ships come out together');
+  const m = g.bodies.find((b) => b.owner === S.NEUTRAL && b.kind === 'planet' && !b.giant && !b.trait);
+  if (m) {
+    S.capture(g, m, 0); m.structures = []; const i0 = S.incomeOf(m, g);
+    m.structures.push({ type: 'mine', level: 1, left: 0 }); const i1 = S.incomeOf(m, g);
+    m.structures.push({ type: 'mine', level: 1, left: 0 }); const i2 = S.incomeOf(m, g);
+    ok(Math.abs((i2 - i1) - (i1 - i0)) < 1e-9 && i1 > i0, 'a second mine earns as much as the first');
+    const before = m.structures.length; S.demolish(g, m, 'mine', 1);
+    ok(m.structures[1].scrap && !m.structures[0].scrap && m.structures.length === before, 'removing picks the one asked for');
+  }
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];

@@ -471,7 +471,7 @@ function stripHTML() {
           h += tile('ship', cls, L(glyph(cls, ui.colors[me]), CLASSES[cls].name), S.shipCost(game, me, cls), why ? 'no' : '').replace('<button', `<button title="${CLASSES[cls].name}"`);
         }
         h += '</div>';
-        if (b.queue.length) h += `<div class="row">${b.queue.map((qq, i) => tile('cancel', i, glyph(qq.cls, AMBER), i === 0 ? mmss(Math.ceil(qq.left / 5) * 5) : '', 'on', i === 0 ? `<span class="prog" style="width:${Math.round((1 - qq.left / qq.total) * 20) * 5}%"></span>` : '')).join('')}</div>`;
+        if (b.queue.length) h += `<div class="row">${b.queue.map((qq, i) => tile('cancel', i, glyph(qq.cls, AMBER), i < S.slipsOf(b) ? mmss(Math.ceil(qq.left / 5) * 5) : '', 'on', i < S.slipsOf(b) ? `<span class="prog" style="width:${Math.round((1 - qq.left / qq.total) * 20) * 5}%"></span>` : '')).join('')}</div>`;
       }
     } else if (b.structures.length) {
       h += `<div class="sub">${b.structures.filter(S.working).map((x) => RULES.structures[x.type].name).join(' \u00b7 ')}</div>`;

@@ -72,15 +72,15 @@ export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender
 
 /** Switches for trying out rule variations (tools/tune.mjs sets them; the shipped values are these defaults). */
 export const TUNE = {
-  dup: false, // the same kind of structure may be built more than once on a world; each working yard builds its own ship
+  dup: true, // the same kind of structure may be built more than once on a world; each working yard builds its own ship
   holdsMoons: 0, // moons round the Holds' home giant (0: as generated, two to four)
 };
 const DUP_OK = ['mine', 'refinery', 'yard', 'lab', 'habitat', 'exchange'];
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.25, start: ['frigate', 'escort', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.4, start: ['frigate', 'escort', 'corvette'] },
   boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast ships, strong rails. Starts with four ships.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
@@ -439,6 +439,9 @@ export function fleetCap(game, owner) {
 export const fleetSize = (game, owner) => warshipsOf(game, owner).length + game.bodies.reduce((k, b) => k + (b.owner === owner ? b.queue.length : 0), 0);
 export const shipCost = (game, owner, cls) => Math.round((CLASSES[cls].cost * (FACTIONS[game.factions[owner]].cost || 1) * (knows(game, owner, 'modular') ? 0.85 : 1)) / 10) * 10;
 export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && b.structures.some((x) => x.type === 'yard' && working(x) && x.level >= 2) ? 1.5 : 1) * (b && b.trait === 'hulk' ? 1.5 : 1) * buildSpeed(game, owner, b));
+
+/** How many ships a world builds at once: one for each working yard. */
+export const slipsOf = (b) => (TUNE.dup ? Math.max(1, b.structures.filter((x) => x.type === 'yard' && working(x)).length) : 1);
 
 export function cantBuild(game, b, type) {
   const S = RULES.structures[type];
@@ -1435,8 +1438,7 @@ function stepWorlds(game, dt) {
       // Yard.
       if (b.queue.length && has(b, 'yard') && !enemyHere) {
         // One ship at a time for each working yard.
-        const slips = TUNE.dup ? Math.max(1, b.structures.filter((x) => x.type === 'yard' && working(x)).length) : 1;
-        for (const q of b.queue.slice(0, slips)) {
+        for (const q of b.queue.slice(0, slipsOf(b))) {
           q.left -= dt;
           if (q.left > 0) continue;
           b.queue.splice(b.queue.indexOf(q), 1);
