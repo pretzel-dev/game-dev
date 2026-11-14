@@ -195,9 +195,11 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   points per power. November 2026 result: Concord 36, Republic 53, Holds 44
   (share of games won). The Republic still leads; trimming its rails or drives
   did not help.
-- Structures other than batteries, arrays and the like can be built more than
-  once on a world (`TUNE.dup`, `DUP_OK`); each working yard builds its own ship.
-  UI addresses a structure as `type.index`.
+- One of each structure per world. The owner tried allowing repeats
+  (`TUNE.dup`, still a switch) and turned it off: it let players pile up habitats.
+  UI addresses a structure as `type.index` all the same.
+- No scuttling, for players or the AI: a ship that runs dry waits for a tender
+  or stays adrift. The owner sees that as the price of getting fuel wrong.
 
 ## Owner's preferences
 
