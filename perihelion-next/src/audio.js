@@ -150,7 +150,7 @@ const TYPES = {
   repaired:   { bus: 'ui', rev: 'hull', send: 0.10, lv: 0.59, gap: 0.30, max: 2, tune: 0.2, pri: 3 },
   fuel:       { bus: 'ui', rev: 'hull', send: 0.10, lv: 0.63, gap: 0.80, max: 1, tune: 0, pri: 3 },
 
-  rail:       { bus: 'fx', rev: 'hull', send: 0.08, lv: 0.95, gap: 0.05, max: 4, tune: 0.1, pri: 1 },
+  rail:       { bus: 'fx', rev: 'hull', send: 0.0, lv: 0.95, gap: 0.05, max: 4, tune: 0.1, pri: 1 },
   railHit:    { bus: 'fx', rev: 'hull', send: 0.08, lv: 0.90, gap: 0.05, max: 4, tune: 0.1, pri: 1 },
   pdc:        { bus: 'fx', rev: 'hull', send: 0.22, lv: 0.70, gap: 0.09, max: 3, tune: 1.0, pri: 0 },
   pdcKill:    { bus: 'fx', rev: 'hull', send: 0.55, lv: 0.60, gap: 0.05, max: 4, tune: 2.0, pri: 0 },
@@ -475,11 +475,11 @@ export function createAudio(opts = {}) {
 
     // ---- weapons: through the hull
     rail(v, t) {
-      // A coil gun, not a cannon: the charge runs up the rail, a dry crack, then a hiss of gas. Nothing low and
-      // nothing that rings (low knocks at a different pitch each shot were heard as drums).
-      noise(v, { n: 'white', ft: 'bandpass', f: 700, f1: 5200, ftm: 0.07, q: 5, t, a: 0.03, d: 0.05, g: 0.7 });
-      noise(v, { n: 'white', ft: 'highpass', f: 3200, q: 0.7, t: t + 0.07, a: 0.0005, d: 0.035, g: 2.2 });
-      noise(v, { n: 'white', ft: 'bandpass', f: 5200, f1: 1800, ftm: 0.22, q: 0.7, t: t + 0.075, a: 0.002, d: 0.3, g: 0.5 });
+      // One dry shot: a hard crack with a short, dead thump under it. No sweep (that was a whip), no ring and
+      // no echo (that was a drum). The body is noise, not a tone, and it is over in a tenth of a second.
+      noise(v, { n: 'white', ft: 'highpass', f: 1800, q: 0.7, t, a: 0.0005, d: 0.03, g: 2.0 });
+      noise(v, { n: 'pink', ft: 'bandpass', f: 900, q: 0.5, t, a: 0.001, d: 0.07, g: 1.3 });
+      noise(v, { n: 'brown', ft: 'lowpass', f: 320, q: 0.5, t, a: 0.002, d: 0.1, g: 1.5 });
     },
     railHit(v, t) {
       // metal struck hard: a bright crack and grit, no thump

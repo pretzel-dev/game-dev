@@ -207,9 +207,11 @@ function tap(x, y, double) {
 
 // ---- The strip (what is selected) ---------------------------------------------------
 const bar = (v) => `style="--v:${Math.round(Math.max(0, Math.min(1, v)) * 25) * 4}%"`;
+const SYSTEMS = ['drive', 'reactor', 'weapons', 'sensors'];
+const SYS_NAME = { drive: 'Drive', reactor: 'Reactor', weapons: 'Weapons', sensors: 'Sensors' };
 function chip(s, on = true) {
-  const dots = ['drive', 'reactor', 'weapons', 'sensors'].map((k) => `<i class="${s.out[k] > 0 ? 'out' : ''}"></i>`).join('');
-  return `<button class="chip ${on ? 'on' : ''}" data-a="chip" data-v="${s.id}" title="${esc(s.name)}">${glyph(s.cls, ui.colors[s.owner])}<span class="bars"><i class="${s.hull < s.st.hull * 0.35 ? 'low' : ''}" ${bar(s.hull / s.st.hull)}></i><i class="f" ${bar(s.dv / s.st.dv)}></i></span><span class="dots">${dots}</span>${S.rankOf(s) ? `<span class="rk">${'<i></i>'.repeat(S.rankOf(s))}</span>` : ''}</button>`;
+  const hurt = SYSTEMS.some((k) => s.out[k] > 0);
+  return `<button class="chip ${on ? 'on' : ''}" data-a="chip" data-v="${s.id}" title="${esc(s.name)}">${glyph(s.cls, ui.colors[s.owner])}<span class="bars"><i class="${s.hull < s.st.hull * 0.35 ? 'low' : ''}" ${bar(s.hull / s.st.hull)}></i><i class="f" ${bar(s.dv / s.st.dv)}></i></span>${hurt ? '<span class="dmg"></span>' : ''}${S.rankOf(s) ? `<span class="rk">${'<i></i>'.repeat(S.rankOf(s))}</span>` : ''}</button>`;
 }
 const L = (ic, word) => `${ic}<em>${word}</em>`;
 const ROUTE_NAME = { hard: 'Hard burn', cruise: 'Cruise', dark: 'Dark', sling: 'Slingshot' };
@@ -325,6 +327,7 @@ function selStats() {
     if (s.st.mag) out.push(stat('Torpedoes', `${s.torps}/${s.st.mag}`));
     if (s.st.stores) out.push(stat('Spares', `${Math.floor(s.stores)}/${s.st.stores}`));
     out.push(stat('Upkeep', `${perDay(RULES.upkeep[s.cls])}/d`));
+    for (const k of SYSTEMS) if (s.out[k] > 0) out.push(stat(SYS_NAME[k], 'out', 'bad'));
     const wait = (s.ready || 0) - game.time;
     if (s.at !== null && wait > 0) out.push(stat(s.pending || s.pend !== undefined ? 'Leaves in' : 'Ready in', mmss(Math.ceil(wait / 4) * 4)));
   } else if (ships.length) {
@@ -332,6 +335,8 @@ function selStats() {
     out.push(stat('Fuel', `${Math.round(Math.min(...ships.map((s) => s.dv / s.st.dv)) * 100)}%`));
     if (mag) out.push(stat('Torpedoes', `${ships.reduce((n, s) => n + s.torps, 0)}/${mag}`));
     out.push(stat('Upkeep', `${perDay(ships.reduce((n, s) => n + RULES.upkeep[s.cls], 0))}/d`));
+    const down = ships.filter((s) => SYSTEMS.some((k) => s.out[k] > 0)).length;
+    if (down) out.push(stat('Systems out', `${down} ship${down > 1 ? 's' : ''}`, 'bad'));
     const wait = Math.max(...ships.map((s) => (s.at !== null ? (s.ready || 0) - game.time : 0)));
     if (wait > 0) out.push(stat(ships.some((s) => s.pending || s.pend !== undefined) ? 'Leaves in' : 'Ready in', mmss(Math.ceil(wait / 4) * 4)));
   } else if (ui.selBody != null) {
@@ -339,7 +344,7 @@ function selStats() {
     if (b.owner === me) out.push(b.blockaded ? stat('Income', 'blockaded', 'bad') : stat('Income', rate(S.incomeOf(b, game) * S.haulBonus(game, b))));
     if (b.owner === me && !b.home) out.push(stat('Waiting', Math.round(b.stock / 5) * 5));
     if (bm) out.push(stat('Battery', `${Math.round(b.bhp)}/${bm}`, b.bhp <= 0 ? 'bad' : ''), stat('Guns', S.batteryGuns(b)));
-    if (b.owner !== me) { out.push(stat('Yields in', mmss(S.yieldTime(b)))); if (b.home) out.push(stat('Ships needed', S.CAPITAL_SHIPS)); }
+    if (b.owner !== me && b.home) out.push(stat('Ships needed', S.CAPITAL_SHIPS));
     if (b.trait) out.push(`<button class="st gold" data-a="trait" data-v="${b.trait}">${icon('star')}${TRAITS[b.trait].name}</button>`);
   } else if (ui.targetShip != null) {
     const T = S.shipById(game, ui.targetShip);
@@ -668,7 +673,8 @@ function refreshUI() {
   if (!game || !inGame()) return;
   $('cr').textContent = Math.floor(game.credits[me] || 0);
   $('rate').textContent = rate(S.incomeBreakdown(game, me).total);
-  $('date').textContent = dateOf(game.time);
+  $('dateT').textContent = dateOf(game.time);
+  $('dayBar').style.width = `${Math.floor(((game.time / S.DAY) % 1) * 20) * 5}%`;
   const cap = S.fleetCap(game, me), n = S.warshipsOf(game, me).length, qd = S.fleetSize(game, me) - n;
   let pips = '';
   for (let i = 0; i < cap; i++) pips += `<i class="${i < n ? 'on' : i < n + qd ? 'q' : ''}"></i>`;
@@ -876,7 +882,13 @@ function endPanel(won, why) {
   $('strip').hidden = true; $('sheet').hidden = true; $('hud').hidden = true; $('date').hidden = true; $('brief').hidden = true; if (tut) endTutorial(true);
   sfx(won ? 'won' : 'defeat');
   const N = game.players, cols = Array.from({ length: N }, (_, o) => o);
-  const row = (label, k) => `<span>${label}</span>${cols.map((o) => `<b style="color:${ui.colors[o]}">${Math.round(game.stats[o][k] || 0)}</b>`).join('')}`;
+  // Who led each row (from the first game): ties share it, nobody leads a row of zeros, and fewer is better for losses.
+  const LOWER = new Set(['lost', 'worldsLost']);
+  const bestIn = (k) => {
+    const v = cols.map((o) => Math.round(game.stats[o][k] || 0)), best = LOWER.has(k) ? Math.min(...v) : Math.max(...v);
+    return (!LOWER.has(k) && best <= 0) || v.every((x) => x === best) ? [] : cols.filter((o) => v[o] === best);
+  };
+  const row = (label, k) => { const top = bestIn(k); return `<span>${label}</span>${cols.map((o) => `<b class="${top.includes(o) ? 'best' : ''}" style="color:${ui.colors[o]}">${Math.round(game.stats[o][k] || 0)}</b>`).join('')}`; };
   // A line chart per measure (from the first game): a line for each side, a faint grid, and a touch readout.
   const chart = (label, k, fmtV = (v) => Math.round(v)) => {
     const ser = game.series || [];

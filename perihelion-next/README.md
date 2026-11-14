@@ -98,7 +98,7 @@ timed events) are still there to lift back if testing asks for them.
   | Laboratory (2) | Rocky planets, stations | Research half as fast again per level |
   | Exchange (2) | Stations, capitals | Income paid straight in |
   | Sensor array | Moons, stations, asteroids | The world sees much further |
-  | Fuel depot | Moons, stations | Quick refuelling |
+  | Fuel depot | Moons, stations, asteroids | Quick refuelling |
 
   A capital has five slots, a planet three, a moon or station two, an asteroid one.
 - **Special worlds.** Most independent worlds have a trait (a gold diamond on
@@ -121,6 +121,10 @@ timed events) are still there to lift back if testing asks for them.
 - **Climate** follows distance from the sun: hot worlds inside the living
   capital's orbit, cold ones well beyond it. A garden world far out is an ice world.
 - **Tutorial.** A guided first game from the title screen (`src/tutorial.js`).
+- **Orbits.** Each ship keeps its own parking orbit (height and tilt), so
+  ships over a world are spread round it.
+- **System damage** shows as a red corner on a ship's square; select the ship
+  to read which systems are out.
 - **Running costs.** Every ship costs credits a second while it is in service
   (corvette 0.05, frigate and escort 0.1, tender 0.08, battleship 0.35). The
   income sheet shows it as its own line.
