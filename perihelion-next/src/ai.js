@@ -5,7 +5,7 @@
 // Difficulty is how often it thinks, how reliably it follows through (skill),
 // and how well its economy runs (eco).
 import {
-  NEUTRAL, RULES, CLASSES, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, scuttle, routes, strength, armed, crippled, shipsAt, has, structure, working,
+  NEUTRAL, RULES, CLASSES, FACTIONS, statsFor, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, scuttle, routes, strength, armed, crippled, shipsAt, has, structure, working,
   cantBuild, buildStructure, cantUpgrade, upgrade, upgradeCost, cantOrderShip, orderShip, shipCost, cantResearch, research,
   fleetCap, fleetSize, incomeOf, batteryMax, batteryGuns, warshipsOf, worldsOf,
 } from './sim.js';
@@ -37,6 +37,39 @@ const DOCTRINE = {
   holds: ['wolfpack', 'swarm', 'tanks', 'coldjets', 'coldrun', 'jammers', 'deepmine', 'arcology', 'rings', 'cipher'],
 };
 
+/** Switches for trying AI variations (tools/tune.mjs). */
+export const AITUNE = {
+  generic: true, // work out fleet, research and doctrine from the power's own numbers instead of the tables above
+  claim: true, // lone fast ships go and take undefended independent worlds
+  refit: true, // at the ship limit with money to spare, retire the weakest ship for the strongest that can be built
+};
+// What each doctrine leans on. A power picks the one that suits what it already is.
+const LEANS = {
+  tanks: 'range', flash: 'speed', coldjets: 'stealth', torch: 'speed', wolfpack: 'small', plate: 'tough', swarm: 'small', flak: 'tough',
+  coldrun: 'stealth', network: 'worlds', jammers: 'stealth', longwatch: 'guns', deepmine: 'worlds', bulk: 'worlds', arcology: 'numbers', wareco: 'capital',
+  sabot: 'spy', rings: 'worlds', fifth: 'spy', cipher: 'guns',
+};
+/** How much a power leans each way, from its own multipliers and what it holds. Around 1 is ordinary. */
+function leanings(game, o, fleet, mine) {
+  const F = FACTIONS[game.factions[o]], n = Math.max(1, fleet.length);
+  return {
+    speed: F.accel || 1, range: 1 / (F.dv || 1), tough: (F.hull || 1) + (F.armour || 0) / 10, stealth: 1 / (F.sig || 1), guns: F.rail || 1,
+    small: 0.6 + fleet.filter((s) => s.cls === 'corvette' || s.cls === 'frigate').length / n, numbers: 1 / ((F.cost || 1) * (F.time || 1)) + (F.cap || 0) * 0.2,
+    capital: F.income || 1, worlds: 0.7 + mine.length / 10, spy: 0.9,
+  };
+}
+/** The order a power works its research lines in: what it is already best at first. */
+function lineOrder(game, o) {
+  const F = FACTIONS[game.factions[o]];
+  const v = { drives: (F.accel || 1) * (F.dv || 1), weapons: (F.rail || 1) * ((F.hull || 1) + (F.armour || 0) / 10), sensors: 1 / (F.sig || 1), industry: 1 / ((F.cost || 1) * (F.time || 1)), intel: 0.9 };
+  return Object.keys(v).sort((a, b) => v[b] - v[a]);
+}
+/** What a class is worth in a fight for this power, from its real stats. */
+function worth(game, o, cls) {
+  const st = statsFor(game, o, cls);
+  const fire = st.rails.reduce((a, b) => a + b, 0) * st.railHit + st.tubes * 2.5 + st.pdc * 0.8 * st.flak;
+  return fire * Math.sqrt((st.hull + st.armour * 12) / 100);
+}
 export function createAI(game, owner, level = 'normal', seed = 1) {
   const d = LEVELS[level] || LEVELS.normal;
   game.eco[owner] = d.eco;
@@ -131,7 +164,17 @@ function think(game, ai) {
         const dd = dist2(f, s) * (f.owner < 0 ? 3 : 1); // an independent convoy is only worth a short chase
         if (dd < pd) { pd = dd; prey = f; }
       }
-      if (prey && t > d.calm) setOrder(game, o, [s.id], { type: 'attack', ship: prey.id, mode: 'match', d0: 1.2, profile: 'hard' });
+      if (prey && t > d.calm) { setOrder(game, o, [s.id], { type: 'attack', ship: prey.id, mode: 'match', d0: 1.2, profile: 'hard' }); continue; }
+      // Nothing to chase: go and take an independent world that has no guns and nobody over it.
+      if (AITUNE.claim && !s.order && (s.at === null || game.bodies[s.at].owner === o)) {
+        let w = null, wd = 1e9;
+        for (const b of game.bodies) {
+          if (b.owner !== NEUTRAL || batteryMax(b) > 0 || game.ships.some((x) => x.owner === o && (x.at === b.id || (x.order && x.order.body === b.id)))) continue;
+          const dd = dist2(game.bp[b.id], s);
+          if (dd < wd) { wd = dd; w = b; }
+        }
+        if (w) { const r = routes(game, [s.id], w.id).filter((x) => x.ok && x.dv < s.dv * 0.5).sort((a, c) => a.time - c.time)[0]; if (r) setOrder(game, o, [s.id], { type: 'orbit', body: w.id, profile: r.profile, via: r.via, side: r.side }); }
+      }
     }
   }
 
@@ -265,6 +308,26 @@ function spend(game, ai, home, mine, fleet, will) {
   const cap = fleetCap(game, o), size = fleetSize(game, o);
   // Ships.
   const want = () => {
+    if (AITUNE.generic) {
+      // The best fight for what is short. Short of money: worth per credit. Short of places in the fleet: worth per ship.
+      // No class above 45% of the fleet, and an escort for every six ships so torpedoes get shot down.
+      const counts = {};
+      for (const s of fleet) counts[s.cls] = (counts[s.cls] || 0) + 1;
+      for (const b of mine) for (const q of b.queue) counts[q.cls] = (counts[q.cls] || 0) + 1;
+      if (size >= 4 && !counts.tender && ai.d.skill > 0.7) return 'tender';
+      if (size >= 5 && (counts.escort || 0) < size / 6) return 'escort';
+      const tight = size >= cap - 2 || credits() > 2500 ? 1 : 0; // 1: places are what is short
+      let best = 'frigate', bv = -1e9;
+      for (const cls of ['corvette', 'frigate', 'escort', 'battleship']) {
+        const C = CLASSES[cls];
+        if (C.needs && !knows(game, o, C.needs)) continue;
+        const share = (counts[cls] || 0) / Math.max(1, size);
+        const w = worth(game, o, cls);
+        const v = (tight ? w : (w / shipCost(game, o, cls)) * 300) * (share > 0.45 ? 0.2 : 1 - share * 0.8);
+        if (v > bv) { bv = v; best = cls; }
+      }
+      return best;
+    }
     const mix = MIX[f];
     const counts = {};
     for (const s of fleet) counts[s.cls] = (counts[s.cls] || 0) + 1;
@@ -286,6 +349,12 @@ function spend(game, ai, home, mine, fleet, will) {
     if (y.queue.length < 2 && !cantOrderShip(game, y, cls) && (size < 4 || credits() > shipCost(game, o, cls) + 100)) { orderShip(game, y, cls); return; }
   }
   if (!will()) return;
+  // At the limit and rich: retire the weakest ship sitting at a yard for the strongest that can be built.
+  if (AITUNE.refit && size >= cap && credits() > 2500 && yards.length && !yards.some((y) => y.queue.length)) {
+    const best = ['battleship', 'frigate', 'escort'].filter((c) => !CLASSES[c].needs || knows(game, o, CLASSES[c].needs)).sort((a, b) => worth(game, o, b) - worth(game, o, a))[0];
+    const idle = fleet.filter((s) => armed(s) && s.at !== null && !s.order && game.bodies[s.at].owner === o).sort((a, b) => worth(game, o, a.cls) - worth(game, o, b.cls))[0];
+    if (best && idle && worth(game, o, best) > worth(game, o, idle.cls) * 1.8 && credits() > shipCost(game, o, best) + 500) { scuttle(game, o, [idle.id]); orderShip(game, yards[0], best); return; }
+  }
   // At the limit with money to spare: habitats let the fleet grow.
   if (size >= cap && credits() > 450) {
     for (const b of mine) {
@@ -307,10 +376,11 @@ function spend(game, ai, home, mine, fleet, will) {
   // Research: the line that is furthest behind, in this power's order, and its favoured doctrine.
   const tech = game.tech[o];
   if (!tech.project && size >= 3) {
-    const line = LINE_ORDER[f].filter((l) => tech[l] < TECH[l].tiers.length).sort((x, y) => tech[x] - tech[y])[0];
+    const line = (AITUNE.generic ? lineOrder(game, o) : LINE_ORDER[f]).filter((l) => tech[l] < TECH[l].tiers.length).sort((x, y) => tech[x] - tech[y])[0];
     if (line) {
       const opts = TECH[line].tiers[tech[line]];
-      const pick = opts.find((x) => DOCTRINE[f].includes(x.key)) || opts[0];
+      const lean = AITUNE.generic ? leanings(game, o, fleet, mine) : null;
+      const pick = lean ? [...opts].sort((x, y) => (lean[LEANS[y.key]] || 1) - (lean[LEANS[x.key]] || 1))[0] : opts.find((x) => DOCTRINE[f].includes(x.key)) || opts[0];
       if (!cantResearch(game, o, line, pick.key) && credits() > TECH_COST[tech[line]] + 120) { research(game, o, line, pick.key); return; }
     }
   }

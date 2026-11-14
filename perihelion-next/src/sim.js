@@ -70,11 +70,17 @@ export const CLASSES = {
 };
 export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender'];
 
+/** Switches for trying out rule variations (tools/tune.mjs sets them; the shipped values are these defaults). */
+export const TUNE = {
+  dup: true, // the same kind of structure may be built more than once on a world; each working yard builds its own ship
+  holdsMoons: 0, // moons round the Holds' home giant (0: as generated, two to four)
+};
+const DUP_OK = ['mine', 'refinery', 'yard', 'lab', 'habitat', 'exchange'];
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.25, start: ['frigate', 'escort', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.4, start: ['frigate', 'escort', 'corvette'] },
   boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast ships, strong rails. Starts with four ships.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
@@ -275,7 +281,7 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
     const owner = i < stationHomes.length ? stationHomes[i] : NEUTRAL;
     const big = court && i === 0;
     const size = big ? 5.2 : 3.4 + rand() * 1.2;
-    specs.push({ owner, giant: true, size, moons: moonsOf(size, big ? 4 : 2 + Math.floor(rand() * 2)), station: owner !== NEUTRAL, stationHome: owner !== NEUTRAL, e: 0.02 + rand() * 0.04, incl: (rand() - 0.5) * 0.04 });
+    specs.push({ owner, giant: true, size, moons: moonsOf(size, owner !== NEUTRAL && TUNE.holdsMoons ? TUNE.holdsMoons + (rand() * 0 | 0) : big ? 4 : 2 + Math.floor(rand() * 2)), station: owner !== NEUTRAL, stationHome: owner !== NEUTRAL, e: 0.02 + rand() * 0.04, incl: (rand() - 0.5) * 0.04 });
   }
   if (rand() < 0.4) { const size = 1.2 + rand() * 0.5; specs.push({ owner: NEUTRAL, giant: false, size, moons: moonsOf(size, Math.floor(rand() * 2)), station: false, e: 0.14 + rand() * 0.1, incl: (rand() - 0.5) * 0.14, dwarf: true }); }
   const hosts = shuffle(specs.filter((s) => s.owner === NEUTRAL && !s.dwarf)).slice(0, 1 + Math.floor(rand() * 2));
@@ -377,9 +383,10 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
 // ---- Economy ----------------------------------------------------------------------
 
 export const working = (x) => x.left <= 0 && !x.scrap;
-export const structure = (b, type) => b.structures.find((x) => x.type === type);
+/** A structure of this type on a world: the one at index `i` when given (a world can hold more than one), else the first. */
+export const structure = (b, type, i = null) => (i != null && b.structures[i] && b.structures[i].type === type ? b.structures[i] : b.structures.find((x) => x.type === type));
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
-const levelOf = (b, type) => { const x = structure(b, type); return x && working(x) ? x.level : 0; };
+const levelOf = (b, type) => { let n = 0; for (const x of b.structures) if (x.type === type && working(x)) n += x.level; return n; }; // (all of that kind, when more than one is allowed)
 /** How far a held world sees, against a ship's sensors. */
 export const worldSight = (b, game = null) => RULES.worldSensor * (levelOf(b, 'array') ? RULES.arraySensor : 1) * (b.trait === 'relay' ? 4 : 1) * (b.trait === 'listening' && levelOf(b, 'array') ? 2 : 1) * (game && knows(game, b.owner, 'network') ? 2 : 1);
 export const batteryMax = (b) => RULES.batteryHp * levelOf(b, 'battery') * (b.trait === 'fortress' ? 2 : 1) * (b.home ? 2 : 1);
@@ -431,7 +438,10 @@ export function fleetCap(game, owner) {
 }
 export const fleetSize = (game, owner) => warshipsOf(game, owner).length + game.bodies.reduce((k, b) => k + (b.owner === owner ? b.queue.length : 0), 0);
 export const shipCost = (game, owner, cls) => Math.round((CLASSES[cls].cost * (FACTIONS[game.factions[owner]].cost || 1) * (knows(game, owner, 'modular') ? 0.85 : 1)) / 10) * 10;
-export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && levelOf(b, 'yard') >= 2 ? 1.5 : 1) * (b && b.trait === 'hulk' ? 1.5 : 1) * buildSpeed(game, owner, b));
+export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && b.structures.some((x) => x.type === 'yard' && working(x) && x.level >= 2) ? 1.5 : 1) * (b && b.trait === 'hulk' ? 1.5 : 1) * buildSpeed(game, owner, b));
+
+/** How many ships a world builds at once: one for each working yard. */
+export const slipsOf = (b) => (TUNE.dup ? Math.max(1, b.structures.filter((x) => x.type === 'yard' && working(x)).length) : 1);
 
 export function cantBuild(game, b, type) {
   const S = RULES.structures[type];
@@ -440,7 +450,7 @@ export function cantBuild(game, b, type) {
   if (b.trait && (TRAITS[b.trait].no || []).includes(type)) return 'Not here';
   if (S.giant && !b.giant) return 'Gas giants only';
   if (S.rocky && b.giant) return 'Not on a gas giant';
-  if (structure(b, type)) return 'Already built';
+  if (structure(b, type) && !(TUNE.dup && DUP_OK.includes(type))) return 'Already built';
   if (b.structures.length >= slotsOf(b)) return 'No room';
   if (game.credits[b.owner] < S.cost) return 'Not enough credits';
   return null;
@@ -455,18 +465,18 @@ export function buildStructure(game, b, type) {
 }
 /** What you get back for taking a structure down: 40% of what it cost. */
 export const scrapValue = (x) => Math.round((RULES.structures[x.type].cost + (x.level - 1) * upgradeCost(x)) * 0.4 / 10) * 10;
-export function cantDemolish(game, b, type) {
-  const x = structure(b, type);
+export function cantDemolish(game, b, type, i = null) {
+  const x = structure(b, type, i);
   if (!x) return 'Not built';
   if (b.blockaded) return 'Under blockade';
   if (x.scrap) return 'Being removed';
   return null;
 }
 /** Take a structure down. One still being built goes at once for its full price; a finished one stops working now and is gone, with its refund, after `scrapTime`. */
-export function demolish(game, b, type) {
-  if (cantDemolish(game, b, type)) return false;
-  const x = structure(b, type);
-  if (type === 'yard') while (b.queue.length) cancelShip(game, b);
+export function demolish(game, b, type, i = null) {
+  if (cantDemolish(game, b, type, i)) return false;
+  const x = structure(b, type, i);
+  if (type === 'yard' && !b.structures.some((y) => y !== x && y.type === 'yard' && !y.scrap)) while (b.queue.length) cancelShip(game, b);
   if (x.left > 0 && !x.next) { game.credits[b.owner] += RULES.structures[type].cost; b.structures = b.structures.filter((y) => y !== x); return true; }
   if (x.next) { delete x.next; x.left = 0; }
   x.scrap = RULES.scrapTime;
@@ -1427,10 +1437,11 @@ function stepWorlds(game, dt) {
       const o = b.owner;
       // Yard.
       if (b.queue.length && has(b, 'yard') && !enemyHere) {
-        const q = b.queue[0];
-        q.left -= dt;
-        if (q.left <= 0) {
-          b.queue.shift();
+        // One ship at a time for each working yard.
+        for (const q of b.queue.slice(0, slipsOf(b))) {
+          q.left -= dt;
+          if (q.left > 0) continue;
+          b.queue.splice(b.queue.indexOf(q), 1);
           const s = spawnShip(game, o, q.cls, b);
           if (b.trait === 'hulk') s.xp = 6; // the hulk's old hands
           tally(game, o, 'built');
@@ -1633,9 +1644,10 @@ export function prepare(game) {
 }
 function place(game) {
   for (const b of game.bodies) { game.bp[b.id] = posAt(game, b, game.time); game.bv[b.id] = velAt(game, b, game.time); }
+  game.placedAt = game.time;
 }
 function tick(game) {
-  place(game);
+  if (game.placedAt !== game.time) place(game); // (the end of the last step already placed them, unless something moved the clock)
   stepShips(game, DT);
   stepTorps(game, DT);
   game.time += DT;

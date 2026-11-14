@@ -145,10 +145,10 @@ function apply(owner, c) {
     case 'stance': return S.setStance(game, owner, ids, c.st || {});
     case 'salvo': { const T = c.ship != null ? S.shipById(game, c.ship) : null; if (T && T.seen[owner]) S.salvo(game, owner, ids, { ship: T.id }); else if (game.bodies[c.at]) S.salvo(game, owner, ids, { body: c.at }); return; }
     case 'build': return b && S.buildStructure(game, b, c.type);
-    case 'upgrade': { const x = b && S.structure(b, c.type); return x && S.upgrade(game, b, x); }
+    case 'upgrade': { const x = b && S.structure(b, c.type, c.i ?? null); return x && S.upgrade(game, b, x); }
     case 'ship': return b && S.orderShip(game, b, c.cls);
     case 'cancel': return b && S.cancelShip(game, b, c.i);
-    case 'demolish': return b && S.demolish(game, b, c.type);
+    case 'demolish': return b && S.demolish(game, b, c.type, c.i ?? null);
     case 'research': return S.research(game, owner, c.line, c.key);
     case 'agent': { const w = game.bodies[c.at]; return w && S.sendAgent(game, owner, w); }
     case 'recall': { const w = game.bodies[c.at]; return w && S.recallAgent(game, owner, w); }
@@ -290,15 +290,19 @@ function shipStats(cls) {
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
   return [['Hull', st.hull], st.rails.length ? ['Rails', st.rails.length] : null, st.mag ? ['Torpedoes', st.mag] : null, C.stores ? ['Spares', C.stores] : null, ['Defence', st.pdc], ['Thrust', Math.round(st.accel * 1000)], ['Fuel', Math.round(st.dv)], ['Build', mmss(S.shipTime(game, me, cls, b))], ['Upkeep', `${perDay(RULES.upkeep[cls])}/d`]].filter(Boolean);
 }
+// Structure buttons carry "type.index" so two of a kind on one world stay apart.
+const stype = (v) => String(v).split('.')[0];
+const sidx = (v) => { const i = String(v).split('.')[1]; return i == null ? null : +i; };
+const sref = (b, v) => S.structure(b, stype(v), sidx(v));
 /** A picked button: a line of plain words and its numbers. */
 function infoOf(a, v) {
   const b = ui.selBody != null && game ? game.bodies[ui.selBody] : null;
   const speed = b && S.buildSpeed ? S.buildSpeed(game, me, b) : 1;
   if (a === 'trait') return { text: TRAITS[v]?.text || '', stats: [] };
   if (a === 'build' && b) return { text: HINT[v], stats: [...structStats(v, b, 1), ['Build', mmss(RULES.structures[v].time / speed)]] };
-  if (a === 'upgrade' && b) { const lv = (S.structure(b, v)?.level || 1) + 1; return { text: `${RULES.structures[v].name} level ${lv}`, stats: [...structStats(v, b, lv), ['Build', mmss(RULES.structures[v].time / speed)]] }; }
-  if (a === 'demolish' && b) { const x = S.structure(b, v); return { text: HINT.demolish, stats: x ? [['Refund', S.scrapValue(x)], ['Takes', mmss(RULES.scrapTime)]] : [] }; }
-  if (a === 'struct' && b) { const x = S.structure(b, v); return { text: '', stats: x ? [[RULES.structures[v].name, RULES.structures[v].maxLevel > 1 ? `level ${x.level}` : ''], ...structStats(v, b, x.level)] : [] }; }
+  if (a === 'upgrade' && b) { const t = stype(v), lv = (sref(b, v)?.level || 1) + 1; return { text: `${RULES.structures[t].name} level ${lv}`, stats: [...structStats(t, b, lv), ['Build', mmss(RULES.structures[t].time / speed)]] }; }
+  if (a === 'demolish' && b) { const x = sref(b, v); return { text: HINT.demolish, stats: x ? [['Refund', S.scrapValue(x)], ['Takes', mmss(RULES.scrapTime)]] : [] }; }
+  if (a === 'struct' && b) { const x = sref(b, v), t = stype(v); return { text: '', stats: x ? [[RULES.structures[t].name, RULES.structures[t].maxLevel > 1 ? `level ${x.level}` : ''], ...structStats(t, b, x.level)] : [] }; }
   if (a === 'ship') return { text: HINT[`ship:${v}`], stats: shipStats(v) };
   if (a === 'cancel' && b) { const q = b.queue[+v]; return { text: HINT.cancel, stats: q ? [['Refund', Math.round(S.shipCost(game, me, q.cls) * 0.8)]] : [] }; }
   if (a === 'board') { const T = S.shipById(game, +v); return { text: HINT.board, stats: T ? [['Chance', `${Math.round(S.boardChance(T, selShips()) * 100)}%`]] : [] }; }
@@ -439,16 +443,16 @@ function stripHTML() {
       const slots = S.slotsOf(b);
       h += '<div class="row">';
       const boost = b.trait ? TRAITS[b.trait].boost : null;
-      for (const x of b.structures) {
-        const S0 = RULES.structures[x.type];
-        h += tile('struct', x.type, L(icon(x.type), S0.name), x.scrap ? 'Removing' : '', `${ui.struct === x.type ? 'on' : ''} ${boost === x.type ? 'boost' : ''} ${x.scrap ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.scrap ? `<span class="prog" style="width:${Math.round((1 - x.scrap / RULES.scrapTime) * 20) * 5}%"></span>` : x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}`);
+      for (const [si, x] of b.structures.entries()) {
+        const S0 = RULES.structures[x.type], sv = `${x.type}.${si}`;
+        h += tile('struct', sv, L(icon(x.type), S0.name), x.scrap ? 'Removing' : '', `${ui.struct === sv ? 'on' : ''} ${boost === x.type ? 'boost' : ''} ${x.scrap ? 'no' : ''}`, `${S0.maxLevel > 1 ? `<span class="lv">${'I'.repeat(x.level)}</span>` : ''}${x.scrap ? `<span class="prog" style="width:${Math.round((1 - x.scrap / RULES.scrapTime) * 20) * 5}%"></span>` : x.left > 0 ? `<span class="prog" style="width:${Math.round((1 - x.left / x.total) * 20) * 5}%"></span>` : ''}`);
       }
       for (let i = b.structures.length; i < slots; i++) h += tile('slot', '', L(icon('add'), 'Build'), '', `empty ${ui.build ? 'on' : ''}`);
       h += '</div>';
-      const px = ui.struct ? S.structure(b, ui.struct) : null;
+      const px = ui.struct ? sref(b, ui.struct) : null;
       if (px && !px.scrap) {
         const S0 = RULES.structures[px.type], can = S.working(px) && px.level < S0.maxLevel;
-        h += `<div class="row">${can ? tile('upgrade', px.type, L(icon('up'), 'Upgrade'), S.upgradeCost(px), S.cantUpgrade(game, b, px) ? 'no' : '') : ''}${tile('demolish', px.type, L(icon('close'), 'Remove'), `+${S.scrapValue(px)}`, S.cantDemolish(game, b, px.type) ? 'no' : '')}</div>`;
+        h += `<div class="row">${can ? tile('upgrade', ui.struct, L(icon('up'), 'Upgrade'), S.upgradeCost(px), S.cantUpgrade(game, b, px) ? 'no' : '') : ''}${tile('demolish', ui.struct, L(icon('close'), 'Remove'), `+${S.scrapValue(px)}`, S.cantDemolish(game, b, px.type, sidx(ui.struct)) ? 'no' : '')}</div>`;
       } else if (!px) ui.struct = null;
       if (ui.build) {
         h += '<div class="row">';
@@ -467,7 +471,7 @@ function stripHTML() {
           h += tile('ship', cls, L(glyph(cls, ui.colors[me]), CLASSES[cls].name), S.shipCost(game, me, cls), why ? 'no' : '').replace('<button', `<button title="${CLASSES[cls].name}"`);
         }
         h += '</div>';
-        if (b.queue.length) h += `<div class="row">${b.queue.map((qq, i) => tile('cancel', i, glyph(qq.cls, AMBER), i === 0 ? mmss(Math.ceil(qq.left / 5) * 5) : '', 'on', i === 0 ? `<span class="prog" style="width:${Math.round((1 - qq.left / qq.total) * 20) * 5}%"></span>` : '')).join('')}</div>`;
+        if (b.queue.length) h += `<div class="row">${b.queue.map((qq, i) => tile('cancel', i, glyph(qq.cls, AMBER), i < S.slipsOf(b) ? mmss(Math.ceil(qq.left / 5) * 5) : '', 'on', i < S.slipsOf(b) ? `<span class="prog" style="width:${Math.round((1 - qq.left / qq.total) * 20) * 5}%"></span>` : '')).join('')}</div>`;
       }
     } else if (b.structures.length) {
       h += `<div class="sub">${b.structures.filter(S.working).map((x) => RULES.structures[x.type].name).join(' \u00b7 ')}</div>`;
@@ -549,7 +553,7 @@ function clickStrip(a, v) {
     }
     case 'slot': ui.build = !ui.build; ui.struct = null; sfx('tap'); break;
     case 'struct': ui.struct = ui.struct === v ? null : v; ui.build = false; sfx('tap'); break;
-    case 'demolish': if (b && !S.cantDemolish(game, b, v)) { act({ t: 'demolish', body: b.id, type: v }); ui.struct = null; sfx('close'); } else sfx('deny'); break;
+    case 'demolish': if (b && !S.cantDemolish(game, b, stype(v), sidx(v))) { act({ t: 'demolish', body: b.id, type: stype(v), i: sidx(v) }); ui.struct = null; sfx('close'); } else sfx('deny'); break;
     case 'trait': break;
     case 'agent': if (b && !S.cantSendAgent(game, me, b)) { act({ t: 'agent', at: b.id }); sfx('confirm'); } else sfx('deny'); break;
     case 'recall': if (b) { act({ t: 'recall', at: b.id }); sfx('close'); } break;
@@ -557,7 +561,7 @@ function clickStrip(a, v) {
     case 'sab': if (b && !S.cantSabotage(game, me, b, v)) { act({ t: 'sabotage', at: b.id, what: v }); sfx('confirm'); } else sfx('deny'); break;
     case 'op': if (b) { act({ t: 'op', at: b.id, op: v }); sfx('tap'); } break;
     case 'build': if (b && !S.cantBuild(game, b, v)) { act({ t: 'build', body: b.id, type: v }); ui.build = false; sfx('confirm'); } else sfx('deny'); break;
-    case 'upgrade': { const x = b && S.structure(b, v); if (x && !S.cantUpgrade(game, b, x)) { act({ t: 'upgrade', body: b.id, type: v }); sfx('confirm'); } else sfx('deny'); break; }
+    case 'upgrade': { const x = b && sref(b, v); if (x && !S.cantUpgrade(game, b, x)) { act({ t: 'upgrade', body: b.id, type: stype(v), i: sidx(v) }); sfx('confirm'); } else sfx('deny'); break; }
     case 'ship': if (b && !S.cantOrderShip(game, b, v)) { act({ t: 'ship', body: b.id, cls: v }); sfx('confirm'); } else sfx('deny'); break;
     case 'cancel': if (b) { act({ t: 'cancel', body: b.id, i: +v }); sfx('close'); } break;
     default:

@@ -184,8 +184,20 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   that trickles in dies. So the AI musters every armed ship at its capital
   (`mustering`), leaves as one formation, reinforces only in groups of three,
   keeps assaulting ships on station (no going home to rearm mid-siege) and
-  breaks off below three ships. Keep those properties when changing it. The
-  Concord wins most AI-only games and the Holds few: open balance work.
+  breaks off below three ships. Keep those properties when changing it.
+- The AI has no per-power plan: it reads each power's numbers (`FACTIONS`) to
+  pick ship classes (worth per credit), research order and doctrines
+  (`leanings`, `lineOrder`), sends lone corvettes to claim empty worlds and
+  scraps weak ships for better ones when at the cap (`AITUNE` switches).
+- Balance is measured with `node tools/tune.mjs <variant>[+variant] 96 normal 4 9000`
+  (variants in `tools/variants.mjs`; 9000 plays matches out, since calling them
+  early favours the Holds). About 13 minutes per 96 matches; noise is about ±6
+  points per power. November 2026 result: Concord 36, Republic 53, Holds 44
+  (share of games won). The Republic still leads; trimming its rails or drives
+  did not help.
+- Structures other than batteries, arrays and the like can be built more than
+  once on a world (`TUNE.dup`, `DUP_OK`); each working yard builds its own ship.
+  UI addresses a structure as `type.index`.
 
 ## Owner's preferences
 
