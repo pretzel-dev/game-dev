@@ -20,11 +20,18 @@ export const VARIANTS = {
   // Same structure more than once; each yard builds its own ship.
   dup: (S) => { S.TUNE.dup = true; },
   // Concord and Republic ideas.
+  concord_hull150: (S) => { S.FACTIONS.concord.hull = 1.5; },
+  concord_income140: (S) => { S.FACTIONS.concord.income = 1.4; },
   concord_hull125: (S) => { S.FACTIONS.concord.hull = 1.25; },
   concord_income110: (S) => { S.FACTIONS.concord.income = 1.1; },
   concord_cost110: (S) => { S.FACTIONS.concord.cost = 1.1; },
   boreal_hull110: (S) => { S.FACTIONS.boreal.hull = 1.1; },
   boreal_rail145: (S) => { S.FACTIONS.boreal.rail = 1.45; },
+  boreal_rail115: (S) => { S.FACTIONS.boreal.rail = 1.15; },
+  boreal_accel110: (S) => { S.FACTIONS.boreal.accel = 1.1; },
+  boreal_start3: (S) => { S.FACTIONS.boreal.start = ['frigate', 'corvette', 'corvette']; },
+  boreal_hull90: (S) => { S.FACTIONS.boreal.hull = 0.9; },
+  boreal_cost110: (S) => { S.FACTIONS.boreal.cost = 1.1; },
 };
 /** Combine variants: "a+b" applies both. */
 export const VARIANTS_PROXY = new Proxy(VARIANTS, { get: (t, k) => (typeof k === 'string' && k.includes('+') ? (S, A) => k.split('+').forEach((n) => t[n](S, A)) : t[k]) });

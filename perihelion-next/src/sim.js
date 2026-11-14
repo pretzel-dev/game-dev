@@ -1641,9 +1641,10 @@ export function prepare(game) {
 }
 function place(game) {
   for (const b of game.bodies) { game.bp[b.id] = posAt(game, b, game.time); game.bv[b.id] = velAt(game, b, game.time); }
+  game.placedAt = game.time;
 }
 function tick(game) {
-  place(game);
+  if (game.placedAt !== game.time) place(game); // (the end of the last step already placed them, unless something moved the clock)
   stepShips(game, DT);
   stepTorps(game, DT);
   game.time += DT;
