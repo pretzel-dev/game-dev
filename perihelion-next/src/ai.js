@@ -214,7 +214,7 @@ function think(game, ai) {
     if (b.home && enemy && main.length < 3) continue; // a capital only yields to three ships or more
     if (b.home && enemy) {
       const ahead = mine.length >= 2 * worldsOf(game, b.owner).length && t > 1200;
-      const need = (b.bhp / 150 + batteryGuns(b) * 0.4 + Math.max(2, enemyStr(b.owner))) * margin * (ahead ? 0.7 : 1);
+      const need = (b.bhp / 150 + batteryGuns(b) * 0.9 + Math.max(2, enemyStr(b.owner))) * margin * (ahead ? 0.7 : 1);
       if (str < need) continue;
       const v = (ahead ? 500 : 50) / (1 + dist2(p, here) / 800);
       if (v > bestV) { bestV = v; best = b; }

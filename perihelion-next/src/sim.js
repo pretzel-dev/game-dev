@@ -34,9 +34,9 @@ export const RULES = {
     lab: { name: 'Lab', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
     exchange: { name: 'Exchange', cost: 400, time: 70, where: ['station'], home: true, maxLevel: 2, income: 1.5 },
     array: { name: 'Sensor array', cost: 250, time: 45, where: ['moon', 'station', 'asteroid'], maxLevel: 1 },
-    depot: { name: 'Fuel depot', cost: 250, time: 45, where: ['moon', 'station'], maxLevel: 1 },
+    depot: { name: 'Fuel depot', cost: 250, time: 45, where: ['moon', 'station', 'asteroid'], maxLevel: 1 },
   },
-  batteryHp: 100, // per level
+  batteryHp: 140, // per level
   batteryRegen: 1.5,
   yield: { asteroid: 18, moon: 20, station: 22, planet: 30, giant: 36, home: 50 }, // seconds of unchallenged orbit
   refuel: 0.5, // delta-v per second in orbit of a world you hold (x3 at a refinery or capital)
@@ -385,7 +385,7 @@ export const worldSight = (b, game = null) => RULES.worldSensor * (levelOf(b, 'a
 export const batteryMax = (b) => RULES.batteryHp * levelOf(b, 'battery') * (b.trait === 'fortress' ? 2 : 1) * (b.home ? 2 : 1);
 /** Rail guns a battery fires: one per level, and one more at a capital. */
 export const batteryGuns = (b) => (levelOf(b, 'battery') ? levelOf(b, 'battery') + (b.home ? 1 : 0) : 0);
-export const BATTERY_DMG = 5;
+export const BATTERY_DMG = 10;
 /** Armed ships that must hold a capital's orbit together before it will yield. */
 export const CAPITAL_SHIPS = 3;
 /** How fast things are built at a world, against the standard. */
@@ -674,12 +674,21 @@ export function spawnShip(game, owner, cls, b, extra = {}) {
   game.ships.push(s);
   return s;
 }
+/** A ship's own parking orbit: how much higher than the lowest (k) and the two axes of its tilted plane. */
+function parkOf(s) {
+  const h = (n) => { const x = Math.sin(s.id * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
+  const k = 1 + h(1) * 0.3, tilt = (h(2) - 0.5) * 0.9, node = h(3) * Math.PI * 2;
+  return { k, ux: Math.cos(node), uz: Math.sin(node), vx: -Math.sin(node) * Math.cos(tilt), vy: Math.sin(tilt), vz: Math.cos(node) * Math.cos(tilt) };
+}
 /** A ship in orbit rides its world's rails. */
 function ride(game, s, t) {
   const b = game.bodies[s.at];
-  const p = posAt(game, b, t), v = velAt(game, b, t), R = parkRadius(b), w = parkRate(b);
-  s.x = p.x + Math.cos(s.ph) * R; s.y = p.y; s.z = p.z + Math.sin(s.ph) * R;
-  s.vx = v.x - Math.sin(s.ph) * R * w; s.vy = v.y; s.vz = v.z + Math.cos(s.ph) * R * w;
+  // Each ship keeps its own orbit (a little higher or lower, tilted its own way), so ships over a world are spread round it.
+  const { k, ux, uz, vx, vy, vz } = parkOf(s);
+  const p = posAt(game, b, t), v = velAt(game, b, t), R = parkRadius(b) * k, w = parkRate(b) / k ** 1.5;
+  const c = Math.cos(s.ph), sn = Math.sin(s.ph);
+  s.x = p.x + (c * ux + sn * vx) * R; s.y = p.y + sn * vy * R; s.z = p.z + (c * uz + sn * vz) * R;
+  s.vx = v.x + (-sn * ux + c * vx) * R * w; s.vy = v.y + c * vy * R * w; s.vz = v.z + (-sn * uz + c * vz) * R * w;
 }
 export const shipById = (game, id) => game.ships.find((s) => s.id === id);
 export const crippled = (s) => s.out.drive > 0 || s.out.reactor > 0 || s.dv <= 0;
@@ -987,7 +996,7 @@ export function advance(game, s, t, h, G, lookup) {
     const dp = Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z), R = parkRadius(b);
     const rv = Math.hypot(v.x - s.vx, v.y - s.vy, v.z - s.vz);
     if (dp < R + 0.7 && rv < 0.45) {
-      s.at = b.id; s.ph = Math.atan2(s.z - p.z, s.x - p.x); s.ready = game.time + RULES.turnaround;
+      s.at = b.id; { const o = parkOf(s), dx = s.x - p.x, dy = s.y - p.y, dz = s.z - p.z; s.ph = Math.atan2(dx * o.vx + dy * o.vy + dz * o.vz, dx * o.ux + dz * o.uz); } s.ready = game.time + RULES.turnaround;
       s.order = null; s.depart = undefined; s.burn = 0; s.tx = s.ty = s.tz = 0; s.phase = 'orbit'; s.arrived = true;
     }
   } else if (o && o.type === 'strike') {
