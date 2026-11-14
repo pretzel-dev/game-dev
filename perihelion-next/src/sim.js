@@ -70,6 +70,12 @@ export const CLASSES = {
 };
 export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender'];
 
+/** Switches for trying out rule variations (tools/tune.mjs sets them; the shipped values are these defaults). */
+export const TUNE = {
+  dup: false, // the same kind of structure may be built more than once on a world; each working yard builds its own ship
+  holdsMoons: 0, // moons round the Holds' home giant (0: as generated, two to four)
+};
+const DUP_OK = ['mine', 'refinery', 'yard', 'lab', 'habitat', 'exchange'];
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
   concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.25, start: ['frigate', 'escort', 'corvette'] },
@@ -275,7 +281,7 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
     const owner = i < stationHomes.length ? stationHomes[i] : NEUTRAL;
     const big = court && i === 0;
     const size = big ? 5.2 : 3.4 + rand() * 1.2;
-    specs.push({ owner, giant: true, size, moons: moonsOf(size, big ? 4 : 2 + Math.floor(rand() * 2)), station: owner !== NEUTRAL, stationHome: owner !== NEUTRAL, e: 0.02 + rand() * 0.04, incl: (rand() - 0.5) * 0.04 });
+    specs.push({ owner, giant: true, size, moons: moonsOf(size, owner !== NEUTRAL && TUNE.holdsMoons ? TUNE.holdsMoons + (rand() * 0 | 0) : big ? 4 : 2 + Math.floor(rand() * 2)), station: owner !== NEUTRAL, stationHome: owner !== NEUTRAL, e: 0.02 + rand() * 0.04, incl: (rand() - 0.5) * 0.04 });
   }
   if (rand() < 0.4) { const size = 1.2 + rand() * 0.5; specs.push({ owner: NEUTRAL, giant: false, size, moons: moonsOf(size, Math.floor(rand() * 2)), station: false, e: 0.14 + rand() * 0.1, incl: (rand() - 0.5) * 0.14, dwarf: true }); }
   const hosts = shuffle(specs.filter((s) => s.owner === NEUTRAL && !s.dwarf)).slice(0, 1 + Math.floor(rand() * 2));
@@ -379,7 +385,7 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
 export const working = (x) => x.left <= 0 && !x.scrap;
 export const structure = (b, type) => b.structures.find((x) => x.type === type);
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
-const levelOf = (b, type) => { const x = structure(b, type); return x && working(x) ? x.level : 0; };
+const levelOf = (b, type) => { let n = 0; for (const x of b.structures) if (x.type === type && working(x)) n += x.level; return n; }; // (all of that kind, when more than one is allowed)
 /** How far a held world sees, against a ship's sensors. */
 export const worldSight = (b, game = null) => RULES.worldSensor * (levelOf(b, 'array') ? RULES.arraySensor : 1) * (b.trait === 'relay' ? 4 : 1) * (b.trait === 'listening' && levelOf(b, 'array') ? 2 : 1) * (game && knows(game, b.owner, 'network') ? 2 : 1);
 export const batteryMax = (b) => RULES.batteryHp * levelOf(b, 'battery') * (b.trait === 'fortress' ? 2 : 1) * (b.home ? 2 : 1);
@@ -440,7 +446,7 @@ export function cantBuild(game, b, type) {
   if (b.trait && (TRAITS[b.trait].no || []).includes(type)) return 'Not here';
   if (S.giant && !b.giant) return 'Gas giants only';
   if (S.rocky && b.giant) return 'Not on a gas giant';
-  if (structure(b, type)) return 'Already built';
+  if (structure(b, type) && !(TUNE.dup && DUP_OK.includes(type))) return 'Already built';
   if (b.structures.length >= slotsOf(b)) return 'No room';
   if (game.credits[b.owner] < S.cost) return 'Not enough credits';
   return null;
@@ -1427,10 +1433,12 @@ function stepWorlds(game, dt) {
       const o = b.owner;
       // Yard.
       if (b.queue.length && has(b, 'yard') && !enemyHere) {
-        const q = b.queue[0];
-        q.left -= dt;
-        if (q.left <= 0) {
-          b.queue.shift();
+        // One ship at a time for each working yard.
+        const slips = TUNE.dup ? Math.max(1, b.structures.filter((x) => x.type === 'yard' && working(x)).length) : 1;
+        for (const q of b.queue.slice(0, slips)) {
+          q.left -= dt;
+          if (q.left > 0) continue;
+          b.queue.splice(b.queue.indexOf(q), 1);
           const s = spawnShip(game, o, q.cls, b);
           if (b.trait === 'hulk') s.xp = 6; // the hulk's old hands
           tally(game, o, 'built');
