@@ -27,12 +27,12 @@ export const RULES = {
   structures: {
     // What can be built depends on the kind of world: that is much of what makes each one worth having.
     yard: { name: 'Yard', cost: 350, time: 60, where: ['planet', 'station'], maxLevel: 2 },
-    mine: { name: 'Mine', cost: 200, time: 40, where: ['planet', 'moon', 'asteroid'], rocky: true, maxLevel: 2, income: 1 },
+    mine: { name: 'Mine', cost: 200, time: 40, where: ['planet', 'moon', 'asteroid'], rocky: true, notHome: true, maxLevel: 2, income: 1 },
     refinery: { name: 'Refinery', cost: 300, time: 50, where: ['planet'], giant: true, maxLevel: 2, income: 1.5 },
     battery: { name: 'Battery', cost: 250, time: 45, where: ['planet', 'moon', 'station', 'asteroid'], maxLevel: 3 },
     habitat: { name: 'Habitat', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
-    lab: { name: 'Lab', cost: 300, time: 60, where: ['planet', 'station'], rocky: true, maxLevel: 2 },
-    exchange: { name: 'Exchange', cost: 400, time: 70, where: ['station'], home: true, maxLevel: 2, income: 1.5 },
+    lab: { name: 'Lab', cost: 300, time: 60, where: ['planet', 'moon', 'station'], rocky: true, maxLevel: 2 },
+    exchange: { name: 'Exchange', cost: 400, time: 70, where: ['station'], home: true, garden: true, maxLevel: 2, income: 1.5 },
     array: { name: 'Sensor array', cost: 250, time: 45, where: ['moon', 'station', 'asteroid'], maxLevel: 1 },
     depot: { name: 'Fuel depot', cost: 250, time: 45, where: ['moon', 'station', 'asteroid'], maxLevel: 1 },
   },
@@ -72,15 +72,16 @@ export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender
 
 /** Switches for trying out rule variations (tools/tune.mjs sets them; the shipped values are these defaults). */
 export const TUNE = {
-  dup: true, // the same kind of structure may be built more than once on a world; each working yard builds its own ship
+  dup: false, // the same kind of structure may be built more than once on a world; each working yard builds its own ship
+  bigShips: false, // a battleship takes two places in the fleet
   holdsMoons: 0, // moons round the Holds' home giant (0: as generated, two to four)
 };
 const DUP_OK = ['mine', 'refinery', 'yard', 'lab', 'habitat', 'exchange'];
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.4, start: ['frigate', 'escort', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.6, start: ['frigate', 'escort', 'corvette'] },
   boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast ships, strong rails. Starts with four ships.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
-  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
+  holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette'] },
 };
 export const FACTION_KEYS = Object.keys(FACTIONS);
 
@@ -133,7 +134,7 @@ export const TRAITS = {
   archive: { name: 'Ancient archive', text: "Research is 30% faster. A lab here counts double.", kinds: ['planet', 'moon'], boost: 'lab' },
   hulk: { name: 'Drydock hulk', text: "Has a yard that builds 50% faster. Its ships start with a rank.", kinds: ['station', 'moon'], boost: 'yard' },
   forge: { name: 'Tidal forge', text: "Everything builds twice as fast. No labs.", kinds: ['moon'], no: ['lab'] },
-  garden: { name: 'Garden world', text: "Earns 4.8 more a day. A habitat here gives 2 ships a level. No mines.", kinds: ['planet'], boost: 'habitat', no: ['mine'] },
+  garden: { name: 'Garden world', text: "Earns 4.8 more a day. A habitat here gives 2 ships a level. Exchanges, no mines.", kinds: ['planet'], boost: 'habitat', no: ['mine'] },
   listening: { name: 'Listening post', text: "Identifies ships far away while their drives burn. A sensor array here sees twice as far again.", kinds: ['asteroid', 'moon', 'station'], boost: 'array' },
 };
 export const AGENT = { cost: 200, travel: 45, caught: 1 / 360, opCost: 150, opRisk: 0.3, skim: 0.33 };
@@ -436,7 +437,9 @@ export function fleetCap(game, owner) {
   // Crews come from habitats: each level lets you field one more ship.
   return Math.min(RULES.capMax, RULES.capBase + (f.cap || 0) + worldsOf(game, owner).reduce((n, b) => n + levelOf(b, 'habitat') * (b.trait === 'garden' ? 2 : 1) * (knows(game, owner, 'arcology') ? 2 : 1), 0));
 }
-export const fleetSize = (game, owner) => warshipsOf(game, owner).length + game.bodies.reduce((k, b) => k + (b.owner === owner ? b.queue.length : 0), 0);
+/** Places a ship of this class takes in the fleet. */
+export const placesOf = (cls) => (TUNE.bigShips && cls === 'battleship' ? 2 : 1);
+export const fleetSize = (game, owner) => warshipsOf(game, owner).reduce((k, s) => k + placesOf(s.cls), 0) + game.bodies.reduce((k, b) => k + (b.owner === owner ? b.queue.reduce((n, q) => n + placesOf(q.cls), 0) : 0), 0);
 export const shipCost = (game, owner, cls) => Math.round((CLASSES[cls].cost * (FACTIONS[game.factions[owner]].cost || 1) * (knows(game, owner, 'modular') ? 0.85 : 1)) / 10) * 10;
 export const shipTime = (game, owner, cls, b = null) => (CLASSES[cls].time * (FACTIONS[game.factions[owner]].time || 1)) / ((b && b.structures.some((x) => x.type === 'yard' && working(x) && x.level >= 2) ? 1.5 : 1) * (b && b.trait === 'hulk' ? 1.5 : 1) * buildSpeed(game, owner, b));
 
@@ -446,7 +449,8 @@ export const slipsOf = (b) => (TUNE.dup ? Math.max(1, b.structures.filter((x) =>
 export function cantBuild(game, b, type) {
   const S = RULES.structures[type];
   if (!S) return 'Unknown';
-  if (!S.where.includes(b.kind) && !(S.home && b.home)) return 'Not here';
+  if (!S.where.includes(b.kind) && !(S.home && b.home) && !(S.garden && b.trait === 'garden')) return 'Not here';
+  if (S.notHome && b.home) return 'Not here';
   if (b.trait && (TRAITS[b.trait].no || []).includes(type)) return 'Not here';
   if (S.giant && !b.giant) return 'Gas giants only';
   if (S.rocky && b.giant) return 'Not on a gas giant';
@@ -502,7 +506,7 @@ export function cantOrderShip(game, b, cls) {
   if (!C || C.civil) return 'Unknown';
   if (!has(b, 'yard')) return 'Needs a yard';
   if (C.needs && !knows(game, b.owner, C.needs)) return `Needs ${techOption(C.needs).name}`;
-  if (fleetSize(game, b.owner) >= fleetCap(game, b.owner)) return 'Fleet at its limit';
+  if (fleetSize(game, b.owner) + placesOf(cls) > fleetCap(game, b.owner)) return 'Fleet at its limit';
   if (game.credits[b.owner] < shipCost(game, b.owner, cls)) return 'Not enough credits';
   return null;
 }

@@ -15,9 +15,9 @@ timed events) are still there to lift back if testing asks for them.
   and none is a perfect circle. Space is mostly empty: a hop to a moon takes
   about a minute, crossing the system many. Solo games have time speeds to 8x.
 - **Where you start suits your power.** The Concord on a living world (its
-  capital earns 40% more), the Republic on a dry one (it starts with
+  capital earns 60% more), the Republic on a dry one (it starts with
   four ships), the Holds on a large station over a gas giant with moons close
-  by (four ships too, but its capital earns 10% less).
+  by (its capital earns 10% less).
 - **Ships are real bodies.** Each has a position, a velocity and a tank. The sun
   and the planets pull on them. They change course only by burning, and every
   burn spends fuel (shown as an amber bar; in the rules it is a total speed
@@ -91,18 +91,17 @@ timed events) are still there to lift back if testing asks for them.
   | Structure | Where | Does |
   |---|---|---|
   | Yard (2 levels) | Planets, stations | Builds, repairs and rearms ships |
-  | Mine (2) | Rocky planets, moons, asteroids | Income |
+  | Mine (2) | Rocky planets (not capitals or garden worlds), moons, asteroids | Income |
   | Refinery (2) | Gas giants | Income; quick refuelling |
   | Battery (2) | Anywhere | Guns and point defence |
   | Habitat (2) | Rocky planets, stations | One more ship per level |
-  | Laboratory (2) | Rocky planets, stations | Research half as fast again per level |
-  | Exchange (2) | Stations, capitals | Income paid straight in |
+  | Laboratory (2) | Rocky planets, moons, stations | Research half as fast again per level |
+  | Exchange (2) | Stations, capitals, garden worlds | Income paid straight in |
   | Sensor array | Moons, stations, asteroids | The world sees much further |
   | Fuel depot | Moons, stations, asteroids | Quick refuelling |
 
   A capital has five slots, a planet three, a moon or station two, an asteroid one.
-  Mines, refineries, yards, labs, habitats and exchanges can be built more
-  than once on a world; each yard builds its own ship at the same time.
+  One of each structure per world.
 - **Special worlds.** Most independent worlds have a trait (a gold diamond on
   the plot; tap the gold tile to read it): rich seam (mines double), old
   relay (sees four times as far), deuterium sea (gas giants only: quick refuelling, better

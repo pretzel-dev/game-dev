@@ -1,12 +1,11 @@
 // Named variations for tools/tune.mjs. Each takes the rules module (S) and the AI module (A) and changes switches or tables.
-const oldAI = (A) => { A.AITUNE.generic = false; A.AITUNE.claim = false; A.AITUNE.refit = false; };
+const oldAI = (A) => { A.AITUNE.generic = false; A.AITUNE.claim = false; };
 export const VARIANTS = {
   // What shipped before this round: per-power tables in the AI.
   old: (S, A) => { oldAI(A); },
-  // The generic AI (fleet, research and doctrine worked out from each power's numbers; claimers; refits).
+  // The generic AI (fleet, research and doctrine worked out from each power's numbers; claimers).
   base: () => {},
-  generic_only: (S, A) => { A.AITUNE.claim = false; A.AITUNE.refit = false; },
-  no_refit: (S, A) => { A.AITUNE.refit = false; },
+  generic_only: (S, A) => { A.AITUNE.claim = false; },
   no_claim: (S, A) => { A.AITUNE.claim = false; },
   // Holds ideas.
   holds_corvette: (S) => { S.FACTIONS.holds.start = ['frigate', 'frigate', 'corvette', 'corvette']; },
@@ -19,10 +18,13 @@ export const VARIANTS = {
   holds_fast: (S) => { S.FACTIONS.holds.time = 0.75; },
   // Same structure more than once; each yard builds its own ship.
   dup: (S) => { S.TUNE.dup = true; },
+  holds3: (S) => { S.FACTIONS.holds.start = ['frigate', 'frigate', 'corvette']; },
+  big: (S) => { S.TUNE.bigShips = true; },
   // Concord and Republic ideas.
   concord_hull150: (S) => { S.FACTIONS.concord.hull = 1.5; },
   concord_income140: (S) => { S.FACTIONS.concord.income = 1.4; },
   concord_income150: (S) => { S.FACTIONS.concord.income = 1.5; },
+  concord_income160: (S) => { S.FACTIONS.concord.income = 1.6; },
   concord_hull125: (S) => { S.FACTIONS.concord.hull = 1.25; },
   concord_income110: (S) => { S.FACTIONS.concord.income = 1.1; },
   concord_cost110: (S) => { S.FACTIONS.concord.cost = 1.1; },

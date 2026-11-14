@@ -351,7 +351,8 @@ for (const k of SCENARIO_KEYS) {
   ok(!q.alive[1], 'conquest: with no worlds left it is out');
 }
 {
-  // The same structure more than once: two yards build two ships at the same time; two mines earn twice.
+  // The same structure more than once (off in play; kept as a switch): two yards build two ships at the same time; two mines earn twice.
+  S.TUNE.dup = true;
   const g = S.createGame({ seed: 3, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
   const h = g.homes[0]; g.credits[0] = 1e5;
   h.structures = h.structures.filter((x) => x.type !== 'yard');
@@ -370,6 +371,21 @@ for (const k of SCENARIO_KEYS) {
     const before = m.structures.length; S.demolish(g, m, 'mine', 1);
     ok(m.structures[1].scrap && !m.structures[0].scrap && m.structures.length === before, 'removing picks the one asked for');
   }
+  S.TUNE.dup = false;
+}
+{
+  // No mines on a capital or a garden world; a garden world takes an exchange; labs go on moons.
+  const g = S.createGame({ seed: 4, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
+  g.credits[0] = 1e5;
+  ok(S.cantBuild(g, g.homes[0], 'mine') === 'Not here', 'no mines on a capital');
+  const gw = g.bodies.find((b) => b.kind === 'planet' && !b.giant && !b.home); gw.trait = 'garden'; gw.owner = 0; gw.structures = [];
+  ok(S.cantBuild(g, gw, 'mine') && !S.cantBuild(g, gw, 'exchange'), 'a garden world takes an exchange, not a mine');
+  const moon = g.bodies.find((b) => b.kind === 'moon' && !b.trait); moon.owner = 0; moon.structures = [];
+  ok(!S.cantBuild(g, moon, 'lab'), 'labs on moons');
+  // A battleship can take two places in the fleet.
+  S.TUNE.bigShips = true;
+  ok(S.placesOf('battleship') === 2 && S.placesOf('frigate') === 1, 'a battleship takes two places');
+  S.TUNE.bigShips = false;
 }
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
