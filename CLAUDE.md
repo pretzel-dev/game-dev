@@ -187,8 +187,8 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   breaks off below three ships. Keep those properties when changing it.
 - The AI has no per-power plan: it reads each power's numbers (`FACTIONS`) to
   pick ship classes (worth per credit), research order and doctrines
-  (`leanings`, `lineOrder`), sends lone corvettes to claim empty worlds and
-  scraps weak ships for better ones when at the cap (`AITUNE` switches).
+  (`leanings`, `lineOrder`) and sends lone corvettes to claim empty worlds
+  (`AITUNE` switches).
 - Balance is measured with `node tools/tune.mjs <variant>[+variant] 96 normal 4 9000`
   (variants in `tools/variants.mjs`; 9000 plays matches out, since calling them
   early favours the Holds). About 13 minutes per 96 matches; noise is about ±6
