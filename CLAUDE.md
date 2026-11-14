@@ -177,9 +177,15 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Sound (`src/audio.js`) is generated in the browser as a trial. The owner
   dislikes cheap synth sound: if they reject it, keep interface and alert
   sounds only and source audio files.
-- Tests: `npm run check`, `npm run check:matches` (up to half of 24
-  may not finish: the AI is poor at taking a defended capital, which now needs
-  three ships in orbit; improving that is open work), `node tools/smoke.mjs`, `node tools/mp-smoke.mjs`.
+- Tests: `npm run check`, `npm run check:matches` (24 AI-only matches; about
+  2 do not finish, and the run fails above half), `node tools/smoke.mjs`,
+  `node tools/mp-smoke.mjs`. The matches take over ten minutes in one process.
+- AI assaults (`ai.js`): a fleet that arrives together takes a capital; one
+  that trickles in dies. So the AI musters every armed ship at its capital
+  (`mustering`), leaves as one formation, reinforces only in groups of three,
+  keeps assaulting ships on station (no going home to rearm mid-siege) and
+  breaks off below three ships. Keep those properties when changing it. The
+  Concord wins most AI-only games and the Holds few: open balance work.
 
 ## Owner's preferences
 
