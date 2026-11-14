@@ -40,7 +40,7 @@ window.addEventListener('pointerup', () => setTimeout(flush, 300), true);
 window.addEventListener('pointercancel', flush, true);
 
 const prefs = (() => {
-  const d = { faction: 'concord', rivals: 1, level: 'normal', sound: true, ui: 1, gfx: 'high', conquest: false, dev: false, name: '', done: {} };
+  const d = { faction: 'concord', rivals: 1, level: 'normal', sound: true, ui: 1, gfx: 'high', conquest: false, winBy: null, dev: false, name: '', done: {} };
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion2') || '{}') }; } catch { return d; }
 })();
 const save = () => { try { localStorage.setItem('perihelion2', JSON.stringify(prefs)); } catch { /* private mode */ } };
@@ -784,7 +784,7 @@ function titleNav() {
 function setupPanel(daily = false) {
   showPanel(`${head(daily ? 'Daily system' : 'Engage')}<p class="lbl">Side</p>${factionOpts(prefs.faction)}`
     + `<p class="lbl">Rivals</p>${seg('rivals', [1, 2], prefs.rivals)}<p class="lbl">AI</p>${seg('level', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}`
-    + (daily ? '' : `<p class="lbl">Win by</p>${seg('winby', ['capital', 'conquest'], prefs.conquest ? 'conquest' : 'capital', (k) => (k === 'capital' ? 'Taking the capital' : 'Taking every world'))}`)
+    + (daily ? '' : `<p class="lbl">Win by</p>${seg('winby', WIN_BY, winBy(), (k) => WIN_LABEL[k])}`)
     + `<button class="cta" data-a="${daily ? 'launchDaily' : 'launch'}">Launch</button>`);
   panel.dataset.screen = daily ? 'daily' : 'setup';
 }
@@ -794,7 +794,7 @@ function launch(seed, daily = false) {
   if (r() < 0.5) others.reverse();
   const players = [{ faction: prefs.faction, name: prefs.name || 'You' }];
   for (let i = 0; i < prefs.rivals; i++) players.push({ faction: others[i], ai: prefs.level });
-  start(S.createGame({ seed, players, conquest: !daily && prefs.conquest }), { players, mode: 'solo' });
+  start(S.createGame({ seed, players, winBy: daily ? 'capital' : winBy() }), { players, mode: 'solo' });
   game.daily = daily ? S.dailySeed().key : null;
 }
 function scenariosPanel() {
@@ -945,7 +945,7 @@ function lobbyPanel() {
   const host = mode === 'hostLobby';
   showPanel(`${head('Lobby', 'leaveLobby')}<p class="lbl">Room code</p><div class="code">${lobby.code || '·····'}</div><div class="opts">`
     + lobby.seats.map((s, i) => `<div class="opt" style="--c:${FACTION_COLORS[s.faction] || '#888'}"><i class="sw"></i><div><b>${esc(s.name)}${i === lobby.you ? ' (you)' : ''}</b><span>${FACTIONS[s.faction]?.name || ''}${s.online ? '' : ' · away'}</span></div>${host && i > 0 ? `<button class="mark" style="visibility:visible" data-a="kick" data-v="${i}">${icon('close')}</button>` : ''}</div>`).join('')
-    + `</div>${host ? `<p class="lbl">Win by</p>${seg('winby', ['capital', 'conquest'], prefs.conquest ? 'conquest' : 'capital', (k) => (k === 'capital' ? 'Taking the capital' : 'Taking every world'))}<p class="lbl">Add an AI</p>${seg('lobbyLevel', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}<button class="cta ghost" data-a="addAI">Add AI</button><button class="cta" data-a="startMP">Start</button>` : '<p class="hint">Waiting for the host to start</p>'}`);
+    + `</div>${host ? `<p class="lbl">Win by</p>${seg('winby', WIN_BY, winBy(), (k) => WIN_LABEL[k])}<p class="lbl">Add an AI</p>${seg('lobbyLevel', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}<button class="cta ghost" data-a="addAI">Add AI</button><button class="cta" data-a="startMP">Start</button>` : '<p class="hint">Waiting for the host to start</p>'}`);
 }
 function hostGame() {
   prefs.name = cleanName($('mpname').value); save();
@@ -971,7 +971,7 @@ function joinGame() {
     message: (m) => {
       if (m.t === 'lobby') { lobby.seats = m.seats; lobby.you = m.you; lobby.code = m.code; if (mode === 'guestLobby') lobbyPanel(); }
       else if (m.t === 'full' || m.t === 'kicked') { closeRoom(); mpPanel(m.why || 'Removed from the room'); }
-      else if (m.t === 'start') { start(S.createGame({ seed: m.seed, players: m.players, mp: true }), { players: m.players, mode: 'guest', me: m.you }); }
+      else if (m.t === 'start') { start(S.createGame({ seed: m.seed, players: m.players, mp: true, winBy: m.winBy }), { players: m.players, mode: 'guest', me: m.you }); }
       else if (m.t === 'snap' && mode === 'guest') { S.applySnapshot(game, m.s, me); game.acc = 0; if (m.fx) ui.pendingFx = (ui.pendingFx || []).concat(m.fx); }
       else if (m.t === 'paused') paused = m.paused;
     },
@@ -985,11 +985,14 @@ function startMP() {
   if (players.length < 2) return;
   room.start();
   const seed = (Math.random() * 1e9) | 0;
-  const g = S.createGame({ seed, players, mp: true, conquest: prefs.conquest });
+  const g = S.createGame({ seed, players, mp: true, winBy: winBy() });
   g.mpPlayers = players;
-  room.seats.forEach((s, i) => { if (s.kind === 'human' && i > 0) room.sendTo(i, { t: 'start', seed, players, you: i }); });
+  room.seats.forEach((s, i) => { if (s.kind === 'human' && i > 0) room.sendTo(i, { t: 'start', seed, players, you: i, winBy: winBy() }); });
   start(g, { players, mode: 'host', me: 0 });
 }
+const WIN_BY = ['capital', 'conquest', 'ark'];
+const WIN_LABEL = { capital: 'Taking the capital', conquest: 'Taking every world', ark: 'The Ark' };
+const winBy = () => (WIN_BY.includes(prefs.winBy) ? prefs.winBy : prefs.conquest ? 'conquest' : 'capital');
 function closeRoom() { if (room) { try { room.close(); } catch { /* gone */ } room = null; } lobby = null; }
 
 function clickPanel(a, v) {
@@ -1023,7 +1026,7 @@ function clickPanel(a, v) {
     case 'text': prefs.ui = prefs.ui === 1 ? 1.15 : prefs.ui > 1 ? 0.9 : 1; save(); document.documentElement.style.setProperty('--ui-mult', prefs.ui); titleNav(); break;
     case 'gfx': prefs.gfx = prefs.gfx === 'low' ? 'high' : 'low'; save(); view.setQuality(gfx()); titleNav(); if (panel.dataset.screen === 'pause' && !panel.hidden) pauseMenu(); break;
     case 'tutorial': { const players = [{ faction: 'concord', name: prefs.name || 'You' }, { faction: 'boreal', ai: LEVEL_KEYS[0] }]; start(S.createGame({ seed: 4, players }), { players, mode: 'solo', tutorial: true }); hidePanel(); break; }
-    case 'winby': prefs.conquest = v === 'conquest'; save(); if (lobby) lobbyPanel(); else setupPanel(panel.dataset.screen === 'daily'); break;
+    case 'winby': prefs.winBy = v; prefs.conquest = v === 'conquest'; save(); if (lobby) lobbyPanel(); else setupPanel(panel.dataset.screen === 'daily'); break;
     case 'share': shareReport(); break;
     default:
   }

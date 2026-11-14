@@ -139,7 +139,7 @@ export const MEGA = {
   ansible: { name: 'Ansible array', cost: 8000, time: 200, text: 'See every ship in the system and where it is going.' },
   spire: { name: 'Arcology spire', cost: 8000, time: 200, text: 'Four more ships, above the usual limit.', crew: 4 },
   blackout: { name: 'Blackout', cost: 8000, time: 200, text: 'Hide all your ships for a while.', last: 120, cooldown: 720 },
-  ark: { name: 'Ark', cost: 20000, time: 480, text: 'Hold it until it leaves to win.', hold: 480 },
+  ark: { name: 'Ark', cost: 15000, time: 480, text: 'Hold it until it leaves to win.', hold: 480 },
 };
 export const MEGA_KEYS = Object.keys(MEGA);
 /** The strike looks and is named differently for each power; it does the same thing. */

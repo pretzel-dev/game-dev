@@ -5,7 +5,7 @@
 // Difficulty is how often it thinks, how reliably it follows through (skill),
 // and how well its economy runs (eco).
 import {
-  NEUTRAL, RULES, CLASSES, FACTIONS, statsFor, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, placesOf, routes, strength, armed, crippled, shipsAt, has, structure, working,
+  NEUTRAL, RULES, CLASSES, FACTIONS, statsFor, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, placesOf, cantMega, startMega, MEGA, cantStrike, fireStrike, cantBlackout, startBlackout, routes, strength, armed, crippled, shipsAt, has, structure, working,
   cantBuild, buildStructure, cantUpgrade, upgrade, upgradeCost, cantOrderShip, orderShip, shipCost, cantResearch, research,
   fleetCap, fleetSize, incomeOf, batteryMax, batteryGuns, warshipsOf, worldsOf,
 } from './sim.js';
@@ -151,7 +151,16 @@ function think(game, ai) {
   // Mustering: well ahead on worlds, or the fleet is as big as it can get and the bank is full. Nothing more is gained
   // by waiting, so every armed ship (the raiders too) gathers for one push on the nearest enemy capital.
   const foeHome = game.homes.filter((h, i) => h && i !== o && game.alive[i]).sort((x, y) => dist2(game.bp[x.id], game.bp[home.id]) - dist2(game.bp[y.id], game.bp[home.id]))[0];
-  const mustering = t > 900 && !!foeHome && (mine.length >= 2 * worldsOf(game, foeHome.owner).length || (fleetSize(game, o) >= fleetCap(game, o) - 1 && game.credits[o] > 3000));
+  // An enemy Ark well on its way, or finished and counting down, has to be stopped now.
+  const arkThreat = game.bodies.some((b) => b.owner >= 0 && b.owner !== o && b.mega && b.mega.key === 'ark' && (b.mega.done || b.mega.left < b.mega.total * 0.5));
+  if (will()) {
+    // Fire the strike at the strongest rival; go dark while an assault is on its way.
+    const rivals = game.homes.filter((h, i) => h && i !== o && game.alive[i]).sort((x, y) => worldsOf(game, y.owner).length - worldsOf(game, x.owner).length);
+    const aim = rivals.find((h) => !cantStrike(game, o, h));
+    if (aim) fireStrike(game, o, aim);
+    if (ai.siege != null && !cantBlackout(game, o) && fleet.some((s) => s.order && s.order.body === ai.siege && s.at === null)) startBlackout(game, o);
+  }
+  const mustering = t > 900 && !!foeHome && (arkThreat || mine.length >= 2 * worldsOf(game, foeHome.owner).length || (fleetSize(game, o) >= fleetCap(game, o) - 1 && game.credits[o] > 3000));
   const raiders = mustering || ai.siege != null ? [] : free.filter((s) => s.cls === 'corvette');
   const line = free.filter((s) => !raiders.includes(s) || raiders.length === free.length);
   if (will()) {
@@ -280,7 +289,7 @@ function think(game, ai) {
       const ahead = mine.length >= 2 * worldsOf(game, b.owner).length && t > 1200;
       const need = (b.bhp / 150 + batteryGuns(b) * 0.9 + Math.max(2, enemyStr(b.owner))) * margin * (ahead ? 0.7 : 1);
       if (str < need) continue;
-      const v = (ahead ? 500 : 50) / (1 + dist2(p, here) / 800);
+      const v = ((ahead ? 500 : 50) * (b.mega ? (b.mega.key === 'ark' ? 20 : 3) : 1)) / (1 + dist2(p, here) / 800); // (a megaproject is worth going for)
       if (v > bestV) { bestV = v; best = b; }
       continue;
     }
@@ -348,6 +357,13 @@ function spend(game, ai, home, mine, fleet, will) {
     if (y.queue.length < 2 && !cantOrderShip(game, y, cls) && (size < 4 || credits() > shipCost(game, o, cls) + 100)) { orderShip(game, y, cls); return; }
   }
   if (!will()) return;
+  // Megaprojects: once the fleet is about full, the bank goes on one. In the Ark mode the Ark comes first.
+  const arkMode = game.winBy === 'ark', building = (key) => game.bodies.some((b) => b.owner === o && b.mega && b.mega.key === key);
+  if (arkMode || size >= cap - 1) {
+    const keys = arkMode && !building('ark') && game.megaDone.ark == null ? ['ark'] : ['spire', 'strike', 'fuelnet', 'ansible', 'blackout'];
+    for (const key of keys) for (const b of [home, ...mine.filter((x) => x !== home)]) if (!cantMega(game, b, key)) { startMega(game, b, key); return; }
+  }
+  const saving = arkMode && game.time > 1200 && !building('ark') && game.megaDone.ark == null && credits() > MEGA.ark.cost * 0.3;
   // At the limit with money to spare: habitats let the fleet grow.
   if (size >= cap && credits() > 450) {
     for (const b of mine) {
@@ -366,6 +382,7 @@ function spend(game, ai, home, mine, fleet, will) {
       if (x && size >= 3 && !cantUpgrade(game, b, x) && credits() > upgradeCost(x) + 150) { upgrade(game, b, x); return; }
     }
   }
+  if (saving) return; // (putting money by for the Ark)
   // Research: the line that is furthest behind, in this power's order, and its favoured doctrine.
   const tech = game.tech[o];
   if (!tech.project && size >= 3) {
