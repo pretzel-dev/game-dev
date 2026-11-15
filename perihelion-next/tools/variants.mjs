@@ -25,6 +25,8 @@ export const VARIANTS = {
   concord_income140: (S) => { S.FACTIONS.concord.income = 1.4; },
   concord_income150: (S) => { S.FACTIONS.concord.income = 1.5; },
   concord_income160: (S) => { S.FACTIONS.concord.income = 1.6; },
+  concord_income180: (S) => { S.FACTIONS.concord.income = 1.8; },
+  holds_income08: (S) => { S.FACTIONS.holds.income = 0.8; },
   concord_hull125: (S) => { S.FACTIONS.concord.hull = 1.25; },
   concord_income110: (S) => { S.FACTIONS.concord.income = 1.1; },
   concord_cost110: (S) => { S.FACTIONS.concord.cost = 1.1; },

@@ -135,7 +135,7 @@ export const knows = (game, owner, key) => owner >= 0 && !!game.tech[owner].pick
 // The effect belongs to whoever holds the world. The Ark only exists in the Ark mode and wins it.
 export const MEGA = {
   fuelnet: { name: 'Fuel network', cost: 8000, time: 200, text: 'Ships refuel and rearm at any of your worlds.' },
-  strike: { name: 'Strike', cost: 10000, time: 240, text: 'Wrecks the structures of an enemy capital and stops its income.', cooldown: 480, flight: 160, hp: 800, stun: 240, reach: 40 },
+  strike: { name: 'Strike', cost: 10000, time: 240, text: 'Wrecks the structures of an enemy capital and stops its income.', cooldown: 480, flight: 160, hp: 1600, stun: 240, reach: 30 },
   ansible: { name: 'Ansible array', cost: 8000, time: 200, text: 'See every ship in the system and where it is going.' },
   spire: { name: 'Arcology spire', cost: 8000, time: 200, text: 'Four more ships, above the usual limit.', crew: 4 },
   blackout: { name: 'Blackout', cost: 8000, time: 200, text: 'Hide all your ships for a while.', last: 120, cooldown: 720 },
