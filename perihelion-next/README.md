@@ -15,8 +15,8 @@ timed events) are still there to lift back if testing asks for them.
   and none is a perfect circle. Space is mostly empty: a hop to a moon takes
   about a minute, crossing the system many. Solo games have time speeds to 8x.
 - **Where you start suits your power.** The Concord on a living world (its
-  capital earns 60% more), the Republic on a dry one (it starts with
-  four ships), the Holds on a large station over a gas giant with moons close
+  capital earns 80% more), the Republic on a dry one (it starts with
+  four ships), the Holds on a large station over a gas giant with two moons close
   by (its capital earns 10% less).
 - **Ships are real bodies.** Each has a position, a velocity and a tank. The sun
   and the planets pull on them. They change course only by burning, and every
