@@ -192,8 +192,11 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Balance is measured with `node tools/tune.mjs <variant>[+variant] 96 normal 4 9000`
   (variants in `tools/variants.mjs`; 9000 plays matches out, since calling them
   early favours the Holds). About 13 minutes per 96 matches; noise is about ±6
-  points per power. November 2026 result: Concord 36, Republic 50, Holds 47
-  (share of games won). The Republic still leads; trimming its rails or drives
+  points per power. November 2026 result, with megaprojects: Concord 39,
+  Republic 50, Holds 44 (share of games won), from Concord capital income x1.8
+  and two moons round the Holds' giant (`TUNE.holdsMoons`). Megaprojects favour
+  whoever is richest early; the Holds' early money is their moons, not their
+  capital (cutting their capital income did nothing). The Republic still leads; trimming its rails or drives
   did not help. Battleships taking two fleet places (`TUNE.bigShips`) left a
   fifth of matches without a winner, so it is off.
 - One of each structure per world. The owner tried allowing repeats
@@ -201,6 +204,17 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   UI addresses a structure as `type.index` all the same.
 - No scuttling, for players or the AI: a ship that runs dry waits for a tender
   or stays adrift. The owner sees that as the price of getting fuel wrong.
+- Megaprojects (`MEGA` in `sim.js`): the fifth research step of each line
+  unlocks one; once per game, a race with half back for the losers, no win
+  from them. Late money and labs are what they are for, so keep them dear.
+  The owner chose them: Fuel network (torpedoes too), a strike on an enemy
+  capital with a different name and look per power (`STRIKE_NAME`; same
+  effect), Ansible array, Arcology spire (crew above the cap), Blackout (you
+  choose when, long recharge). Models come from the first game
+  (`gfx/megastructures.js`, `MEGA_LOOK`). Ship crew sizes stay at one place
+  each for now (the owner's call).
+- Win option `winBy: 'ark'`: the Ark is built at any capital (not only gas
+  giants: that would favour the Holds), held for a count everyone sees.
 
 ## Owner's preferences
 

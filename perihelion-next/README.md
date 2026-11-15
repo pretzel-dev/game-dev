@@ -15,8 +15,8 @@ timed events) are still there to lift back if testing asks for them.
   and none is a perfect circle. Space is mostly empty: a hop to a moon takes
   about a minute, crossing the system many. Solo games have time speeds to 8x.
 - **Where you start suits your power.** The Concord on a living world (its
-  capital earns 60% more), the Republic on a dry one (it starts with
-  four ships), the Holds on a large station over a gas giant with moons close
+  capital earns 80% more), the Republic on a dry one (it starts with
+  four ships), the Holds on a large station over a gas giant with two moons close
   by (its capital earns 10% less).
 - **Ships are real bodies.** Each has a position, a velocity and a tank. The sun
   and the planets pull on them. They change course only by burning, and every
@@ -129,16 +129,33 @@ timed events) are still there to lift back if testing asks for them.
 - **Running costs.** Every ship costs credits a second while it is in service
   (corvette 0.05, frigate and escort 0.1, tender 0.08, battleship 0.35). The
   income sheet shows it as its own line.
-- **Winning.** Take the enemy capital, or (a new-game option) take every
-  world: then a power that loses its capital moves it to its best world left.
+- **Winning.** Take the enemy capital, or (new-game options) take every
+  world (a power that loses its capital moves it to its best world left), or
+  the Ark: build it at your capital (15,000 credits, 60 days) and hold it for
+  another 60 days until it leaves. Everyone sees the count; a captured Ark
+  starts its count again for the captor. Taking a capital still wins.
 - **Fleet limit.** Four ships (five for the Holds), plus one for every habitat
   level you build, up to twelve. Pips under the credits show it.
 - **Research.** Five lines (drives, weapons, sensors, industry, intelligence)
-  of four steps, costing 250, 450, 750 and 1200. Some steps are a choice between two doctrines, and taking one closes the
+  of five steps, costing 250, 450, 750, 1200 and 2000. Some steps are a choice between two doctrines, and taking one closes the
   other for the rest of the game (wolfpack tubes or layered plate; swarm
   warheads or flak curtain; cold running or a deep-space network; and so on).
   Battleships (spinal mounts) are a plain step anyone can take.
   One project at a time; laboratories and the archive speed it up.
+- **Megaprojects.** The fifth step of each line lets you build one, at any
+  world you hold (one per world). Each kind can be finished once per game:
+  powers can race for the same one, and the losers get half back. Everyone is
+  told when one starts and finishes, a gold arc round the world shows how far
+  it has got, and whoever holds the world has its effect. Labs speed them up
+  half as much as research.
+
+  | Line | Megaproject | Cost | Does |
+  |---|---|---|---|
+  | Drives | Fuel network | 8000 | Ships refuel fast and rearm torpedoes at any of your worlds |
+  | Weapons | Comet tug (Concord), Long rail (Republic), Moon hammer (Holds) | 10000 | Fire at an enemy capital: it flies for 20 days on a curve everyone can see, can be shot down by enemy ships and batteries within reach, and on arrival wrecks every structure but a bare yard and stops the world's income for 30 days. Reloads in 60 days |
+  | Sensors | Ansible array | 8000 | See every ship in the system and where it is going |
+  | Industry | Arcology spire | 8000 | Four more ships, above the usual limit |
+  | Intelligence | Blackout | 8000 | Go dark when you choose: nobody sees your ships for 15 days. Recharges in 90 days |
 - **Agents** (Intelligence). Send one to a world that is not yours (200
   credits, 45 seconds). She shows you the place and the ships over it. With
   research she can sabotage a battery or stall a yard, skim a third of the

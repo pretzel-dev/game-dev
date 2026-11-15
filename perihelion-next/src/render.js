@@ -3,7 +3,8 @@
 // plotted routes, contact markers and the few words the game shows.
 // Reads game state every frame; owns the camera.
 import * as THREE from 'three';
-import { NEUTRAL, RULES, posAt, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, worldSight, rankOf } from './sim.js';
+import { NEUTRAL, RULES, posAt, orbitOffset, parkRadius, crippled, yieldTime, batteryMax, worldSight, rankOf, strikePos, megaName, MEGA } from './sim.js';
+import { megaMesh, megaProgress } from './gfx/megastructures.js';
 import { createPost } from './gfx/post.js';
 import { createSky } from './gfx/sky.js';
 import { createSun } from './gfx/sun.js';
@@ -479,6 +480,29 @@ export function createView(canvas, plot, opts = {}) {
         }
       }
       v.owner = b.owner;
+      // A megaproject: the structure goes up in stages, the rest shown as a hologram (gfx/megastructures.js).
+      const mkey = b.mega ? b.mega.key : null;
+      if (v.megaKey !== mkey) {
+        v.megaKey = mkey;
+        if (v.megaObj) { v.megaObj.removeFromParent(); v.megaObj = null; }
+        if (mkey) {
+          const m = megaMesh(mkey, b, shipR.uT);
+          if (m.userData.surface && b.kind !== 'station') {
+            // Surface works stand on the world and turn with it.
+            const dir = new THREE.Vector3(Math.sin(b.id * 1.7), 0.3 * Math.cos(b.id * 2.3), Math.cos(b.id * 1.7)).normalize();
+            m.position.copy(dir).multiplyScalar(b.size * 0.995);
+            m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+            v.body.add(m);
+          } else { if (m.userData.surface) m.position.set(b.size * 1.6, 0, 0); v.g.add(m); }
+          v.megaObj = m;
+        }
+      }
+      if (v.megaObj) {
+        megaProgress(v.megaObj, b.mega.done ? 1 : 1 - b.mega.left / b.mega.total, b.mega.done);
+        v.megaObj.userData.set(colorOf(b.owner), sunlit(p));
+        if (v.megaObj.userData.faceSun) v.megaObj.lookAt(0, 0, 0);
+        v.megaObj.userData.spinner?.rotateZ(realDt * 0.25);
+      }
       // A planet's family (moons, station) appears as you come in on it, or when one of them is picked.
       if (b.parent !== null) {
         const pp = bodyPos[b.parent];
@@ -534,6 +558,26 @@ export function createView(canvas, plot, opts = {}) {
         for (let k = 0; k < 3; k++) fx.explosion(tmp2.copy(a).add(tmp3.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(e.size)), 0.5 + Math.random() * 0.5);
         sound('boom', e.x, e.y, e.z); heat = 1;
       } else if (e.type === 'launch') sound('torpLaunch', e.x, e.y, e.z);
+    }
+    // Strikes in flight: the Concord's comet trails a tail away from the sun, the Republic's slug a hot streak,
+    // the Holds' moonlet a cloud of dust. Everyone sees them.
+    fx.drift.set(0, 0, 0);
+    for (const k of game.strikes || []) {
+      if ((k.emitT || 0) > t - 0.05) continue;
+      k.emitT = t;
+      const a = strikePos(k, now), head = tmp.set(a.x, a.y, a.z);
+      const ah = strikePos(k, now + 1), dir = tmp2.set(ah.x - a.x, ah.y - a.y, ah.z - a.z).normalize();
+      if (k.kind === 'concord') {
+        fx.ring(head, '#cfe8ff', 1.2, 0.12);
+        const away = tmp3.copy(head).normalize();
+        fx.bolt(head, head.clone().addScaledVector(away, 6 + Math.random() * 3).addScaledVector(dir, -2), '#9fd4ff', 2.2, 1.5, 0.2);
+      } else if (k.kind === 'boreal') {
+        fx.ring(head, '#ffe2b0', 0.6, 0.1);
+        fx.bolt(head, head.clone().addScaledVector(dir, -4), '#ffd090', 0.5, 3, 0.12);
+      } else {
+        fx.ring(head, '#d8c4a0', 1.0, 0.12);
+        fx.bolt(head, head.clone().add(tmp3.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(2)).addScaledVector(dir, -1.5), '#b8a080', 1.6, 0.6, 0.25);
+      }
     }
     fx.update(t, (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / H);
 
@@ -592,6 +636,15 @@ export function createView(canvas, plot, opts = {}) {
           ctx.strokeStyle = i < lit ? c : DIM; ctx.globalAlpha = i < lit ? 0.95 : 0.5; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(v.sx, v.sy, R + (b.home ? 7 : 4), a - 0.07, a + 0.07); ctx.stroke();
         }
+        ctx.globalAlpha = 1;
+      }
+      if (b.mega) {
+        // A megaproject, for everyone to see: a gold arc as far round as the work (or the Ark's wait) has got.
+        const m = b.mega, f = m.done ? (m.key === 'ark' ? 1 - m.hold / MEGA.ark.hold : 1) : 1 - m.left / m.total;
+        ctx.strokeStyle = AMBER; ctx.lineWidth = m.key === 'ark' ? 3 : 1.5; ctx.globalAlpha = 0.9;
+        ctx.setLineDash(m.done && m.key !== 'ark' ? [] : [3, 3]);
+        ctx.beginPath(); ctx.arc(v.sx, v.sy, R + 15, -Math.PI / 2, -Math.PI / 2 + Math.max(0.02, f) * Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+        if (!far) label(megaName(game, b.owner, m.key), v.sx, v.sy - R - 21, AMBER, 0.9, 9);
         ctx.globalAlpha = 1;
       }
       if (b.yt > 0) {
@@ -727,6 +780,17 @@ export function createView(canvas, plot, opts = {}) {
       ctx.beginPath(); ctx.arc(q.x, q.y, 8 + age * 0.25, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
 
+    // Strikes: where they are and where they will land.
+    for (const k of game.strikes || []) {
+      const a = strikePos(k, now), c = k.owner === me ? INK : HOSTILE;
+      const rest = []; for (let i = 0; i <= 24; i++) { const q = strikePos(k, now + ((k.t1 - now) * i) / 24); rest.push(new THREE.Vector3(q.x, q.y, q.z)); }
+      pathOn(rest, c, 0.6, [5, 5], 1.2);
+      const q = proj(a.x, a.y, a.z);
+      if (!q.ok) continue;
+      ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.moveTo(q.x, q.y - 6); ctx.lineTo(q.x + 6, q.y); ctx.lineTo(q.x, q.y + 6); ctx.lineTo(q.x - 6, q.y); ctx.closePath(); ctx.stroke();
+      label(megaName(game, k.owner, 'strike'), q.x, q.y - 12, c, 0.9, 9);
+    }
     // Torpedoes: a hot point with a short wake.
     const liveT = new Set();
     for (const m of game.torps) {

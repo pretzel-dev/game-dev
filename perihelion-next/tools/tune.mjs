@@ -22,9 +22,13 @@ if (process.argv[2] === '--job') {
   VARIANTS[name](S, A);
   const fs = setup(+i), lv = level.split('/'); // "hard/easy": seat 0 hard, the rest easy
   const players = fs.map((f, k) => ({ faction: f, ai: lv[Math.min(k, lv.length - 1)] }));
-  const g = S.createGame({ seed: 100 + +i, players });
+  const g = S.createGame({ seed: 100 + +i, players, winBy: process.env.WINBY || null }); // (WINBY=ark tries the Ark mode)
+  let strikes = 0, hits = 0, blackouts = 0;
   const ais = players.map((p, k) => A.createAI(g, k, p.ai, 100 + +i));
-  while (!g.over && g.time < +horizon) { S.step(g, 1); for (const a of ais) A.stepAI(g, a, 1); }
+  while (!g.over && g.time < +horizon) {
+    S.step(g, 1); for (const a of ais) A.stepAI(g, a, 1);
+    for (const e of g.events) if (e.t > g.time - 1 && !e.counted) { e.counted = true; if (e.type === 'strike') strikes++; if (e.type === 'struck') hits++; if (e.type === 'blackout') blackouts++; }
+  }
   // Ahead: share of worlds plus share of fleet strength.
   const worlds = fs.map((_, o) => g.bodies.filter((b) => b.owner === o).length);
   const fleet = fs.map((_, o) => g.ships.filter((s) => s.owner === o && !s.st.civil).reduce((v, s) => v + S.strength(s), 0));
@@ -32,7 +36,7 @@ if (process.argv[2] === '--job') {
   const score = fs.map((_, o) => (g.alive[o] ? worlds[o] / tw + fleet[o] / tf : -1));
   const lead = score.indexOf(Math.max(...score));
   const inc = (g.series || []).filter((p) => p.t <= 1800).slice(-1)[0]?.inc || null;
-  console.log(JSON.stringify({ i: +i, fs, win: g.over ? g.over.winner : -1, lead, t: g.over ? g.over.t : g.time, inc }));
+  console.log(JSON.stringify({ i: +i, fs, win: g.over ? g.over.winner : -1, lead, t: g.over ? g.over.t : g.time, inc, how: g.over?.how || null, megas: Object.keys(g.megaDone).map((k) => [k, g.megaDone[k] != null ? g.bodies[g.megaDone[k]].mega?.done ? 1 : 0 : 0, +(g.events.find((e) => e.type === 'megaDone' && e.key === k)?.t / 60 || 0).toFixed(0)]), strikes, hits, blackouts }));
   process.exit(0);
 }
 
@@ -77,6 +81,8 @@ function report(name) {
     variant: name, level, matches: games.length, ended: mins.length, topPct: Object.fromEntries(F.map((f) => [f, pct(f)])),
     spread: Math.max(...F.map(pct)) - Math.min(...F.map(pct)), wins, seat0Pct: Math.round((seat0 / games.length) * 100),
     medianMin: Math.round(mins[mins.length >> 1] || 0), incomeAt30min: Object.fromEntries(F.map((f) => [f, +((inc[f] || 0) / (incN[f] || 1)).toFixed(1)])),
+    megas: (() => { const c = {}; for (const g of games) for (const [k, , m] of g.megas || []) { c[k] ||= { n: 0, min: 0 }; c[k].n++; c[k].min += m; } for (const k in c) c[k].min = Math.round(c[k].min / c[k].n); return c; })(),
+    strikes: games.reduce((a, g) => a + (g.strikes || 0), 0), hits: games.reduce((a, g) => a + (g.hits || 0), 0), blackouts: games.reduce((a, g) => a + (g.blackouts || 0), 0), arkWins: games.filter((g) => g.how === 'ark').length,
     minutes: +((Date.now() - t0) / 60000).toFixed(1),
   }));
 }

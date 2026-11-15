@@ -74,12 +74,12 @@ export const BUILDABLE = ['corvette', 'frigate', 'escort', 'battleship', 'tender
 export const TUNE = {
   dup: false, // the same kind of structure may be built more than once on a world; each working yard builds its own ship
   bigShips: false, // a battleship takes two places in the fleet
-  holdsMoons: 0, // moons round the Holds' home giant (0: as generated, two to four)
+  holdsMoons: 2, // moons round the Holds' home giant (0: as generated, two to four)
 };
 const DUP_OK = ['mine', 'refinery', 'yard', 'lab', 'habitat', 'exchange'];
 // The three powers. Multipliers on the class table above.
 export const FACTIONS = {
-  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.6, start: ['frigate', 'escort', 'corvette'] },
+  concord: { name: 'Meridian Concord', short: 'Concord', text: 'Tough ships. The capital earns more.', hull: 1.4, armour: 4, cost: 1, accel: 0.95, income: 1.8, start: ['frigate', 'escort', 'corvette'] },
   boreal: { name: 'Boreal Republic', short: 'Republic', text: 'Fast ships, strong rails. Starts with four ships.', accel: 1.2, rail: 1.3, hull: 1, dv: 1.1, start: ['frigate', 'frigate', 'corvette', 'corvette'] },
   holds: { name: 'Lantern Holds', short: 'Holds', text: 'Cheap ships, hard to see. Starts on a station with moons nearby. The capital earns less.', cost: 0.95, time: 0.9, sig: 0.6, hull: 0.75, cap: 1, income: 0.9, start: ['frigate', 'frigate', 'corvette'] },
 };
@@ -93,37 +93,58 @@ export const TECH = {
     [{ key: 'tanks', name: 'Drop tanks', text: "+35% fuel." }, { key: 'flash', name: 'Flash burn', text: "Hard burn has 40% more thrust." }],
     [{ key: 'cruise', name: 'Efficient cruise', text: "Cruise is 33% faster." }],
     [{ key: 'coldjets', name: 'Cold thrusters', text: "Dark runs show no drive plume." }, { key: 'torch', name: 'Torch drive', text: "+25% thrust." }],
+    [{ key: 'fuelnet', name: 'Fuel network', text: "Lets you build the Fuel network.", mega: true }],
   ] },
   weapons: { name: 'Weapons', tiers: [
     [{ key: 'guided', name: 'Guided slugs', text: "Rails hit 25% more often." }],
     [{ key: 'spinal', name: 'Spinal mounts', text: "Lets you build battleships." }],
     [{ key: 'wolfpack', name: 'Wolfpack tubes', text: "Corvettes and frigates carry 50% more torpedoes and reload faster." }, { key: 'plate', name: 'Layered plate', text: "+25% hull." }],
     [{ key: 'swarm', name: 'Swarm warheads', text: "Point defence stops half as many of your torpedoes." }, { key: 'flak', name: 'Flak curtain', text: "Your point defence is twice as strong." }],
+    [{ key: 'strike', name: 'Strike', text: "Lets you build the strike megaproject.", mega: true }],
   ] },
   sensors: { name: 'Sensors', tiers: [
     [{ key: 'passive', name: 'Passive arrays', text: "See coasting ships 40% further away." }],
     [{ key: 'coldrun', name: 'Cold running', text: "Your ships are 40% harder to see." }, { key: 'network', name: 'Deep-space network', text: "Your worlds see twice as far." }],
     [{ key: 'firecon', name: 'Fire-control link', text: "Rails reach 25% further." }],
     [{ key: 'jammers', name: 'Jammers', text: "30% of torpedoes fired at your ships miss." }, { key: 'longwatch', name: 'Long watch', text: "Identify ships 60% further away." }],
+    [{ key: 'ansible', name: 'Ansible array', text: "Lets you build the Ansible array.", mega: true }],
   ] },
   industry: { name: 'Industry', tiers: [
     [{ key: 'fabs', name: 'Orbital fabricators', text: "Build 20% faster." }],
     [{ key: 'deepmine', name: 'Deep mining', text: "Mines earn 50% more." }, { key: 'bulk', name: 'Bulk freight', text: "Freighters are faster and twice as tough." }],
     [{ key: 'modular', name: 'Modular yards', text: "Ships cost 15% less." }],
     [{ key: 'arcology', name: 'Arcologies', text: "Habitats give twice as many ships." }, { key: 'wareco', name: 'War economy', text: "Your capital earns twice as much." }],
+    [{ key: 'spire', name: 'Arcology spire', text: "Lets you build the Arcology spire.", mega: true }],
   ] },
   intel: { name: 'Intelligence', tiers: [
     [{ key: 'signals', name: 'Signals intercept', text: "Lets you use agents. Shows where enemy ships are going." }],
     [{ key: 'sabot', name: 'Saboteurs', text: "Agents can turn off a battery or delay a yard." }, { key: 'rings', name: 'Spy rings', text: "Agents can take a third of a world's income." }],
     [{ key: 'counter', name: 'Counter-intelligence', text: "Catch enemy agents twice as fast." }],
     [{ key: 'fifth', name: 'Fifth column', text: "Worlds with your agent yield twice as fast." }, { key: 'cipher', name: 'Broken cipher', text: "Identify any enemy ship while its drive burns." }],
+    [{ key: 'blackout', name: 'Blackout', text: "Lets you build Blackout.", mega: true }],
   ] },
 };
 export const TECH_KEYS = Object.keys(TECH);
-export const TECH_COST = [250, 450, 750, 1200];
-export const TECH_TIME = [50, 80, 120, 170];
+export const TECH_COST = [250, 450, 750, 1200, 2000];
+export const TECH_TIME = [50, 80, 120, 170, 260];
 export const techOption = (key) => { for (const l of TECH_KEYS) for (const t of TECH[l].tiers) for (const o of t) if (o.key === key) return o; return null; };
 export const knows = (game, owner, key) => owner >= 0 && !!game.tech[owner].picks[key];
+
+// Megaprojects: the last step of each research line lets you build one. Each kind can be finished once
+// per game; powers can race for the same one, and the losers get half back. Labs speed them up.
+// The effect belongs to whoever holds the world. The Ark only exists in the Ark mode and wins it.
+export const MEGA = {
+  fuelnet: { name: 'Fuel network', cost: 8000, time: 200, text: 'Ships refuel and rearm at any of your worlds.' },
+  strike: { name: 'Strike', cost: 10000, time: 240, text: 'Wrecks the structures of an enemy capital and stops its income.', cooldown: 480, flight: 160, hp: 1600, stun: 240, reach: 30 },
+  ansible: { name: 'Ansible array', cost: 8000, time: 200, text: 'See every ship in the system and where it is going.' },
+  spire: { name: 'Arcology spire', cost: 8000, time: 200, text: 'Four more ships, above the usual limit.', crew: 4 },
+  blackout: { name: 'Blackout', cost: 8000, time: 200, text: 'Hide all your ships for a while.', last: 120, cooldown: 720 },
+  ark: { name: 'Ark', cost: 15000, time: 480, text: 'Hold it until it leaves to win.', hold: 480 },
+};
+export const MEGA_KEYS = Object.keys(MEGA);
+/** The strike looks and is named differently for each power; it does the same thing. */
+export const STRIKE_NAME = { concord: 'Comet tug', boreal: 'Long rail', holds: 'Moon hammer' };
+export const megaName = (game, owner, key) => (key === 'strike' && owner >= 0 ? STRIKE_NAME[game.factions[owner]] || MEGA.strike.name : MEGA[key].name);
 
 // What makes a world worth having. Most independent worlds have one of these.
 export const TRAITS = {
@@ -228,7 +249,8 @@ const parkRate = (b) => (b.gm ? Math.sqrt(b.gm / parkRadius(b)) / parkRadius(b) 
  * players: [{ faction, name, ai }] (ai: a level name, or falsy for a human).
  * Every game rolls a fresh system from the seed.
  */
-export function createGame({ seed = Date.now(), players = [{ faction: 'concord' }, { faction: 'boreal', ai: 'normal' }], mp = false, empty = false, conquest = false } = {}) {
+export function createGame({ seed = Date.now(), players = [{ faction: 'concord' }, { faction: 'boreal', ai: 'normal' }], mp = false, empty = false, conquest = false, winBy = null } = {}) {
+  winBy = winBy || (conquest ? 'conquest' : 'capital'); conquest = winBy === 'conquest';
   const rand = rng(seed);
   const n = players.length;
   const pick = (list, used) => {
@@ -331,13 +353,14 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
   }
 
   const game = {
-    seed, mp, conquest, time: 0, acc: 0, players: n, bodies, ships: [], torps: [], events: [], fx: [], nextId: 1,
+    seed, mp, conquest, winBy, megaDone: {}, strikes: [], time: 0, acc: 0, players: n, bodies, ships: [], torps: [], events: [], fx: [], nextId: 1,
     stars: [{ r: 0, period: 1, phase: 0, size: SUN_R / 6, gm: GM_SUN }], belt: { r: beltR, w: beltW },
     factions: facs,
     names: players.map((p, i) => p.name || FACTIONS[p.faction || 'concord'].short || `Player ${i + 1}`),
     credits: players.map(() => RULES.startCredits),
     tech: players.map(() => ({ drives: 0, weapons: 0, sensors: 0, industry: 0, intel: 0, picks: {}, project: null })),
     agents: [],
+    blackout: players.map(() => ({ until: 0, ready: 0 })), strikeReady: players.map(() => 0),
     alive: players.map(() => true), eco: players.map(() => 1),
     stats: players.map(() => ({ built: 0, lost: 0, killed: 0, captured: 0, worldsLost: 0, hauled: 0, raided: 0, earned: 0 })),
     over: null, usedNames: [],
@@ -435,7 +458,7 @@ export const warshipsOf = (game, owner) => game.ships.filter((s) => s.owner === 
 export function fleetCap(game, owner) {
   const f = FACTIONS[game.factions[owner]];
   // Crews come from habitats: each level lets you field one more ship.
-  return Math.min(RULES.capMax, RULES.capBase + (f.cap || 0) + worldsOf(game, owner).reduce((n, b) => n + levelOf(b, 'habitat') * (b.trait === 'garden' ? 2 : 1) * (knows(game, owner, 'arcology') ? 2 : 1), 0));
+  return Math.min(RULES.capMax, RULES.capBase + (f.cap || 0) + worldsOf(game, owner).reduce((n, b) => n + levelOf(b, 'habitat') * (b.trait === 'garden' ? 2 : 1) * (knows(game, owner, 'arcology') ? 2 : 1), 0)) + (megaOf(game, owner, 'spire') ? MEGA.spire.crew : 0);
 }
 /** Places a ship of this class takes in the fleet. */
 export const placesOf = (cls) => (TUNE.bigShips && cls === 'battleship' ? 2 : 1);
@@ -1130,14 +1153,17 @@ function detect(game) {
     eyes[a.owner].push({ x: p.x, y: p.y, z: p.z, cold: RULES.cold * RULES.worldSensor, ident: RULES.ident * RULES.worldSensor, skip: a.body });
   }
   const cipher = Array.from({ length: game.players }, (_, o) => knows(game, o, 'cipher'));
+  const all = Array.from({ length: game.players }, (_, o) => !!megaOf(game, o, 'ansible'));
+  const dark = Array.from({ length: game.players }, (_, o) => blackedOut(game, o));
   for (const s of game.ships) {
     const hot = s.lit > game.time || (s.burn && !(s.st.coldDark && s.order && s.order.profile === 'dark'));
     const lit = hot;
     for (let o = 0; o < game.players; o++) {
       if (o === s.owner || (s.beacon && game.alive[o])) { s.seen[o] = 2; continue; } // (a beacon is known to all)
       if (!game.alive[o]) { s.seen[o] = 0; continue; }
-      let lv = 0;
-      for (const e of eyes[o]) {
+      if (s.owner >= 0 && dark[s.owner] && !s.st.civil) { s.seen[o] = 0; continue; } // blackout
+      let lv = all[o] ? 2 : 0; // (an ansible array sees everything)
+      for (const e of lv ? [] : eyes[o]) {
         const d = Math.hypot(e.x - s.x, e.y - s.y, e.z - s.z);
         const near = lit ? d < e.ident : d < e.cold * s.st.sig;
         if (!lit && !near) continue;
@@ -1414,6 +1440,7 @@ function eliminate(game, owner, by) {
   if (left.length === 1) { game.over = { winner: left[0], t: game.time }; note(game, { type: 'won', owner: left[0] }); }
 }
 function stepWorlds(game, dt) {
+  const nets = Array.from({ length: game.players }, (_, o) => !!megaOf(game, o, 'fuelnet'));
   for (const b of game.bodies) {
     // Building.
     for (const x of b.structures) {
@@ -1453,7 +1480,7 @@ function stepWorlds(game, dt) {
         }
       }
       // Income: a capital banks it, everything else waits for a freighter.
-      let inc = incomeOf(b, game) * dt * (enemyHere ? 0 : 1);
+      let inc = incomeOf(b, game) * dt * (enemyHere || (b.stun || 0) > game.time ? 0 : 1);
       const thief = skimming(game, b);
       if (thief) { game.credits[thief.owner] += inc * AGENT.skim; inc *= 1 - AGENT.skim; }
       if (b.home) { game.credits[o] += inc * game.eco[o]; game.stats[o].earned += inc * game.eco[o]; }
@@ -1468,11 +1495,12 @@ function stepWorlds(game, dt) {
         }
       }
       // Ships in orbit of a friendly world take on fuel, and at a yard, repairs and torpedoes.
-      const fast = b.home || has(b, 'refinery') || has(b, 'depot') || b.trait === 'deut' ? 3 : 1, yard = has(b, 'yard');
+      const net = nets[o];
+      const fast = net || b.home || has(b, 'refinery') || has(b, 'depot') || b.trait === 'deut' ? 3 : 1, yard = has(b, 'yard');
       if (!enemyHere) {
         for (const s of game.ships) {
           if (s.at !== b.id || s.owner !== o) continue;
-          resupply(game, s, dt, RULES.refuel * fast, RULES.repair * (yard ? 1 : 0.33), yard || b.home ? 1 / RULES.rearm : 0, yard);
+          resupply(game, s, dt, RULES.refuel * fast, RULES.repair * (yard ? 1 : 0.33), yard || b.home || net ? 1 / RULES.rearm : 0, yard);
         }
       }
     }
@@ -1497,6 +1525,7 @@ export function capture(game, b, to) {
   tally(game, from, 'worldsLost'); tally(game, to, 'captured');
   game.credits[to] += b.stock; b.stock = 0;
   b.owner = to; b.yt = 0; b.yo = NEUTRAL; b.queue = []; b.bhp = 0; b.bquiet = game.time + 30;
+  if (b.mega && b.mega.done && b.mega.key === 'ark') b.mega.hold = MEGA.ark.hold; // (a captured Ark starts its count again)
   b.structures = b.structures.filter((x) => x.left <= 0 || x.next);
   for (const x of b.structures) { if (x.next) { delete x.next; x.left = 0; } delete x.scrap; }
   note(game, { type: 'captured', owner: to, from, at: b.id });
@@ -1661,6 +1690,7 @@ function tick(game) {
   combat(game, DT);
   stepWorlds(game, DT);
   stepResearch(game, DT);
+  stepMegas(game, DT);
   for (const s of game.ships) if (s.pending && game.time >= (s.ready || 0)) { const p = s.pending; s.pending = null; if (s.at !== null) giveOrder(game, s, p.o, p.g); }
   for (let o = 0; o < game.players; o++) if (game.alive[o]) game.credits[o] = Math.max(0, game.credits[o] - upkeepOf(game, o) * DT);
   stepAgents(game, DT);
@@ -1671,6 +1701,122 @@ function tick(game) {
     if (game.series.length > 600) game.series.splice(0, 1);
   }
   stepEvents(game);
+}
+
+// ---- Megaprojects -------------------------------------------------------------------------
+
+/** The world holding a finished megaproject of this kind for this power, or null. */
+export const megaOf = (game, owner, key) => (owner < 0 ? null : game.bodies.find((b) => b.owner === owner && b.mega && b.mega.done && b.mega.key === key) || null);
+export const blackedOut = (game, owner) => owner >= 0 && game.blackout && game.blackout[owner].until > game.time;
+/** Labs speed a megaproject half as much as they speed research. */
+export const megaSpeed = (game, owner) => 1 + (researchSpeed(game, owner) - 1) * 0.5;
+export function cantMega(game, b, key) {
+  const M = MEGA[key], o = b.owner;
+  if (!M || o < 0) return 'Unknown';
+  if (key === 'ark' ? game.winBy !== 'ark' : !knows(game, o, key)) return key === 'ark' ? 'Ark games only' : `Needs ${M.name}`;
+  if (key === 'ark' && !b.home) return 'Capital only';
+  if (game.megaDone[key] != null) return 'Already built';
+  if (b.mega) return 'World taken';
+  if (game.bodies.some((x) => x.owner === o && x.mega && x.mega.key === key)) return 'Already building';
+  if (b.blockaded) return 'Under blockade';
+  if (game.credits[o] < M.cost) return 'Not enough credits';
+  return null;
+}
+export function startMega(game, b, key) {
+  if (cantMega(game, b, key)) return false;
+  game.credits[b.owner] -= MEGA[key].cost;
+  b.mega = { key, by: b.owner, left: MEGA[key].time, total: MEGA[key].time, done: false };
+  note(game, { type: 'megaStart', owner: b.owner, at: b.id, key });
+  return true;
+}
+/** Fire the strike at an enemy capital. It flies for a while and can be shot down near any enemy ship or battery. */
+export function cantStrike(game, owner, target) {
+  const from = megaOf(game, owner, 'strike');
+  if (!from) return 'Not built';
+  if (!target || !target.home || target.owner === owner || target.owner < 0) return 'Enemy capitals only';
+  if (game.strikeReady[owner] > game.time) return 'Not ready';
+  if (game.strikes.some((k) => k.owner === owner)) return 'Already on its way';
+  return null;
+}
+export function fireStrike(game, owner, target) {
+  if (cantStrike(game, owner, target)) return false;
+  const M = MEGA.strike, from = megaOf(game, owner, 'strike'), t1 = game.time + M.flight;
+  const p0 = game.bp[from.id], p1 = posAt(game, target, t1);
+  // The path bends round the sun: its middle is kept out at about the nearer world's distance.
+  const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2, mz = (p0.z + p1.z) / 2, ml = Math.hypot(mx, my, mz);
+  const D = Math.min(Math.hypot(p0.x, p0.y, p0.z), Math.hypot(p1.x, p1.y, p1.z)) * 0.8;
+  let ux = mx / (ml || 1), uy = my / (ml || 1), uz = mz / (ml || 1);
+  if (ml < 1) { const dx = p1.x - p0.x, dz = p1.z - p0.z, l = Math.hypot(dx, dz) || 1; ux = -dz / l; uy = 0; uz = dx / l; }
+  const T = Math.max(ml, D), cx = 2 * ux * T - mx, cy = 2 * uy * T - my, cz = 2 * uz * T - mz;
+  game.strikes.push({ id: game.nextId++, owner, kind: game.factions[owner], from: from.id, to: target.id, t0: game.time, t1, x0: p0.x, y0: p0.y, z0: p0.z, cx, cy, cz, x1: p1.x, y1: p1.y, z1: p1.z, hp: M.hp });
+  game.strikeReady[owner] = game.time + M.cooldown;
+  note(game, { type: 'strike', owner, at: target.id, to: target.owner });
+  return true;
+}
+/** Where a strike is at time t: a curve from launch, round the control point, to where the target will be. */
+export const strikePos = (k, t) => {
+  const f = Math.min(1, Math.max(0, (t - k.t0) / (k.t1 - k.t0))), a = (1 - f) * (1 - f), b = 2 * (1 - f) * f, c = f * f;
+  const cx = k.cx ?? (k.x0 + k.x1) / 2, cy = k.cy ?? (k.y0 + k.y1) / 2, cz = k.cz ?? (k.z0 + k.z1) / 2;
+  return { x: a * k.x0 + b * cx + c * k.x1, y: a * k.y0 + b * cy + c * k.y1, z: a * k.z0 + b * cz + c * k.z1 };
+};
+export function cantBlackout(game, owner) {
+  if (!megaOf(game, owner, 'blackout')) return 'Not built';
+  if (blackedOut(game, owner)) return 'On';
+  if (game.blackout[owner].ready > game.time) return 'Not ready';
+  return null;
+}
+export function startBlackout(game, owner) {
+  if (cantBlackout(game, owner)) return false;
+  game.blackout[owner] = { until: game.time + MEGA.blackout.last, ready: game.time + MEGA.blackout.cooldown };
+  note(game, { type: 'blackout', owner });
+  return true;
+}
+function stepMegas(game, dt) {
+  for (const b of game.bodies) {
+    const m = b.mega;
+    if (!m || b.owner < 0) continue;
+    if (!m.done) {
+      if (b.blockaded) continue;
+      m.left -= dt * megaSpeed(game, b.owner);
+      if (m.left > 0) continue;
+      m.left = 0; m.done = true; game.megaDone[m.key] = b.id;
+      if (m.key === 'ark') m.hold = MEGA.ark.hold;
+      note(game, { type: 'megaDone', owner: b.owner, at: b.id, key: m.key });
+      // The race is over: the others get half back.
+      for (const x of game.bodies) if (x !== b && x.mega && x.mega.key === m.key) { if (x.owner >= 0) game.credits[x.owner] += MEGA[m.key].cost / 2; note(game, { type: 'megaLost', owner: x.owner, at: x.id, key: m.key }); x.mega = null; }
+    } else if (m.key === 'ark' && !game.over) {
+      m.hold -= dt;
+      if (m.hold <= 0) { game.over = { winner: b.owner, t: game.time, how: 'ark' }; note(game, { type: 'won', owner: b.owner }); }
+    }
+  }
+  // Strikes in flight: shot at by anything hostile close by; on arrival they wreck the capital.
+  if (!game.strikes.length) return;
+  const M = MEGA.strike;
+  for (const k of game.strikes) {
+    const p = strikePos(k, game.time);
+    for (const s of game.ships) {
+      if (s.owner === k.owner || s.owner < 0 || !armed(s) || s.out.weapons > 0) continue;
+      if (Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z) > M.reach) continue;
+      k.hp -= (s.st.rails.reduce((a, d) => a + d, 0) + s.st.pdc) * dt;
+    }
+    for (const b of game.bodies) {
+      if (b.owner < 0 || b.owner === k.owner || b.bhp <= 0) continue;
+      const q = game.bp[b.id];
+      if (Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) < M.reach) k.hp -= batteryGuns(b) * BATTERY_DMG * dt;
+    }
+    if (k.hp <= 0) { k.gone = true; note(game, { type: 'strikeDown', owner: k.owner, at: k.to }); fx(game, { type: 'boom', x: p.x, y: p.y, z: p.z, vx: 0, vy: 0, vz: 0, size: 2, owner: k.owner }); continue; }
+    if (game.time < k.t1) continue;
+    k.gone = true;
+    const b = game.bodies[k.to];
+    fx(game, { type: 'boom', x: p.x, y: p.y, z: p.z, vx: 0, vy: 0, vz: 0, size: 4, owner: k.owner });
+    if (b.owner === k.owner || b.owner < 0) continue;
+    // Everything but a bare yard is gone, and the world earns nothing for a while.
+    b.structures = b.structures.some((x) => x.type === 'yard') ? [{ type: 'yard', level: 1, left: 0 }] : [];
+    b.bhp = 0; b.queue = b.queue.slice(0, 1); b.stun = game.time + M.stun;
+    if (b.mega && !b.mega.done) b.mega = null;
+    note(game, { type: 'struck', owner: k.owner, at: b.id, to: b.owner });
+  }
+  game.strikes = game.strikes.filter((k) => !k.gone);
 }
 
 // ---- Things that turn up ---------------------------------------------------------------
@@ -1709,13 +1855,13 @@ function stepEvents(game) {
 export function snapshot(game, owner) {
   const r2 = (v) => Math.round(v * 100) / 100;
   return {
-    time: game.time, over: game.over, credits: game.credits[owner], tech: game.tech[owner], alive: game.alive, stats: game.stats, series: game.over ? game.series : undefined, agents: game.agents.filter((a) => a.owner === owner),
-    bodies: game.bodies.map((b) => ({ owner: b.owner, structures: b.structures, queue: b.owner === owner ? b.queue : [], stock: b.owner === owner ? r2(b.stock) : 0, bhp: r2(b.bhp), yt: r2(b.yt), yo: b.yo, home: !!b.home, blockaded: !!b.blockaded })),
+    time: game.time, over: game.over, credits: game.credits[owner], tech: game.tech[owner], megaDone: game.megaDone, strikes: game.strikes, blackout: game.blackout, strikeReady: game.strikeReady, alive: game.alive, stats: game.stats, series: game.over ? game.series : undefined, agents: game.agents.filter((a) => a.owner === owner),
+    bodies: game.bodies.map((b) => ({ owner: b.owner, structures: b.structures, queue: b.owner === owner ? b.queue : [], stock: b.owner === owner ? r2(b.stock) : 0, bhp: r2(b.bhp), yt: r2(b.yt), yo: b.yo, home: !!b.home, blockaded: !!b.blockaded, mega: b.mega || null, stun: b.stun || 0 })),
     ships: game.ships.filter((s) => s.seen[owner]).map((s) => {
       const mine = s.owner === owner, id2 = s.seen[owner] === 2;
       return {
         id: s.id, owner: s.owner, cls: id2 ? s.cls : null, name: id2 ? s.name : null, x: r2(s.x), y: r2(s.y), z: r2(s.z), vx: r2(s.vx), vy: r2(s.vy), vz: r2(s.vz),
-        tx: s.tx, ty: s.ty, tz: s.tz, burn: s.burn, at: s.at, ph: s.ph, hull: id2 ? r2(s.hull) : 0, derelict: !!s.derelict, cargo: s.owner < 0 ? s.cargo : undefined, xp: id2 ? s.xp || 0 : 0, dest: id2 && !mine && s.order && s.order.body != null && knows(game, owner, 'signals') ? s.order.body : null, out: id2 ? s.out : null, seen: s.seen[owner], phase: s.phase,
+        tx: s.tx, ty: s.ty, tz: s.tz, burn: s.burn, at: s.at, ph: s.ph, hull: id2 ? r2(s.hull) : 0, derelict: !!s.derelict, cargo: s.owner < 0 ? s.cargo : undefined, xp: id2 ? s.xp || 0 : 0, dest: id2 && !mine && s.order && s.order.body != null && (knows(game, owner, 'signals') || megaOf(game, owner, 'ansible')) ? s.order.body : null, out: id2 ? s.out : null, seen: s.seen[owner], phase: s.phase,
         ...(mine ? { cargo: s.cargo, src: s.src, dv: r2(s.dv), torps: s.torps, stores: s.stores, order: s.order, ready: s.ready, pend: s.pending ? (s.pending.o.body ?? -1) : undefined, grp: s.grp, torpsFree: s.torpsFree, fireFree: s.fireFree, evade: s.evade, board: s.board, tau: s.tau } : {}),
       };
     }),
@@ -1725,7 +1871,8 @@ export function snapshot(game, owner) {
 }
 /** Guest side: fold a snapshot into the local game, keeping body objects in place. */
 export function applySnapshot(game, snap, owner) {
-  game.time = snap.time; game.over = snap.over; game.credits[owner] = snap.credits; game.tech[owner] = snap.tech; game.agents = snap.agents || []; if (snap.series) game.series = snap.series; game.alive = snap.alive; game.stats = snap.stats;
+  game.time = snap.time; game.over = snap.over; game.credits[owner] = snap.credits; game.tech[owner] = snap.tech;
+  game.megaDone = snap.megaDone || {}; game.strikes = snap.strikes || []; if (snap.blackout) game.blackout = snap.blackout; if (snap.strikeReady) game.strikeReady = snap.strikeReady; game.agents = snap.agents || []; if (snap.series) game.series = snap.series; game.alive = snap.alive; game.stats = snap.stats;
   snap.bodies.forEach((sb, i) => Object.assign(game.bodies[i], sb));
   for (const b of game.bodies) if (b.home && b.owner >= 0) game.homes[b.owner] = b; // a capital can move (conquest)
   const old = new Map(game.ships.map((s) => [s.id, s]));

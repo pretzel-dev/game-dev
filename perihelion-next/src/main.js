@@ -40,7 +40,7 @@ window.addEventListener('pointerup', () => setTimeout(flush, 300), true);
 window.addEventListener('pointercancel', flush, true);
 
 const prefs = (() => {
-  const d = { faction: 'concord', rivals: 1, level: 'normal', sound: true, ui: 1, gfx: 'high', conquest: false, dev: false, name: '', done: {} };
+  const d = { faction: 'concord', rivals: 1, level: 'normal', sound: true, ui: 1, gfx: 'high', conquest: false, winBy: null, dev: false, name: '', done: {} };
   try { return { ...d, ...JSON.parse(localStorage.getItem('perihelion2') || '{}') }; } catch { return d; }
 })();
 const save = () => { try { localStorage.setItem('perihelion2', JSON.stringify(prefs)); } catch { /* private mode */ } };
@@ -149,6 +149,9 @@ function apply(owner, c) {
     case 'ship': return b && S.orderShip(game, b, c.cls);
     case 'cancel': return b && S.cancelShip(game, b, c.i);
     case 'demolish': return b && S.demolish(game, b, c.type, c.i ?? null);
+    case 'mega': return b && S.startMega(game, b, c.key);
+    case 'mstrike': return b && S.fireStrike(game, owner, b);
+    case 'dark': return S.startBlackout(game, owner);
     case 'research': return S.research(game, owner, c.line, c.key);
     case 'agent': { const w = game.bodies[c.at]; return w && S.sendAgent(game, owner, w); }
     case 'recall': { const w = game.bodies[c.at]; return w && S.recallAgent(game, owner, w); }
@@ -290,6 +293,23 @@ function shipStats(cls) {
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
   return [['Hull', st.hull], st.rails.length ? ['Rails', st.rails.length] : null, st.mag ? ['Torpedoes', st.mag] : null, C.stores ? ['Spares', C.stores] : null, ['Defence', st.pdc], ['Thrust', Math.round(st.accel * 1000)], ['Fuel', Math.round(st.dv)], ['Build', mmss(S.shipTime(game, me, cls, b))], ['Upkeep', `${perDay(RULES.upkeep[cls])}/d`], S.placesOf(cls) > 1 ? ['Fleet places', S.placesOf(cls)] : null].filter(Boolean);
 }
+/** A world's megaproject, or the ones it could start. */
+function megaRow(b) {
+  const m = b.mega;
+  if (m) {
+    const nm = S.megaName(game, b.owner, m.key);
+    let small = 'Done', bar = '';
+    if (!m.done) { small = mmss(Math.ceil(m.left / S.megaSpeed(game, b.owner) / 8) * 8); bar = `<span class="prog" style="width:${Math.round((1 - m.left / m.total) * 20) * 5}%"></span>`; }
+    else if (m.key === 'ark') small = mmss(Math.ceil(m.hold / 8) * 8);
+    else if (m.key === 'strike') { const rd = game.strikeReady[b.owner] - game.time; small = game.strikes.some((k) => k.owner === b.owner) ? 'Fired' : rd > 0 ? mmss(Math.ceil(rd / 8) * 8) : 'Ready'; }
+    let h = `<div class="row">${tile('megaInfo', m.key, L(icon('star'), nm), small, 'mega', bar)}`;
+    if (m.done && m.key === 'blackout') { const why = S.cantBlackout(game, me), bl = game.blackout[me]; h += tile('dark', '', L(icon('dark'), 'Go dark'), why === 'On' ? mmss(Math.ceil((bl.until - game.time) / 8) * 8) : why === 'Not ready' ? mmss(Math.ceil((bl.ready - game.time) / 8) * 8) : 'Ready', why === 'On' ? 'on' : why ? 'no' : ''); }
+    return h + '</div>';
+  }
+  const keys = S.MEGA_KEYS.filter((k) => { const w = S.cantMega(game, b, k); return !w || w === 'Not enough credits'; });
+  if (!keys.length) return '';
+  return `<div class="row">${keys.map((k) => tile('mega', k, L(icon('star'), S.megaName(game, me, k)), S.MEGA[k].cost, `mega ${S.cantMega(game, b, k) ? 'no' : ''}`)).join('')}</div>`;
+}
 // Structure buttons carry "type.index" so two of a kind on one world stay apart.
 const stype = (v) => String(v).split('.')[0];
 const sidx = (v) => { const i = String(v).split('.')[1]; return i == null ? null : +i; };
@@ -304,6 +324,9 @@ function infoOf(a, v) {
   if (a === 'demolish' && b) { const x = sref(b, v); return { text: HINT.demolish, stats: x ? [['Refund', S.scrapValue(x)], ['Takes', mmss(RULES.scrapTime)]] : [] }; }
   if (a === 'struct' && b) { const x = sref(b, v), t = stype(v); return { text: '', stats: x ? [[RULES.structures[t].name, RULES.structures[t].maxLevel > 1 ? `level ${x.level}` : ''], ...structStats(t, b, x.level)] : [] }; }
   if (a === 'ship') return { text: HINT[`ship:${v}`], stats: shipStats(v) };
+  if (a === 'mega' || a === 'megaInfo') { const M = S.MEGA[v]; return { text: M.text, stats: a === 'mega' ? [['Cost', M.cost], ['Build', mmss(M.time / S.megaSpeed(game, me))]] : [] }; }
+  if (a === 'mstrike') return { text: 'Fire at this capital.', stats: [['Flight', mmss(S.MEGA.strike.flight)], ['Reload', mmss(S.MEGA.strike.cooldown)]] };
+  if (a === 'dark') return { text: 'Hide all your ships.', stats: [['Lasts', mmss(S.MEGA.blackout.last)], ['Recharge', mmss(S.MEGA.blackout.cooldown)]] };
   if (a === 'cancel' && b) { const q = b.queue[+v]; return { text: HINT.cancel, stats: q ? [['Refund', Math.round(S.shipCost(game, me, q.cls) * 0.8)]] : [] }; }
   if (a === 'board') { const T = S.shipById(game, +v); return { text: HINT.board, stats: T ? [['Chance', `${Math.round(S.boardChance(T, selShips()) * 100)}%`]] : [] }; }
   if (a === 'agent') return { text: HINT.agent, stats: [['Arrives', mmss(AGENT.travel)]] };
@@ -318,7 +341,7 @@ const infoHTML = (i) => `${i.text ? `<p>${esc(i.text)}</p>` : ''}${statsHTML(i.s
 /** The same as plain text, for a mouse tooltip. */
 function hintOf(a, v) { const i = infoOf(a, v); return [i.text, ...i.stats.map(([l, x]) => `${l} ${x}`)].filter(Boolean).join(' · '); }
 // Buttons that spend something or cannot be undone ask for a second tap. The rest act at once.
-const TWO_STEP = new Set(['go', 'strike', 'pass', 'match', 'board', 'salvo', 'join', 'retreat', 'cut', 'build', 'ship', 'upgrade', 'demolish', 'agent', 'recall', 'buy', 'sab', 'op', 'cancel']);
+const TWO_STEP = new Set(['mega', 'mstrike', 'dark', 'go', 'strike', 'pass', 'match', 'board', 'salvo', 'join', 'retreat', 'cut', 'build', 'ship', 'upgrade', 'demolish', 'agent', 'recall', 'buy', 'sab', 'op', 'cancel']);
 let touchInput = false;
 window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; }, true);
 const tile = (a, v, ic, small, cls = '', extra = '') => `<button class="tile ${cls} ${ui.armed === `${a}:${v}` && ui.armedLabel ? 'arm' : ''}" title="${esc(hintOf(a, v))}" data-a="${a}" data-v="${v}">${ic}${small ? `<small>${small}</small>` : ''}${extra}</button>`;
@@ -345,7 +368,8 @@ function selStats() {
     if (wait > 0) out.push(stat(ships.some((s) => s.pending || s.pend !== undefined) ? 'Leaves in' : 'Ready in', mmss(Math.ceil(wait / 4) * 4)));
   } else if (ui.selBody != null) {
     const b = game.bodies[ui.selBody], bm = S.batteryMax(b);
-    if (b.owner === me) out.push(b.blockaded ? stat('Income', 'blockaded', 'bad') : stat('Income', rate(S.incomeOf(b, game) * S.haulBonus(game, b))));
+    if (b.owner === me) out.push(b.blockaded ? stat('Income', 'blockaded', 'bad') : (b.stun || 0) > game.time ? stat('Income', 'stopped', 'bad') : stat('Income', rate(S.incomeOf(b, game) * S.haulBonus(game, b))));
+    if (b.mega && b.owner !== me) out.push(b.mega.done ? stat(S.megaName(game, b.owner, b.mega.key), b.mega.key === 'ark' ? `leaves in ${mmss(Math.ceil(b.mega.hold / 8) * 8)}` : 'done') : stat(S.megaName(game, b.owner, b.mega.key), `${Math.floor((1 - b.mega.left / b.mega.total) * 10) * 10}%`));
     if (b.owner === me && !b.home) out.push(stat('Waiting', Math.round(b.stock / 5) * 5));
     if (bm) out.push(stat('Battery', `${Math.round(b.bhp)}/${bm}`, b.bhp <= 0 ? 'bad' : ''), stat('Guns', S.batteryGuns(b)));
     if (b.owner !== me && b.home) out.push(stat('Ships needed', S.CAPITAL_SHIPS));
@@ -413,7 +437,7 @@ function stripHTML() {
     if (!T || !(ui.dev || T.seen[me])) { ui.targetShip = null; return ''; }
     if (T.st.civil) return freighterHTML(T);
     if (T.derelict) return `<div class="head"><b>${esc(T.name)}</b><small>Derelict ${CLASSES[T.cls].name.toLowerCase()}</small><button class="x" data-a="clear">${icon('close')}</button></div><div class="sub">No power. Match it to board. It joins your fleet.</div>`;
-    const bound = T.owner !== me && S.knows(game, me, 'signals') ? (T.dest ?? (T.order && T.order.body != null ? T.order.body : null)) : null;
+    const bound = T.owner !== me && (S.knows(game, me, 'signals') || S.megaOf(game, me, 'ansible')) ? (T.dest ?? (T.order && T.order.body != null ? T.order.body : null)) : null;
     if (bound != null && T.seen[me] === 2) return `<div class="head"><b style="color:${ui.colors[T.owner]}">${esc(T.name)}</b><small>${CLASSES[T.cls].name}</small><button class="x" data-a="clear">${icon('close')}</button></div><div class="row">${chip(T, false)}</div><div class="sub">${icon('arrived')} Bound for ${esc(game.bodies[bound].name)}</div>`;
     const known = T.seen[me] === 2 || ui.dev;
     return `<div class="head"><b style="color:${ui.colors[T.owner]}">${known ? esc(T.name) : 'Contact'}</b><small>${known ? CLASSES[T.cls].name : 'unidentified'}</small><button class="x" data-a="clear">${icon('close')}</button></div>${known ? `<div class="row">${chip(T, false)}</div>` : ''}`;
@@ -425,6 +449,7 @@ function stripHTML() {
     let h = `<div class="head"><b style="color:${b.owner === NEUTRAL ? INK : ui.colors[b.owner]}">${esc(b.name)}</b><small>${b.home ? 'Capital' : b.giant ? 'Gas giant' : b.kind} · ${esc(who)}</small><button class="x" data-a="clear">${icon('close')}</button></div>`;
     const here = game.ships.filter((s) => s.at === b.id && mine(s) && !s.st.civil);
     if (!own) {
+      if (b.home && b.owner >= 0 && S.megaOf(game, me, 'strike')) { const why = S.cantStrike(game, me, b), rd = game.strikeReady[me] - game.time; h += `<div class="row">${tile('mstrike', b.id, L(icon('fire'), S.megaName(game, me, 'strike')), why === 'Not ready' ? mmss(Math.ceil(rd / 8) * 8) : why ? '' : 'Ready', why ? 'no' : '')}</div>`; }
       const ag = S.agentAt(game, me, b);
       if (ag && ag.at > game.time) h += `<div class="sub">${icon('agent')} Agent arriving<span class="num">${mmss(Math.ceil((ag.at - game.time) / 5) * 5)}</span></div>`;
       else if (ag) {
@@ -454,6 +479,7 @@ function stripHTML() {
         const S0 = RULES.structures[px.type], can = S.working(px) && px.level < S0.maxLevel;
         h += `<div class="row">${can ? tile('upgrade', ui.struct, L(icon('up'), 'Upgrade'), S.upgradeCost(px), S.cantUpgrade(game, b, px) ? 'no' : '') : ''}${tile('demolish', ui.struct, L(icon('close'), 'Remove'), `+${S.scrapValue(px)}`, S.cantDemolish(game, b, px.type, sidx(ui.struct)) ? 'no' : '')}</div>`;
       } else if (!px) ui.struct = null;
+      h += megaRow(b);
       if (ui.build) {
         h += '<div class="row">';
         for (const type in RULES.structures) {
@@ -553,6 +579,10 @@ function clickStrip(a, v) {
     }
     case 'slot': ui.build = !ui.build; ui.struct = null; sfx('tap'); break;
     case 'struct': ui.struct = ui.struct === v ? null : v; ui.build = false; sfx('tap'); break;
+    case 'mega': if (b && !S.cantMega(game, b, v)) { act({ t: 'mega', body: b.id, key: v }); sfx('confirm'); } else sfx('deny'); break;
+    case 'mstrike': if (b && !S.cantStrike(game, me, b)) { act({ t: 'mstrike', body: b.id }); sfx('confirm'); } else sfx('deny'); break;
+    case 'dark': if (!S.cantBlackout(game, me)) { act({ t: 'dark' }); sfx('confirm'); } else sfx('deny'); break;
+    case 'megaInfo': sfx('tap'); break;
     case 'demolish': if (b && !S.cantDemolish(game, b, stype(v), sidx(v))) { act({ t: 'demolish', body: b.id, type: stype(v), i: sidx(v) }); ui.struct = null; sfx('close'); } else sfx('deny'); break;
     case 'trait': break;
     case 'agent': if (b && !S.cantSendAgent(game, me, b)) { act({ t: 'agent', at: b.id }); sfx('confirm'); } else sfx('deny'); break;
@@ -595,17 +625,17 @@ function sheetHTML() {
   for (const line of TECH_KEYS) {
     h += `<div class="tr"><div class="tn">${icon(line)}<span>${TECH[line].name}</span></div>`;
     TECH[line].tiers.forEach((t, i) => {
-      h += `<div class="tc">${t.map((o) => `<button class="nd ${state(line, i, o)} ${ui.techSel === `${line}:${o.key}` ? 'sel' : ''}" data-a="node" data-v="${line}:${o.key}">${o.name}</button>`).join('')}</div>`;
+      h += `<div class="tc">${t.map((o) => `<button class="nd ${state(line, i, o)} ${o.mega ? 'mega' : ''} ${ui.techSel === `${line}:${o.key}` ? 'sel' : ''}" data-a="node" data-v="${line}:${o.key}">${o.mega ? S.megaName(game, me, o.key) : o.name}</button>`).join('')}</div>`;
     });
     h += '</div>';
   }
   h += '</div>';
-  if (!ui.techSel) { const l0 = TECH_KEYS.find((l) => tech[l] < TECH[l].tiers.length) || TECH_KEYS[0]; ui.techSel = `${l0}:${TECH[l0].tiers[Math.min(tech[l0], 3)][0].key}`; }
+  if (!ui.techSel) { const l0 = TECH_KEYS.find((l) => tech[l] < TECH[l].tiers.length) || TECH_KEYS[0]; ui.techSel = `${l0}:${TECH[l0].tiers[Math.min(tech[l0], TECH[l0].tiers.length - 1)][0].key}`; }
   if (ui.techSel) {
     const [line, key] = ui.techSel.split(':'), i = TECH[line].tiers.findIndex((t) => t.some((o) => o.key === key)), o = S.techOption(key), st = state(line, i, o).split(' ')[0];
     const fork = TECH[line].tiers[i].length > 1;
     const right = st === 'done' ? 'Done' : st === 'now' ? mmss(Math.ceil(pr.left / sp / 5) * 5) : st === 'skip' ? 'Not chosen' : st === 'lock' ? 'Later' : `<button class="tile ${S.cantResearch(game, me, line, key) ? 'no' : 'go'}" data-a="research" data-v="${line}:${key}"><em>Research</em><small>${TECH_COST[i]}</small></button>`;
-    h += `<div class="td"><div class="what"><b>${o.name}</b><span>${o.text}</span></div><span class="num">${right}</span></div>`;
+    h += `<div class="td"><div class="what"><b>${o.mega ? S.megaName(game, me, key) : o.name}</b><span>${o.mega ? `Unlocks a megaproject. ${S.MEGA[key].text}` : o.text}</span></div><span class="num">${right}</span></div>`;
   }
   return h;
 }
@@ -663,6 +693,13 @@ function drainEvents() {
       case 'fuel': if (e.owner === me && s) { notice('fuel', AMBER, `${s.name}: low fuel`, toShip); sfx('fuel'); } break;
       case 'repelled': if (e.owner === me) { notice('flag', HOSTILE, `Boarding of ${e.name} failed`, toShip); sfx('deny'); } else if (e.from === me) notice('flag', mineC, `${e.name} fought off boarders`, toShip); break;
       case 'boarded': if (e.owner === me) { notice('flag', mineC, e.name, toShip); sfx('captured'); } else if (e.from === me) { notice('flag', HOSTILE, e.name, toShip); sfx('lost'); } break;
+      case 'megaStart': if (e.owner !== me) notice('star', ui.colors[e.owner], `${S.megaName(game, e.owner, e.key)} begun at ${b.name}`, toBody); break;
+      case 'megaDone': notice('star', e.owner === me ? mineC : ui.colors[e.owner], `${S.megaName(game, e.owner, e.key)} done`, toBody); sfx(e.owner === me ? 'research' : 'alarm'); break;
+      case 'megaLost': if (e.owner === me) { notice('star', HOSTILE, `${S.megaName(game, me, e.key)} lost the race`, toBody); sfx('deny'); } break;
+      case 'strike': if (e.to === me) { notice('fire', HOSTILE, `${S.megaName(game, e.owner, 'strike')} on its way`, toBody); sfx('alarm'); } else if (e.owner === me) notice('fire', mineC, 'Strike fired', toBody); break;
+      case 'struck': if (e.to === me) { notice('fire', HOSTILE, `${b.name} struck`, toBody); sfx('lostWorld'); } else if (e.owner === me) { notice('fire', mineC, `${b.name} struck`, toBody); sfx('captured'); } break;
+      case 'strikeDown': if (e.owner === me) { notice('fire', HOSTILE, 'Strike shot down', toBody); sfx('deny'); } else notice('fire', mineC, 'Strike shot down', toBody); break;
+      case 'blackout': if (e.owner === me) sfx('confirm'); else { notice('dark', ui.colors[e.owner], `${game.names[e.owner]} went dark`, null); sfx('alarm'); } break;
       case 'eliminated': if (e.owner !== me) notice('skull', ui.colors[e.owner], game.names[e.owner], null); break;
       default:
     }
@@ -677,7 +714,8 @@ function refreshUI() {
   if (!game || !inGame()) return;
   $('cr').textContent = Math.floor(game.credits[me] || 0);
   $('rate').textContent = rate(S.incomeBreakdown(game, me).total);
-  $('dateT').textContent = dateOf(game.time);
+  const ark = game.bodies.find((x) => x.mega && x.mega.key === 'ark' && x.mega.done && x.owner >= 0);
+  $('dateT').textContent = dateOf(game.time) + (ark ? ` · Ark ${mmss(Math.ceil(ark.mega.hold / 8) * 8)}` : '');
   $('dayBar').style.width = `${Math.floor(((game.time / S.DAY) % 1) * 20) * 5}%`;
   const cap = S.fleetCap(game, me), n = S.warshipsOf(game, me).reduce((k, s) => k + S.placesOf(s.cls), 0), qd = S.fleetSize(game, me) - n;
   let pips = '';
@@ -784,7 +822,7 @@ function titleNav() {
 function setupPanel(daily = false) {
   showPanel(`${head(daily ? 'Daily system' : 'Engage')}<p class="lbl">Side</p>${factionOpts(prefs.faction)}`
     + `<p class="lbl">Rivals</p>${seg('rivals', [1, 2], prefs.rivals)}<p class="lbl">AI</p>${seg('level', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}`
-    + (daily ? '' : `<p class="lbl">Win by</p>${seg('winby', ['capital', 'conquest'], prefs.conquest ? 'conquest' : 'capital', (k) => (k === 'capital' ? 'Taking the capital' : 'Taking every world'))}`)
+    + (daily ? '' : `<p class="lbl">Win by</p>${seg('winby', WIN_BY, winBy(), (k) => WIN_LABEL[k])}`)
     + `<button class="cta" data-a="${daily ? 'launchDaily' : 'launch'}">Launch</button>`);
   panel.dataset.screen = daily ? 'daily' : 'setup';
 }
@@ -794,7 +832,7 @@ function launch(seed, daily = false) {
   if (r() < 0.5) others.reverse();
   const players = [{ faction: prefs.faction, name: prefs.name || 'You' }];
   for (let i = 0; i < prefs.rivals; i++) players.push({ faction: others[i], ai: prefs.level });
-  start(S.createGame({ seed, players, conquest: !daily && prefs.conquest }), { players, mode: 'solo' });
+  start(S.createGame({ seed, players, winBy: daily ? 'capital' : winBy() }), { players, mode: 'solo' });
   game.daily = daily ? S.dailySeed().key : null;
 }
 function scenariosPanel() {
@@ -945,7 +983,7 @@ function lobbyPanel() {
   const host = mode === 'hostLobby';
   showPanel(`${head('Lobby', 'leaveLobby')}<p class="lbl">Room code</p><div class="code">${lobby.code || '·····'}</div><div class="opts">`
     + lobby.seats.map((s, i) => `<div class="opt" style="--c:${FACTION_COLORS[s.faction] || '#888'}"><i class="sw"></i><div><b>${esc(s.name)}${i === lobby.you ? ' (you)' : ''}</b><span>${FACTIONS[s.faction]?.name || ''}${s.online ? '' : ' · away'}</span></div>${host && i > 0 ? `<button class="mark" style="visibility:visible" data-a="kick" data-v="${i}">${icon('close')}</button>` : ''}</div>`).join('')
-    + `</div>${host ? `<p class="lbl">Win by</p>${seg('winby', ['capital', 'conquest'], prefs.conquest ? 'conquest' : 'capital', (k) => (k === 'capital' ? 'Taking the capital' : 'Taking every world'))}<p class="lbl">Add an AI</p>${seg('lobbyLevel', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}<button class="cta ghost" data-a="addAI">Add AI</button><button class="cta" data-a="startMP">Start</button>` : '<p class="hint">Waiting for the host to start</p>'}`);
+    + `</div>${host ? `<p class="lbl">Win by</p>${seg('winby', WIN_BY, winBy(), (k) => WIN_LABEL[k])}<p class="lbl">Add an AI</p>${seg('lobbyLevel', LEVEL_KEYS, prefs.level, (k) => LEVELS[k].name)}<button class="cta ghost" data-a="addAI">Add AI</button><button class="cta" data-a="startMP">Start</button>` : '<p class="hint">Waiting for the host to start</p>'}`);
 }
 function hostGame() {
   prefs.name = cleanName($('mpname').value); save();
@@ -971,7 +1009,7 @@ function joinGame() {
     message: (m) => {
       if (m.t === 'lobby') { lobby.seats = m.seats; lobby.you = m.you; lobby.code = m.code; if (mode === 'guestLobby') lobbyPanel(); }
       else if (m.t === 'full' || m.t === 'kicked') { closeRoom(); mpPanel(m.why || 'Removed from the room'); }
-      else if (m.t === 'start') { start(S.createGame({ seed: m.seed, players: m.players, mp: true }), { players: m.players, mode: 'guest', me: m.you }); }
+      else if (m.t === 'start') { start(S.createGame({ seed: m.seed, players: m.players, mp: true, winBy: m.winBy }), { players: m.players, mode: 'guest', me: m.you }); }
       else if (m.t === 'snap' && mode === 'guest') { S.applySnapshot(game, m.s, me); game.acc = 0; if (m.fx) ui.pendingFx = (ui.pendingFx || []).concat(m.fx); }
       else if (m.t === 'paused') paused = m.paused;
     },
@@ -985,11 +1023,14 @@ function startMP() {
   if (players.length < 2) return;
   room.start();
   const seed = (Math.random() * 1e9) | 0;
-  const g = S.createGame({ seed, players, mp: true, conquest: prefs.conquest });
+  const g = S.createGame({ seed, players, mp: true, winBy: winBy() });
   g.mpPlayers = players;
-  room.seats.forEach((s, i) => { if (s.kind === 'human' && i > 0) room.sendTo(i, { t: 'start', seed, players, you: i }); });
+  room.seats.forEach((s, i) => { if (s.kind === 'human' && i > 0) room.sendTo(i, { t: 'start', seed, players, you: i, winBy: winBy() }); });
   start(g, { players, mode: 'host', me: 0 });
 }
+const WIN_BY = ['capital', 'conquest', 'ark'];
+const WIN_LABEL = { capital: 'Taking the capital', conquest: 'Taking every world', ark: 'The Ark' };
+const winBy = () => (WIN_BY.includes(prefs.winBy) ? prefs.winBy : prefs.conquest ? 'conquest' : 'capital');
 function closeRoom() { if (room) { try { room.close(); } catch { /* gone */ } room = null; } lobby = null; }
 
 function clickPanel(a, v) {
@@ -1023,7 +1064,7 @@ function clickPanel(a, v) {
     case 'text': prefs.ui = prefs.ui === 1 ? 1.15 : prefs.ui > 1 ? 0.9 : 1; save(); document.documentElement.style.setProperty('--ui-mult', prefs.ui); titleNav(); break;
     case 'gfx': prefs.gfx = prefs.gfx === 'low' ? 'high' : 'low'; save(); view.setQuality(gfx()); titleNav(); if (panel.dataset.screen === 'pause' && !panel.hidden) pauseMenu(); break;
     case 'tutorial': { const players = [{ faction: 'concord', name: prefs.name || 'You' }, { faction: 'boreal', ai: LEVEL_KEYS[0] }]; start(S.createGame({ seed: 4, players }), { players, mode: 'solo', tutorial: true }); hidePanel(); break; }
-    case 'winby': prefs.conquest = v === 'conquest'; save(); if (lobby) lobbyPanel(); else setupPanel(panel.dataset.screen === 'daily'); break;
+    case 'winby': prefs.winBy = v; prefs.conquest = v === 'conquest'; save(); if (lobby) lobbyPanel(); else setupPanel(panel.dataset.screen === 'daily'); break;
     case 'share': shareReport(); break;
     default:
   }
