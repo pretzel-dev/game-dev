@@ -1742,12 +1742,23 @@ export function fireStrike(game, owner, target) {
   if (cantStrike(game, owner, target)) return false;
   const M = MEGA.strike, from = megaOf(game, owner, 'strike'), t1 = game.time + M.flight;
   const p0 = game.bp[from.id], p1 = posAt(game, target, t1);
-  game.strikes.push({ id: game.nextId++, owner, kind: game.factions[owner], from: from.id, to: target.id, t0: game.time, t1, x0: p0.x, y0: p0.y, z0: p0.z, x1: p1.x, y1: p1.y, z1: p1.z, hp: M.hp });
+  // The path bends round the sun: its middle is kept out at about the nearer world's distance.
+  const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2, mz = (p0.z + p1.z) / 2, ml = Math.hypot(mx, my, mz);
+  const D = Math.min(Math.hypot(p0.x, p0.y, p0.z), Math.hypot(p1.x, p1.y, p1.z)) * 0.8;
+  let ux = mx / (ml || 1), uy = my / (ml || 1), uz = mz / (ml || 1);
+  if (ml < 1) { const dx = p1.x - p0.x, dz = p1.z - p0.z, l = Math.hypot(dx, dz) || 1; ux = -dz / l; uy = 0; uz = dx / l; }
+  const T = Math.max(ml, D), cx = 2 * ux * T - mx, cy = 2 * uy * T - my, cz = 2 * uz * T - mz;
+  game.strikes.push({ id: game.nextId++, owner, kind: game.factions[owner], from: from.id, to: target.id, t0: game.time, t1, x0: p0.x, y0: p0.y, z0: p0.z, cx, cy, cz, x1: p1.x, y1: p1.y, z1: p1.z, hp: M.hp });
   game.strikeReady[owner] = game.time + M.cooldown;
   note(game, { type: 'strike', owner, at: target.id, to: target.owner });
   return true;
 }
-export const strikePos = (k, t) => { const f = Math.min(1, Math.max(0, (t - k.t0) / (k.t1 - k.t0))); return { x: k.x0 + (k.x1 - k.x0) * f, y: k.y0 + (k.y1 - k.y0) * f, z: k.z0 + (k.z1 - k.z0) * f }; };
+/** Where a strike is at time t: a curve from launch, round the control point, to where the target will be. */
+export const strikePos = (k, t) => {
+  const f = Math.min(1, Math.max(0, (t - k.t0) / (k.t1 - k.t0))), a = (1 - f) * (1 - f), b = 2 * (1 - f) * f, c = f * f;
+  const cx = k.cx ?? (k.x0 + k.x1) / 2, cy = k.cy ?? (k.y0 + k.y1) / 2, cz = k.cz ?? (k.z0 + k.z1) / 2;
+  return { x: a * k.x0 + b * cx + c * k.x1, y: a * k.y0 + b * cy + c * k.y1, z: a * k.z0 + b * cz + c * k.z1 };
+};
 export function cantBlackout(game, owner) {
   if (!megaOf(game, owner, 'blackout')) return 'Not built';
   if (blackedOut(game, owner)) return 'On';

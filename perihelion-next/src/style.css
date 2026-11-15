@@ -195,7 +195,7 @@ input { text-transform: none; }
 .tile small.over { color: var(--hostile); }
 
 .tree { display: flex; flex-direction: column; gap: 0.3rem; }
-.tr { display: grid; grid-template-columns: 3.6rem repeat(4, 1fr); gap: 0.3rem; align-items: center; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
+.tr { display: grid; grid-template-columns: 3.2rem repeat(5, 1fr); gap: 0.3rem; align-items: center; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
 .tn { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.66rem; color: var(--dim); background: var(--bg); padding-right: 0.2rem; }
 .tc { display: flex; flex-direction: column; gap: 3px; }
 .nd { font-size: 0.62rem; line-height: 1.05; min-height: 1.75rem; padding: 0.15rem 0.2rem; border: 1px solid var(--line); background: #08080b; color: var(--dim); }
@@ -249,3 +249,8 @@ input { text-transform: none; }
 .chip .dmg { position: absolute; top: 3px; left: 3px; width: 5px; height: 5px; background: var(--hostile); }
 .tally b.best { font-weight: 700; background: rgba(232, 226, 210, 0.12); outline: 1px solid var(--line); padding: 0 0.3rem; }
 .tally b.best { justify-self: end; }
+
+/* Megaprojects: gold, like a trait. */
+.nd.mega { color: var(--amber); }
+.nd.mega.done { color: var(--bg); }
+.tile.mega { color: var(--amber); }

@@ -201,6 +201,17 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   UI addresses a structure as `type.index` all the same.
 - No scuttling, for players or the AI: a ship that runs dry waits for a tender
   or stays adrift. The owner sees that as the price of getting fuel wrong.
+- Megaprojects (`MEGA` in `sim.js`): the fifth research step of each line
+  unlocks one; once per game, a race with half back for the losers, no win
+  from them. Late money and labs are what they are for, so keep them dear.
+  The owner chose them: Fuel network (torpedoes too), a strike on an enemy
+  capital with a different name and look per power (`STRIKE_NAME`; same
+  effect), Ansible array, Arcology spire (crew above the cap), Blackout (you
+  choose when, long recharge). Models come from the first game
+  (`gfx/megastructures.js`, `MEGA_LOOK`). Ship crew sizes stay at one place
+  each for now (the owner's call).
+- Win option `winBy: 'ark'`: the Ark is built at any capital (not only gas
+  giants: that would favour the Holds), held for a count everyone sees.
 
 ## Owner's preferences
 
