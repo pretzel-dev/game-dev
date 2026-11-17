@@ -429,6 +429,23 @@ for (const k of SCENARIO_KEYS) {
   for (let t = 0; t < 8 && !g.over; t++) S.step(g, 1);
   ok(g.over && g.over.winner === 0 && g.over.how === 'ark', 'holding the Ark wins');
 }
+{
+  // Catching a ship: each drive gives a time and fuel, hard fastest and dark cheapest. Each fleet keeps its own formation.
+  const g = S.createGame({ seed: 3, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
+  for (let i = 0; i < 30; i++) S.step(g, 1);
+  const mine = g.ships.filter((s) => s.owner === 0 && !s.st.civil), foe = g.ships.find((s) => s.owner === 1 && !s.st.civil);
+  foe.seen[0] = 2;
+  const ic = S.intercepts(g, mine.map((s) => s.id), foe.id);
+  ok(ic.length === 3 && ic.every((r) => r.reach), 'every drive can catch a ship parked at a far world');
+  ok(ic[0].time < ic[1].time && ic[1].time < ic[2].time && ic[0].dv > ic[2].dv, 'a hard burn is quickest, running dark the cheapest');
+  S.setStance(g, 0, [mine[0].id], { shape: 'column' });
+  ok(mine[0].shape === 'column' && !mine[1].shape, 'a formation belongs to the ships it was set on');
+  // A fuel depot rearms torpedoes.
+  const moon = g.bodies.find((b) => b.kind === 'moon' && !b.trait); S.capture(g, moon, 0); moon.structures = [{ type: 'depot', level: 1, left: 0 }];
+  const f = mine.find((s) => s.st.mag); f.at = moon.id; f.order = null; f.torps = 0; f.ready = 0;
+  for (let i = 0; i < 12; i++) S.step(g, 1);
+  ok(f.torps > 0, 'a fuel depot rearms torpedoes');
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];

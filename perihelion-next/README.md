@@ -54,8 +54,10 @@ timed events) are still there to lift back if testing asks for them.
   Ships ordered together fly in formation: the slowest sets the pace and the
   rest keep station on it, escorts closest, so point defence covers the group.
   The Formation button cycles Wedge, Column and Off (each ship at its own
-  pace). An unarmed leader such as a tender flies behind the warships. Tap one
-  ship's square to pick it alone; an order then takes only that ship out of
+  pace); each fleet keeps its own. An unarmed leader such as a tender flies behind the warships. Tap one
+  ship's square to pick it alone; your other warships in the same place show
+  dim beside the selection: tap one to add it, hold a lit one (or shift-click
+  it) to drop it; an order then takes only that ship out of
   the formation and the rest carry on. With ships selected, tap
   another of your ships and choose Join to fly to it and stay with it (this is
   how a tender reaches a ship that has run dry).
@@ -98,7 +100,7 @@ timed events) are still there to lift back if testing asks for them.
   | Laboratory (2) | Rocky planets, moons, stations | Research half as fast again per level |
   | Exchange (2) | Stations, capitals, garden worlds | Income paid straight in |
   | Sensor array | Moons, stations, asteroids | The world sees much further |
-  | Fuel depot | Moons, stations, asteroids | Quick refuelling |
+  | Fuel depot | Moons, stations, asteroids | Quick refuelling; rearms torpedoes |
 
   A capital has five slots, a planet three, a moon or station two, an asteroid one.
   One of each structure per world.
@@ -162,6 +164,12 @@ timed events) are still there to lift back if testing asks for them.
   world's earnings, or make it yield to your ships twice as fast. An
   independent world with your agent on it can be bought outright. Every second
   there is a chance she is caught; counter-intelligence doubles it.
+- **Chasing a ship.** Picking another ship as the target shows hard burn,
+  cruise and dark with the time and fuel to come alongside (reckoned as if it
+  keeps its course); Pass, Match and Board fly with the one picked.
+- **Rings round your world.** Picking one of your worlds shows how far it sees
+  a coasting ship (Sensors) and its battery's reach (Guns); picking a sensor
+  array to build shows the ring it would give.
 - **Boarding.** Board is an order against any enemy warship: pull alongside
   and after 20 seconds there is a chance to take it (bigger and more seasoned
   boarders, a smaller or damaged target, raise it). A failed try costs the
@@ -169,7 +177,7 @@ timed events) are still there to lift back if testing asks for them.
 - **Batteries** have three levels. A capital's is twice as strong and has an
   extra gun, and a capital yields only when three or more of your armed ships
   hold its orbit together.
-- **Rearming.** Torpedoes come back at a yard or your capital, or from a
+- **Rearming.** Torpedoes come back at a yard, a fuel depot or your capital, or from a
   tender flying alongside (it carries 24 and refills at a yard or capital).
 - **Trait limits.** A garden world takes no mines; a tidal forge takes no labs.
 - **Worlds are solid.** Ships steer round planets and moons, including the
