@@ -73,7 +73,7 @@ window.addEventListener('resize', () => view.resize());
 let tut = null; // the guided first game, while it runs
 let game = null, ais = [], me = 0, mode = 'demo'; // demo | solo | host | guest
 let paused = false, warp = 1, room = null, scn = null, ended = false, netFx = [], lastSnap = 0, notesT = 0;
-const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, shape: 'wedge', plotMode: false };
+const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, drive: 'hard', plotMode: false };
 const inGame = () => mode === 'solo' || mode === 'host' || mode === 'guest';
 const live = () => inGame() && game && !ended;
 const mine = (s) => s.owner === me;
@@ -248,7 +248,7 @@ const HINT = {
   lab: 'Speeds up research.',
   exchange: 'Earns credits.',
   array: 'This world sees further.',
-  depot: 'Refuels ships faster.',
+  depot: 'Refuels ships faster. Rearms torpedoes.',
   'ship:corvette': 'Small and fast. Hard to see.',
   'ship:frigate': 'All-round warship.',
   'ship:escort': 'Shoots down torpedoes near it.',
@@ -267,6 +267,8 @@ const HINT = {
   'formation:loose': 'Each ship at its own speed.',
 };
 const SHAPE = { wedge: 'Wedge', column: 'Column', loose: 'Off' };
+/** A selection's formation: each fleet keeps its own (stored on the ships). */
+const shapeOf = (ships) => (ships[0] && ships[0].shape) || 'wedge';
 const num = (x) => (Math.round(x * 10) / 10).toString();
 const perDay = (x) => { const v = Math.abs(x) * S.DAY; return v >= 10 ? Math.round(v).toString() : num(v); };
 const rate = (x) => `${x < 0 ? '−' : '+'}${perDay(x)}/d`;
@@ -284,7 +286,7 @@ function structStats(type, b, level = 1) {
     case 'battery': return [['Strength', RULES.batteryHp * level * (t === 'fortress' ? 2 : 1) * (b.home ? 2 : 1)], ['Guns', level + (b.home ? 1 : 0)]];
     case 'yard': return level > 1 || t === 'hulk' ? [['Build speed', `+${(level > 1 ? 50 : 0) + (t === 'hulk' ? 50 : 0)}%`]] : [];
     case 'array': return [['Sight', `×${num(RULES.arraySensor * (t === 'listening' ? 2 : 1))}`]];
-    case 'depot': return [['Refuel', '×3']];
+    case 'depot': return [['Refuel', '×3'], ['Torpedoes', 'rearmed']];
     default: return [];
   }
 }
@@ -333,7 +335,8 @@ function infoOf(a, v) {
   if (a === 'sab') return { text: HINT[`sab:${v}`], stats: [[v === 'battery' ? 'Off for' : 'Delay', mmss(v === 'battery' ? 90 : 60)], ['Risk', `${Math.round(AGENT.opRisk * 100)}%`]] };
   if (a === 'op' && v === 'steal') return { text: HINT['op:steal'], stats: [['Share', `${Math.round(AGENT.skim * 100)}%`]] };
   if (a === 'op' && v === 'incite') return { text: HINT['op:incite'], stats: [['Yield', '×2']] };
-  if (a === 'formation') return { text: HINT[`formation:${ui.shape}`], stats: [] };
+  if (a === 'formation') return { text: HINT[`formation:${shapeOf(selShips())}`], stats: [] };
+  if (a === 'drive') return { text: HINT[`go:${v}`], stats: [] };
   return { text: HINT[`${a}:${v}`] || HINT[a] || '', stats: [] };
 }
 const statsHTML = (list) => (list.length ? `<div class="sts">${list.map(([l, x]) => stat(l, x)).join('')}</div>` : '');
@@ -386,7 +389,9 @@ function stripHTML() {
   if (ships.length) {
     const one = ships.length === 1 ? ships[0] : null;
     let h = `<div class="head"><b>${one ? esc(one.name) : `${ships.length} ships`}</b><small>${one ? [CLASSES[one.cls].name, RANKS[S.rankOf(one)]].filter(Boolean).join(' · ') : ''}</small><button class="x" data-a="clear">${icon('close')}</button></div>`;
-    h += `<div class="row">${ships.map((s) => chip(s)).join('')}</div>`;
+    // The fleet's squares, then (dim) your other warships in the same place: tap one to add it; hold a lit one to drop it.
+    const others = game.ships.filter((x) => mine(x) && !x.st.civil && !ui.sel.has(x.id) && ships.some((s) => (s.at !== null ? x.at === s.at : x.at === null && x.grp != null && x.grp === s.grp)));
+    h += `<div class="row">${ships.map((s) => chip(s)).join('')}${others.map((s) => chip(s, false)).join('')}</div>`;
     const lead = ships.find((s) => s.order && s.at === null);
     if (lead && ui.target == null && ui.targetShip == null) {
       const o = lead.order;
@@ -411,7 +416,13 @@ function stripHTML() {
         h += `<div class="sub">${icon('match')} ${esc(T.name)}</div><div class="row">${tile('join', T.id, L(icon('match'), 'Join'), '', 'wide')}${tile('pick', T.id, L(icon('check'), 'Select'), '', 'wide')}</div>`;
       } else if (T && (ui.dev || T.seen[me])) {
         const known = T.seen[me] === 2;
-        h += `<div class="sub" style="color:${T.owner < 0 ? AMBER : HOSTILE}">${icon('contact')} ${T.derelict ? `Derelict ${CLASSES[T.cls].name.toLowerCase()}` : T.owner < 0 ? 'Convoy' : known ? `${esc(T.name)} · ${CLASSES[T.cls].name}` : 'Unknown contact'}</div><div class="row">`;
+        h += `<div class="sub" style="color:${T.owner < 0 ? AMBER : HOSTILE}">${icon('contact')} ${T.derelict ? `Derelict ${CLASSES[T.cls].name.toLowerCase()}` : T.owner < 0 ? 'Convoy' : known ? `${esc(T.name)} · ${CLASSES[T.cls].name}` : 'Unknown contact'}<span class="cols">Time · Fuel</span></div><div class="row">`;
+        // How to get there: the drive the orders below use, each with its time and fuel to come alongside.
+        const ikey = `${ships.map((x) => x.id)}:${T.id}`;
+        if (ui.icptKey !== ikey || Math.abs(game.time - ui.icptT) > 4) { ui.icpt = S.intercepts(game, ships.map((x) => x.id), T.id); ui.icptKey = ikey; ui.icptT = game.time; }
+        const full = Math.min(...ships.map((x) => x.st.dv));
+        for (const r of ui.icpt) h += tile('drive', r.key, L(icon(r.key), ROUTE_NAME[r.key]), r.reach ? `${mmss(Math.round(r.time / 5) * 5)} · <b class="${r.ok ? '' : 'bad'}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</b>` : 'No course', `wide ${ui.drive === r.key ? 'on' : ''}`);
+        h += '</div><div class="row">';
         h += tile('pass', T.id, L(icon('strike'), 'Pass'), '', 'wide') + tile('match', T.id, L(icon('match'), 'Match'), '', 'wide');
         if (known && T.owner >= 0 && !T.st.civil) h += tile('board', T.id, L(icon('flag'), 'Board'), '', 'wide');
         if (ships.some((s) => s.torps > 0)) h += tile('salvo', T.id, L(icon('salvo'), 'Salvo'), '', 'wide');
@@ -426,7 +437,7 @@ function stripHTML() {
       h += tile('plot', '', L(icon('plot'), 'Plot burn'), '', ui.plotMode ? 'on' : '');
       if (ships.some((s) => s.order)) h += tile('cut', '', L(icon('cut'), 'Stop'), '');
       h += tile('retreat', '', L(icon('retreat'), 'Retreat'), '');
-      if (ships.length > 1) h += tile('formation', '', L(icon('match'), 'Formation'), SHAPE[ui.shape], ui.shape === 'loose' ? '' : 'on');
+      if (ships.length > 1) h += tile('formation', '', L(icon('match'), 'Formation'), SHAPE[shapeOf(ships)], shapeOf(ships) === 'loose' ? '' : 'on');
       h += tile('follow', '', L(icon('focus'), 'Follow'), '');
       h += '</div>';
     }
@@ -526,14 +537,16 @@ function clickStrip(a, v) {
   ui.armed = TWO_STEP.has(a) || !infoOf(a, v).text ? (a === 'struct' ? key : null) : key; ui.armedLabel = '';
   const ships = selShips(), ids = ships.map((s) => s.id);
   const b = ui.selBody != null ? game.bodies[ui.selBody] : null;
-  const order = (o) => { act({ t: 'order', ids, order: o ? { ...o, loose: ui.shape === 'loose', shape: ui.shape } : o }); sfx('confirm'); };
+  const sh = shapeOf(ships);
+  const order = (o) => { act({ t: 'order', ids, order: o ? { ...o, loose: sh === 'loose', shape: sh } : o }); sfx('confirm'); };
   switch (a) {
     case 'clear': clearSel(); ui.selBody = null; sfx('close'); break;
     case 'chip': {
       const id = +v;
       const s = S.shipById(game, id);
       if (!s || !mine(s)) break;
-      if (ui.sel.size > 1 || !ui.sel.has(id)) { selectShips([s]); view.followShip(s.id); }
+      if (ui.sel.size && !ui.sel.has(id)) { ui.sel.add(id); ui.routes = null; ui.routeKey = null; }
+      else if (ui.sel.size > 1 || !ui.sel.has(id)) { selectShips([s]); view.followShip(s.id); }
       sfx('tap');
       break;
     }
@@ -546,9 +559,9 @@ function clickStrip(a, v) {
       break;
     }
     case 'strike': order({ type: 'strike', body: +v, profile: 'hard' }); ui.target = null; ui.routes = null; break;
-    case 'pass': order({ type: 'attack', ship: +v, mode: 'pass', profile: 'hard' }); ui.targetShip = null; break;
-    case 'match': order({ type: 'attack', ship: +v, mode: 'match', profile: 'hard' }); ui.targetShip = null; break;
-    case 'board': order({ type: 'attack', ship: +v, mode: 'board', profile: 'hard' }); ui.targetShip = null; break;
+    case 'pass': order({ type: 'attack', ship: +v, mode: 'pass', profile: ui.drive }); ui.targetShip = null; break;
+    case 'match': order({ type: 'attack', ship: +v, mode: 'match', profile: ui.drive }); ui.targetShip = null; break;
+    case 'board': order({ type: 'attack', ship: +v, mode: 'board', profile: ui.drive }); ui.targetShip = null; break;
     case 'salvo': act({ t: 'salvo', ids, ship: +v }); sfx('confirm'); break;
     case 'torps': act({ t: 'stance', ids, st: { torpsFree: !ships.every((s) => s.torpsFree) } }); sfx('tap'); break;
     case 'fire': act({ t: 'stance', ids, st: { fireFree: !ships.every((s) => s.fireFree) } }); sfx('tap'); break;
@@ -557,14 +570,16 @@ function clickStrip(a, v) {
     case 'plot': ui.plotMode = !ui.plotMode; ui.plot = null; sfx('tap'); break;
     case 'follow': if (ships[0]) view.followShip(ships[0].id, true); break;
     case 'formation': {
-      ui.shape = ui.shape === 'wedge' ? 'column' : ui.shape === 'column' ? 'loose' : 'wedge';
+      const next = sh === 'wedge' ? 'column' : sh === 'column' ? 'loose' : 'wedge';
+      act({ t: 'stance', ids, st: { shape: next } });
       // Ships already under way together take the new shape now.
       const lead = ships.find((x) => x.at === null && x.order && ['orbit', 'strike', 'attack'].includes(x.order.type));
-      if (lead && ships.length > 1) act({ t: 'order', ids, order: { ...lead.order, loose: ui.shape === 'loose', shape: ui.shape } });
+      if (lead && ships.length > 1) act({ t: 'order', ids, order: { ...lead.order, loose: next === 'loose', shape: next } });
       sfx('tap');
       break;
     }
     case 'join': order({ type: 'form', lead: +v }); ui.targetShip = null; break;
+    case 'drive': ui.drive = v; sfx('tap'); break;
     case 'pick': { const T = S.shipById(game, +v); if (T) { selectShips([T]); view.followShip(T.id); } break; }
     case 'retreat': {
       // Nearest friendly world, by a hard burn if the tanks allow, else as they can.
@@ -600,6 +615,24 @@ function clickStrip(a, v) {
 }
 const delegate = (el, fn) => el.addEventListener('click', (e) => { const t = e.target.closest('[data-a]'); if (t) { e.stopPropagation(); fn(t.dataset.a, t.dataset.v, t); } });
 delegate($('strip'), (a, v, el) => clickStrip(a, v, el.querySelector('em')?.textContent));
+// Holding a lit ship square (or shift-clicking it) drops that ship from the selection.
+{
+  let hold = null, swallow = false;
+  const drop = (id) => { if (ui.sel.size > 1 && ui.sel.delete(id)) { ui.routes = null; ui.routeKey = null; sfx('tap'); refreshUI(); } };
+  $('strip').addEventListener('pointerdown', (e) => {
+    const c = e.target.closest('[data-a="chip"].on');
+    if (!c) return;
+    const id = +c.dataset.v;
+    clearTimeout(hold);
+    hold = setTimeout(() => { hold = null; swallow = true; drop(id); }, 450);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('strip').addEventListener(ev, () => { clearTimeout(hold); hold = null; });
+  $('strip').addEventListener('click', (e) => {
+    if (swallow) { swallow = false; e.stopPropagation(); e.preventDefault(); return; }
+    const c = e.target.closest('[data-a="chip"].on');
+    if (c && (e.shiftKey || e.metaKey || e.ctrlKey)) { e.stopPropagation(); drop(+c.dataset.v); }
+  }, true);
+}
 
 // ---- Research sheet ------------------------------------------------------------------
 const signed = (x) => `${x < 0 ? '\u2212' : '+'}${Math.abs(x).toFixed(1)}`;

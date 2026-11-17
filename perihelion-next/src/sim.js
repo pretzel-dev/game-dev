@@ -804,6 +804,7 @@ export function setStance(game, owner, ids, st) {
     if ('torpsFree' in st) s.torpsFree = !!st.torpsFree;
     if ('fireFree' in st) s.fireFree = !!st.fireFree;
     if ('evade' in st) s.evade = !!st.evade;
+    if ('shape' in st) s.shape = ['wedge', 'column', 'loose'].includes(st.shape) ? st.shape : 'wedge'; // (each fleet keeps its own formation)
   }
   return true;
 }
@@ -1055,15 +1056,15 @@ export function advance(game, s, t, h, G, lookup) {
  * Fly an order forward without touching the game: how long it takes, how much
  * fuel it burns, and the path, for the route panel and the AI.
  */
-export function dryRun(game, s0, order, { maxT = 2400, h = 1.5, every = 4, coast = 0 } = {}) {
+export function dryRun(game, s0, order, { maxT = 2400, h = 1.5, every = 4, coast = 0, lookupAt = null, until = null } = {}) {
   const s = {
     id: s0.id, owner: s0.owner, x: s0.x, y: s0.y, z: s0.z, vx: s0.vx, vy: s0.vy, vz: s0.vz, tx: 0, ty: 0, tz: 0,
     st: s0.st, out: { drive: 0, reactor: 0 }, dv: 1e9, order: { ...order }, at: null, tau: 0, coast: false, inSoi: false, term: false, av: 0,
     depart: s0.at !== null ? planetOf(game, game.bodies[s0.at]).id : s0.depart,
   };
-  const lookup = (id) => shipById(game, id);
-  const path = [{ x: s.x, y: s.y, z: s.z }];
   let t = game.time, used = 0, k = 0;
+  const lookup = lookupAt ? (id) => lookupAt(id, t) : (id) => shipById(game, id);
+  const path = [{ x: s.x, y: s.y, z: s.z }];
   while (t - game.time < maxT) {
     const G = wells(game, t);
     const before = s.dv;
@@ -1072,10 +1073,38 @@ export function dryRun(game, s0, order, { maxT = 2400, h = 1.5, every = 4, coast
     t += h;
     if (++k % every === 0) path.push({ x: s.x, y: s.y, z: s.z });
     if (s.at !== null) break;
+    if (until && until(s, t)) { s.caught = true; break; }
     if (!s.order && (coast -= h) <= 0) break;
   }
   path.push({ x: s.x, y: s.y, z: s.z });
-  return { time: t - game.time, dv: used, ok: s.at !== null || order.type !== 'orbit', path, end: { x: s.x, y: s.y, z: s.z } };
+  return { time: t - game.time, dv: used, ok: until ? !!s.caught : s.at !== null || order.type !== 'orbit', path, end: { x: s.x, y: s.y, z: s.z } };
+}
+
+/**
+ * The ways to catch a ship: hard burn, cruise or dark, with the time and fuel to come alongside it,
+ * reckoned as if it keeps its present course. Each: { key, profile, time, dv, ok }.
+ */
+export function intercepts(game, ids, shipId) {
+  const list = game.ships.filter((s) => ids.includes(s.id));
+  const T = shipById(game, shipId);
+  if (!list.length || !T) return [];
+  const lead = list.reduce((a, b) => (b.st.accel < a.st.accel ? b : a));
+  const tank = Math.min(...list.map((s) => s.dv));
+  const t0 = game.time;
+  const ghost = { ...T };
+  const lookupAt = (id, t) => {
+    if (id !== T.id) return shipById(game, id);
+    const dt = t - t0;
+    if (T.at !== null) { const p = posAt(game, game.bodies[T.at], t), p0 = game.bp[T.at]; ghost.x = T.x - p0.x + p.x; ghost.y = T.y - p0.y + p.y; ghost.z = T.z - p0.z + p.z; } // (in orbit: it stays with its world)
+    else { ghost.x = T.x + T.vx * dt; ghost.y = T.y + T.vy * dt; ghost.z = T.z + T.vz * dt; }
+    return ghost;
+  };
+  const until = (s, t) => { const g = lookupAt(T.id, t); return Math.hypot(g.x - s.x, g.y - s.y, g.z - s.z) < 6 && Math.hypot(g.vx - s.vx, g.vy - s.vy, g.vz - s.vz) < 0.6; };
+  return ['hard', 'cruise', 'dark'].map((profile) => {
+    const amax = Math.min(...list.map((s) => s.st.accel * PROFILES[profile].a * (profile === 'hard' ? s.st.flash : 1)));
+    const r = dryRun(game, lead, { type: 'attack', ship: T.id, mode: 'match', d0: 3, profile, amax }, { maxT: 3000, lookupAt, until });
+    return { key: profile, profile, time: r.time, dv: r.dv, ok: r.ok && r.dv <= tank, reach: r.ok };
+  });
 }
 
 /**
@@ -1500,7 +1529,7 @@ function stepWorlds(game, dt) {
       if (!enemyHere) {
         for (const s of game.ships) {
           if (s.at !== b.id || s.owner !== o) continue;
-          resupply(game, s, dt, RULES.refuel * fast, RULES.repair * (yard ? 1 : 0.33), yard || b.home || net ? 1 / RULES.rearm : 0, yard);
+          resupply(game, s, dt, RULES.refuel * fast, RULES.repair * (yard ? 1 : 0.33), yard || b.home || net || has(b, 'depot') ? 1 / RULES.rearm : 0, yard);
         }
       }
     }
@@ -1862,7 +1891,7 @@ export function snapshot(game, owner) {
       return {
         id: s.id, owner: s.owner, cls: id2 ? s.cls : null, name: id2 ? s.name : null, x: r2(s.x), y: r2(s.y), z: r2(s.z), vx: r2(s.vx), vy: r2(s.vy), vz: r2(s.vz),
         tx: s.tx, ty: s.ty, tz: s.tz, burn: s.burn, at: s.at, ph: s.ph, hull: id2 ? r2(s.hull) : 0, derelict: !!s.derelict, cargo: s.owner < 0 ? s.cargo : undefined, xp: id2 ? s.xp || 0 : 0, dest: id2 && !mine && s.order && s.order.body != null && (knows(game, owner, 'signals') || megaOf(game, owner, 'ansible')) ? s.order.body : null, out: id2 ? s.out : null, seen: s.seen[owner], phase: s.phase,
-        ...(mine ? { cargo: s.cargo, src: s.src, dv: r2(s.dv), torps: s.torps, stores: s.stores, order: s.order, ready: s.ready, pend: s.pending ? (s.pending.o.body ?? -1) : undefined, grp: s.grp, torpsFree: s.torpsFree, fireFree: s.fireFree, evade: s.evade, board: s.board, tau: s.tau } : {}),
+        ...(mine ? { cargo: s.cargo, src: s.src, dv: r2(s.dv), torps: s.torps, stores: s.stores, order: s.order, ready: s.ready, pend: s.pending ? (s.pending.o.body ?? -1) : undefined, grp: s.grp, torpsFree: s.torpsFree, fireFree: s.fireFree, evade: s.evade, shape: s.shape, board: s.board, tau: s.tau } : {}),
       };
     }),
     torps: game.torps.map((m) => ({ id: m.id, owner: m.owner, x: r2(m.x), y: r2(m.y), z: r2(m.z), vx: r2(m.vx), vy: r2(m.vy), vz: r2(m.vz), burn: m.burn })),

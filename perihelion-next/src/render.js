@@ -824,8 +824,25 @@ export function createView(canvas, plot, opts = {}) {
     // A selected world of yours: how far its sensors and battery reach.
     if (ui.selBody != null && game.bodies[ui.selBody].owner === me && !zoomedOut) {
       const b = game.bodies[ui.selBody], p = bodyPos[b.id];
-      ringOn(p.x, p.y, p.z, RULES.cold * worldSight(b, game), INK, 0.2, [1, 5]);
-      if (batteryMax(b)) ringOn(p.x, p.y, p.z, RULES.railRange + b.size, INK, 0.35, null);
+      // Named where they cross the right of the ring: Sensors (how far a coasting ship is seen), Guns (the battery's reach).
+      const named = (r, text, color, alpha) => {
+        // Named at the highest point of the ring that is on screen, clear of the edges.
+        let best = null;
+        for (let i = 0; i < 48; i++) {
+          const an = (i / 48) * Math.PI * 2, q = proj(p.x + Math.cos(an) * r, p.y, p.z + Math.sin(an) * r);
+          if (!q.ok || q.x < 40 || q.x > W - 40 || q.y < 70 || q.y > H * 0.6) continue;
+          if (!best || q.y < best.y) best = { x: q.x, y: q.y };
+        }
+        if (best) label(text, best.x, best.y - 8, color, alpha, 9);
+      };
+      const sight = RULES.cold * worldSight(b, game);
+      ringOn(p.x, p.y, p.z, sight, INK, 0.3, [1, 5]); named(sight, 'Sensors', INK, 0.55);
+      // Picking a sensor array to build: how far the world would see with it.
+      if (ui.armed === 'build:array' || (ui.struct || '').startsWith('array')) {
+        const withA = (ui.struct || '').startsWith('array') ? sight : sight * RULES.arraySensor * (b.trait === 'listening' ? 2 : 1);
+        if (withA !== sight) { ringOn(p.x, p.y, p.z, withA, AMBER, 0.7, [4, 4]); named(withA, 'With array', AMBER, 0.85); }
+      }
+      if (batteryMax(b)) { ringOn(p.x, p.y, p.z, RULES.railRange + b.size, INK, 0.35, null); named(RULES.railRange + b.size, 'Guns', INK, 0.55); }
     }
     // A burn being plotted by hand: the arrow from the ship.
     if (ui.plot) {

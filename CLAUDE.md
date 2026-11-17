@@ -150,6 +150,11 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   a fixed height so the panel does not jump.
 - Ships ordered together fly in formation (`type: 'form'` orders keep station
   on a leader); `loose` turns it off. `form` is also how one ship joins another.
+  The shape is kept on the ships (`s.shape`, set with `setStance`), so each
+  fleet has its own. Your other warships in the same place show dim beside a
+  selection: tap to add, hold (or shift-click) a lit one to drop it.
+- Orders against a ship (Pass, Match, Board) take the drive picked in the
+  panel, which shows time and fuel per drive from `intercepts()`.
 - Research is drawn as a board (rows are lines, columns are steps, forks are
   two stacked boxes); tapping a box shows one line about it and the button.
 - Panels redraw several times a second: keep their HTML steady (round times
