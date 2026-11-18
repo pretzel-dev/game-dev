@@ -108,7 +108,7 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Touch and mouse handling in `main.js` is a port of the first game's; keep
   the two in step.
 - Desktop (`@media (min-width: 900px)`, at the end of `style.css`): one centred
-  column, smaller text than the phone scale. Mouse: right-click targets (as in
+  column (menus too), smaller text than the phone scale. Mouse: right-click targets (as in
   the first game), double-click the target to go, right-click empty space or
   click the map to back out or close the sheet. Keep the phone untouched.
 - Explaining without clutter: on touch the first tap on a button shows a

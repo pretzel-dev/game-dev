@@ -259,4 +259,9 @@ input { text-transform: none; }
   #hud { left: 0; right: 0; margin: 0 auto; max-width: 40rem; }
   #feed { left: max(0.6rem, calc(50% - 20rem)); }
   #date, #brief { right: max(0.6rem, calc(50% - 20rem)); }
+  /* The title, setup, lobby and pause screens: a centred column too. */
+  .screen { align-items: center; background: rgba(4, 4, 6, 0.72); }
+  .screen > * { width: 100%; max-width: 30rem; }
+  .mast { text-align: center; }
+  #panel > :first-child { margin-top: auto; } #panel > :last-child { margin-bottom: auto; } /* (centred, and still scrolls when tall) */
 }
