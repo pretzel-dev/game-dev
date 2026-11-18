@@ -446,6 +446,20 @@ for (const k of SCENARIO_KEYS) {
   for (let i = 0; i < 12; i++) S.step(g, 1);
   ok(f.torps > 0, 'a fuel depot rearms torpedoes');
 }
+{
+  // Torpedoes go round a world between them and the target instead of into it.
+  const g = S.createGame({ seed: 3, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
+  S.step(g, 1);
+  const pl = g.bodies.find((b) => b.kind === 'planet' && !b.giant && b.owner === S.NEUTRAL), p = g.bp[pl.id], v = g.bv[pl.id];
+  const a = g.ships.find((s) => s.owner === 0 && s.st.tubes), b = g.ships.find((s) => s.owner === 1 && !s.st.civil), r = pl.size * 2.2;
+  Object.assign(a, { x: p.x + r, y: p.y, z: p.z, vx: v.x, vy: v.y, vz: v.z, at: null, order: null, torpsFree: false, fireFree: false });
+  Object.assign(b, { x: p.x - r, y: p.y, z: p.z, vx: v.x, vy: v.y, vz: v.z, at: null, order: null, torpsFree: false, fireFree: false });
+  b.seen[0] = 2; b.st = { ...b.st, pdc: 0 };
+  const h0 = b.hull;
+  S.salvo(g, 0, [a.id], { ship: b.id });
+  for (let i = 0; i < 300 && g.torps.length; i++) S.step(g, 0.2);
+  ok(b.hull < h0, 'torpedoes steer round a world in the way');
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];

@@ -170,6 +170,34 @@ function fleetOf(s) {
 }
 function clearSel() { ui.armed = null; ui.struct = null; ui.sel = new Set(); ui.target = null; ui.targetShip = null; ui.routes = null; ui.routeKey = null; ui.build = false; ui.plotMode = false; ui.plot = null; }
 function selectShips(list) { clearSel(); ui.selBody = null; for (const s of list) ui.sel.add(s.id); sfx('select'); }
+function quickGo() {
+  const tank = Math.min(...selShips().map((s) => s.dv));
+  const r = (ui.routes || []).find((x) => x.key === 'cruise' && x.dv <= tank) || (ui.routes || []).find((x) => x.dv <= tank);
+  if (!r) return false;
+  clickStrip('go', r.key);
+  return true;
+}
+/** Mouse right-click: with ships selected, the world or ship under the cursor becomes their target; on empty space it backs out. */
+function rightClick(x, y) {
+  if (!live()) return;
+  if (!$('sheet').hidden) { $('sheet').hidden = true; sfx('close'); return; }
+  const hit = view.pick(x, y);
+  if (!hit) {
+    if (ui.target != null || ui.targetShip != null) { ui.target = null; ui.targetShip = null; ui.routes = null; }
+    else { clearSel(); ui.selBody = null; }
+    sfx('close'); refreshUI(); return;
+  }
+  if (!ui.sel.size) return;
+  const ships = selShips();
+  if (hit.ship != null) {
+    const s = S.shipById(game, hit.ship);
+    if (s && !(mine(s) && (ui.sel.has(s.id) || (s.at !== null && ships.every((k) => k.at === s.at))))) { ui.targetShip = s.id; ui.target = null; ui.routes = null; sfx('tap'); refreshUI(); return; }
+    const w = view.pick(x, y, false);
+    if (w && w.body != null && !ships.every((k) => k.at === w.body)) { setTarget(w.body); refreshUI(); }
+    return;
+  }
+  if (hit.body != null && !ships.every((k) => k.at === hit.body)) { setTarget(hit.body); refreshUI(); }
+}
 function setTarget(bodyId) { ui.target = bodyId; ui.targetShip = null; ui.routeKey = null; refreshRoutes(); sfx('tap'); }
 function refreshRoutes() {
   if (ui.target == null || !ui.sel.size) { ui.routes = null; return; }
@@ -177,6 +205,8 @@ function refreshRoutes() {
 }
 function tap(x, y, double) {
   if (!live()) return;
+  // Clicking the map closes the research or income sheet.
+  if (!$('sheet').hidden) { $('sheet').hidden = true; sfx('close'); return; }
   let hit = view.pick(x, y);
   // With ships selected, a tap on a world means "go there" even if one of your own ships is drawn over it.
   if (hit && hit.ship != null && ui.sel.size) {
@@ -192,12 +222,18 @@ function tap(x, y, double) {
       else selectShips(s.at !== null ? game.ships.filter((x) => mine(x) && !x.st.civil && x.at === s.at) : fleetOf(s));
       view.followShip(s.id, double);
     } else if (mine(s)) { clearSel(); ui.selBody = null; ui.targetShip = s.id; sfx('tap'); view.followShip(s.id, double); }
-    else { ui.targetShip = s.id; ui.target = null; ui.routes = null; if (!ui.sel.size) ui.selBody = null; sfx('tap'); if (double) view.followShip(s.id, true); }
+    else {
+      // Mouse: double-clicking another ship with yours selected goes to match it, with the drive picked.
+      if (double && !touchInput && ui.sel.size && ui.targetShip === s.id) { clickStrip('match', String(s.id)); return; }
+      ui.targetShip = s.id; ui.target = null; ui.routes = null; if (!ui.sel.size) ui.selBody = null; sfx('tap'); if (double) view.followShip(s.id, true);
+    }
     return;
   }
   if (hit && hit.body != null) {
     const b = game.bodies[hit.body];
     const ships = selShips();
+    // Mouse: double-clicking the destination sends the ships by cruise (a hard burn if cruise is out of reach).
+    if (double && !touchInput && ships.length && ui.target === b.id && quickGo()) return;
     if (double) view.focus(game, b.id, true);
     if (ships.length && !ships.every((s) => s.at === b.id)) { setTarget(b.id); return; }
     clearSel(); ui.selBody = b.id; sfx('select');
@@ -1162,7 +1198,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (e.button === 0 && startPlot(e)) return;
     // Mouse: left drags pan, right or middle drags turn the view around whatever is under the cursor.
     const turn = e.button === 2 || e.button === 1 || e.altKey;
-    gesture = { kind: turn ? 'turn' : 'click', mouse: true, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
+    gesture = { kind: turn ? 'turn' : 'click', right: e.button === 2, moved: false, mouse: true, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
       pivot: turn && !view.following() ? view.pivotAt(e.clientX, e.clientY) : null };
     ui.dragging = true;
     return;
@@ -1184,7 +1220,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (gesture?.mouse) {
     const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
     gesture.x = e.clientX; gesture.y = e.clientY;
-    if (gesture.kind === 'click' && Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) gesture.kind = 'pan';
+    if (Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > 5) { gesture.moved = true; if (gesture.kind === 'click') gesture.kind = 'pan'; }
     if (gesture.kind === 'pan') view.pan(dx, dy);
     if (gesture.kind === 'turn') {
       if (gesture.pivot) view.rotateAround(gesture.pivot, -dx * 0.006, -dy * 0.006);
@@ -1221,6 +1257,8 @@ function endPointer(e) {
     const g = gesture;
     gesture = null; ui.dragging = false;
     if (g.kind === 'click' && e.type !== 'pointercancel') doTap(e.clientX, e.clientY);
+    // A right-click that did not drag: target what is under the cursor (as in the first game).
+    if (g.kind === 'turn' && g.right && !g.moved && e.type !== 'pointercancel') rightClick(e.clientX, e.clientY);
     return;
   }
   if (!pointers.delete(e.pointerId)) return;
