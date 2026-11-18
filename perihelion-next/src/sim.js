@@ -1292,6 +1292,20 @@ function stepTorps(game, dt) {
     if (m.dv > 0) {
       const tau = clamp(d / Math.max(0.5, closing), 0.5, 40);
       let ax = (rx + wx * tau) / tau + (rx / d) * 0.6, ay = (ry + wy * tau) / tau + (ry / d) * 0.6, az = (rz + wz * tau) / tau + (rz / d) * 0.6;
+      // A world between it and the target (say, both ships in orbit on opposite sides): steer round it.
+      for (const w of game.blockers) {
+        if (w.id === m.body) continue;
+        const p = game.bp[w.id], ox = p.x - m.x, oy = p.y - m.y, oz = p.z - m.z;
+        const along = (ox * rx + oy * ry + oz * rz) / d;
+        if (along <= 0 || along >= d) continue;
+        const px = ox - (rx / d) * along, py = oy - (ry / d) * along, pz = oz - (rz / d) * along, miss = Math.hypot(px, py, pz);
+        const clear = w.size * 1.6;
+        if (miss >= clear) continue;
+        // Push sideways, away from the world's centre, harder the closer the line runs to it.
+        const k = (1 - miss / clear) * 3 / (miss || 1e-6);
+        ax -= px * k; ay -= py * k; az -= pz * k;
+        if (miss < 1e-3) { ax += rz / d; az -= rx / d; } // (dead centre: pick a side)
+      }
       const al = Math.hypot(ax, ay, az) || 1;
       ax *= R.accel / al; ay *= R.accel / al; az *= R.accel / al;
       m.vx += ax * dt; m.vy += ay * dt; m.vz += az * dt; m.dv -= R.accel * dt; m.burn = 1;
@@ -1301,7 +1315,7 @@ function stepTorps(game, dt) {
     for (const w of game.blockers) {
       if (w.id === m.body) continue;
       const p = game.bp[w.id];
-      if (Math.hypot(p.x - m.x, p.y - m.y, p.z - m.z) < w.size) { m.dead = true; break; }
+      if (Math.hypot(p.x - m.x, p.y - m.y, p.z - m.z) < w.size) { m.dead = true; fx(game, { type: 'torpHit', x: m.x, y: m.y, z: m.z, owner: m.owner }); break; }
     }
     if (Math.hypot(m.x, m.y, m.z) < SUN_R) m.dead = true;
   }

@@ -146,9 +146,6 @@ input:focus { border-color: var(--amber); }
 #brief b { display: block; font-size: 0.7rem; color: var(--amber); margin-bottom: 0.25rem; }
 #brief .t { font-family: var(--mono); color: var(--amber); float: right; font-size: 0.75rem; }
 
-@media (min-width: 900px) {
-  #strip, #sheet { left: 1rem; right: auto; margin: 0; width: 30rem; bottom: 1rem; padding-bottom: 0.8rem; border: 1px solid var(--faint); background: rgba(4, 4, 6, 0.9); }
-}
 
 /* Plain speech: sentence case, no tracked-out capitals, no accent bars, nothing that pulses. */
 .mast h1 { letter-spacing: 0.18em; text-transform: uppercase; font-size: clamp(2rem, 8vw, 3.2rem); }
@@ -254,3 +251,12 @@ input { text-transform: none; }
 .nd.mega { color: var(--amber); }
 .nd.mega.done { color: var(--bg); }
 .tile.mega { color: var(--amber); }
+
+@media (min-width: 900px) {
+  /* Desktop: one centred column (top bar, notices, date, panel), and text that grows less with the screen. */
+  :root { --ui-auto: clamp(15px, min(0.8vw, 1.45vh), 19px); }
+  #strip, #sheet { left: 0; right: 0; margin: 0 auto; width: 34rem; bottom: 1rem; padding-bottom: 0.8rem; border: 1px solid var(--faint); background: rgba(4, 4, 6, 0.9); }
+  #hud { left: 0; right: 0; margin: 0 auto; max-width: 40rem; }
+  #feed { left: max(0.6rem, calc(50% - 20rem)); }
+  #date, #brief { right: max(0.6rem, calc(50% - 20rem)); }
+}

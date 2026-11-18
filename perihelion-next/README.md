@@ -167,6 +167,7 @@ timed events) are still there to lift back if testing asks for them.
 - **Chasing a ship.** Picking another ship as the target shows hard burn,
   cruise and dark with the time and fuel to come alongside (reckoned as if it
   keeps its course); Pass, Match and Board fly with the one picked.
+- **Torpedoes** steer round a world between them and their target.
 - **Rings round your world.** Picking one of your worlds shows how far it sees
   a coasting ship (Sensors) and its battery's reach (Guns); picking a sensor
   array to build shows the ring it would give.
@@ -227,6 +228,12 @@ timed events) are still there to lift back if testing asks for them.
   drag to turn, two fingers to move and zoom (while locked, a pinch zooms about
   the locked world or ship), double-tap to fly in.
 - Mouse: click to select, drag to move the map, right-drag to turn, wheel to zoom.
+  With ships selected, right-click a world or a ship to make it the target;
+  double-click the target world to go by cruise (a hard burn if cruise is out
+  of reach), or a target ship to match it. Right-click empty space to back out.
+  Clicking the map closes the research sheet.
+- Desktop: the interface is one centred column (top bar, panel at the bottom
+  middle), and its text grows less with the screen than on a phone.
 - Keys: WASD or arrows move, Q/E turn, +/- zoom, Space pause, 1 to 4 time speed, H whole system, R research, F follow, Esc back.
 
 ## Run
