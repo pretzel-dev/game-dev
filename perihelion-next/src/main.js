@@ -32,8 +32,19 @@ const held = new Set();
 const setHTML = (el, html) => {
   if (pressed && performance.now() - pressedAt < 1500 && el.contains(pressed)) { el._pending = html; held.add(el); return; }
   el._pending = undefined;
-  if (el._html !== html) { el._html = html; el.innerHTML = html; }
+  if (el._html !== html) { el._html = html; morph(el, html); }
 };
+/** Replace only the top-level parts that changed, so a row of buttons survives a change in the numbers below it. */
+function morph(el, html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const next = [...tpl.content.childNodes], cur = [...el.childNodes];
+  if (next.length !== cur.length) { el.innerHTML = html; return; }
+  next.forEach((n, i) => {
+    const c = cur[i];
+    if (c.nodeType !== n.nodeType || (n.nodeType === 1 ? n.outerHTML !== c.outerHTML : n.textContent !== c.textContent)) el.replaceChild(n, c);
+  });
+}
 const flush = () => { pressed = null; for (const el of held) { held.delete(el); if (el._pending !== undefined) setHTML(el, el._pending); } };
 window.addEventListener('pointerdown', (e) => { pressed = e.target; pressedAt = performance.now(); }, true);
 window.addEventListener('pointerup', () => setTimeout(flush, 300), true);
@@ -150,7 +161,7 @@ function apply(owner, c) {
     case 'cancel': return b && S.cancelShip(game, b, c.i);
     case 'demolish': return b && S.demolish(game, b, c.type, c.i ?? null);
     case 'mega': return b && S.startMega(game, b, c.key);
-    case 'mstrike': return b && S.fireStrike(game, owner, b);
+    case 'mstrike': { const w = game.bodies[c.at]; return w && S.fireStrike(game, owner, w); } // (the target is an enemy world: it travels as `at`, not `body`)
     case 'dark': return S.startBlackout(game, owner);
     case 'research': return S.research(game, owner, c.line, c.key);
     case 'agent': { const w = game.bodies[c.at]; return w && S.sendAgent(game, owner, w); }
@@ -631,7 +642,7 @@ function clickStrip(a, v) {
     case 'slot': ui.build = !ui.build; ui.struct = null; sfx('tap'); break;
     case 'struct': ui.struct = ui.struct === v ? null : v; ui.build = false; sfx('tap'); break;
     case 'mega': if (b && !S.cantMega(game, b, v)) { act({ t: 'mega', body: b.id, key: v }); sfx('confirm'); } else sfx('deny'); break;
-    case 'mstrike': if (b && !S.cantStrike(game, me, b)) { act({ t: 'mstrike', body: b.id }); sfx('confirm'); } else sfx('deny'); break;
+    case 'mstrike': if (b && !S.cantStrike(game, me, b)) { act({ t: 'mstrike', at: b.id }); sfx('confirm'); } else sfx('deny'); break;
     case 'dark': if (!S.cantBlackout(game, me)) { act({ t: 'dark' }); sfx('confirm'); } else sfx('deny'); break;
     case 'megaInfo': sfx('tap'); break;
     case 'demolish': if (b && !S.cantDemolish(game, b, stype(v), sidx(v))) { act({ t: 'demolish', body: b.id, type: stype(v), i: sidx(v) }); ui.struct = null; sfx('close'); } else sfx('deny'); break;
