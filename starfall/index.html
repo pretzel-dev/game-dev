@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#05060d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Starfall</title>
+    <link rel="icon" href="favicon.svg" />
+    <script type="module" crossorigin src="./assets/index-D4MMfWZw.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-ICYqaL9z.css">
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="labels"></div>
+    <div id="toast"></div>
+
+    <div id="hud" hidden>
+      <div id="share"></div>
+      <button id="gear" aria-label="Settings">⚙</button>
+      <button id="pause" aria-label="Pause">❚❚</button>
+    </div>
+    <div id="research-bar" hidden></div>
+
+    <div id="actions" hidden>
+      <div id="order" hidden>
+        <div id="order-info"></div>
+        <div class="bar">
+          <input id="amount" type="range" min="5" max="100" step="5" aria-label="Share of ships to send" />
+          <button id="launch">Launch</button>
+        </div>
+      </div>
+      <div class="bar" id="manage">
+        <span id="hint">Tap a target</span>
+        <button id="upgrade"></button>
+        <button id="tech-btn">Tech</button>
+      </div>
+    </div>
+
+    <div id="tech" hidden>
+      <div class="sheet-head"><span>Research</span><span id="tech-status"></span><button id="tech-close" aria-label="Close">✕</button></div>
+      <div id="tech-list"></div>
+      <p class="sheet-foot">Paid in ships from the selected star. One project at a time.</p>
+    </div>
+
+    <div id="menu" class="overlay">
+      <h1>Starfall</h1>
+      <p class="how">Select your star, pick a target, launch.<br />Fleets take a long time to arrive and can't be recalled.</p>
+      <div class="row"><span>Rivals</span>
+        <div class="seg" id="rivals"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div>
+      </div>
+      <div class="row"><span>AI</span>
+        <div class="seg" id="difficulty"><button data-v="easy">Easy</button><button data-v="normal">Normal</button><button data-v="hard">Hard</button></div>
+      </div>
+      <button id="play" class="primary">Play</button>
+      <button id="resume" class="primary" hidden>Resume</button>
+      <button id="settings-btn" class="link">Settings</button>
+    </div>
+
+    <div id="settings" class="overlay" hidden>
+      <h2>Settings</h2>
+      <p class="how">For playtesting. Saved on this device; most apply from the next game.</p>
+      <div id="settings-list"></div>
+      <div class="row">
+        <button id="settings-copy" class="link">Copy settings</button>
+        <button id="settings-reset" class="link">Reset to defaults</button>
+      </div>
+      <textarea id="settings-json" readonly rows="3" aria-label="Settings to copy"></textarea>
+      <div class="row">
+        <button id="settings-done" class="primary small">Done</button>
+      </div>
+    </div>
+
+    <div id="end" class="overlay" hidden>
+      <h1 id="end-title"></h1>
+      <p id="end-sub" class="how"></p>
+      <button id="again" class="primary">Play again</button>
+      <div id="end-stats"></div>
+    </div>
+
+  </body>
+</html>
