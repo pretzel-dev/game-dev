@@ -1095,7 +1095,7 @@ export function intercepts(game, ids, shipId) {
   const lookupAt = (id, t) => {
     if (id !== T.id) return shipById(game, id);
     const dt = t - t0;
-    if (T.at !== null) { const p = posAt(game, game.bodies[T.at], t), p0 = game.bp[T.at]; ghost.x = T.x - p0.x + p.x; ghost.y = T.y - p0.y + p.y; ghost.z = T.z - p0.z + p.z; } // (in orbit: it stays with its world)
+    if (T.at !== null) { const b = game.bodies[T.at], p = posAt(game, b, t), p0 = game.bp[T.at], v = velAt(game, b, t); ghost.x = T.x - p0.x + p.x; ghost.y = T.y - p0.y + p.y; ghost.z = T.z - p0.z + p.z; ghost.vx = v.x; ghost.vy = v.y; ghost.vz = v.z; } // (in orbit: it moves with its world)
     else { ghost.x = T.x + T.vx * dt; ghost.y = T.y + T.vy * dt; ghost.z = T.z + T.vz * dt; }
     return ghost;
   };
