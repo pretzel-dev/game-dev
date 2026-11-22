@@ -23,7 +23,7 @@ export const STEPS = [
   { title: 'The view', text: (c) => (c.touch ? 'Drag to turn. Pinch to zoom. Two fingers to move.' : 'Drag to move. Right-drag to turn. Scroll to zoom.'), done: (c) => c.moved > 1 },
   { title: 'Credits', text: () => 'Top left: your credits and income a day. The bars are your ships and your ship limit.', point: '#purse' },
   { title: 'Select ships', text: (c) => `${c.touch ? 'Tap' : 'Click'} one of your ships at <em>${c.home.name}</em>.`, world: (c) => c.home.id, done: (c) => c.ui.sel.size > 0 },
-  { title: 'Send them', text: (c) => `${c.ui.sel.size ? '' : 'Select your ships. '}${c.touch ? 'Tap' : 'Click'} <em>${c.target.name}</em> and pick a course.`, world: (c) => c.target.id, point: '[data-a="go"]', on: 'order' },
+  { title: 'Send them', text: (c) => `${c.ui.sel.size ? '' : 'Select your ships. '}${c.touch ? `Tap <em>${c.target.name}</em> and pick a course.` : `Right-click <em>${c.target.name}</em>.`}`, world: (c) => c.target.id, point: '[data-a="go"]', on: 'order' },
   { title: 'Time', text: () => 'Travel takes days. This button makes time run faster.', point: '#warp', done: (c) => c.warp > 1 },
   { title: 'Take the world', text: (c) => `<em>${c.target.name}</em> yields when your ships hold its orbit.`, world: (c) => c.target.id, done: (c) => c.gained > 0 },
   { title: 'Build', text: (c) => `Select <em>${c.home.name}</em>. ${c.touch ? 'Tap' : 'Click'} Build and pick a structure.`, world: (c) => (c.ui.selBody === c.home.id ? null : c.home.id), point: (c) => (c.ui.build ? '[data-a="build"]:not(.no)' : '[data-a="slot"]'), on: 'build' },

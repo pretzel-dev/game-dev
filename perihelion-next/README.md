@@ -164,9 +164,12 @@ timed events) are still there to lift back if testing asks for them.
   world's earnings, or make it yield to your ships twice as fast. An
   independent world with your agent on it can be bought outright. Every second
   there is a chance she is caught; counter-intelligence doubles it.
-- **Chasing a ship.** Picking another ship as the target shows hard burn,
-  cruise and dark with the time and fuel to come alongside (reckoned as if it
-  keeps its course); Pass, Match and Board fly with the one picked.
+- **Chasing a ship.** Picking another ship as the target shows a row to pick
+  what to do there (Match, Pass, Board: a setting) and the courses, hard burn,
+  cruise and dark, with the time and fuel to come alongside (reckoned as if it
+  keeps its course; ? when it cannot be reckoned). Pressing a course gives the
+  order, as for a world. Joined buttons are settings; boxes with time and fuel
+  are orders.
 - **Torpedoes** steer round a world between them and their target.
 - **Rings round your world.** Picking one of your worlds shows how far it sees
   a coasting ship (Sensors) and its battery's reach (Guns); picking a sensor
@@ -228,10 +231,12 @@ timed events) are still there to lift back if testing asks for them.
   drag to turn, two fingers to move and zoom (while locked, a pinch zooms about
   the locked world or ship), double-tap to fly in.
 - Mouse: click to select, drag to move the map, right-drag to turn, wheel to zoom.
-  With ships selected, right-click a world or a ship to make it the target;
-  double-click the target world to go by cruise (a hard burn if cruise is out
-  of reach), or a target ship to match it. Right-click empty space to back out.
-  Clicking the map closes the research sheet.
+  Left-click only selects (a world, a ship, or empty space to clear;
+  shift-click adds or drops one of your ships). Right-click gives the order to
+  the ships selected: on a world, go there now by cruise (a hard burn if
+  cruise is out of reach); on another ship, go and catch it; on one of your
+  own, join it. The panel then shows the courses with the one used lit, to
+  switch. Clicking the map closes the research sheet.
 - Desktop: the interface is one centred column (top bar, panel at the bottom
   middle), and its text grows less with the screen than on a phone.
 - Keys: WASD or arrows move, Q/E turn, +/- zoom, Space pause, 1 to 4 time speed, H whole system, R research, F follow, Esc back.

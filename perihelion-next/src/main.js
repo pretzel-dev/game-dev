@@ -84,7 +84,7 @@ window.addEventListener('resize', () => view.resize());
 let tut = null; // the guided first game, while it runs
 let game = null, ais = [], me = 0, mode = 'demo'; // demo | solo | host | guest
 let paused = false, warp = 1, room = null, scn = null, ended = false, netFx = [], lastSnap = 0, notesT = 0;
-const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, drive: 'hard', plotMode: false };
+const ui = { me: 0, sel: new Set(), selBody: null, target: null, targetShip: null, routes: null, routeKey: null, paths: new Map(), colors: [], fx: [], dev: false, plot: null, warp: 1, dragging: false, build: false, amode: 'match', plotMode: false };
 const inGame = () => mode === 'solo' || mode === 'host' || mode === 'guest';
 const live = () => inGame() && game && !ended;
 const mine = (s) => s.owner === me;
@@ -181,35 +181,71 @@ function fleetOf(s) {
 }
 function clearSel() { ui.armed = null; ui.struct = null; ui.sel = new Set(); ui.target = null; ui.targetShip = null; ui.routes = null; ui.routeKey = null; ui.build = false; ui.plotMode = false; ui.plot = null; }
 function selectShips(list) { clearSel(); ui.selBody = null; for (const s of list) ui.sel.add(s.id); sfx('select'); }
-function quickGo() {
-  const tank = Math.min(...selShips().map((s) => s.dv));
-  const r = (ui.routes || []).find((x) => x.key === 'cruise' && x.dv <= tank) || (ui.routes || []).find((x) => x.dv <= tank);
-  if (!r) return false;
-  clickStrip('go', r.key);
-  return true;
+/** Give the selected ships an order, in their formation. */
+function sendOrder(o) {
+  const ships = selShips(), sh = shapeOf(ships);
+  act({ t: 'order', ids: ships.map((x) => x.id), order: o ? { ...o, loose: sh === 'loose', shape: sh } : o });
+  sfx('confirm');
 }
-/** Mouse right-click: with ships selected, the world or ship under the cursor becomes their target; on empty space it backs out. */
+/** The ways to catch a ship (time and fuel per drive), worked out again every few game seconds. */
+function icptFor(ships, T) {
+  const key = `${ships.map((x) => x.id)}:${T.id}`;
+  if (ui.icptKey !== key || Math.abs(game.time - ui.icptT) > 4) { ui.icpt = S.intercepts(game, ships.map((x) => x.id), T.id); ui.icptKey = key; ui.icptT = game.time; }
+  return ui.icpt;
+}
+/** The default course: cruise, or the first that the tanks allow. */
+const pickCourse = (list, tank) => list.find((r) => r.key === 'cruise' && r.reach !== false && r.dv <= tank) || list.find((r) => r.reach !== false && r.dv <= tank) || null;
+/**
+ * Mouse right-click: the order button. With ships selected: a world, go there now by the default course;
+ * another ship, go and catch it (Match unless another way was picked); one of your own, join it.
+ * The panel stays on the target with the course used lit, so another course can still be picked.
+ */
 function rightClick(x, y) {
   if (!live()) return;
   if (!$('sheet').hidden) { $('sheet').hidden = true; sfx('close'); return; }
-  const hit = view.pick(x, y);
-  if (!hit) {
-    if (ui.target != null || ui.targetShip != null) { ui.target = null; ui.targetShip = null; ui.routes = null; }
-    else { clearSel(); ui.selBody = null; }
-    sfx('close'); refreshUI(); return;
-  }
   if (!ui.sel.size) return;
-  const ships = selShips();
-  if (hit.ship != null) {
+  const ships = selShips(), tank = Math.min(...ships.map((k) => k.dv));
+  let hit = view.pick(x, y);
+  if (hit && hit.ship != null) {
+    const T = S.shipById(game, hit.ship);
+    if (T && mine(T) && !T.st.civil) {
+      if (ui.sel.has(T.id) || (T.at !== null && ships.every((k) => k.at === T.at))) { const w = view.pick(x, y, false); hit = w && w.body != null ? w : null; }
+      else { sendOrder({ type: 'form', lead: T.id }); ui.targetShip = null; ui.target = null; refreshUI(); return; }
+    } else if (T) {
+      ui.targetShip = T.id; ui.target = null; ui.routes = null;
+      const list = icptFor(ships, T), r = pickCourse(list, tank) || (list.some((x) => x.reach) ? null : list.find((x) => x.key === 'cruise'));
+      if (r) { sendOrder({ type: 'attack', ship: T.id, mode: ui.amode, profile: r.profile }); ui.sentKey = `${T.id}:${r.key}`; } else sfx('deny');
+      refreshUI(); return;
+    }
+  }
+  if (hit && hit.body != null && !ships.every((k) => k.at === hit.body)) {
+    setTarget(hit.body);
+    const r = pickCourse(ui.routes || [], tank);
+    if (r) { sendOrder({ type: 'orbit', body: hit.body, profile: r.profile, via: r.via, side: r.side }); ui.sentKey = `${hit.body}:${r.key}`; } else sfx('deny');
+    refreshUI(); return;
+  }
+  if (!hit) { ui.target = null; ui.targetShip = null; ui.routes = null; sfx('close'); refreshUI(); }
+}
+/** Mouse left-click: only ever selects (a world, a ship, or nothing). Shift-click adds or drops one of your ships. */
+function clickSelect(hit, double) {
+  if (hit && hit.ship != null) {
     const s = S.shipById(game, hit.ship);
-    if (s && !(mine(s) && (ui.sel.has(s.id) || (s.at !== null && ships.every((k) => k.at === s.at))))) { ui.targetShip = s.id; ui.target = null; ui.routes = null; sfx('tap'); refreshUI(); return; }
-    const w = view.pick(x, y, false);
-    if (w && w.body != null && !ships.every((k) => k.at === w.body)) { setTarget(w.body); refreshUI(); }
+    if (!s) return;
+    if (mine(s) && !s.st.civil) {
+      if (shiftDown && ui.sel.size) { if (!ui.sel.has(s.id)) ui.sel.add(s.id); else if (ui.sel.size > 1) ui.sel.delete(s.id); ui.routes = null; ui.routeKey = null; ui.target = null; ui.targetShip = null; sfx('tap'); return; }
+      if (ui.sel.has(s.id) && ui.sel.size > 1) selectShips([s]);
+      else selectShips(s.at !== null ? game.ships.filter((x) => mine(x) && !x.st.civil && x.at === s.at) : fleetOf(s));
+      view.followShip(s.id, double);
+      return;
+    }
+    clearSel(); ui.selBody = null; ui.targetShip = s.id; sfx('tap'); if (double) view.followShip(s.id, true);
     return;
   }
-  if (hit.body != null && !ships.every((k) => k.at === hit.body)) { setTarget(hit.body); refreshUI(); }
+  if (hit && hit.body != null) { clearSel(); ui.selBody = hit.body; sfx('select'); view.focus(game, hit.body, double); return; }
+  if (ui.target != null || ui.targetShip != null) { ui.target = null; ui.targetShip = null; ui.routes = null; return; }
+  clearSel(); ui.selBody = null;
 }
-function setTarget(bodyId) { ui.target = bodyId; ui.targetShip = null; ui.routeKey = null; refreshRoutes(); sfx('tap'); }
+function setTarget(bodyId) { ui.target = bodyId; ui.targetShip = null; ui.routeKey = null; ui.sentKey = null; refreshRoutes(); sfx('tap'); }
 function refreshRoutes() {
   if (ui.target == null || !ui.sel.size) { ui.routes = null; return; }
   ui.routes = S.routes(game, [...ui.sel], ui.target).filter((r) => r.reach);
@@ -219,6 +255,7 @@ function tap(x, y, double) {
   // Clicking the map closes the research or income sheet.
   if (!$('sheet').hidden) { $('sheet').hidden = true; sfx('close'); return; }
   let hit = view.pick(x, y);
+  if (!touchInput) { clickSelect(hit, double); return; } // (a mouse selects with the left button and orders with the right)
   // With ships selected, a tap on a world means "go there" even if one of your own ships is drawn over it.
   if (hit && hit.ship != null && ui.sel.size) {
     const s = S.shipById(game, hit.ship), w = view.pick(x, y, false);
@@ -234,8 +271,6 @@ function tap(x, y, double) {
       view.followShip(s.id, double);
     } else if (mine(s)) { clearSel(); ui.selBody = null; ui.targetShip = s.id; sfx('tap'); view.followShip(s.id, double); }
     else {
-      // Mouse: double-clicking another ship with yours selected goes to match it, with the drive picked.
-      if (double && !touchInput && ui.sel.size && ui.targetShip === s.id) { clickStrip('match', String(s.id)); return; }
       ui.targetShip = s.id; ui.target = null; ui.routes = null; if (!ui.sel.size) ui.selBody = null; sfx('tap'); if (double) view.followShip(s.id, true);
     }
     return;
@@ -243,8 +278,6 @@ function tap(x, y, double) {
   if (hit && hit.body != null) {
     const b = game.bodies[hit.body];
     const ships = selShips();
-    // Mouse: double-clicking the destination sends the ships by cruise (a hard burn if cruise is out of reach).
-    if (double && !touchInput && ships.length && ui.target === b.id && quickGo()) return;
     if (double) view.focus(game, b.id, true);
     if (ships.length && !ships.every((s) => s.at === b.id)) { setTarget(b.id); return; }
     clearSel(); ui.selBody = b.id; sfx('select');
@@ -265,6 +298,7 @@ function chip(s, on = true) {
 }
 const L = (ic, word) => `${ic}<em>${word}</em>`;
 const ROUTE_NAME = { hard: 'Hard burn', cruise: 'Cruise', dark: 'Dark', sling: 'Slingshot' };
+const MODE_NAME = { match: 'Match', pass: 'Pass', board: 'Board' };
 // What a button does: a few plain words, and the numbers as stats. Shown in the bar when the button is picked
 // (touch: first tap shows it, second does it) and as the tooltip for a mouse. Nothing else on screen explains.
 const HINT = {
@@ -383,7 +417,8 @@ function infoOf(a, v) {
   if (a === 'op' && v === 'steal') return { text: HINT['op:steal'], stats: [['Share', `${Math.round(AGENT.skim * 100)}%`]] };
   if (a === 'op' && v === 'incite') return { text: HINT['op:incite'], stats: [['Yield', '×2']] };
   if (a === 'formation') return { text: HINT[`formation:${shapeOf(selShips())}`], stats: [] };
-  if (a === 'drive') return { text: HINT[`go:${v}`], stats: [] };
+  if (a === 'chase') return { text: HINT[`go:${v}`], stats: [] };
+  if (a === 'amode') return { text: HINT[v], stats: [] };
   return { text: HINT[`${a}:${v}`] || HINT[a] || '', stats: [] };
 }
 const statsHTML = (list) => (list.length ? `<div class="sts">${list.map(([l, x]) => stat(l, x)).join('')}</div>` : '');
@@ -391,9 +426,10 @@ const infoHTML = (i) => `${i.text ? `<p>${esc(i.text)}</p>` : ''}${statsHTML(i.s
 /** The same as plain text, for a mouse tooltip. */
 function hintOf(a, v) { const i = infoOf(a, v); return [i.text, ...i.stats.map(([l, x]) => `${l} ${x}`)].filter(Boolean).join(' · '); }
 // Buttons that spend something or cannot be undone ask for a second tap. The rest act at once.
-const TWO_STEP = new Set(['mega', 'mstrike', 'dark', 'go', 'strike', 'pass', 'match', 'board', 'salvo', 'join', 'retreat', 'cut', 'build', 'ship', 'upgrade', 'demolish', 'agent', 'recall', 'buy', 'sab', 'op', 'cancel']);
+const TWO_STEP = new Set(['chase', 'mega', 'mstrike', 'dark', 'go', 'strike', 'pass', 'match', 'board', 'salvo', 'join', 'retreat', 'cut', 'build', 'ship', 'upgrade', 'demolish', 'agent', 'recall', 'buy', 'sab', 'op', 'cancel']);
 let touchInput = false;
-window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; }, true);
+let shiftDown = false;
+window.addEventListener('pointerdown', (e) => { touchInput = e.pointerType !== 'mouse'; shiftDown = e.shiftKey; }, true);
 const tile = (a, v, ic, small, cls = '', extra = '') => `<button class="tile ${cls} ${ui.armed === `${a}:${v}` && ui.armedLabel ? 'arm' : ''}" title="${esc(hintOf(a, v))}" data-a="${a}" data-v="${v}">${ic}${small ? `<small>${small}</small>` : ''}${extra}</button>`;
 /** The bar when no button is picked: the stats of what is selected. Stats only, no sentences. */
 function selStats() {
@@ -452,7 +488,7 @@ function stripHTML() {
       const full = Math.min(...ships.map((x) => x.st.dv));
       for (const r of ui.routes || []) {
         const over = r.dv > tank;
-        h += tile('go', r.key, L(icon(r.key), ROUTE_NAME[r.key]), `${mmss(Math.round(r.time / 5) * 5)} · <b class="${over ? 'bad' : ''}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</b>`, `wide ${over ? 'no' : ''}`);
+        h += tile('go', r.key, L(icon(r.key), ROUTE_NAME[r.key]), `${mmss(Math.round(r.time / 5) * 5)} · <b class="${over ? 'bad' : ''}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</b>`, `wide ${over ? 'no' : ''} ${ui.sentKey === `${ui.target}:${r.key}` ? 'on' : ''}`);
       }
       if (b.owner !== me && S.batteryMax(b) > 0 && b.bhp > 0) h += tile('strike', b.id, L(icon('strike'), 'Firing pass'), '', 'wide');
       if (!(ui.routes || []).length) h += `<span class="hint">No course</span>`;
@@ -463,16 +499,14 @@ function stripHTML() {
         h += `<div class="sub">${icon('match')} ${esc(T.name)}</div><div class="row">${tile('join', T.id, L(icon('match'), 'Join'), '', 'wide')}${tile('pick', T.id, L(icon('check'), 'Select'), '', 'wide')}</div>`;
       } else if (T && (ui.dev || T.seen[me])) {
         const known = T.seen[me] === 2;
-        h += `<div class="sub" style="color:${T.owner < 0 ? AMBER : HOSTILE}">${icon('contact')} ${T.derelict ? `Derelict ${CLASSES[T.cls].name.toLowerCase()}` : T.owner < 0 ? 'Convoy' : known ? `${esc(T.name)} · ${CLASSES[T.cls].name}` : 'Unknown contact'}<span class="cols">Time · Fuel</span></div><div class="row">`;
-        // How to get there: the drive the orders below use, each with its time and fuel to come alongside.
-        const ikey = `${ships.map((x) => x.id)}:${T.id}`;
-        if (ui.icptKey !== ikey || Math.abs(game.time - ui.icptT) > 4) { ui.icpt = S.intercepts(game, ships.map((x) => x.id), T.id); ui.icptKey = ikey; ui.icptT = game.time; }
-        const full = Math.min(...ships.map((x) => x.st.dv));
-        for (const r of ui.icpt) h += tile('drive', r.key, L(icon(r.key), ROUTE_NAME[r.key]), r.reach ? `${mmss(Math.round(r.time / 5) * 5)} · <b class="${r.ok ? '' : 'bad'}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</b>` : 'No course', `wide ${ui.drive === r.key ? 'on' : ''}`);
-        h += '</div><div class="row">';
-        h += tile('pass', T.id, L(icon('strike'), 'Pass'), '', 'wide') + tile('match', T.id, L(icon('match'), 'Match'), '', 'wide');
-        if (known && T.owner >= 0 && !T.st.civil) h += tile('board', T.id, L(icon('flag'), 'Board'), '', 'wide');
-        if (ships.some((s) => s.torps > 0)) h += tile('salvo', T.id, L(icon('salvo'), 'Salvo'), '', 'wide');
+        h += `<div class="sub" style="color:${T.owner < 0 ? AMBER : HOSTILE}">${icon('contact')} ${T.derelict ? `Derelict ${CLASSES[T.cls].name.toLowerCase()}` : T.owner < 0 ? 'Convoy' : known ? `${esc(T.name)} · ${CLASSES[T.cls].name}` : 'Unknown contact'}<span class="cols">Time · Fuel</span></div>`;
+        // What to do when there (a setting: joined buttons, one lit), then the courses (the order: time and fuel, press to go).
+        const modes = ['match', 'pass', ...(known && T.owner >= 0 && !T.st.civil ? ['board'] : [])];
+        if (!modes.includes(ui.amode)) ui.amode = 'match';
+        h += `<div class="seg">${modes.map((m) => `<button class="${ui.amode === m ? 'on' : ''}" data-a="amode" data-v="${m}" title="${esc(HINT[m])}">${MODE_NAME[m]}</button>`).join('')}</div><div class="row">`;
+        const full = Math.min(...ships.map((x) => x.st.dv)), tank = Math.min(...ships.map((x) => x.dv));
+        for (const r of icptFor(ships, T)) h += tile('chase', r.key, L(icon(r.key), ROUTE_NAME[r.key]), r.reach ? `${mmss(Math.round(r.time / 5) * 5)} · <b class="${r.dv > tank ? 'bad' : ''}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</b>` : '? · ?', `wide ${r.reach && r.dv > tank ? 'no' : ''} ${ui.sentKey === `${T.id}:${r.key}` ? 'on' : ''}`);
+        if (ships.some((x) => x.torps > 0)) h += tile('salvo', T.id, L(icon('salvo'), 'Salvo'), '', 'wide');
         h += '</div>';
       } else ui.targetShip = null;
     } else {
@@ -606,9 +640,6 @@ function clickStrip(a, v) {
       break;
     }
     case 'strike': order({ type: 'strike', body: +v, profile: 'hard' }); ui.target = null; ui.routes = null; break;
-    case 'pass': order({ type: 'attack', ship: +v, mode: 'pass', profile: ui.drive }); ui.targetShip = null; break;
-    case 'match': order({ type: 'attack', ship: +v, mode: 'match', profile: ui.drive }); ui.targetShip = null; break;
-    case 'board': order({ type: 'attack', ship: +v, mode: 'board', profile: ui.drive }); ui.targetShip = null; break;
     case 'salvo': act({ t: 'salvo', ids, ship: +v }); sfx('confirm'); break;
     case 'torps': act({ t: 'stance', ids, st: { torpsFree: !ships.every((s) => s.torpsFree) } }); sfx('tap'); break;
     case 'fire': act({ t: 'stance', ids, st: { fireFree: !ships.every((s) => s.fireFree) } }); sfx('tap'); break;
@@ -626,7 +657,14 @@ function clickStrip(a, v) {
       break;
     }
     case 'join': order({ type: 'form', lead: +v }); ui.targetShip = null; break;
-    case 'drive': ui.drive = v; sfx('tap'); break;
+    case 'amode': ui.amode = v; ui.sentKey = null; sfx('tap'); break;
+    case 'chase': {
+      const T = S.shipById(game, ui.targetShip), r = (ui.icpt || []).find((x) => x.key === v);
+      if (!T || !r || (r.reach && r.dv > Math.min(...ships.map((s) => s.dv)))) { sfx('deny'); break; } // (no estimate, as for a ship under way: the chase still steers after it)
+      order({ type: 'attack', ship: T.id, mode: ui.amode, profile: r.profile });
+      ui.targetShip = null;
+      break;
+    }
     case 'pick': { const T = S.shipById(game, +v); if (T) { selectShips([T]); view.followShip(T.id); } break; }
     case 'retreat': {
       // Nearest friendly world, by a hard burn if the tanks allow, else as they can.

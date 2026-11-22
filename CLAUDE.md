@@ -108,9 +108,11 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Touch and mouse handling in `main.js` is a port of the first game's; keep
   the two in step.
 - Desktop (`@media (min-width: 900px)`, at the end of `style.css`): one centred
-  column (menus too), smaller text than the phone scale. Mouse: right-click targets (as in
-  the first game), double-click the target to go, right-click empty space or
-  click the map to back out or close the sheet. Keep the phone untouched.
+  column (menus too), smaller text than the phone scale. Mouse follows RTS
+  basics (the owner asked): left-click only ever selects (`clickSelect`),
+  right-click is the order (`rightClick`: go by cruise, chase, join), and the
+  panel then shows the course used, lit, to switch. Touch keeps tap the
+  target, then pick a course. Keep the phone untouched.
 - Explaining without clutter: on touch the first tap on a button shows a
   one-line hint (`HINT` in `main.js`) and the second tap does it; mouse users
   hover. Add a hint for every new button rather than text on screen.
@@ -157,8 +159,9 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   The shape is kept on the ships (`s.shape`, set with `setStance`), so each
   fleet has its own. Your other warships in the same place show dim beside a
   selection: tap to add, hold (or shift-click) a lit one to drop it.
-- Orders against a ship (Pass, Match, Board) take the drive picked in the
-  panel, which shows time and fuel per drive from `intercepts()`.
+- Settings look like a joined row with one lit (`.seg`: Match/Pass/Board);
+  orders look like boxes with time and fuel (course tiles `go`, `chase`). A
+  ship target shows the mode row, then course tiles from `intercepts()`.
 - Research is drawn as a board (rows are lines, columns are steps, forks are
   two stacked boxes); tapping a box shows one line about it and the button.
 - Panels redraw several times a second: keep their HTML steady (round times
