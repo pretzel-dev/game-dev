@@ -173,6 +173,9 @@ timed events) are still there to lift back if testing asks for them.
 - **Torpedoes** steer round a world between them and their target. One that
   runs out of fuel and is no longer closing is finished (it does not coast on).
 - **Upgrades.** A structure being upgraded keeps working at its present level.
+- **Capital alert.** An alert when enemy warships are known to be heading for
+  your capital. It needs the ships identified and their course readable
+  (Signals intercept or an Ansible array).
 - **Drifting ships.** A ship with its drive out that meets a world skims past it.
 - **Rings round your world.** Picking one of your worlds shows how far it sees
   a coasting ship (Sensors) and its battery's reach (Guns); picking a sensor
