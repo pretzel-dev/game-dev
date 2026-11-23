@@ -460,6 +460,29 @@ for (const k of SCENARIO_KEYS) {
   for (let i = 0; i < 300 && g.torps.length; i++) S.step(g, 0.2);
   ok(b.hull < h0, 'torpedoes steer round a world in the way');
 }
+{
+  // A structure being upgraded keeps working at its present level.
+  const g = S.createGame({ seed: 3, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
+  const h = g.homes[0]; g.credits[0] = 1e5;
+  h.structures.push({ type: 'habitat', level: 1, left: 0 });
+  const cap = S.fleetCap(g, 0), hab = h.structures.find((x) => x.type === 'habitat');
+  S.upgrade(g, h, hab);
+  ok(hab.left > 0 && S.fleetCap(g, 0) === cap, 'a habitat being upgraded still counts');
+  ok(S.cantUpgrade(g, h, hab) === 'Still building', 'and cannot be upgraded twice at once');
+  // A ship with its drive out that meets a world skims past it instead of rattling on the surface.
+  S.step(g, 1);
+  const pl = g.bodies.find((b) => b.kind === 'planet' && !b.giant && b.owner === S.NEUTRAL), p = g.bp[pl.id], v = g.bv[pl.id];
+  const a = g.ships.find((s) => s.owner === 0 && !s.st.civil);
+  Object.assign(a, { x: p.x + pl.size * 3, y: p.y, z: p.z + pl.size * 0.3, vx: v.x - 0.8, vy: v.y, vz: v.z, at: null, order: null });
+  a.out.drive = 1e9;
+  let inward = 0;
+  for (let i = 0; i < 200; i++) {
+    S.step(g, 0.2);
+    const q = g.bp[pl.id], w = g.bv[pl.id], dx = a.x - q.x, dy = a.y - q.y, dz = a.z - q.z, d = Math.hypot(dx, dy, dz);
+    if (d < pl.size * 1.06 && ((a.vx - w.x) * dx + (a.vy - w.y) * dy + (a.vz - w.z) * dz) / d < -0.05) inward++;
+  }
+  ok(inward <= 1, 'a drifting ship that touches a world loses its inward speed');
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];

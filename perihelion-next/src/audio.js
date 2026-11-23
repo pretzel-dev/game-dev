@@ -748,11 +748,11 @@ export function createAudio(opts = {}) {
     const rum = gain(0.3, b.airG);
     loop('brown', biq('lowpass', 240, 0.7, rum), 0.8);
     lfo(0.041, 0.12, rum.gain);
-    const air = gain(0.2, b.airG);
+    const air = gain(0.13, b.airG);
     const airBP = biq('bandpass', 560, 0.7, air);
     loop('pink', airBP, 1);
     lfo(0.057, 0.07, air.gain); lfo(0.019, 120, airBP.frequency);
-    const duct = gain(0.3, b.airG);
+    const duct = gain(0.2, b.airG);
     const d1 = biq('bandpass', 437, 14, duct), d2 = biq('bandpass', 655, 16, duct);
     loop('pink', d1, 0.9); loop('pink', d2, 1.1);
     lfo(0.033, 0.18, duct.gain); lfo(0.013, 7, d1.frequency); lfo(0.017, 9, d2.frequency);
@@ -790,11 +790,11 @@ export function createAudio(opts = {}) {
     const now = ctx.currentTime;
     const set = (p, val, tau) => p.setTargetAtTime(val, now, tau);
     const z = st.zoom, bt = st.battle, bn = st.burn, p = st.paused;
-    set(G.hullLP.frequency, 2400 + 4200 * z, 0.5);
+    set(G.hullLP.frequency, 2400 + 1400 * z, 0.5); // (opened wide up close, the air noise turned to a loud hiss)
     if (!bed) return;
     const near = 0.4 + 0.6 * z;
     set(bed.droneG.gain, (p ? 0.5 : 1) * (1 - 0.3 * bt), 1.0);
-    set(bed.airG.gain, (p ? 0.5 : 1) * (0.65 + 0.35 * z), 0.8);
+    set(bed.airG.gain, (p ? 0.5 : 1) * (0.65 - 0.2 * z), 0.8); // (quieter close in, not louder)
     set(bed.tenG.gain, p ? 0 : Math.pow(bt, 0.8), force ? 0.05 : 1.2);
     set(bed.tenLP.frequency, 300 + 1300 * bt * bt, 1.2);
     set(bed.pulseLfo.frequency, 0.55 + 0.5 * bt, 2);

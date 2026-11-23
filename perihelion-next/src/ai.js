@@ -5,7 +5,7 @@
 // Difficulty is how often it thinks, how reliably it follows through (skill),
 // and how well its economy runs (eco).
 import {
-  NEUTRAL, RULES, CLASSES, FACTIONS, statsFor, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, placesOf, cantMega, startMega, MEGA, cantStrike, fireStrike, cantBlackout, startBlackout, routes, strength, armed, crippled, shipsAt, has, structure, working,
+  NEUTRAL, RULES, CLASSES, FACTIONS, statsFor, TECH, TECH_COST, knows, agentAt, cantSendAgent, sendAgent, setAgentOp, cantSabotage, sabotage, cantBuyWorld, buyWorld, worldPrice, rng, posAt, setOrder, intercepts, placesOf, cantMega, startMega, MEGA, cantStrike, fireStrike, cantBlackout, startBlackout, routes, strength, armed, crippled, shipsAt, has, structure, working,
   cantBuild, buildStructure, cantUpgrade, upgrade, upgradeCost, cantOrderShip, orderShip, shipCost, cantResearch, research,
   fleetCap, fleetSize, incomeOf, batteryMax, batteryGuns, warshipsOf, worldsOf,
 } from './sim.js';
@@ -171,6 +171,12 @@ function think(game, ai) {
         if (f.owner === o || !f.st.civil || !f.seen[o]) continue;
         const dd = dist2(f, s) * (f.owner < 0 ? 3 : 1); // an independent convoy is only worth a short chase
         if (dd < pd) { pd = dd; prey = f; }
+      }
+      // A derelict warship is a free veteran: one ship goes for each, if the tanks reach it with fuel to spare.
+      const wreck = game.ships.find((f) => f.derelict && !fleet.some((x) => x.order && x.order.type === 'attack' && x.order.ship === f.id));
+      if (wreck && ai.d.skill > 0.5) {
+        const r = intercepts(game, [s.id], wreck.id).filter((x) => x.reach && x.dv < s.dv * 0.6).sort((x, y) => x.time - y.time)[0];
+        if (r && r.time < 900) { setOrder(game, o, [s.id], { type: 'attack', ship: wreck.id, mode: 'match', d0: 1.2, profile: r.profile }); continue; }
       }
       if (prey && t > d.calm) { setOrder(game, o, [s.id], { type: 'attack', ship: prey.id, mode: 'match', d0: 1.2, profile: 'hard' }); continue; }
       // Nothing to chase: go and take an independent world that has no guns and nobody over it.
