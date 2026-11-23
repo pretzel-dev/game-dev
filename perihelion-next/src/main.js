@@ -92,6 +92,7 @@ const selShips = () => game.ships.filter((s) => ui.sel.has(s.id) && s.owner === 
 
 function start(g, opts = {}) {
   game = g;
+  inbound.clear(); inboundT = -99;
   me = opts.me ?? 0;
   mode = opts.mode || 'solo';
   scn = opts.scn || null;
@@ -778,6 +779,31 @@ function notice(ic, color, text, jump) {
   setTimeout(() => el.remove(), 5900);
 }
 let lastContact = -99, lastAlarm = -99;
+// Enemy warships known to be making for your capital: one alert for each group as it is found out. It needs what
+// the game already asks for to know a course: the ship identified, and signals intercept or an Ansible array.
+const inbound = new Set();
+let inboundT = -99;
+function watchCapital() {
+  if (!inGame() || !live()) return;
+  const home = game.homes[me];
+  if (!home || !(S.knows(game, me, 'signals') || S.megaOf(game, me, 'ansible'))) { inbound.clear(); return; }
+  const now = new Set();
+  let fresh = null;
+  for (const T of game.ships) {
+    if (T.owner === me || T.owner < 0 || T.st.civil || T.seen[me] !== 2 || T.at === home.id) continue;
+    const dest = T.dest ?? (T.order && T.order.body != null ? T.order.body : null);
+    if (dest !== home.id) continue;
+    now.add(T.id);
+    if (!inbound.has(T.id)) fresh = fresh || T;
+  }
+  for (const id of inbound) if (!now.has(id)) inbound.delete(id);
+  for (const id of now) inbound.add(id);
+  if (fresh && game.time - inboundT > 10) {
+    inboundT = game.time;
+    notice('contact', HOSTILE, `${now.size} ${now.size > 1 ? 'ships' : 'ship'} heading for ${home.name}`, () => view.followShip(fresh.id));
+    sfx('alarm');
+  }
+}
 function drainEvents() {
   for (const e of game.events) {
     if (e.seen) continue;
@@ -1391,6 +1417,7 @@ function frame(nowMs) {
   ui.warp = warp;
   const rep = view.render(game, ui, gdt, t);
   drainEvents();
+  watchCapital();
   if (live()) {
     if (nowMs - pathT > 900) {
       pathT = nowMs;
