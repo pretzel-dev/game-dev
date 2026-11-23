@@ -185,6 +185,8 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Course choices are tiles like the other buttons (the owner tried a table and
   preferred the tiles).
 - Rail sounds must stay unpitched (pitched thumps read as drums to the owner).
+- The ambient bed must not get brighter or louder close in (the owner heard
+  it as a loud hiss near planets): `applyState` in `audio.js`.
 - Guests don't run the sim; anything a guest must see goes in `snapshot()`.
 - Sound (`src/audio.js`) is generated in the browser as a trial. The owner
   dislikes cheap synth sound: if they reject it, keep interface and alert
@@ -200,7 +202,7 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - The AI has no per-power plan: it reads each power's numbers (`FACTIONS`) to
   pick ship classes (worth per credit), research order and doctrines
   (`leanings`, `lineOrder`) and sends lone corvettes to claim empty worlds
-  (`AITUNE` switches).
+  (`AITUNE` switches). A free raider goes to board a derelict (`intercepts`).
 - Balance is measured with `node tools/tune.mjs <variant>[+variant] 96 normal 4 9000`
   (variants in `tools/variants.mjs`; 9000 plays matches out, since calling them
   early favours the Holds). About 13 minutes per 96 matches; noise is about ±6

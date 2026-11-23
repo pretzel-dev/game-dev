@@ -170,7 +170,10 @@ timed events) are still there to lift back if testing asks for them.
   keeps its course; ? when it cannot be reckoned). Pressing a course gives the
   order, as for a world. Joined buttons are settings; boxes with time and fuel
   are orders.
-- **Torpedoes** steer round a world between them and their target.
+- **Torpedoes** steer round a world between them and their target. One that
+  runs out of fuel and is no longer closing is finished (it does not coast on).
+- **Upgrades.** A structure being upgraded keeps working at its present level.
+- **Drifting ships.** A ship with its drive out that meets a world skims past it.
 - **Rings round your world.** Picking one of your worlds shows how far it sees
   a coasting ship (Sensors) and its battery's reach (Guns); picking a sensor
   array to build shows the ring it would give.

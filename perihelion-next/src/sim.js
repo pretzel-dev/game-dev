@@ -406,7 +406,8 @@ export function createGame({ seed = Date.now(), players = [{ faction: 'concord' 
 
 // ---- Economy ----------------------------------------------------------------------
 
-export const working = (x) => x.left <= 0 && !x.scrap;
+/** In use: built (one being upgraded keeps working at its present level) and not being removed. */
+export const working = (x) => (x.left <= 0 || !!x.next) && !x.scrap;
 /** A structure of this type on a world: the one at index `i` when given (a world can hold more than one), else the first. */
 export const structure = (b, type, i = null) => (i != null && b.structures[i] && b.structures[i].type === type ? b.structures[i] : b.structures.find((x) => x.type === type));
 export const has = (b, type) => b.structures.some((x) => x.type === type && working(x));
@@ -513,7 +514,7 @@ export function demolish(game, b, type, i = null) {
 export const upgradeCost = (x) => Math.round(RULES.structures[x.type].cost * 0.8);
 export function cantUpgrade(game, b, x) {
   const S = RULES.structures[x.type];
-  if (!working(x)) return 'Still building';
+  if (!working(x) || x.left > 0) return 'Still building';
   if (x.level >= S.maxLevel) return 'Fully upgraded';
   if (game.credits[b.owner] < upgradeCost(x)) return 'Not enough credits';
   return null;
@@ -1023,7 +1024,14 @@ export function advance(game, s, t, h, G, lookup) {
   for (const w of G) {
     if (w.id < 0 || !w.size) continue;
     const dx = s.x - w.x, dy = s.y - w.y, dz = s.z - w.z, dr = Math.hypot(dx, dy, dz);
-    if (dr < w.size * 1.05) { const k = (w.size * 1.05) / (dr || 1); s.x = w.x + dx * k; s.y = w.y + dy * k; s.z = w.z + dz * k; }
+    if (dr < w.size * 1.05) {
+      const k = (w.size * 1.05) / (dr || 1); s.x = w.x + dx * k; s.y = w.y + dy * k; s.z = w.z + dz * k;
+      // It skims past: lose the speed that carries it into the world (measured against the world's own motion),
+      // keep the rest. Without this a ship with its drive out kept its inward speed and jittered on the surface.
+      const wv = velAt(game, game.bodies[w.id], t), nx = dx / (dr || 1), ny = dy / (dr || 1), nz = dz / (dr || 1);
+      const vn = (s.vx - wv.x) * nx + (s.vy - wv.y) * ny + (s.vz - wv.z) * nz;
+      if (vn < 0) { s.vx -= nx * vn; s.vy -= ny * vn; s.vz -= nz * vn; }
+    }
   }
   // Never inside the sun.
   const rs = Math.hypot(s.x, s.y, s.z);
@@ -1288,6 +1296,9 @@ function stepTorps(game, dt) {
       continue;
     }
     if (game.time - m.born > R.life) { m.dead = true; continue; }
+    // Out of fuel and no longer closing (a miss, or one that never found its lock): it is finished. Before, these
+    // coasted on for minutes, right across the system.
+    if (m.dv <= 0) { m.coast = (m.coast || 0) + dt; if ((closing <= 0 && m.coast > 3) || m.coast > 30) { m.dead = true; continue; } }
     m.burn = 0;
     if (m.dv > 0) {
       const tau = clamp(d / Math.max(0.5, closing), 0.5, 40);

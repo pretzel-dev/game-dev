@@ -568,7 +568,7 @@ function stripHTML() {
       h += '</div>';
       const px = ui.struct ? sref(b, ui.struct) : null;
       if (px && !px.scrap) {
-        const S0 = RULES.structures[px.type], can = S.working(px) && px.level < S0.maxLevel;
+        const S0 = RULES.structures[px.type], can = S.working(px) && !(px.left > 0) && px.level < S0.maxLevel;
         h += `<div class="row">${can ? tile('upgrade', ui.struct, L(icon('up'), 'Upgrade'), S.upgradeCost(px), S.cantUpgrade(game, b, px) ? 'no' : '') : ''}${tile('demolish', ui.struct, L(icon('close'), 'Remove'), `+${S.scrapValue(px)}`, S.cantDemolish(game, b, px.type, sidx(ui.struct)) ? 'no' : '')}</div>`;
       } else if (!px) ui.struct = null;
       h += megaRow(b);
@@ -1288,7 +1288,7 @@ canvas.addEventListener('pointermove', (e) => {
     const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     // Two fingers drag the map and zoom toward themselves. While locked onto a world or ship,
     // a pinch just zooms about it, until the fingers clearly drag the map away.
-    if (view.following() && Math.hypot(mx - gesture.mx0, my - gesture.my0) < 40) view.zoomBy(gesture.d / Math.max(1, d));
+    if (view.following() && Math.hypot(mx - gesture.mx0, my - gesture.my0) < 90) view.zoomBy(gesture.d / Math.max(1, d));
     else { view.pan(mx - gesture.mx, my - gesture.my); view.zoomAt(mx, my, gesture.d / Math.max(1, d)); }
     gesture.d = d; gesture.mx = mx; gesture.my = my;
     return;

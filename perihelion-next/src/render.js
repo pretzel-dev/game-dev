@@ -426,7 +426,9 @@ export function createView(canvas, plot, opts = {}) {
       else orbit.target.lerp(livePos(s, tmp), Math.min(1, realDt * 8));
     }
     if (orbit.follow !== null) { const p = bodyPos[orbit.follow]; orbit.target.lerp(tmp.set(p.x, p.y, p.z), Math.min(1, realDt * 8)); }
-    else if (orbit.ship == null) orbit.target.y *= 1 - Math.min(1, realDt * 2);
+    // Free view: settle back onto the plane of the orbits, but only from far out. Close in, a world or ship that
+    // sits off the plane would slide off screen the moment a pinch let go of it.
+    else if (orbit.ship == null) orbit.target.y *= 1 - Math.min(1, realDt * 2) * THREE.MathUtils.smoothstep(orbit.dist, 40, 160);
     const extent = orbit.maxDist * 0.35;
     const flat = Math.hypot(orbit.target.x, orbit.target.z);
     if (flat > extent) { orbit.target.x *= extent / flat; orbit.target.z *= extent / flat; }
