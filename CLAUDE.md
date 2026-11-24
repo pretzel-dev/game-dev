@@ -244,8 +244,19 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   eighteen ships (`holds_ships.py`, `concord_ships.py`, `boreal_ships.py`:
   parts 0-5 are the classes, 6-11 their far-off versions; a faction's file,
   about 1.1 to 1.8 MB with its shade map, is fetched when one of its ships is
-  first drawn, `SHIP_MODELS` in `gfx/ships.js`). The designs follow the
-  kit-built hulls they replace. Still kit-built: neutral stations,
+  first drawn, `SHIP_MODELS` in `gfx/ships.js`). The Holds' and Republic's
+  designs still follow the kit-built hulls they replace. The owner then asked
+  for new designs "without fear of the old ones", sent reference pictures
+  (thick armoured wedges in white with bold owner stripes; wheel-and-spine
+  stations with copper panels; exposed glowing reactors) and wants ships to
+  feel epic and large. The rule that came out of it: fittings (ports, guns,
+  plates, masts) stay the same real size on every class, hulls are about six
+  times as long as wide, the tower is small and aft. The Concord is rebuilt
+  that way (`concord_ships.py`). `tools/blender/concepts.py` draws rough
+  outline sheets to pick a direction before building; the owner liked the
+  Holds "Lantern" (a cage of mismatched modules round a spine), found thin
+  blades too thin and squat bricks too squat, and did not like radiator-wing
+  Republic ships. Still kit-built: neutral stations,
   megaprojects, probes. Station add-on modules
   (`setStationModules`) are not drawn in this game. The owner wants ships and
   stations to look as good as the planets; a dark unlit side is fine, with
