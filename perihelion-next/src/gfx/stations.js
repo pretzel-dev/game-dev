@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE } from './ships.js';
+import { kit, singleHull, bakedHullMaterial, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE } from './ships.js';
+import { whenModel } from './models.js';
 
 /** How many core layouts there are (a station's core is its id modulo this). */
 export const STATION_CORES = 3;
@@ -143,6 +144,9 @@ export function stationMesh(size, core, uT) {
   void r;
   const mesh = cull(singleHull(k.build(1, uvD(S)), uT));
   mesh.userData.spin = 0.015; // a slow drift: nothing in zero g needs to hold still
+  // The Holds' home is modelled in Blender (tools/blender/holds_station.py); the
+  // one built above stands in until the file is in.
+  if (core === 3) whenModel('holds', (m) => useModel(mesh, m, S, uT));
   const base = mesh.userData.set;
   const st = { S, uT, parts: [], wip: [], last: ['#6a7080', 1, false] };
   mesh.userData.station = st;
@@ -153,6 +157,20 @@ export function stationMesh(size, core, uT) {
   };
   return mesh;
 }
+
+/** Swap a station's stand-in hull for its Blender model (in units of S), keeping the per-station attributes. */
+function useModel(mesh, m, S, uT) {
+  const old = mesh.geometry, g = m.geometry.clone().scale(S, S, S);
+  const uv = g.attributes.uv, d = S * PLATE_D;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * d, uv.getY(i) * d);
+  for (const n of ['iPaint', 'iSun', 'iLit', 'iGround', 'iSeed', 'iHull']) g.setAttribute(n, old.getAttribute(n));
+  mesh.geometry = g;
+  mesh.material = bakedHullMaterial(uT, m.bake);
+  old.dispose();
+  cull(mesh);
+}
+/** Plating repeats per world unit on a model: small plates make a big hull. */
+const PLATE_D = 4.5;
 
 const uvD = (S) => 7 / Math.max(S * 2.5, 1);
 /** Let the renderer skip it when it's off screen (singleHull turns that off). */
@@ -367,6 +385,7 @@ function habitat(k, S, level, done) {
  * docked ship sits out along (in the station's frame, so ships turn with it).
  */
 export function stationPorts(core) {
+  if (core === 3) return holdPorts();
   const out = [];
   for (const [i, a] of PORT_ANGLES.entries()) {
     const R = core === 1 ? 0.8 : core === 0 ? 0.36 : [0.26, 0.29, 0.26, 0.24][i];
@@ -374,4 +393,9 @@ export function stationPorts(core) {
     out.push({ p: [Math.cos(a) * R, Math.sin(a) * R, z], n: [Math.cos(a), Math.sin(a), 0] });
   }
   return out;
+}
+/** The Holds' home: the ends of its four docking arms (PORTS in tools/blender/holds_station.py). */
+const HOLD_PORTS = [[45, 0.215, 0.58], [135, -0.13, 0.7], [232, 0.19, 0.5], [318, -0.24, 0.62]];
+function holdPorts() {
+  return HOLD_PORTS.map(([deg, z, R]) => { const a = (deg * Math.PI) / 180; return { p: [Math.cos(a) * R, Math.sin(a) * R, z], n: [Math.cos(a), Math.sin(a), 0] }; });
 }

@@ -909,10 +909,14 @@ white.needsUpdate = true;
  * The hull material. `groundTex` (a world's baked surface map) is what a
  * building's earthworks on that world are painted with.
  */
-export function hullMaterial(uT, groundTex = null) {
+export function hullMaterial(uT, groundTex = null, bakeTex = null) {
   const pl = platingTex();
   const mat = new THREE.MeshStandardMaterial({ color: '#d4d8de', map: pl, roughnessMap: pl, metalness: 0.35, roughness: 0.62, emissive: '#06070a' });
+  // A Blender-made model brings a shade map (`gnd.xy` on it): red is how open
+  // each spot is to the sky (dark in joints and recesses), green its weathering.
+  if (bakeTex) mat.defines = { ...mat.defines, BAKED: '' };
   mat.onBeforeCompile = (sh) => {
+    sh.uniforms.tBake = { value: bakeTex };
     sh.uniforms.uT = uT;
     sh.uniforms.uPxK = hullPx;
     sh.uniforms.tGround = { value: groundTex || white };
@@ -937,6 +941,9 @@ export function hullMaterial(uT, groundTex = null) {
         varying float vKind; varying float vTint; varying vec3 vPaint; varying float vSun; varying float vSeed; varying float vHull; varying float vLit; varying float vPx; varying vec3 vLocal; varying vec3 vGround;
         varying vec3 vGnd; uniform sampler2D tGround; uniform float uGroundTex;
         varying vec3 vShW;
+        #ifdef BAKED
+        uniform sampler2D tBake;
+        #endif
         ${SHADOW_GLSL}
         float isK(float k) { return 1.0 - step(0.5, abs(vKind - k)); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -958,6 +965,13 @@ export function hullMaterial(uT, groundTex = null) {
         float cell = max(smoothstep(0.8, 0.95, cg.x), smoothstep(0.8, 0.95, cg.y));
         base = mix(base, vec3(0.55, 0.58, 0.62), sol * cell * 0.6 * fine);
         diffuseColor.rgb *= mix(base, vPaint * 0.9 + 0.04, paint);
+        #ifdef BAKED
+        vec2 bk = texture2D(tBake, vGnd.xy).rg;
+        // (plating drawn fainter: the shade map and the model's own detail carry it)
+        float plateK = isK(0.0) + isK(1.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb / max(sampledDiffuseColor.rgb, vec3(0.05)) * mix(vec3(0.8), sampledDiffuseColor.rgb, 0.5), plateK);
+        diffuseColor.rgb *= mix(0.66, 1.0, bk.g) * mix(0.5, 1.0, bk.r);
+        #endif
         {
           // Worked ground: the world's colour, with grit up close.
           vec3 q = floor(vLocal * 900.0);
@@ -976,7 +990,10 @@ export function hullMaterial(uT, groundTex = null) {
         roughnessFactor = mix(roughnessFactor, 0.45, isK(1.0));
         roughnessFactor = mix(roughnessFactor, 0.9, isK(8.0));
         roughnessFactor = mix(roughnessFactor, 0.22, isK(9.0));
-        roughnessFactor = mix(roughnessFactor, 1.0, isK(10.0));`)
+        roughnessFactor = mix(roughnessFactor, 1.0, isK(10.0));
+        #ifdef BAKED
+        roughnessFactor = clamp(roughnessFactor + (0.55 - bk.g) * 0.3, 0.2, 1.0);
+        #endif`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
         metalnessFactor = mix(metalnessFactor, 0.7, isK(1.0));
         metalnessFactor = mix(metalnessFactor, 0.05, isK(8.0));
@@ -1012,7 +1029,13 @@ export function hullMaterial(uT, groundTex = null) {
           float ndv = abs(dot(normal, normalize(vViewPosition)));
           float rim = pow(1.0 - ndv, 3.0);
           reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.5, 0.58, 0.78) * (0.05 + rim * 0.3);
-        }`);
+        }
+        #ifdef BAKED
+        // Recesses see less of the sky, and less of the sun's glint.
+        reflectedLight.indirectDiffuse *= bk.r;
+        reflectedLight.indirectSpecular *= bk.r * bk.r;
+        reflectedLight.directSpecular *= mix(0.35, 1.0, bk.r);
+        #endif`);
   };
   return mat;
 }
@@ -1140,6 +1163,12 @@ export function singleHull(geo, uT, groundTex = null) {
   return m;
 }
 let singleMat = null;
+/** The hull material for a Blender-made model (one per shade map). */
+const bakedMats = new WeakMap();
+export function bakedHullMaterial(uT, bakeTex) {
+  if (!bakedMats.has(bakeTex)) bakedMats.set(bakeTex, hullMaterial(uT, null, bakeTex));
+  return bakedMats.get(bakeTex);
+}
 /** One per world with a surface map (same shader; only its ground texture differs). */
 const groundMats = new WeakMap();
 

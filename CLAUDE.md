@@ -227,6 +227,20 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   choose when, long recharge). Models come from the first game
   (`gfx/megastructures.js`, `MEGA_LOOK`). Ship crew sizes stay at one place
   each for now (the owner's call).
+- Models made in Blender (trial, November 2026): the Holds' home station is
+  built by `tools/blender/holds_station.py` (run headless, about 10 seconds:
+  `/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup
+  --python tools/blender/holds_station.py`), which writes
+  `src/assets/holds-station.glb` (meshopt-compressed) and a shade map
+  (`holds-station-bake.webp`: red is ambient occlusion, green weathering).
+  `gfx/models.js` loads them and turns the file's colour attribute into the
+  hull shader's `kind` and `tint`; the shade map's coordinates ride in `gnd`
+  (no spare attribute), and the shader reads it under `#ifdef BAKED`. The
+  block-built station stands in until the file loads. Docking arm ends are
+  listed twice (`PORTS` in the script, `HOLD_PORTS` in `gfx/stations.js`).
+  Station add-on modules, other stations and ships are still built from the
+  parts kit. The owner wants ships and stations to look as good as the planets;
+  a dark unlit side is fine, with small lights showing.
 - Win option `winBy: 'ark'`: the Ark is built at any capital (not only gas
   giants: that would favour the Holds), held for a count everyone sees.
 
