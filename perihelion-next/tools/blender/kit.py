@@ -461,6 +461,78 @@ def nav(red, green, strobe, s=0.006):
     light(strobe, STROBE, s)
 
 
+class Hull:
+    """A shaped hull: chamfered cross-sections at stations along z, skinned. Each station is
+    (z, width, height, y of its centre, chamfer 0..1). Use it to find the surface when fitting things."""
+    def __init__(self, st, kind=HULL, tint=1.0, bevel=0.004, bake=True, draw=True):
+        self.st = [tuple(s) + (0.0, 0.3)[len(s) - 3:] for s in st]
+        if draw:
+            self.draw(kind, tint, bevel, bake)
+
+    def at(self, z):
+        st = self.st
+        if z <= st[0][0]:
+            return st[0][1:]
+        for a, b in zip(st, st[1:]):
+            if z <= b[0]:
+                f = (z - a[0]) / (b[0] - a[0])
+                return tuple(a[i] + (b[i] - a[i]) * f for i in range(1, 5))
+        return st[-1][1:]
+
+    def hw(self, z):
+        return self.at(z)[0] / 2
+
+    def top(self, z):
+        w, h, y, c = self.at(z)
+        return y + h / 2
+
+    def bottom(self, z):
+        w, h, y, c = self.at(z)
+        return y - h / 2
+
+    def mid(self, z):
+        return self.at(z)[2]
+
+    def yaw(self, z, d=0.004):
+        """How far the flank turns in toward the bow at z (radians)."""
+        return math.atan2(self.hw(z + d) - self.hw(z - d), 2 * d)
+
+    def flank(self, z, sx, size, kind=HULL, tint=1.0, bevel=0.0, bake=True, dy=0.0, proud=0.0):
+        """A plate lying on the flank at z: size is (thickness, height, length)."""
+        m = Matrix.Translation((sx * (self.hw(z) + proud), self.mid(z) + dy, z)) @ Matrix.Rotation(sx * self.yaw(z), 4, 'Y')
+        box(size, m, kind, tint, bevel, bake)
+
+    def draw(self, kind, tint, bevel, bake):
+        M = K.base
+        rings = []
+        for z, w, h, y, c in self.st:
+            a, b = w / 2, h / 2
+            d = c * min(a, b)
+            rings.append([M @ Vector(p) for p in ((a, y - b + d, z), (a, y + b - d, z), (a - d, y + b, z), (-a + d, y + b, z), (-a, y + b - d, z), (-a, y - b + d, z), (-a + d, y - b, z), (a - d, y - b, z))])
+        if not _keep([p for r in rings for p in r], kind):
+            return
+        bk = bucket(bevel)
+        bm = bk.bm
+        vr = [[bm.verts.new(p) for p in r] for r in rings]
+        faces = []
+        for a, c in zip(vr, vr[1:]):
+            for j in range(8):
+                k = (j + 1) % 8
+                faces.append(bm.faces.new((a[j], a[k], c[k], c[j])))
+        faces.append(bm.faces.new(list(reversed(vr[0]))))
+        faces.append(bm.faces.new(vr[-1]))
+        bk.tag(faces, kind, tint, bake)
+
+
+def cowl(x, y, z, R, L, tint=0.82, seg=18, kind=HULL):
+    """An engine housing: a shroud that swells round the bell and ends in a lip. Returns where the torch starts."""
+    M = Matrix.Translation((x, y, 0))
+    zr = z - L * 0.3
+    lathe([(zr, R * 1.08), (zr + L * 0.05, R * 1.13), (z + L * 0.35, R * 1.06), (z + L * 0.8, R * 0.62), (z + L * 0.8, R * 0.5), (z + L * 0.2, R * 0.92), (zr, R * 0.99), (zr, R * 1.08)], M, seg, kind, tint, 0.0, True)
+    band(z + L * 0.3, z + L * 0.34, R * 1.062, DARK, 0.8, M, seg, 0.0015)
+    return bell(z, R * 0.86, L * 0.62, seg, 0.42, 1.6, 0.7, (x, y))
+
+
 # ---- Blender plumbing -----------------------------------------------------------
 def scene():
     if bpy.app.background or not bpy.context.window:

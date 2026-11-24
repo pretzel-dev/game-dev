@@ -252,7 +252,13 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   feel epic and large. The rule that came out of it: fittings (ports, guns,
   plates, masts) stay the same real size on every class, hulls are about six
   times as long as wide, the tower is small and aft. The Concord is rebuilt
-  that way (`concord_ships.py`). `tools/blender/concepts.py` draws rough
+  that way (`concord_ships.py`), on shaped hulls (`Hull` in the kit: chamfered
+  sections at stations, skinned) after the owner found a box stern with a
+  triangle bow too square: hulls swell round housed engines (`cowl`), pinch at
+  the waist and taper. Each class has a character the owner named: corvette
+  nimble, frigate intimidating, battleship formidable, escort shows its guns,
+  tender shows its tanks. `concepts.py -- concord_a concord_b` draws the real
+  models on a side/top/angled sheet. `tools/blender/concepts.py` draws rough
   outline sheets to pick a direction before building; the owner liked the
   Holds "Lantern" (a cage of mismatched modules round a spine), found thin
   blades too thin and squat bricks too squat, and did not like radiator-wing
