@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { kit, singleHull, bakedHullMaterial, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE } from './ships.js';
-import { whenModel } from './models.js';
+import { kit, singleHull, bakedHullMaterial, swapHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE } from './ships.js';
+import { whenModel, sized } from './models.js';
 
 /** How many core layouts there are (a station's core is its id modulo this). */
 export const STATION_CORES = 3;
@@ -158,15 +158,9 @@ export function stationMesh(size, core, uT) {
   return mesh;
 }
 
-/** Swap a station's stand-in hull for its Blender model (in units of S), keeping the per-station attributes. */
+/** Swap a station's stand-in hull for its Blender model (in units of S). */
 function useModel(mesh, m, S, uT) {
-  const old = mesh.geometry, g = m.geometry.clone().scale(S, S, S);
-  const uv = g.attributes.uv, d = S * PLATE_D;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * d, uv.getY(i) * d);
-  for (const n of ['iPaint', 'iSun', 'iLit', 'iGround', 'iSeed', 'iHull']) g.setAttribute(n, old.getAttribute(n));
-  mesh.geometry = g;
-  mesh.material = bakedHullMaterial(uT, m.bake);
-  old.dispose();
+  swapHull(mesh, sized(m.parts[0], S, PLATE_D), bakedHullMaterial(uT, m.bake));
   cull(mesh);
 }
 /** Plating repeats per world unit on a model: small plates make a big hull. */
