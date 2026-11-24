@@ -324,7 +324,7 @@ export function createView(canvas, plot, opts = {}) {
     const which = r2 < 0.18 ? 1 : r2 > 0.86 ? 2 : 3;
     // A Blender-made hull says where its jets are (aft z, how far out, fore z, how far out, in hull
     // units); its puffs are sized to the fittings, not the hull. Otherwise guess from the size.
-    const len = (J ? sc * (0.045 + 0.07 * pow) : s * (0.06 + 0.1 * pow)) * (0.75 + r2 * 0.5), wid = J ? sc * 0.032 : s * 0.05;
+    const len = (J ? sc * (0.03 + 0.045 * pow) : s * (0.06 + 0.1 * pow)) * (0.75 + r2 * 0.5), wid = J ? sc * 0.024 : s * 0.05;
     const zf = J ? J[2] * sc : L, rf = J ? J[3] * sc : s * 0.06, za = J ? J[0] * sc : -L * 0.85, ra = J ? J[1] * sc : s * 0.06;
     if (which & 1) { jP.copy(p).addScaledVector(n, zf).addScaledVector(jD, -rf); shipR.jet(jP, tmp5.copy(jD).negate(), len, wid, p0, id); }
     if (which & 2) { jP.copy(p).addScaledVector(n, za).addScaledVector(jD, ra); shipR.jet(jP, jD, len * (0.85 + r1 * 0.3), wid, p0, id + 0.5); }

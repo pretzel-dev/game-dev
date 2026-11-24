@@ -244,8 +244,7 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   eighteen ships (`holds_ships.py`, `concord_ships.py`, `boreal_ships.py`:
   parts 0-5 are the classes, 6-11 their far-off versions; a faction's file,
   about 1.1 to 1.8 MB with its shade map, is fetched when one of its ships is
-  first drawn, `SHIP_MODELS` in `gfx/ships.js`). The Holds' and Republic's
-  designs still follow the kit-built hulls they replace. The owner then asked
+  first drawn, `SHIP_MODELS` in `gfx/ships.js`). The owner then asked
   for new designs "without fear of the old ones", sent reference pictures
   (thick armoured wedges in white with bold owner stripes; wheel-and-spine
   stations with copper panels; exposed glowing reactors) and wants ships to
@@ -266,7 +265,14 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   in the file's extras: drawn without `CLASS_SIZE`, lengths in `LEN`), and the
   file lists each housed engine (one torch each) and where the attitude jets
   sit (`engines`, `jets`; `K.engines`, `K.jets` in the kit), because flares
-  placed by guesswork floated off the tapered hulls. `tools/blender/concepts.py` draws rough
+  placed by guesswork floated off the tapered hulls. The Holds and the
+  Republic are rebuilt the same way (`fleet()` in the kit does the plumbing):
+  the Holds on a truss spine with cages of hoops (tug, lantern, gun wheel,
+  two cages and a slung mass driver, a cage of ball tanks, an ore train); the
+  Republic as a slab engine block, an open reactor in a frame and gun rails
+  or a blunt head (one gun, twin rails, a flak tower in a cross, a hammer with
+  three rails, a frame of ball tanks, a frame of cargo drums).
+  `concepts.py -- holds_a holds_b boreal_a boreal_b` draws them. `tools/blender/concepts.py` draws rough
   outline sheets to pick a direction before building; the owner liked the
   Holds "Lantern" (a cage of mismatched modules round a spine), found thin
   blades too thin and squat bricks too squat, and did not like radiator-wing

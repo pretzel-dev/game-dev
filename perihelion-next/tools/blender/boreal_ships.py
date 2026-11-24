@@ -1,5 +1,16 @@
-# The Boreal Republic's ships: torch ships. A truss spine from a huge bell to
-# a small capsule, tapering radiator vanes, spherical tanks.
+# The Boreal Republic's ships: utilitarian and intimidating. Built round the
+# gun and the reactor: a slab-sided engine block with a cluster of small
+# engines, the reactor in the open in a frame (lit from within), and long gun
+# rails or a blunt armoured head forward. Dark plate, hard corners, no trim.
+#
+# Each class has its own outline: the corvette is one gun with an engine; the
+# frigate is twin rails; the escort is a flak tower with gun arms in a cross;
+# the battleship is a hammer (a great head and block joined by a frame of
+# tanks, three rails out past the bow); the tender is a frame of ball tanks;
+# the freighter a frame of cargo drums.
+#
+# Fittings are the same real size on every class (the game draws these models
+# at the size they are made), so a bigger hull simply carries more of them.
 #
 # Run from perihelion-next/ (Blender 5.x):
 #   /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup --python tools/blender/boreal_ships.py
@@ -10,215 +21,260 @@ from kit import *
 
 V = Vector
 T = Matrix.Translation
-SPACING = 1.6
 LOD = [0.02, 0.034, 0.034, 0.05, 0.045, 0.04]
-PI = math.pi
+# True lengths in hull units (a frigate is 0.72).
+LEN = [0.4, 0.76, 0.56, 1.8, 1.0, 1.05]
 
 
-def drive(R, L, rr, rl):
-    """A big bell on a thrust frame, a bare reactor and a conical shadow shield, its rim in the owner's paint. Returns (z forward of it, torch start)."""
-    noz = bell(0, R, L, 28)
-    for i in range(8):
-        a = TAU * i / 8 + 0.3
-        strut(pol(a, rr * 0.9, 0.014), pol(a, R * 0.6, -L * 0.28), 0.004)
-    lathe([(0.008, 0), (0.008, rr * 0.9), (0.014, rr * 0.95), (0.014, rr * 0.9), (0.016, rr * 0.9), (0.016, 0)], Matrix(), 18, DARK, 0.8, 0.0, False)
-    lathe([(0.016, 0), (0.016, rr), (0.016 + rl, rr * 0.85), (0.022 + rl, rr * 0.6), (0.022 + rl, 0)], Matrix(), 18, DARK, 0.95, 0.0015)
-    for i in range(4):
-        zz = 0.016 + rl * (0.15 + 0.22 * i)
-        band(zz - 0.002, zz + 0.002, rr * (1 - 0.15 * (0.15 + 0.22 * i)), DARK, 0.7, Matrix(), 18, rr * 0.07)
-    zs = 0.03 + rl
-    lathe([(zs, 0), (zs, rr), (zs + 0.012, rr * 1.55), (zs + 0.014, rr * 1.62), (zs + 0.03, rr * 1.62), (zs + 0.03, 0)], Matrix(), 24, DARK, 0.75, 0.0015)
-    band(zs + 0.017, zs + 0.027, rr * 1.62, PAINT, 1.0, Matrix(), 24, 0.0015)
-    return zs + 0.03, noz
+def gun(p, s=1.0, up=1):
+    turret(p, (0, up, 0), s)
 
 
-def pod(r, L, z, win=5):
-    """A small crew capsule on the axis, banded in the owner's paint."""
-    M = capsule((0, 0, z), (0, 0, 1), r, L, HULL, 1.0, 18)
-    band(L * 0.42, L * 0.52, r, PAINT, 1.0, M, 18, 0.0015)
-    band(L * 0.26, L * 0.28, r, DARK, 0.8, M, 18, 0.002)
-    windows(0.3, win, TAU / max(win, 8), r, L * 0.66, r * 0.14, r * 0.16, M, 0)
-    box((r * 1.0, 0.004, 0.005), T((0, r * 0.72, z + L - r * 0.38)), WINDOW, 1, 0, False)
-    return z + L
+def block(w, h, z0, z1, engines, R):
+    """The engine block: slab sides with cooling slats, short thick radiators, a cluster of small engines.
+    `engines` is a list of (x, y) for the bells."""
+    d = z1 - z0
+    Hull([(z0, w * 0.86, h * 0.86, 0, 0.18), (z0 + d * 0.2, w, h, 0, 0.18), (z1 - d * 0.12, w, h, 0, 0.18), (z1, w * 0.8, h * 0.8, 0, 0.18)], HULL, 0.62, 0.006)
+    box((w * 0.8, h * 0.8, 0.012), T((0, 0, z0)), DARK, 0.7, 0.002)
+    for x, y in engines:
+        torch(x, y, z0, R, R * 2.1, 16)
+    n = max(2, int(d * 0.62 / 0.014))
+    for i in range(n):
+        z = z0 + d * 0.24 + i * 0.014
+        for sx in (-1, 1):
+            box((0.006, h * 0.72, 0.007), T((sx * w * 0.5, 0, z)), DARK, 0.7, 0.0, False)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            box((w * 0.3, 0.008, d * 0.6), T((sx * w * 0.62, sy * h * 0.24, z0 + d * 0.52)), RAD, 0.95, 0.002)
+        box((0.008, h * 0.6, d * 0.64), T((sx * w * 0.77, 0, z0 + d * 0.52)), DARK, 0.8, 0.002)
+        rcs((sx * (w * 0.5 + 0.008), h * 0.36, z0 + d * 0.14), (sx, 0, 0))
+    box((w * 0.5, 0.004, 0.02), T((0, h * 0.5 + 0.001, z1 - d * 0.3)), PAINT, 1.0, 0.0, True)
 
 
-def ball(p, r, paint=False, tint=1.0, seg=20):
-    sphere(p, r, HULL, tint, seg, max(8, seg * 3 // 5))
-    M = T(V(p))
-    band(-r * 0.2, r * 0.2, r * 0.98, PAINT if paint else DARK, 1.0 if paint else 0.8, M, seg, r * 0.03)
-    lathe(drum(r * 0.95, r * 1.06, r * 0.22), M, 8, DARK, 0.8, 0.0, False)
-    lathe(drum(-r * 1.06, -r * 0.95, r * 0.22), M, 8, DARK, 0.8, 0.0, False)
+def frame(w, h, z0, z1, bays, t=0.008):
+    """An open girder frame between two masses: four chords, hoops, diagonals."""
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            beam((sx * w / 2, sy * h / 2, z0), (sx * w / 2, sy * h / 2, z1), t, DARK, 0.75)
+    L = (z1 - z0) / bays
+    for i in range(bays + 1):
+        z = z0 + i * L
+        for s in (-1, 1):
+            beam((-w / 2, s * h / 2, z), (w / 2, s * h / 2, z), t * 0.8, DARK, 0.75)
+            beam((s * w / 2, -h / 2, z), (s * w / 2, h / 2, z), t * 0.8, DARK, 0.75)
+        if i < bays:
+            for s in (-1, 1):
+                f = 1 if i % 2 else -1
+                strut((s * w / 2, -f * h / 2, z), (s * w / 2, f * h / 2, z + L), t * 0.6)
 
 
-def outrig(z, reach, t=0.004):
-    """Attitude jets out on a pair of booms."""
-    for s in (-1, 1):
-        strut((0, 0, z), (s * reach, 0, z), t)
-        rcs((s * reach, 0, z), (s, 0, 0))
+def core(z0, z1, r, n, y=0.0):
+    """The reactor, in the open: drums in a row, each with a lit band."""
+    L = (z1 - z0) / n
+    M = T((0, y, 0))
+    for i in range(n):
+        a, b = z0 + i * L + L * 0.08, z0 + (i + 1) * L - L * 0.08
+        lathe(drum(a, b, r), M, 16, DARK, 0.9, 0.002)
+        lathe([((a + b) / 2 - L * 0.07, r), ((a + b) / 2 - L * 0.07, r + 0.0012), ((a + b) / 2 + L * 0.07, r + 0.0012), ((a + b) / 2 + L * 0.07, r)], M, 16, WINDOW, 1.0, 0.0, False)
+        lathe(drum(b, b + L * 0.16, r * 0.55), M, 10, DARK, 0.7, 0.0, False)
 
 
-def whip(z, L=0.04):
-    cyl((0, 0, z), (0, 0, z + L), 0.002, 4, DARK, 0.9, 0.0, False)
+def rail(x, y, z0, z1, w=0.04, h=0.05):
+    """A gun rail: a long box section, a dark slot along it, clamps, an owner's mark near the muzzle."""
+    L = z1 - z0
+    box((w, h, L), T((x, y, (z0 + z1) / 2)), HULL, 0.66, 0.005)
+    box((w * 1.08, h * 0.3, L * 0.94), T((x, y, (z0 + z1) / 2 + L * 0.02)), DARK, 0.55, 0.002)
+    for i in range(max(2, int(L / 0.11))):
+        box((w * 1.25, h * 1.2, 0.016), T((x, y, z0 + 0.04 + i * 0.11)), DARK, 0.85, 0.002)
+    box((w * 1.02, h * 1.02, 0.03), T((x, y, z1 - 0.07)), PAINT, 1.0, 0.0, True)
+    box((w * 1.2, h * 1.2, 0.03), T((x, y, z1 - 0.015)), DARK, 0.8, 0.003)
+
+
+def head(w, h, z0, z1, prow=0.35, tint=0.72):
+    """A blunt armoured head: slab sides, a short chamfered prow, slit ports. Returns its hull."""
+    zp = z1 - (z1 - z0) * prow
+    H = Hull([(z0, w * 0.88, h * 0.88, 0, 0.16), (z0 + 0.02, w, h, 0, 0.16), (zp, w, h, 0, 0.16), (z1, w * 0.5, h * 0.55, 0, 0.2)], HULL, tint, 0.007)
+    n = max(1, int((zp - z0 - 0.03) / 0.05))
+    pl = (zp - z0 - 0.03) / n
+    for sx in (-1, 1):
+        for i in range(n):
+            z = z0 + 0.03 + pl * (i + 0.5)
+            H.flank(z, sx, (0.008, h * 0.62, pl * 0.9), HULL, rnd.uniform(0.6, 0.78), 0.002, True, 0, 0.002)
+            for k in range(3):
+                if rnd.random() < 0.7:
+                    H.flank(z + (k - 1) * 0.012, sx, (0.002, 0.003, 0.007), WINDOW, 1, 0.0, False, h * 0.38, 0.002)
+        rcs((sx * (w * 0.5 + 0.008), 0, zp - 0.02), (sx, 0, 0))
+    return H
+
+
+def bridge(z, y, s=1.0):
+    """The conn: a plain box with a slit of window and a mast."""
+    box((0.05 * s, 0.03 * s, 0.07 * s), T((0, y + 0.015 * s, z)), HULL, 0.8, 0.003)
+    box((0.04 * s, 0.004, 0.002), T((0, y + 0.02 * s, z + 0.0355 * s)), WINDOW, 1, 0, False)
+    cyl((0, y + 0.03 * s, z - 0.01), (0, y + 0.03 * s + 0.12, z - 0.01), 0.002, 4, DARK, 0.9, 0.0, False)
+    box((0.03 * s, 0.014, 0.004), T((0, y + 0.03 * s + 0.07, z - 0.01)), DARK, 0.9, 0.0, False)
+    light((0, y + 0.03 * s + 0.122, z - 0.01), STROBE, 0.005)
+
+
+def running(x, y, z):
+    light((-x, y, z), NAV_R, 0.005)
+    light((x, y, z), NAV_G, 0.005)
 
 
 def corvette():
-    """A needle. Bell, two tanks, a boom and a capsule."""
-    z, noz = drive(0.046, 0.11, 0.02, 0.03)
-    cyl((0, 0, z), (0, 0, z + 0.13), 0.008, 8, DARK, 0.9, 0.0, True)
-    for s in (-1, 1):
-        ball((s * 0.031, 0, z + 0.035), 0.028, True, 1.0, 16)
-        vane((s * 0.006, 0), 0 if s > 0 else PI, z + 0.07, z + 0.115, 0.03, 0.014, 2, 0.0025)
-    top = pod(0.026, 0.085, z + 0.118, 4)
-    whip(top - 0.004, 0.045)
-    box((0.01, 0.01, 0.012), T((0, 0, top + 0.04)), DARK, 0.9, 0.0, False)
-    outrig(z + 0.125, 0.03, 0.003)
-    nav((-0.03, 0.008, z + 0.125), (0.03, 0.008, z + 0.125), (0, 0.03, z + 0.16))
-    return noz
+    """One gun with an engine on the end of it."""
+    L = LEN[0]
+    block(0.075, 0.062, 0.03, 0.115, [(0, 0), (-0.022, 0), (0.022, 0)], 0.012)
+    core(0.12, 0.165, 0.02, 1)
+    frame(0.06, 0.055, 0.115, 0.17, 1, 0.006)
+    rail(0, 0, 0.17, L, 0.038, 0.044)
+    box((0.034, 0.02, 0.05), T((0, 0.036, 0.21)), HULL, 0.78, 0.003)
+    box((0.028, 0.003, 0.002), T((0, 0.04, 0.2355)), WINDOW, 1, 0, False)
+    cyl((0, 0.046, 0.2), (0, 0.13, 0.2), 0.0018, 4, DARK, 0.9, 0.0, False)
+    pdc((0, -0.022, 0.24), (0, -1, 0))
+    for sx in (-1, 1):
+        rcs((sx * 0.028, 0, L - 0.06), (sx, 0, 0))
+    running(0.04, 0, 0.1)
 
 
 def frigate():
-    """Truss spine, four delta vanes, a revolver of torpedo tubes behind the capsule."""
-    z, noz = drive(0.075, 0.17, 0.034, 0.05)
-    truss3(z, z + 0.35, 0.028, 6, 0.004)
-    for a in (0.45, PI - 0.45, PI + 0.45, -0.45):
-        vane((math.cos(a) * 0.02, math.sin(a) * 0.02), a, z + 0.01, z + 0.24, 0.15, 0.04, 4)
-    for s in (-1, 1):
-        ball((s * 0.05, 0, z + 0.295), 0.038, True)
-    lathe(drum(z + 0.344, z + 0.356, 0.05), Matrix(), 18, DARK, 0.85, 0.002)
-    for i in range(6):
-        p = pol(TAU * i / 6, 0.037, z + 0.353)
-        cyl(p, p + V((0, 0, 0.085)), 0.012, 10, HULL, 0.82, 0.0, True)
-        lathe([(0.085, 0.012), (0.089, 0.012), (0.089, 0.009), (0.086, 0.009), (0.086, 0)], T(p), 10, DARK, 0.4, 0.0, False)
-    top = pod(0.032, 0.11, z + 0.435, 6)
-    whip(top - 0.004, 0.05)
-    strut((0, 0.02, z + 0.33), (0, 0.035, z + 0.335), 0.004)
-    dish((0.0, 0.035, z + 0.335), (0.3, 1, 0.5), 0.03)
-    pdc((0, 0.031, z + 0.49))
-    outrig(z + 0.44, 0.062)
-    for s in (-1, 1):
-        rcs((s * 0.05, 0, z - 0.02), (s, 0, 0))
-    nav((-0.066, 0.008, z + 0.44), (0.066, 0.008, z + 0.44), (0, 0.038, z + 0.52))
-    return noz
+    """Twin rails ahead of an open reactor and a block of engines."""
+    L = LEN[1]
+    block(0.16, 0.12, 0.03, 0.2, [(0, 0), (-0.048, 0.03), (0.048, 0.03), (-0.048, -0.03), (0.048, -0.03)], 0.02)
+    frame(0.11, 0.1, 0.2, 0.36, 2)
+    core(0.21, 0.35, 0.036, 4)
+    box((0.15, 0.085, 0.03), T((0, 0, 0.375)), DARK, 0.85, 0.004)  # breech
+    for sx in (-1, 1):
+        rail(sx * 0.04, 0, 0.39, L)
+        rcs((sx * 0.07, 0, L - 0.08), (sx, 0, 0))
+    for z in (0.5, 0.64):
+        box((0.13, 0.03, 0.022), T((0, 0, z)), DARK, 0.85, 0.003)
+    bridge(0.3, 0.05, 0.9)
+    box((0.07, 0.014, 0.12), T((0, 0.057, 0.29)), HULL, 0.7, 0.003)
+    gun((0, 0.06, 0.13), 1.1)
+    gun((0, -0.06, 0.13), 1.1, -1)
+    pdc((0, 0.016, 0.52))
+    pdc((0, -0.016, 0.6), (0, -1, 0))
+    running(0.085, 0, 0.12)
 
 
 def escort():
-    """Short spine, point-defence blisters out on two rings of outriggers."""
-    z, noz = drive(0.07, 0.15, 0.034, 0.045)
-    truss3(z, z + 0.27, 0.03, 4, 0.0045)
-    for a in (0, PI):
-        vane((math.cos(a) * 0.025, 0), a, z + 0.01, z + 0.13, 0.11, 0.05, 3)
-    for zz, a0 in ((0.17, PI / 4), (0.25, 0)):
-        for i in range(4):
-            a = a0 + TAU * i / 4
-            c = V((math.cos(a), math.sin(a), 0))
-            beam(c * 0.015 + V((0, 0, z + zz)), c * 0.1 + V((0, 0, z + zz)), 0.007)
-            box((0.04, 0.04, 0.046), T(c * 0.098 + V((0, 0, z + zz))), HULL, 0.82, 0.003)
-            blister(c * 0.122 + V((0, 0, z + zz)), 1.35)
-    lathe([(z + 0.28, 0), (z + 0.28, 0.04), (z + 0.285, 0.046), (z + 0.37, 0.046), (z + 0.4, 0.026), (z + 0.4, 0)], Matrix(), 20, HULL, 0.95, 0.002)
-    band(z + 0.3, z + 0.345, 0.046, PAINT, 1.0, Matrix(), 20, 0.0015)
-    windows(0.2, 7, TAU / 9, 0.046, z + 0.357, 0.005, 0.006, Matrix(), 0)
+    """A flak tower: gun arms in a cross round a blunt head. A plus sign from ahead."""
+    L = LEN[2]
+    block(0.13, 0.11, 0.03, 0.17, [(0, 0), (-0.036, 0.024), (0.036, 0.024), (-0.036, -0.024), (0.036, -0.024)], 0.017)
+    frame(0.08, 0.08, 0.17, 0.25, 1)
+    core(0.18, 0.245, 0.028, 2)
+    H = head(0.11, 0.11, 0.25, L, 0.3)
     for i in range(4):
-        a = PI / 4 + TAU * i / 4
-        blister((math.cos(a) * 0.04, math.sin(a) * 0.04, z + 0.385), 1.2)
-    whip(z + 0.398, 0.035)
-    for s in (-1, 1):
-        rcs((s * 0.05, 0, z + 0.3), (s, 0, 0))
-        rcs((s * 0.05, 0, z - 0.02), (s, 0, 0))
-    nav((-0.05, 0.01, z + 0.33), (0.05, 0.01, z + 0.33), (0, 0.05, z + 0.33))
-    return noz
+        a = math.pi / 2 * i
+        d = V((math.cos(a), math.sin(a), 0))
+        for z in (0.3, 0.42):
+            beam(d * 0.05 + V((0, 0, z)), d * 0.15 + V((0, 0, z)), 0.016, DARK, 0.8)
+            box((0.05, 0.05, 0.06), at(d * 0.165 + V((0, 0, z)), (0, 0, 1), a), HULL, 0.68, 0.004)
+            turret(d * 0.19 + V((0, 0, z)), d, 1.15)
+        strut(d * 0.15 + V((0, 0, 0.3)), d * 0.15 + V((0, 0, 0.42)), 0.006)
+    for a in (0.785, 2.356, 3.927, 5.498):
+        pdc(pol(a, 0.07, 0.36), (math.cos(a), math.sin(a), 0))
+    box((0.006, 0.03, 0.006), T((0, 0.07, 0.27)), DARK, 0.9, 0.0, False)
+    box((0.05, 0.024, 0.004), T((0, 0.094, 0.27)), HULL, 0.8, 0.0015)
+    box((0.112, 0.02, 0.02), T((0, 0.03, L - 0.12)), PAINT, 1.0, 0.0, True)
+    running(0.07, 0, 0.1)
 
 
 def battleship():
-    """A spinal railgun the length of the ship, a huge bell and four great vanes."""
-    z, noz = drive(0.125, 0.25, 0.055, 0.09)
-    truss3(z, z + 0.8, 0.05, 10, 0.006)
-    for a in (0.5, PI - 0.5, PI + 0.5, -0.5):
-        vane((math.cos(a) * 0.04, math.sin(a) * 0.04), a, z + 0.02, z + 0.47, 0.28, 0.07, 6, 0.004)
-    cyl((0, 0, z), (0, 0, z + 1.2), 0.021, 12, HULL, 0.6, 0.0, True)  # the gun, out past the bow
-    for i in range(8):
-        lathe(drum(z + 0.072 + i * 0.1, z + 0.088 + i * 0.1, 0.03), Matrix(), 14, DARK, 0.9, 0.0015)
-    for j in range(2):
-        for i in range(3):
-            a = PI / 2 + PI / 3 + TAU * i / 3 + j * (PI / 3)
-            ball((math.cos(a) * 0.088, math.sin(a) * 0.088, z + 0.56 + j * 0.125), 0.058, j == 0, 1.0 - 0.1 * j, 22)
-    lathe([(z + 0.8, 0), (z + 0.8, 0.05), (z + 0.81, 0.062), (z + 0.93, 0.058), (z + 0.97, 0.03), (z + 0.97, 0)], Matrix(), 22, HULL, 0.95, 0.002)
-    band(z + 0.83, z + 0.89, 0.0615, PAINT, 1.0, Matrix(), 22, 0.0015)
-    windows(0.2, 10, TAU / 12, 0.06, z + 0.905, 0.006, 0.007, Matrix(), 0.1)
-    for zz, L in ((1.06, 0.02), (1.14, 0.07)):  # muzzle
-        lathe(drum(z + zz - L / 2, z + zz + L / 2, 0.03), Matrix(), 12, DARK, 0.8, 0.002)
-    for s in (-1, 1):
-        tubes((s * 0.085, 0, z + 0.85), 2, 2, 0.009, 0.09)
-        beam((s * 0.04, 0, z + 0.85), (s * 0.07, 0, z + 0.85), 0.008)
-        rcs((s * 0.085, 0, z - 0.03), (s, 0, 0))
-    outrig(z + 0.77, 0.11, 0.006)
-    turret((0, 0.06, z + 0.87), (0, 1, 0), 1.3)
-    turret((0, -0.06, z + 0.87), (0, -1, 0), 1.3)
-    for zz in (0.5, 0.75):
-        pdc((0, 0.03, z + zz))
-        pdc((0.03, -0.022, z + zz), (0.6, -0.8, 0))
-    strut((-0.02, 0.03, z + 0.76), (-0.03, 0.05, z + 0.77), 0.004)
-    dish((-0.03, 0.05, z + 0.77), (-0.4, 1, 0.4), 0.04)
-    nav((-0.115, 0.01, z + 0.77), (0.115, 0.01, z + 0.77), (0, 0.08, z + 0.9))
-    return noz
+    """A hammer: a great armoured head and an engine block, joined by an open frame of tanks and reactor, three rails out past the bow."""
+    L = LEN[3]
+    eng = [(0, 0)] + [(math.cos(TAU * i / 6) * 0.095, math.sin(TAU * i / 6) * 0.075) for i in range(6)]
+    block(0.32, 0.24, 0.04, 0.34, eng, 0.03)
+    frame(0.2, 0.18, 0.34, 0.92, 5, 0.01)
+    core(0.36, 0.9, 0.034, 8, -0.05)
+    for i in range(4):
+        sphere((0.04 * (1 if i % 2 else -1), 0.04, 0.43 + i * 0.135), 0.066, HULL, rnd.uniform(0.7, 0.85), 22, 12)
+        band(-0.004, 0.004, 0.066, DARK, 0.8, T((0.04 * (1 if i % 2 else -1), 0.04, 0.43 + i * 0.135)), 22, 0.002)
+    H = head(0.26, 0.21, 0.92, 1.42, 0.3)
+    for sx in (-1, 1):
+        rail(sx * 0.09, -0.03, 1.0, L, 0.044, 0.056)
+        for i in range(5):  # casemates down the head
+            z = 0.99 + i * 0.07
+            H.flank(z, sx, (0.03, 0.06, 0.05), HULL, 0.66, 0.003, True, -0.03, 0.012)
+            for e in (-1, 1):
+                H.flank(z + 0.05, sx, (0.005, 0.005, 0.06), DARK, 0.6, 0.0, False, -0.03 + e * 0.012, 0.02)
+        box((0.05, 0.05, 0.3), T((sx * 0.185, 0, 0.19)), HULL, 0.58, 0.004)  # armoured cheeks on the block
+        for z in (0.12, 0.26):
+            gun((sx * 0.1, 0.12, z), 1.2)
+        pdc((sx * 0.11, 0.105, 1.3))
+        pdc((sx * 0.11, -0.105, 1.1), (0, -1, 0))
+    rail(0, -0.12, 1.02, L - 0.04, 0.05, 0.06)
+    for z in (1.5, 1.64):
+        box((0.24, 0.03, 0.022), T((0, -0.04, z)), DARK, 0.85, 0.003)
+        beam((0, -0.04, z), (0, -0.12, z), 0.014, DARK, 0.85)
+    bridge(1.04, 0.105, 1.1)
+    box((0.12, 0.02, 0.26), T((0, 0.112, 1.12)), HULL, 0.7, 0.004)
+    gun((0, 0.122, 1.2), 1.6)
+    gun((0, 0.105, 1.33), 1.3)
+    gun((0, -0.105, 1.0), 1.5, -1)
+    gun((0, 0.12, 0.19), 1.5)
+    gun((0, -0.12, 0.19), 1.5, -1)
+    box((0.262, 0.03, 0.03), T((0, 0.05, 1.26)), PAINT, 1.0, 0.0, True)
+    box((0.262, 0.03, 0.01), T((0, 0.05, 1.22)), PAINT, 1.0, 0.0, True)
+    for sx in (-1, 1):
+        rcs((sx * 0.12, 0, L - 0.1), (sx, 0, 0))
+    running(0.2, 0, 0.2)
+
+
+def aux_head(z0, L):
+    H = head(0.1, 0.085, z0, L, 0.4, 0.74)
+    bridge(z0 + 0.06, 0.0425, 0.85)
+    pdc((0, -0.0425, z0 + 0.08), (0, -1, 0))
+    box((0.102, 0.016, 0.016), T((0, 0.02, L - 0.1)), PAINT, 1.0, 0.0, True)
+    return H
 
 
 def tender():
-    """Three big spheres threaded on the spine, a transfer boom."""
-    z, noz = drive(0.07, 0.15, 0.034, 0.045)
-    truss3(z, z + 0.62, 0.03, 8, 0.0045)
-    for a in (0, PI):
-        vane((math.cos(a) * 0.025, 0), a, z + 0.005, z + 0.125, 0.14, 0.07, 3)
-    for i in range(3):
-        ball((0, 0, z + 0.225 + i * 0.17), 0.09, i == 1, 0.92 + i * 0.05, 28)
-        lathe(drum(z + 0.304 + i * 0.17, z + 0.316 + i * 0.17, 0.062), Matrix(), 16, DARK, 0.85, 0.002)
-    top = pod(0.03, 0.105, z + 0.635, 5)
-    j0 = V((0.03, 0, z + 0.645))
-    j1 = j0 + V((1, 0.1, 0.3)).normalized() * 0.2
-    j2 = j1 + V((0.15, 0, 1)).normalized() * 0.1
-    beam(j0, j1, 0.009, HULL, 0.85)
-    sphere(j1, 0.014, DARK, 0.8, 10, 6, False)
-    beam(j1, j2, 0.006, DARK, 0.85)
-    lathe(drum(-0.01, 0.01, 0.009), T(j2), 8, HULL, 0.9, 0.0, False)
-    for s in (-1, 1):
-        rcs((s * 0.036, 0, z + 0.66), (s, 0, 0))
-        rcs((s * 0.05, 0, z - 0.02), (s, 0, 0))
-    nav((-0.093, 0, z + 0.395), (0.093, 0, z + 0.395), j1 + V((0, 0.02, 0)))
-    return noz
+    """A frame of ball tanks between the block and a small head, a transfer boom."""
+    L = LEN[4]
+    block(0.15, 0.12, 0.03, 0.19, [(0, 0), (-0.045, 0.028), (0.045, 0.028), (-0.045, -0.028), (0.045, -0.028)], 0.019)
+    frame(0.21, 0.21, 0.19, 0.78, 4, 0.009)
+    for i in range(4):
+        z = 0.264 + i * 0.1475
+        sphere((0, 0, z), 0.092, HULL, rnd.uniform(0.72, 0.88), 28, 16)
+        band(-0.005, 0.005, 0.092, PAINT if i == 1 else DARK, 1.0 if i == 1 else 0.8, T((0, 0, z)), 28, 0.002)
+        if i < 3:
+            lathe(drum(z + 0.062, z + 0.086, 0.03), Matrix(), 12, DARK, 0.8, 0.0, False)
+    core(0.2, 0.3, 0.018, 2, -0.085)
+    aux_head(0.78, L)
+    j0 = V((0.058, 0, 0.84))
+    j1 = j0 + V((1, 0.1, 0.4)).normalized() * 0.2
+    box((0.026, 0.026, 0.026), T(j0), DARK, 0.8, 0.002)
+    beam(j0, j1, 0.009, HULL, 0.7)
+    box((0.02, 0.02, 0.03), T(j1), DARK, 0.8, 0.002)
+    cyl(j1 + V((0, 0, 0.012)), j1 + V((0, 0, 0.07)), 0.005, 8, HULL, 0.8, 0.0, False)
+    light(j1 + V((0, 0.016, 0)), STROBE, 0.005)
+    running(0.11, 0, 0.48)
 
 
 def freighter():
-    """The same spine, ringed with cargo drums."""
-    z, noz = drive(0.065, 0.14, 0.03, 0.04)
-    truss3(z, z + 0.75, 0.026, 10, 0.004)
-    for a in (0, PI):
-        vane((math.cos(a) * 0.022, 0), a, z + 0.01, z + 0.17, 0.1, 0.035, 3)
-    for i in range(5):
-        for j in range(3):
-            a = PI / 2 + PI / 3 + TAU * j / 3
-            p = V((math.cos(a) * 0.05, math.sin(a) * 0.05, z + 0.196 + i * 0.112))
-            M = can(p, (0, 0, 1), 0.034, 0.098, rnd.uniform(0.7, 1.0), 14, 1, 0, False, 0.25)
-            if (i + j) % 4 == 1:
-                band(0.06, 0.076, 0.034, PAINT, 1.0, M, 14, 0.0015)
-    top = pod(0.026, 0.085, z + 0.752, 4)
-    for s in (-1, 1):
-        rcs((s * 0.032, 0, z + 0.77), (s, 0, 0))
-        rcs((s * 0.046, 0, z - 0.02), (s, 0, 0))
-    nav((-0.085, 0, z + 0.47), (0.085, 0, z + 0.47), (0, 0.03, z + 0.8))
-    return noz
+    """A frame of cargo drums, the same block and head as the tender."""
+    L = LEN[5]
+    block(0.15, 0.12, 0.03, 0.19, [(0, 0), (-0.045, 0.028), (0.045, 0.028), (-0.045, -0.028), (0.045, -0.028)], 0.019)
+    frame(0.16, 0.14, 0.19, 0.83, 6, 0.008)
+    core(0.2, 0.28, 0.018, 2, -0.05)
+    for i in range(6):
+        z = 0.245 + i * 0.1067
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                if i == 0 and sy < 0:
+                    continue
+                if rnd.random() < 0.08:
+                    continue
+                M = can((sx * 0.04, sy * 0.034, z - 0.046), (0, 0, 1), 0.032, 0.092, rnd.uniform(0.55, 0.85), 14, 1, 0, False, 0.22)
+                if rnd.random() < 0.2:
+                    band(0.036, 0.056, 0.032, PAINT, 1.0, M, 14, 0.0015)
+    aux_head(0.83, L)
+    running(0.085, 0, 0.5)
 
 
 HULLS = [corvette, frigate, escort, battleship, tender, freighter]
 
-
-def build():
-    nozzles = []
-    for i, f in enumerate(HULLS):
-        begin(i, (i * SPACING, 0, 0), 0.0, 130 + i)
-        nozzles.append(f())
-        begin(i + len(HULLS), (i * SPACING, 3.0, 0), LOD[i], 130 + i)
-        f()
-    return {'nozzles': nozzles, 'spacing': SPACING, 'hulls': len(HULLS), 'lod_y': 3.0}
-
-
-LEN = [0.4, 0.72, 0.6, 1.5, 0.95, 1.05]
-run('boreal_ships', 'boreal-ships', build, views=[(0.5, 0.35, LEN[i] * 2.6, (i * SPACING, 0, LEN[i] * 0.38)) for i in range(6)])
+if __name__ == '__main__':
+    run('boreal_ships', 'boreal-ships', lambda: fleet(HULLS, LOD, 130), views=[(0.5, 0.35, LEN[i] * 2.6, (i * 1.6, 0, LEN[i] * 0.45)) for i in range(6)])
