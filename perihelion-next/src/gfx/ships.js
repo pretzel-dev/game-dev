@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './glsl.js';
 import { rng } from '../sim.js';
 import { SHADOW_GLSL, addShadowUniforms } from './shadow.js';
+import { whenModel, sized } from './models.js';
 
 /**
  * Ships, drawn with GPU instancing: one draw call per hull type for every
@@ -1169,6 +1170,16 @@ export function bakedHullMaterial(uT, bakeTex) {
   if (!bakedMats.has(bakeTex)) bakedMats.set(bakeTex, hullMaterial(uT, null, bakeTex));
   return bakedMats.get(bakeTex);
 }
+/** Give an instanced hull mesh a new geometry (a Blender model), keeping its per-instance attributes. */
+export function swapHull(mesh, g, mat) {
+  const old = mesh.geometry;
+  for (const [n, a] of Object.entries(old.attributes)) if (a.isInstancedBufferAttribute) g.setAttribute(n, a);
+  mesh.geometry = g;
+  mesh.material = mat;
+  old.dispose();
+}
+/** Factions whose hulls are Blender models (`tools/blender/<name>_ships.py`): the kit-built ones stand in until the file loads. */
+const SHIP_MODELS = { holds: 'holdsShips' };
 /** One per world with a surface map (same shader; only its ground texture differs). */
 const groundMats = new WeakMap();
 
@@ -1200,6 +1211,21 @@ export function createShipRenderer(scene, max) {
   const coarse = types.map((g) => (g.userData.coarse ? instanced(g.userData.coarse) : null));
   const all = [...meshes, ...rotors.filter(Boolean), ...coarse.filter(Boolean)];
   const rz = new THREE.Matrix4();
+  // A faction's models are fetched the first time one of its ships is drawn.
+  const asked = new Set();
+  const fetchModels = (faction) => whenModel(SHIP_MODELS[faction], (m) => {
+    const n = HULL_CLASSES.length, f = HULL_FACTIONS.indexOf(faction), bm = bakedHullMaterial(uT, m.bake);
+    for (let c = 0; c < n; c++) {
+      // Centred on its length and sized for its class, as the kit-built hulls are.
+      const t = f * n + c, src = m.parts[c];
+      src.computeBoundingBox();
+      const bb = src.boundingBox, s = types[t].userData.length / (bb.max.z - bb.min.z), mid = (bb.max.z + bb.min.z) / 2;
+      const fit = (g) => sized(g.clone().translate(0, 0, -mid), s, 7);
+      swapHull(meshes[t], fit(src), bm);
+      if (coarse[t] && m.parts[c + n]) swapHull(coarse[t], fit(m.parts[c + n]), bm);
+      types[t].userData.nozzle = (m.extras.nozzles[c] - mid) * s;
+    }
+  });
 
   // Plumes: one instanced quad pair per burning ship.
   const pg = new THREE.InstancedBufferGeometry();
@@ -1270,6 +1296,8 @@ export function createShipRenderer(scene, max) {
       q.setFromRotationMatrix(m4);
       // Too small to see as a hull: just the glint.
       if (px > 1.5) {
+        const fac = type < PROBE && HULL_FACTIONS[(type / HULL_CLASSES.length) | 0];
+        if (fac && SHIP_MODELS[fac] && !asked.has(fac)) { asked.add(fac); fetchModels(fac); }
         const m = px < FAR_PX && coarse[type] ? coarse[type] : meshes[type];
         const i = m.userData.n++;
         m4.compose(p, q, sc.set(s[0], s[1], s[2]));

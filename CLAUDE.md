@@ -227,20 +227,27 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   choose when, long recharge). Models come from the first game
   (`gfx/megastructures.js`, `MEGA_LOOK`). Ship crew sizes stay at one place
   each for now (the owner's call).
-- Models made in Blender (trial, November 2026): the Holds' home station is
-  built by `tools/blender/holds_station.py` (run headless, about 10 seconds:
-  `/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup
-  --python tools/blender/holds_station.py`), which writes
-  `src/assets/holds-station.glb` (meshopt-compressed) and a shade map
-  (`holds-station-bake.webp`: red is ambient occlusion, green weathering).
-  `gfx/models.js` loads them and turns the file's colour attribute into the
-  hull shader's `kind` and `tint`; the shade map's coordinates ride in `gnd`
-  (no spare attribute), and the shader reads it under `#ifdef BAKED`. The
-  block-built station stands in until the file loads. Docking arm ends are
-  listed twice (`PORTS` in the script, `HOLD_PORTS` in `gfx/stations.js`).
-  Station add-on modules, other stations and ships are still built from the
-  parts kit. The owner wants ships and stations to look as good as the planets;
-  a dark unlit side is fine, with small lights showing.
+- Models made in Blender (November 2026; the owner liked the trial and asked
+  for the rest). `tools/blender/kit.py` is the shared kit (parts, bevels,
+  unwrap, bake, export); each model file has its own script, run headless in
+  seconds: `/Applications/Blender.app/Contents/MacOS/Blender -b
+  --factory-startup --python tools/blender/holds_ships.py` (add `-- build
+  preview` for renders in `tools/blender/out/`). A script writes
+  `src/assets/<name>.glb` (meshopt-compressed) and `<name>-bake.webp` (red is
+  ambient occlusion, green weathering). `gfx/models.js` loads them and turns
+  the file's colour attribute into the hull shader's `kind` and `tint` (blue
+  is the part index when a file holds several models); the shade map's
+  coordinates ride in `gnd` (no spare attribute), and the shader reads it
+  under `#ifdef BAKED`. The kit-built model stands in until the file loads.
+  Done: the Holds' home station (`holds_station.py`; docking arm ends are
+  listed twice, `PORTS` there and `HOLD_PORTS` in `gfx/stations.js`) and the
+  Holds' six ships (`holds_ships.py`: parts 0-5 are the classes, 6-11 their
+  far-off versions; a faction's file is fetched when one of its ships is first
+  drawn, `SHIP_MODELS` in `gfx/ships.js`). Still kit-built: the other powers'
+  ships, neutral stations, megaprojects, probes. Station add-on modules
+  (`setStationModules`) are not drawn in this game. The owner wants ships and
+  stations to look as good as the planets; a dark unlit side is fine, with
+  small lights showing.
 - Win option `winBy: 'ark'`: the Ark is built at any capital (not only gas
   giants: that would favour the Holds), held for a count everyone sees.
 
