@@ -144,9 +144,6 @@ export function stationMesh(size, core, uT) {
   void r;
   const mesh = cull(singleHull(k.build(1, uvD(S)), uT));
   mesh.userData.spin = 0.015; // a slow drift: nothing in zero g needs to hold still
-  // The Holds' home is modelled in Blender (tools/blender/holds_station.py); the
-  // one built above stands in until the file is in.
-  if (core === 3) whenModel('holds', (m) => useModel(mesh, m, S, uT));
   const base = mesh.userData.set;
   const st = { S, uT, parts: [], wip: [], last: ['#6a7080', 1, false] };
   mesh.userData.station = st;
@@ -155,6 +152,25 @@ export function stationMesh(size, core, uT) {
     base(color, sunV, on);
     for (const m of st.parts) m.userData.set?.(color, sunV, on);
   };
+  // The Holds' home is modelled in Blender (tools/blender/holds_station.py); the
+  // one built above stands in until the file is in.
+  if (core === 3) whenModel('holds', (m) => useModel(mesh, m, S, uT));
+  // The neutral stations too (tools/blender/stations.py): a wheel on a spine, a hub with arms, a yard.
+  else whenModel('stations', (m) => {
+    const s = S * NEUTRAL_SCALE, mat = bakedHullMaterial(uT, m.bake);
+    swapHull(mesh, sized(m.parts[[0, 2, 3][core]], s, PLATE_D), mat);
+    cull(mesh);
+    if (core === 0) {
+      // The wheel turns on its own bearing.
+      const rot = singleHull(sized(m.parts[1], s, PLATE_D), uT);
+      rot.material = mat;
+      rot.userData.spin = 0.12;
+      mesh.add(rot);
+      st.parts.push(rot);
+      mesh.userData.rotor = rot;
+      rot.userData.set(...st.last);
+    }
+  });
   return mesh;
 }
 
@@ -163,6 +179,8 @@ function useModel(mesh, m, S, uT) {
   swapHull(mesh, sized(m.parts[0], S, PLATE_D), bakedHullMaterial(uT, m.bake));
   cull(mesh);
 }
+/** Neutral stations are drawn this much bigger than the sim's size for them: several frigates across, still well inside where ships park. */
+const NEUTRAL_SCALE = 2.6;
 /** Plating repeats per world unit on a model: small plates make a big hull. */
 const PLATE_D = 4.5;
 

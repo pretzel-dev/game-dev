@@ -27,6 +27,7 @@ class K:
     part = 0          # its index in the file
     lod = 0.0         # > 0: the far-off version; parts smaller than this radius are left out
     name = 'model'
+    part_div = 15     # parts are packed as part / part_div (63 for a file with more than 16 models)
     engines = []      # this model's drive bells in housings: (x, y, where the torch starts, radius)
     jets = []         # where its attitude jets sit: (z, distance out from the axis)
     file = 'model'
@@ -563,6 +564,33 @@ def fleet(hulls, lod, seed, spacing=1.6):
     return {'nozzles': nozzles, 'spacing': spacing, 'hulls': len(hulls), 'lod_y': 3.0, 'true_size': 1, 'engines_n': counts, 'engines': engines, 'jets': jet}
 
 
+def panel_pair(c, d, reach, n=3, w=0.05, kind=SOLAR, along=(0, 0, 1)):
+    """Panels on a boom out both sides of c along d: n panels wide (along `along`), each `reach` long."""
+    c, d, along = Vector(c), Vector(d).normalized(), Vector(along).normalized()
+    nrm = d.cross(along)
+    for s in (-1, 1):
+        strut(c, c + d * s * reach, 0.004)
+        for i in range(n):
+            m = Matrix((along, d * s, nrm * s)).transposed().to_4x4()
+            m.translation = c + along * ((i - (n - 1) / 2) * w * 1.12) + d * s * (reach * 0.58)
+            box((w, reach * 0.72, 0.003), m, kind, rnd.uniform(0.92, 1.05), 0.0, True)
+            box((w * 0.06, reach * 0.72, 0.005), m, DARK, 0.7, 0.0, False)
+
+
+def ring(R, z, w=0.05, t=0.03, seg=48, kind=HULL, tint=0.95, M=Matrix()):
+    """A wheel rim round local z: a box-section ring of radius R."""
+    lathe([(z - w / 2, R - t), (z - w / 2, R), (z + w / 2, R), (z + w / 2, R - t), (z - w / 2, R - t)], M, seg, kind, tint, 0.0, True)
+
+
+def parts(fns, spacing=3.0, seed=40, div=63):
+    """Build several unrelated models into one file, spaced apart. Returns the extras the game needs."""
+    K.part_div = div
+    for i, f in enumerate(fns):
+        begin(i, (i * spacing, 0, 0), 0.0, seed + i)
+        f()
+    return {'hulls': len(fns), 'spacing': spacing, 'part_div': div}
+
+
 # ---- Blender plumbing -----------------------------------------------------------
 def scene():
     if bpy.app.background or not bpy.context.window:
@@ -633,7 +661,7 @@ def pack_colour(ob):
     col = me.color_attributes.get('Col') or me.color_attributes.new('Col', 'FLOAT_COLOR', 'CORNER')
     out = []
     for p in me.polygons:
-        out += [kind[p.index] / 15, tint[p.index] / 2, part[p.index] / 15, 1.0] * p.loop_total
+        out += [kind[p.index] / 15, tint[p.index] / 2, part[p.index] / K.part_div, 1.0] * p.loop_total
     col.data.foreach_set('color', out)
     me.color_attributes.active_color = col
     me.color_attributes.render_color_index = list(me.color_attributes).index(col)
