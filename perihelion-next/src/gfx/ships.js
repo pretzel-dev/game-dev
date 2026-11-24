@@ -1179,7 +1179,7 @@ export function swapHull(mesh, g, mat) {
   old.dispose();
 }
 /** Factions whose hulls are Blender models (`tools/blender/<name>_ships.py`): the kit-built ones stand in until the file loads. */
-const SHIP_MODELS = { holds: 'holdsShips' };
+const SHIP_MODELS = { concord: 'concordShips', boreal: 'borealShips', holds: 'holdsShips' };
 /** One per world with a surface map (same shader; only its ground texture differs). */
 const groundMats = new WeakMap();
 

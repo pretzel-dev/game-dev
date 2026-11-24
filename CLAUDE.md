@@ -240,11 +240,13 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   coordinates ride in `gnd` (no spare attribute), and the shader reads it
   under `#ifdef BAKED`. The kit-built model stands in until the file loads.
   Done: the Holds' home station (`holds_station.py`; docking arm ends are
-  listed twice, `PORTS` there and `HOLD_PORTS` in `gfx/stations.js`) and the
-  Holds' six ships (`holds_ships.py`: parts 0-5 are the classes, 6-11 their
-  far-off versions; a faction's file is fetched when one of its ships is first
-  drawn, `SHIP_MODELS` in `gfx/ships.js`). Still kit-built: the other powers'
-  ships, neutral stations, megaprojects, probes. Station add-on modules
+  listed twice, `PORTS` there and `HOLD_PORTS` in `gfx/stations.js`) and all
+  eighteen ships (`holds_ships.py`, `concord_ships.py`, `boreal_ships.py`:
+  parts 0-5 are the classes, 6-11 their far-off versions; a faction's file,
+  about 1.1 to 1.8 MB with its shade map, is fetched when one of its ships is
+  first drawn, `SHIP_MODELS` in `gfx/ships.js`). The designs follow the
+  kit-built hulls they replace. Still kit-built: neutral stations,
+  megaprojects, probes. Station add-on modules
   (`setStationModules`) are not drawn in this game. The owner wants ships and
   stations to look as good as the planets; a dark unlit side is fine, with
   small lights showing.
