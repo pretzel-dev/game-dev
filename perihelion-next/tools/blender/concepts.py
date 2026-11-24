@@ -333,7 +333,18 @@ def holds_lantern():
         patchrad((s * 0.02, 0, z + 0.44), (s, 0.2, 0), 0.1, 0.12, 2)
 
 
+def real(name):
+    """The class functions of a finished ships script (its `run` line left off), to draw them on a sheet."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    g = {'__file__': path}
+    exec(compile(open(path).read().split('\nHULLS = ')[0], path, 'exec'), g)
+    return g
+
+
+CONCORD = real('concord_ships.py')
 POWERS = {
+    'concord_a': ('Meridian Concord (true relative size)', (('Corvette', CONCORD['corvette']), ('Frigate', CONCORD['frigate']), ('Escort', CONCORD['escort'])), 0.68),
+    'concord_b': ('Meridian Concord (true relative size)', (('Battleship', CONCORD['battleship']), ('Tender', CONCORD['tender']), ('Freighter', CONCORD['freighter'])), 0.68),
     'concord': ('Meridian Concord', (('A  Wedge', concord_wedge), ('B  Broadsword', concord_broadsword), ('C  Bastion', concord_bastion))),
     'boreal': ('Boreal Republic', (('A  Lance', boreal_lance), ('B  Spine', boreal_spine), ('C  Hammer', boreal_hammer))),
     'family': ('Meridian Concord: one family at true relative size', (('Corvette', lambda: concord_hull(0.4)), ('Frigate', lambda: concord_hull(0.72)), ('Battleship', lambda: concord_hull(1.37))), 0.68),
@@ -443,5 +454,5 @@ def sheet(key):
             bpy.data.objects.remove(t, do_unlink=True)
 
 
-for key in (kit.ARGS or POWERS):
+for key in (kit.ARGS or [k for k in POWERS if not k.startswith('concord_')]):
     sheet(key)
