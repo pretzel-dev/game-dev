@@ -342,7 +342,13 @@ def real(name):
 
 
 CONCORD = real('concord_ships.py')
+HOLDS = real('holds_ships.py')
+BOREAL = real('boreal_ships.py')
 POWERS = {
+    'holds_a': ('Lantern Holds (true relative size)', (('Corvette', HOLDS['corvette']), ('Frigate', HOLDS['frigate']), ('Escort', HOLDS['escort'])), 0.55),
+    'holds_b': ('Lantern Holds (true relative size)', (('Battleship', HOLDS['battleship']), ('Tender', HOLDS['tender']), ('Freighter', HOLDS['freighter'])), 0.55),
+    'boreal_a': ('Boreal Republic (true relative size)', (('Corvette', BOREAL['corvette']), ('Frigate', BOREAL['frigate']), ('Escort', BOREAL['escort'])), 0.55),
+    'boreal_b': ('Boreal Republic (true relative size)', (('Battleship', BOREAL['battleship']), ('Tender', BOREAL['tender']), ('Freighter', BOREAL['freighter'])), 0.55),
     'concord_a': ('Meridian Concord (true relative size)', (('Corvette', CONCORD['corvette']), ('Frigate', CONCORD['frigate']), ('Escort', CONCORD['escort'])), 0.55),
     'concord_b': ('Meridian Concord (true relative size)', (('Battleship', CONCORD['battleship']), ('Tender', CONCORD['tender']), ('Freighter', CONCORD['freighter'])), 0.55),
     'concord': ('Meridian Concord', (('A  Wedge', concord_wedge), ('B  Broadsword', concord_broadsword), ('C  Bastion', concord_bastion))),
@@ -454,5 +460,5 @@ def sheet(key):
             bpy.data.objects.remove(t, do_unlink=True)
 
 
-for key in (kit.ARGS or [k for k in POWERS if not k.startswith('concord_')]):
+for key in (kit.ARGS or [k for k in POWERS if k[-2:] not in ('_a', '_b')]):
     sheet(key)

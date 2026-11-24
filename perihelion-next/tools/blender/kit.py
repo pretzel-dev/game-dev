@@ -356,6 +356,7 @@ def patchrad(root, out, length, reach, segs=3, missing=-1, t=0.003):
 def rcs(p, out):
     """An attitude-jet cluster: a block with nozzles out to the side, fore and aft."""
     p, out = Vector(p), Vector(out).normalized()
+    K.jets.append((p.z, math.hypot(p.x, p.y) + 0.006))
     box((0.012, 0.012, 0.015), Matrix.Translation(p), DARK, 0.85, 0.001)
     for o in (out * 0.008, Vector((0, 0, 0.0095)), Vector((0, 0, -0.0095))):
         box((0.0045, 0.0045, 0.0045), Matrix.Translation(p + o), DARK, 0.5, 0.0, False)
@@ -536,6 +537,30 @@ def cowl(x, y, z, R, L, tint=0.82, seg=18, kind=HULL):
     noz = bell(z, R * 0.86, L * 0.62, seg, 0.42, 1.6, 0.7, (x, y))
     K.engines.append((x, y, noz, R * 0.86))
     return noz
+
+
+def torch(x, y, z, R, L=None, seg=18):
+    """A bare drive bell that the game gives a torch of its own. Returns where the torch starts."""
+    noz = bell(z, R, L or R * 2.2, seg, 0.42, 1.6, 0.7, (x, y))
+    K.engines.append((x, y, noz, R))
+    return noz
+
+
+def fleet(hulls, lod, seed, spacing=1.6):
+    """Build a power's hulls (parts 0..n-1) and their far-off versions (n..2n-1) at true size, and
+    gather what the game needs to know about each: its engines and where its attitude jets sit."""
+    nozzles, engines, counts, jet = [], [], [], []
+    for i, f in enumerate(hulls):
+        begin(i, (i * spacing, 0, 0), 0.0, seed + i)
+        f()
+        counts.append(len(K.engines))
+        engines += [v for e in K.engines for v in e]
+        nozzles.append(K.engines[0][2])
+        lo, hi = min(K.jets), max(K.jets)
+        jet += [lo[0], lo[1], hi[0], hi[1]]
+        begin(i + len(hulls), (i * spacing, 3.0, 0), lod[i], seed + i)
+        f()
+    return {'nozzles': nozzles, 'spacing': spacing, 'hulls': len(hulls), 'lod_y': 3.0, 'true_size': 1, 'engines_n': counts, 'engines': engines, 'jets': jet}
 
 
 # ---- Blender plumbing -----------------------------------------------------------
