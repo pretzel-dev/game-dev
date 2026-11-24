@@ -393,6 +393,74 @@ def tubes(c, nx, ny, rad=0.0085, L=0.1, tint=0.85):
             lathe([(-0.002, 0), (-0.002, rad), (0.003, rad), (0.003, rad * 0.75), (0.0005, rad * 0.75), (0.0005, 0)], Matrix.Translation(q), 10, DARK, 0.45, 0.0, False)
 
 
+def wedge(size, M, fw=1.0, fh=1.0, kind=HULL, tint=1.0, bevel=0.0, fx=0.0, fy=0.0, bake=True):
+    """A tapered block: a box whose front (+z) face is scaled by fw x fh and shifted by (fx, fy)."""
+    m = K.base @ M @ Matrix.Diagonal((*size, 1.0))
+    def warp(c):
+        return m @ (Vector((c.x * fw + fx / size[0], c.y * fh + fy / size[1], c.z)) if c.z > 0 else c)
+    if not _keep([warp(Vector((sx * 0.5, sy * 0.5, sz * 0.5))) for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)], kind):
+        return
+    b = bucket(bevel)
+    v = bmesh.ops.create_cube(b.bm, size=1.0)['verts']
+    for x in v:
+        x.co = warp(x.co.copy())
+    b.tag({f for x in v for f in x.link_faces}, kind, tint, bake)
+
+
+def truss3(z0, z1, R, bays, t, rot=0.0, kind=DARK, tint=0.75):
+    """A triangular truss along z: three longerons, frames and zig-zag diagonals."""
+    P = [pol(rot + math.pi / 2 + TAU * i / 3, R, 0) for i in range(3)]
+    for p in P:
+        strut(p + Vector((0, 0, z0)), p + Vector((0, 0, z1)), t, kind, tint)
+    L = (z1 - z0) / bays
+    for i in range(bays + 1):
+        z = Vector((0, 0, z0 + i * L))
+        for j in range(3):
+            strut(P[j] + z, P[(j + 1) % 3] + z, t * 0.8, kind, tint)
+        if i < bays:
+            for j in range(3):
+                a, e = (P[j], P[(j + 1) % 3]) if i % 2 else (P[(j + 1) % 3], P[j])
+                strut(a + z, e + z + Vector((0, 0, L)), t * 0.7, kind, tint * 0.9)
+
+
+def vane(root, a, z0, z1, r0, r1, segs=4, t=0.003):
+    """A radiator vane along z that tapers from r0 (aft, at the reactor) to r1 (forward)."""
+    root = Vector((root[0], root[1], 0))
+    out = Vector((math.cos(a), math.sin(a), 0))
+    n = out.cross(Vector((0, 0, 1)))
+    L = z1 - z0
+    gap = L * 0.03
+    sl = (L - gap * (segs - 1)) / segs
+    for i in range(segs):
+        ra = r0 + (r1 - r0) * (i / segs)
+        rb = r0 + (r1 - r0) * ((i + 1) / segs)
+        m = Matrix((n, out, Vector((0, 0, 1)))).transposed().to_4x4()
+        m.translation = root + Vector((0, 0, z0 + sl / 2 + i * (sl + gap))) + out * (ra / 2)
+        wedge((t, ra, sl), m, 1.0, rb / ra, RAD, rnd.uniform(0.92, 1.06), 0.0, 0.0, (rb - ra) / 2, True)
+    strut(root + out * r0 + Vector((0, 0, z0)), root + out * r1 + Vector((0, 0, z1)), t * 1.6, DARK, 0.7)
+    cyl(root + Vector((0, 0, z0 - L * 0.015)), root + Vector((0, 0, z1 + L * 0.015)), t * 1.4, 6, DARK, 0.8, 0.0, False)
+
+
+def blister(p, s=1.0):
+    """A point-defence ball mount with twin barrels, facing out from the hull axis."""
+    p = Vector(p)
+    sphere(p, 0.016 * s, DARK, 0.95, 12, 8, False)
+    o = Vector((p.x - K_axis[0], p.y - K_axis[1], 0))
+    o = o.normalized() * 0.012 * s if o.length > 1e-6 else Vector((0, 0.012 * s, 0))
+    side = Vector((-o.y, o.x, 0)) * 0.3
+    for e in (-1, 1):
+        box((0.0035 * s, 0.0035 * s, 0.036 * s), Matrix.Translation(p + o + side * e + Vector((0, 0, 0.02 * s))), DARK, 0.6, 0.0, False)
+
+
+K_axis = (0.0, 0.0)
+
+
+def nav(red, green, strobe, s=0.006):
+    light(red, NAV_R, s)
+    light(green, NAV_G, s)
+    light(strobe, STROBE, s)
+
+
 # ---- Blender plumbing -----------------------------------------------------------
 def scene():
     if bpy.app.background or not bpy.context.window:

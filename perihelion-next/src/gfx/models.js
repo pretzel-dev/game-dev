@@ -23,6 +23,14 @@ const MODELS = {
     glb: new URL('../assets/holds-ships.glb', import.meta.url).href,
     bake: new URL('../assets/holds-ships-bake.webp', import.meta.url).href,
   },
+  concordShips: {
+    glb: new URL('../assets/concord-ships.glb', import.meta.url).href,
+    bake: new URL('../assets/concord-ships-bake.webp', import.meta.url).href,
+  },
+  borealShips: {
+    glb: new URL('../assets/boreal-ships.glb', import.meta.url).href,
+    bake: new URL('../assets/boreal-ships-bake.webp', import.meta.url).href,
+  },
 };
 
 const ready = new Map();
