@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { kit, singleHull, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE, SOLAR } from './ships.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { kit, singleHull, bakedHullMaterial, HULL, DARK, PAINT, WINDOW, NAV_R, NAV_G, STROBE, SOLAR } from './ships.js';
+import { whenModel, sized } from './models.js';
 import { SHADOW_LAYER } from './shadow.js';
 import { LD_VERT_PARS, LD_VERT, LD_FRAG_PARS, LD_FRAG } from './glsl.js';
 
@@ -256,29 +258,92 @@ export function megaMesh(mkey, b, uT) {
 
   const g = new THREE.Group();
   const out = [];
-  for (const K of stages) {
-    const geo = K.build(1, 7);
-    geo.applyMatrix4(place);
-    const solid = singleHull(geo, uT);
-    solid.computeBoundingSphere(); solid.frustumCulled = true; solid.layers.enable(SHADOW_LAYER);
-    const ghost = new THREE.Mesh(geo, ghostMat);
-    g.add(solid, ghost);
-    out.push([solid, ghost]);
-  }
-  if (spin) {
-    const geo = spin.build(1, 7);
-    const ring = singleHull(geo, uT);
-    ring.applyMatrix4(place);
-    const ghost = new THREE.Mesh(geo, ghostMat);
-    ghost.applyMatrix4(place);
-    g.add(ring, ghost);
-    out[1].push(ring, ghost); // turns up with the second stage
-    g.userData.spinner = ring;
-  }
-  g.userData = { ...g.userData, stages: out, faceSun, surface };
+  // Put the stages into the group: solid and hologram for each (and the turning part with the second).
+  const fill = (geos, spinGeo, mat) => {
+    for (const st of out) for (const m of st) { m.removeFromParent(); m.geometry.dispose(); }
+    out.length = 0;
+    g.userData.spinner = null;
+    for (const geo of geos) {
+      const solid = singleHull(geo, uT);
+      if (mat) solid.material = mat;
+      solid.computeBoundingSphere(); solid.frustumCulled = true; solid.layers.enable(SHADOW_LAYER);
+      const ghost = new THREE.Mesh(geo, ghostMat);
+      g.add(solid, ghost);
+      out.push([solid, ghost]);
+    }
+    if (spinGeo) {
+      const ring = singleHull(spinGeo, uT);
+      if (mat) ring.material = mat;
+      ring.applyMatrix4(place);
+      const ghost = new THREE.Mesh(spinGeo, ghostMat);
+      ghost.applyMatrix4(place);
+      g.add(ring, ghost);
+      out[1].push(ring, ghost); // turns up with the second stage
+      g.userData.spinner = ring;
+    }
+  };
+  g.userData = { stages: out, faceSun, surface };
   g.userData.set = (color, sun) => { for (const st of out) for (const m of st) m.userData.set?.(color, sun, true); };
+  fill(stages.map((K) => K.build(1, 7).applyMatrix4(place)), spin ? spin.build(1, 7) : null, null);
+  // The Blender-made version (tools/blender/megas.py) takes over when its file is in.
+  if (MODELLED[key]) whenModel('megas', (m) => {
+    const made = MODELLED[key](m.parts.map((p) => (p ? () => sized(p, M, 7) : null)), R, M);
+    fill(made.stages.map((x) => x.applyMatrix4(place)), made.spin || null, bakedHullMaterial(uT, m.bake));
+  });
   return g;
 }
+
+// ---- Megaprojects from Blender-made pieces ------------------------------------------
+// Each takes P (P[i]() is a fresh copy of piece i, at the megastructure scale), the world's
+// radius R and the scale M, and returns the three stages (and the turning part, if any).
+const put = (geo, m4) => geo.applyMatrix4(m4);
+const m4 = () => new THREE.Matrix4();
+/** A frame at angle a round the world, radius r: x along the ring, y up, z outward. */
+function ringAt(r, a) {
+  const u = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), y = new THREE.Vector3(0, 1, 0);
+  return m4().makeBasis(new THREE.Vector3().crossVectors(y, u), y, u).setPosition(u.multiplyScalar(r));
+}
+const MODELLED = {
+  array: (P) => ({ stages: [P[0](), P[1](), P[2]()] }),
+  ark: (P) => ({ stages: [P[3](), P[4](), P[5]()] }),
+  college: (P) => ({ stages: [P[6](), P[7](), P[8]()], spin: P[9]() }),
+  // Six battle platforms round the world, two to a stage, guns outward; pickets between them with the last.
+  citadel: (P, R, M) => {
+    const Rr = R * 1.4, stages = [[], [], []];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.3;
+      stages[Math.floor(i / 2)].push(put(P[10](), m4().makeRotationY(-a).setPosition(Math.cos(a) * Rr, 0, Math.sin(a) * Rr)));
+    }
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + 0.3 + Math.PI / 12;
+      stages[2].push(put(P[11](), m4().makeRotationY(-a).setPosition(Math.cos(a) * Rr, 0, Math.sin(a) * Rr)));
+    }
+    return { stages: stages.map((x) => mergeGeometries(x)) };
+  },
+  // A truss ring round the world in straight bays, three hubs on it, six berths outside it.
+  ringyard: (P, R, M) => {
+    const Rr = R * 1.45, n = Math.max(24, Math.round((Math.PI * 2 * Rr) / M)), chord = 2 * Rr * Math.sin(Math.PI / n);
+    const A = [], B = [], C = [];
+    for (let i = 0; i < n; i++) {
+      const a = ((i + 0.5) / n) * Math.PI * 2;
+      A.push(put(P[12]().scale(chord / M, 1, 1), ringAt(Rr * Math.cos(Math.PI / n), a)));
+    }
+    for (let i = 0; i < 3; i++) B.push(put(P[13](), ringAt(Rr, (i / 3) * Math.PI * 2)));
+    for (let i = 0; i < 6; i++) C.push(put(P[14](), ringAt(Rr + M * 0.45, (i / 6) * Math.PI * 2 + Math.PI / 6)));
+    return { stages: [A, B, C].map((x) => mergeGeometries(x)) };
+  },
+  // On the surface: the trestle's feet (far below, in the model) are stood on the curving ground, and the plant at the foot.
+  massdriver: (P, R, M) => {
+    const ground = (x) => Math.sqrt(Math.max(0, R * R - x * x)) - R;
+    const stand = (geo) => {
+      const p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) if (p.getY(i) < -2 * M) p.setY(i, ground(p.getX(i)) - M * 0.02);
+      return geo;
+    };
+    const fx = -M * 2.3 - M * 0.35;
+    return { stages: [stand(P[15]()), P[16](), mergeGeometries([stand(P[17]()), put(P[18](), m4().makeTranslation(fx, ground(fx), 0))])] };
+  },
+};
 
 /** A spot in orbit: radius r, angle a round the world's equator; local +y points away from the world. */
 function orbitAt(r, a) {

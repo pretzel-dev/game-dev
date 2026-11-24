@@ -272,12 +272,22 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   Republic as a slab engine block, an open reactor in a frame and gun rails
   or a blunt head (one gun, twin rails, a flak tower in a cross, a hammer with
   three rails, a frame of ball tanks, a frame of cargo drums).
-  `concepts.py -- holds_a holds_b boreal_a boreal_b` draws them. `tools/blender/concepts.py` draws rough
+  `concepts.py -- holds_a holds_b boreal_a boreal_b` draws them.
+  Neutral stations (`stations.py`: a wheel on a spine with the wheel as its
+  own turning part, a hub with arms, a yard) are drawn `NEUTRAL_SCALE` (2.6)
+  times the sim's size, still inside where ships park. Megaprojects
+  (`megas.py`) are pieces the game assembles (`MODELLED` in
+  `gfx/megastructures.js`): stages for the array, ark and spire; one battle
+  platform and one picket repeated round the world; one ring bay, hub and
+  berth repeated for the fuel network; the strike driver's trestle feet (far
+  below, at `FOOT`) are stood on the curving ground. A file with more than 16
+  pieces packs the part index as part / 63 (`part_div`). Still kit-built:
+  probes, the Holds' home station's stand-in, and the hologram of unbuilt
+  stages uses the same geometry. `tools/blender/concepts.py` draws rough
   outline sheets to pick a direction before building; the owner liked the
   Holds "Lantern" (a cage of mismatched modules round a spine), found thin
   blades too thin and squat bricks too squat, and did not like radiator-wing
-  Republic ships. Still kit-built: neutral stations,
-  megaprojects, probes. Station add-on modules
+  Republic ships. Still kit-built: probes. Station add-on modules
   (`setStationModules`) are not drawn in this game. The owner wants ships and
   stations to look as good as the planets; a dark unlit side is fine, with
   small lights showing.

@@ -27,6 +27,14 @@ const MODELS = {
     glb: new URL('../assets/concord-ships.glb', import.meta.url).href,
     bake: new URL('../assets/concord-ships-bake.webp', import.meta.url).href,
   },
+  stations: {
+    glb: new URL('../assets/stations.glb', import.meta.url).href,
+    bake: new URL('../assets/stations-bake.webp', import.meta.url).href,
+  },
+  megas: {
+    glb: new URL('../assets/megas.glb', import.meta.url).href,
+    bake: new URL('../assets/megas-bake.webp', import.meta.url).href,
+  },
   borealShips: {
     glb: new URL('../assets/boreal-ships.glb', import.meta.url).href,
     bake: new URL('../assets/boreal-ships-bake.webp', import.meta.url).href,
@@ -63,11 +71,11 @@ function load(name) {
 function prepare(src, extras) {
   const g = src.index ? src.toNonIndexed() : src;
   const pos = g.attributes.position, nor = g.attributes.normal, col = g.attributes.color, uv0 = g.attributes.uv, n = pos.count;
-  const hulls = extras.hulls || 1, spacing = extras.spacing || 0, lodY = extras.lod_y || 0;
+  const hulls = extras.hulls || 1, spacing = extras.spacing || 0, lodY = extras.lod_y || 0, div = extras.part_div || 15;
   // Sort the triangles into their parts.
   const lists = [];
   for (let i = 0; i < n; i += 3) {
-    const p = Math.round(col.getZ(i) * 15);
+    const p = Math.round(col.getZ(i) * div);
     (lists[p] || (lists[p] = [])).push(i);
   }
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), fn = new THREE.Vector3();
