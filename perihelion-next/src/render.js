@@ -290,7 +290,7 @@ export function createView(canvas, plot, opts = {}) {
   // nose and tail fire on opposite sides to start a turn and the opposite pair to stop it.
   const spin = new Map();
   const jA = new THREE.Vector3(), jN = new THREE.Vector3(), jP = new THREE.Vector3(), jD = new THREE.Vector3(), tmp5 = new THREE.Vector3();
-  function attitudeJets(id, p, n, s, gt, t, px) {
+  function attitudeJets(id, p, n, s, gt, t, px, J = null, sc = 0) {
     let st = spin.get(id);
     if (!st) { spin.set(id, { n: n.clone(), w: new THREE.Vector3(), a: new THREE.Vector3(), t: gt }); return; }
     const dt = gt - st.t;
@@ -320,11 +320,14 @@ export function createView(canvas, plot, opts = {}) {
     jD.crossVectors(alpha >= 0.04 ? st.a : jN, n);
     if (jD.lengthSq() < 1e-10) return;
     jD.normalize();
-    const len = s * (0.06 + 0.1 * pow) * (0.75 + r2 * 0.5), wid = s * 0.05;
     const p0 = (0.35 + 0.5 * pow) * (0.8 + r1 * 0.4);
     const which = r2 < 0.18 ? 1 : r2 > 0.86 ? 2 : 3;
-    if (which & 1) { jP.copy(p).addScaledVector(n, L).addScaledVector(jD, -s * 0.06); shipR.jet(jP, tmp5.copy(jD).negate(), len, wid, p0, id); }
-    if (which & 2) { jP.copy(p).addScaledVector(n, -L * 0.85).addScaledVector(jD, s * 0.06); shipR.jet(jP, jD, len * (0.85 + r1 * 0.3), wid, p0, id + 0.5); }
+    // A Blender-made hull says where its jets are (aft z, how far out, fore z, how far out, in hull
+    // units); its puffs are sized to the fittings, not the hull. Otherwise guess from the size.
+    const len = (J ? sc * (0.045 + 0.07 * pow) : s * (0.06 + 0.1 * pow)) * (0.75 + r2 * 0.5), wid = J ? sc * 0.032 : s * 0.05;
+    const zf = J ? J[2] * sc : L, rf = J ? J[3] * sc : s * 0.06, za = J ? J[0] * sc : -L * 0.85, ra = J ? J[1] * sc : s * 0.06;
+    if (which & 1) { jP.copy(p).addScaledVector(n, zf).addScaledVector(jD, -rf); shipR.jet(jP, tmp5.copy(jD).negate(), len, wid, p0, id); }
+    if (which & 2) { jP.copy(p).addScaledVector(n, za).addScaledVector(jD, ra); shipR.jet(jP, jD, len * (0.85 + r1 * 0.3), wid, p0, id + 0.5); }
   }
   // What the view remembers between frames.
   const heads = new Map(); // ship id -> facing (unit vector), turned smoothly
@@ -705,9 +708,11 @@ export function createView(canvas, plot, opts = {}) {
         const fade = 1 - THREE.MathUtils.smoothstep(hullPx, 4, 16);
         const glint = fade <= 0 ? null : [s.burn ? 7 : 4.5, (s.burn ? 0.9 : 0.5) * fade, !!s.burn];
         const hull = 0.85 + ((s.id * 37) % 20) / 100 - (crippled(s) ? 0.3 : 0);
-        const sc = shipLib.hullIndex ? SHIP_SCALE * (CLASS_SIZE[s.cls] || 1) : scale; // the new hulls carry their class size in the model
-        shipR.add(hullType(game.factions[s.owner], s.cls, s.id), p, h, [sc, sc, sc], c, hull, s.id, !!s.burn, (0.45 + 0.55 * Math.min(1, thrust / (s.st.accel || 0.1))) * (0.8 + Math.sin(t * 40 + s.id) * 0.05), glint, hullPx, sunlit(p));
-        attitudeJets(s.id, p, h, sc * (CLASS_SCALE[s.cls] || 1), now, t, hullPx);
+        // (The hulls carry their class size in the model; one made at its true size needs nothing more.)
+        const type = hullType(game.factions[s.owner], s.cls, s.id), gU = shipR.geometries[type]?.userData;
+        const sc = shipLib.hullIndex ? SHIP_SCALE * (gU?.trueSize ? 1 : CLASS_SIZE[s.cls] || 1) : scale;
+        shipR.add(type, p, h, [sc, sc, sc], c, hull, s.id, !!s.burn, (0.45 + 0.55 * Math.min(1, thrust / (s.st.accel || 0.1))) * (0.8 + Math.sin(t * 40 + s.id) * 0.05), glint, hullPx, sunlit(p));
+        attitudeJets(s.id, p, h, sc * (CLASS_SCALE[s.cls] || 1), now, t, hullPx, gU?.jets, sc);
       } else if (s.burn) shipR.add(0, p, h, [0.01, 0.01, 0.01], c, 1, s.id, true, 1.4, [7, 0.9, true], 0, 1);
       const q = proj(p.x, p.y, p.z);
       if (!q.ok) continue;

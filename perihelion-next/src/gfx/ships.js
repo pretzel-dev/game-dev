@@ -1215,15 +1215,26 @@ export function createShipRenderer(scene, max) {
   const asked = new Set();
   const fetchModels = (faction) => whenModel(SHIP_MODELS[faction], (m) => {
     const n = HULL_CLASSES.length, f = HULL_FACTIONS.indexOf(faction), bm = bakedHullMaterial(uT, m.bake);
+    const X = m.extras, own = !!X.true_size;
+    let eo = 0;
     for (let c = 0; c < n; c++) {
-      // Centred on its length and sized for its class, as the kit-built hulls are.
-      const t = f * n + c, src = m.parts[c];
+      // Centred on its length. A model made at its true size is drawn as it is; the others are
+      // sized for their class, as the kit-built hulls are.
+      const t = f * n + c, src = m.parts[c], U = types[t].userData;
       src.computeBoundingBox();
-      const bb = src.boundingBox, s = types[t].userData.length / (bb.max.z - bb.min.z), mid = (bb.max.z + bb.min.z) / 2;
+      const bb = src.boundingBox, s = own ? 1 : U.length / (bb.max.z - bb.min.z), mid = (bb.max.z + bb.min.z) / 2;
       const fit = (g) => sized(g.clone().translate(0, 0, -mid), s, 7);
       swapHull(meshes[t], fit(src), bm);
       if (coarse[t] && m.parts[c + n]) swapHull(coarse[t], fit(m.parts[c + n]), bm);
-      types[t].userData.nozzle = (m.extras.nozzles[c] - mid) * s;
+      U.nozzle = (X.nozzles[c] - mid) * s;
+      U.trueSize = own;
+      if (own) U.length = (bb.max.z - bb.min.z);
+      // Each housed engine gets its own torch; attitude jets fire from where the model has them.
+      if (X.engines_n) {
+        U.engines = [];
+        for (let i = 0; i < X.engines_n[c]; i++, eo += 4) U.engines.push([X.engines[eo] * s, X.engines[eo + 1] * s, (X.engines[eo + 2] - mid) * s, X.engines[eo + 3] * s]);
+      }
+      if (X.jets) U.jets = [(X.jets[c * 4] - mid) * s, X.jets[c * 4 + 1] * s, (X.jets[c * 4 + 2] - mid) * s, X.jets[c * 4 + 3] * s];
     }
   });
 
@@ -1236,7 +1247,7 @@ export function createShipRenderer(scene, max) {
   pg.setAttribute('part', new THREE.Float32BufferAttribute([0, 0, 0, 0, 1, 1, 1, 1], 1));
   pg.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
   // Room for each ship's drive plus a pair of attitude jets.
-  const pMax = max * 3;
+  const pMax = max * 8;
   const plumeAttr = (n, size) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(pMax * size), size); a.setUsage(THREE.DynamicDrawUsage); pg.setAttribute(n, a); return a; };
   const pPow = plumeAttr('iPow', 1), pSeed = plumeAttr('iSeed', 1), pTint = plumeAttr('iTint', 3);
   const plumes = new THREE.InstancedMesh(pg, plumeMaterial(uT), pMax);
@@ -1317,20 +1328,25 @@ export function createShipRenderer(scene, max) {
           rm.userData.hull.setX(j, hull);
         }
       }
-      if (burning && nPlume < pMax) {
-        const i = nPlume++;
-        // Nozzle at the back of the drive bell; length along -Z.
-        tgt.set(0, 0, types[type].userData.nozzle).multiply(sc.set(s[0], s[1], s[2])).applyQuaternion(q).add(p);
-        const len = 1.9 * plume * Math.max(s[2], 0.62); // long torches even on small hulls
-        m4.compose(tgt, q, sc.set(0.06 * s[0] * (type >= PROBE ? 0.5 : 1), 1, len));
-        plumes.setMatrixAt(i, m4);
+      if (burning) {
+        // Nozzle at the back of each drive bell; length along -Z. (A hull with no list has one, on the axis.)
+        const U = types[type].userData, E = U.engines;
+        const far = THREE.MathUtils.smoothstep(px, 4, 40);
         // Up close the torch is toned down a little so it doesn't outshine
         // the hull. Far off it dims too (the point of light carries the ship
         // there), and a short thruster puff fades out entirely.
-        const far = THREE.MathUtils.smoothstep(px, 4, 40);
-        pPow.setX(i, (1 - 0.35 * THREE.MathUtils.smoothstep(px, 120, 500)) * (plume < 0.2 ? far : 0.3 + 0.7 * far));
-        pSeed.setX(i, (seed * 0.371) % 1);
-        pTint.setXYZ(i, PLUME_TINT.r, PLUME_TINT.g, PLUME_TINT.b);
+        const pow = (1 - 0.35 * THREE.MathUtils.smoothstep(px, 120, 500)) * (plume < 0.2 ? far : 0.3 + 0.7 * far);
+        const big = E ? Math.max(...E.map((e) => e[3])) : 1;
+        for (let k = 0, nE = E ? E.length : 1; k < nE && nPlume < pMax; k++) {
+          const e = E ? E[k] : null, i = nPlume++;
+          tgt.set(e ? e[0] : 0, e ? e[1] : 0, e ? e[2] : U.nozzle).multiply(sc.set(s[0], s[1], s[2])).applyQuaternion(q).add(p);
+          const len = 1.9 * plume * Math.max(s[2], 0.62) * (e ? Math.sqrt(e[3] / big) : 1); // long torches even on small hulls
+          m4.compose(tgt, q, sc.set(e ? 1.5 * e[3] * s[0] : 0.06 * s[0] * (type >= PROBE ? 0.5 : 1), 1, len));
+          plumes.setMatrixAt(i, m4);
+          pPow.setX(i, pow);
+          pSeed.setX(i, (seed * 0.371 + k * 0.173) % 1);
+          pTint.setXYZ(i, PLUME_TINT.r, PLUME_TINT.g, PLUME_TINT.b);
+        }
       }
       if (glint && glint[0] > 0) {
         const i = nGlint++;

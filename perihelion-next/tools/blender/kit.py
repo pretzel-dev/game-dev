@@ -27,12 +27,15 @@ class K:
     part = 0          # its index in the file
     lod = 0.0         # > 0: the far-off version; parts smaller than this radius are left out
     name = 'model'
+    engines = []      # this model's drive bells in housings: (x, y, where the torch starts, radius)
+    jets = []         # where its attitude jets sit: (z, distance out from the axis)
     file = 'model'
     views = ((0.9, 0.35, 3.3, (0, 0, 0)),)
 
 
 def begin(part, offset=(0, 0, 0), lod=0.0, seed=11):
     K.part, K.base, K.lod = part, Matrix.Translation(Vector(offset)), lod
+    K.engines, K.jets = [], []
     rnd.seed(seed)
 
 
@@ -530,7 +533,9 @@ def cowl(x, y, z, R, L, tint=0.82, seg=18, kind=HULL):
     zr = z - L * 0.3
     lathe([(zr, R * 1.08), (zr + L * 0.05, R * 1.13), (z + L * 0.35, R * 1.06), (z + L * 0.8, R * 0.62), (z + L * 0.8, R * 0.5), (z + L * 0.2, R * 0.92), (zr, R * 0.99), (zr, R * 1.08)], M, seg, kind, tint, 0.0, True)
     band(z + L * 0.3, z + L * 0.34, R * 1.062, DARK, 0.8, M, seg, 0.0015)
-    return bell(z, R * 0.86, L * 0.62, seg, 0.42, 1.6, 0.7, (x, y))
+    noz = bell(z, R * 0.86, L * 0.62, seg, 0.42, 1.6, 0.7, (x, y))
+    K.engines.append((x, y, noz, R * 0.86))
+    return noz
 
 
 # ---- Blender plumbing -----------------------------------------------------------
