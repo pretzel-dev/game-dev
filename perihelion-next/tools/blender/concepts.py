@@ -343,8 +343,8 @@ def real(name):
 
 CONCORD = real('concord_ships.py')
 POWERS = {
-    'concord_a': ('Meridian Concord (true relative size)', (('Corvette', CONCORD['corvette']), ('Frigate', CONCORD['frigate']), ('Escort', CONCORD['escort'])), 0.68),
-    'concord_b': ('Meridian Concord (true relative size)', (('Battleship', CONCORD['battleship']), ('Tender', CONCORD['tender']), ('Freighter', CONCORD['freighter'])), 0.68),
+    'concord_a': ('Meridian Concord (true relative size)', (('Corvette', CONCORD['corvette']), ('Frigate', CONCORD['frigate']), ('Escort', CONCORD['escort'])), 0.55),
+    'concord_b': ('Meridian Concord (true relative size)', (('Battleship', CONCORD['battleship']), ('Tender', CONCORD['tender']), ('Freighter', CONCORD['freighter'])), 0.55),
     'concord': ('Meridian Concord', (('A  Wedge', concord_wedge), ('B  Broadsword', concord_broadsword), ('C  Bastion', concord_bastion))),
     'boreal': ('Boreal Republic', (('A  Lance', boreal_lance), ('B  Spine', boreal_spine), ('C  Hammer', boreal_hammer))),
     'family': ('Meridian Concord: one family at true relative size', (('Corvette', lambda: concord_hull(0.4)), ('Frigate', lambda: concord_hull(0.72)), ('Battleship', lambda: concord_hull(1.37))), 0.68),

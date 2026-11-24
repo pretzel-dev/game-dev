@@ -21,8 +21,9 @@ V = Vector
 T = Matrix.Translation
 SPACING = 1.6
 LOD = [0.02, 0.034, 0.034, 0.05, 0.045, 0.04]
-# Lengths as the game draws them (FRIGATE_LEN * CLASS_LEN in gfx/ships.js).
-LEN = [0.40, 0.72, 0.65, 1.37, 0.90, 1.00]
+# True lengths in hull units: the game draws these models at the size they are made (`true_size`),
+# so a fitting is the same size on every class. A frigate is 0.72.
+LEN = [0.36, 0.72, 0.60, 1.85, 1.02, 1.05]
 
 
 def gun(p, s=1.0, up=1):
@@ -104,6 +105,7 @@ def running(H, z):
 
 def jets(H, zs):
     for z in zs:
+        K.jets.append((z, H.hw(z) + 0.012))
         for sx in (-1, 1):
             rcs((sx * (H.hw(z) + 0.006), H.mid(z) + H.at(z)[1] * 0.3, z), (sx, 0, 0))
 
@@ -111,7 +113,7 @@ def jets(H, zs):
 def corvette():
     """A nimble dart: a slim hull, a waist, and engines that look too big for it."""
     L = LEN[0]
-    H = Hull([(0.035, 0.05, 0.04), (0.075, 0.074, 0.05), (0.13, 0.058, 0.046), (0.2, 0.07, 0.05, -0.002), (0.3, 0.04, 0.034, -0.005), (L, 0.012, 0.014, -0.01)], HULL, 0.92, 0.004)
+    H = Hull([(0.035, 0.05, 0.04), (0.075, 0.074, 0.05), (0.13, 0.058, 0.046), (0.19, 0.07, 0.05, -0.002), (0.27, 0.04, 0.034, -0.005), (L, 0.012, 0.014, -0.01)], HULL, 0.92, 0.004)
     noz = cowl(0, 0, 0.035, 0.026, 0.07)
     for sx in (-1, 1):  # outboard engines on short pylons, proud of the hull
         cowl(sx * 0.058, 0.004, 0.06, 0.018, 0.075)
@@ -121,13 +123,13 @@ def corvette():
         wedge((0.003, 0.05, 0.07), T((sx * 0.07, 0.03, 0.085)) @ Matrix.Rotation(-sx * 0.5, 4, 'Z'), 1.0, 0.35, HULL, 0.85, 0.0, 0, -0.012)
     louvres(H, 0.05, 0.1)
     plates(H, 0.14, 0.22, 0.04)
-    stripes(H, 0.25, 2, 0.6)
-    D = decks(H, [[(0.1, 0.03, 0.014), (0.16, 0.04, 0.018), (0.26, 0.022, 0.01)]])
+    stripes(H, 0.235, 2, 0.6)
+    D = decks(H, [[(0.1, 0.03, 0.014), (0.16, 0.04, 0.018), (0.25, 0.022, 0.01)]])
     gun((0, D.top(0.2), 0.2), 0.8)
     pdc((0, H.bottom(0.19), 0.19), (0, -1, 0))
     tower(0.125, D.top(0.125), 0.6)
     tip(H, L)
-    jets(H, (0.12, 0.26))
+    jets(H, (0.12, 0.25))
     running(H, 0.19)
     return noz
 
@@ -166,90 +168,95 @@ def frigate():
 
 
 def escort():
-    """You see the guns: a slim hull with turrets out on sponsons all round it."""
+    """You see the guns. A broad flat arrowhead, nothing like the frigate's dart: turrets all along both leading edges, above and below."""
     L = LEN[2]
-    H = Hull([(0.04, 0.085, 0.065), (0.095, 0.14, 0.09), (0.16, 0.1, 0.08), (0.3, 0.12, 0.09), (0.42, 0.11, 0.085, -0.003), (L, 0.02, 0.024, -0.014)], HULL, 0.92, 0.006)
-    noz = cowl(0, 0, 0.045, 0.032, 0.08)
+    H = Hull([(0.04, 0.12, 0.05), (0.09, 0.25, 0.062), (0.17, 0.3, 0.06), (0.3, 0.22, 0.056, -0.002), (0.45, 0.1, 0.044, -0.004), (L, 0.02, 0.02, -0.008)], HULL, 0.92, 0.005)
+    noz = cowl(0, 0, 0.045, 0.03, 0.08)
     for sx in (-1, 1):
-        cowl(sx * 0.052, 0, 0.055, 0.024, 0.075)
-    louvres(H, 0.07, 0.115)
-    plates(H, 0.17, 0.42, 0.05, 0.26, 0.25)
-    stripes(H, 0.48, 2, 0.6)
-    D = decks(H, [[(0.13, 0.05, 0.02), (0.24, 0.07, 0.024), (0.44, 0.04, 0.014)]])
-    Kl = keel(H, [(0.18, 0.04, 0.016), (0.3, 0.05, 0.02), (0.44, 0.025, 0.01)])
-    # Sponsons: stub wings carrying a turret each, three stations down each side, above and below.
-    for z in (0.2, 0.3, 0.4):
-        for sx in (-1, 1):
-            x = sx * (H.hw(z) + 0.035)
-            wedge((0.07, 0.014, 0.05), T((sx * (H.hw(z) + 0.012), 0.0, z)) @ Matrix.Rotation(0 if sx > 0 else math.pi, 4, 'Z') @ Matrix.Rotation(math.pi / 2, 4, 'Y'), 0.6, 0.7, HULL, 0.82, 0.002)
-            gun((x, 0.007, z), 0.95)
-            gun((x, -0.007, z + 0.005), 0.85, -1)
-    for z in (0.22, 0.34):
-        gun((0, D.top(z), z), 1.05)
-        gun((0, Kl.bottom(z), z + 0.02), 0.95, -1)
-    gun((0, H.top(0.5) + 0.004, 0.5), 0.9)
-    for z in (0.26, 0.38, 0.47):
-        for sx in (-1, 1):
-            pdc((sx * H.hw(z) * 0.7, H.top(z), z))
-    box((0.006, 0.03, 0.006), T((0, D.top(0.16) + 0.04, 0.16)), DARK, 0.9, 0.0, False)  # fire-control array
-    box((0.055, 0.026, 0.004), T((0, D.top(0.16) + 0.066, 0.16)), HULL, 0.9, 0.0015)
-    tower(0.155, D.top(0.155), 0.75)
+        cowl(sx * 0.062, 0, 0.05, 0.024, 0.075)
+        cowl(sx * 0.112, 0, 0.065, 0.02, 0.07)
+    louvres(H, 0.105, 0.15)
+    stripes(H, 0.4, 2, 0.6)
+    D = decks(H, [[(0.1, 0.06, 0.02), (0.2, 0.08, 0.026), (0.42, 0.04, 0.014)], [(0.12, 0.04, 0.014), (0.2, 0.045, 0.016), (0.3, 0.025, 0.01)]])
+    Kl = keel(H, [(0.12, 0.05, 0.016), (0.24, 0.06, 0.02), (0.42, 0.025, 0.01)])
+    # Gun galleries: a raised strip along each leading edge, top and bottom, a turret every few metres.
+    for sx in (-1, 1):
+        for i in range(6):
+            z = 0.17 + i * 0.052
+            x = sx * (H.hw(z) - 0.022)
+            gun((x, H.top(z), z), 0.9)
+            gun((x, H.bottom(z), z + 0.012), 0.8, -1)
+            H.flank(z, sx, (0.008, H.at(z)[1] * 0.7, 0.046), HULL, rnd.uniform(0.8, 0.96), 0.002, True, 0, 0.002)
+        for i in range(int(0.3 / 0.011)):
+            if rnd.random() < 0.6:
+                H.flank(0.17 + i * 0.011, sx, (0.002, 0.004, 0.005), WINDOW, 1, 0.0, False, 0, 0.0065)
+        pdc((sx * 0.1, H.top(0.12), 0.12))
+    gun((0, D.top(0.34) + 0.002, 0.34), 1.0)
+    gun((0, H.top(0.48), 0.48), 0.9)
+    gun((0, Kl.bottom(0.3), 0.3), 0.95, -1)
+    box((0.006, 0.03, 0.006), T((0, D.top(0.14) + 0.04, 0.14)), DARK, 0.9, 0.0, False)  # fire-control array
+    box((0.055, 0.026, 0.004), T((0, D.top(0.14) + 0.066, 0.14)), HULL, 0.9, 0.0015)
+    tower(0.19, D.top(0.19), 0.7)
     tip(H, L)
-    jets(H, (0.15, 0.5))
-    running(H, 0.3)
+    jets(H, (0.13, 0.46))
+    running(H, 0.2)
     return noz
 
 
 def battleship():
     """Formidable: a deep hull, tiered citadel with superfiring guns, casemated shoulders, a bank of five engines."""
     L = LEN[3]
-    H = Hull([(0.05, 0.19, 0.12), (0.15, 0.33, 0.19), (0.27, 0.23, 0.165), (0.45, 0.3, 0.2, -0.004), (0.7, 0.27, 0.19, -0.008), (1.05, 0.12, 0.105, -0.022), (L, 0.036, 0.044, -0.04)], HULL, 0.92, 0.008)
-    noz = cowl(0, 0, 0.06, 0.05, 0.11)
+    H = Hull([(0.06, 0.22, 0.14), (0.19, 0.39, 0.22), (0.36, 0.27, 0.19), (0.6, 0.35, 0.23, -0.004), (0.95, 0.32, 0.22, -0.008), (1.42, 0.14, 0.12, -0.026), (L, 0.04, 0.05, -0.05)], HULL, 0.92, 0.008)
+    noz = cowl(0, 0, 0.07, 0.056, 0.12)
     for sx in (-1, 1):
-        cowl(sx * 0.085, -0.012, 0.075, 0.04, 0.1)
-        cowl(sx * 0.14, 0.02, 0.095, 0.03, 0.09)
-        wedge((0.012, 0.16, 0.12), T((sx * 0.176, 0, 0.12)), 1.0, 0.7, HULL, 0.8, 0.003)  # armoured skirts round the bank
-    louvres(H, 0.19, 0.25)
-    plates(H, 0.29, 0.7)
+        cowl(sx * 0.1, -0.014, 0.085, 0.045, 0.11)
+        cowl(sx * 0.166, 0.022, 0.11, 0.034, 0.1)
+        wedge((0.012, 0.19, 0.15), T((sx * 0.208, 0, 0.15)), 1.0, 0.7, HULL, 0.8, 0.003)  # armoured skirts round the bank
+    louvres(H, 0.24, 0.33)
+    plates(H, 0.39, 0.95)
     for sx in (-1, 1):
-        for i in range(5):  # casemates along the shoulders
-            z = 0.36 + i * 0.075
-            H.flank(z, sx, (0.03, 0.06, 0.055), HULL, 0.86, 0.003, True, -0.03, 0.012)
+        for i in range(7):  # casemates along the shoulders
+            z = 0.47 + i * 0.07
+            H.flank(z, sx, (0.03, 0.06, 0.05), HULL, 0.86, 0.003, True, -0.036, 0.012)
             for e in (-1, 1):
-                H.flank(z + 0.05, sx, (0.005, 0.005, 0.06), DARK, 0.6, 0.0, False, -0.03 + e * 0.012, 0.02)
+                H.flank(z + 0.048, sx, (0.005, 0.005, 0.06), DARK, 0.6, 0.0, False, -0.036 + e * 0.012, 0.02)
         # spinal rails slung under the bow
-        box((0.03, 0.036, 0.5), T((sx * 0.045, H.bottom(1.0) - 0.004, 1.0)), HULL, 0.74, 0.003)
-        box((0.034, 0.012, 0.48), T((sx * 0.045, H.bottom(1.0) - 0.004, 1.01)), DARK, 0.55, 0.0015)
-        for i in range(5):
-            box((0.04, 0.046, 0.014), T((sx * 0.045, H.bottom(1.0) - 0.004, 0.8 + i * 0.1)), DARK, 0.85, 0.002)
-    stripes(H, 0.86, 3, 0.55)
-    bow_ports(H, 0.72, 0.84)
-    D = decks(H, [[(0.2, 0.14, 0.03), (0.4, 0.2, 0.036), (0.72, 0.17, 0.03), (1.08, 0.05, 0.014)], [(0.24, 0.1, 0.03), (0.42, 0.13, 0.034), (0.64, 0.1, 0.026), (0.82, 0.04, 0.012)], [(0.27, 0.07, 0.026), (0.4, 0.08, 0.03), (0.52, 0.05, 0.016)]])
-    Kl = keel(H, [(0.3, 0.1, 0.03), (0.5, 0.15, 0.045), (0.8, 0.06, 0.02)])
-    D0 = Hull([(z, w, h, H.top(z) + h / 2 - 0.003, 0.4) for z, w, h in [(0.2, 0.14, 0.03), (0.4, 0.2, 0.036), (0.72, 0.17, 0.03), (1.08, 0.05, 0.014)]], draw=False)
-    D1 = Hull([(z, w, h, D0.top(z) + h / 2 - 0.003, 0.4) for z, w, h in [(0.24, 0.1, 0.03), (0.42, 0.13, 0.034), (0.64, 0.1, 0.026), (0.82, 0.04, 0.012)]], draw=False)
+        box((0.03, 0.036, 0.66), T((sx * 0.05, H.bottom(1.36) - 0.004, 1.36)), HULL, 0.74, 0.003)
+        box((0.034, 0.012, 0.64), T((sx * 0.05, H.bottom(1.36) - 0.004, 1.37)), DARK, 0.55, 0.0015)
+        for i in range(7):
+            box((0.04, 0.046, 0.014), T((sx * 0.05, H.bottom(1.36) - 0.004, 1.07 + i * 0.1)), DARK, 0.85, 0.002)
+    stripes(H, 1.16, 3, 0.55)
+    bow_ports(H, 0.97, 1.14)
+    t0 = [(0.27, 0.16, 0.034), (0.54, 0.24, 0.04), (0.97, 0.2, 0.034), (1.46, 0.05, 0.014)]
+    t1 = [(0.32, 0.12, 0.034), (0.57, 0.16, 0.038), (0.86, 0.12, 0.03), (1.1, 0.04, 0.012)]
+    t2 = [(0.36, 0.08, 0.03), (0.54, 0.1, 0.034), (0.7, 0.06, 0.018)]
+    D = decks(H, [t0, t1, t2])
+    Kl = keel(H, [(0.4, 0.12, 0.034), (0.68, 0.18, 0.05), (1.08, 0.07, 0.022)])
+    D0 = Hull([(z, w, h, H.top(z) + h / 2 - 0.003, 0.4) for z, w, h in t0], draw=False)
+    D1 = Hull([(z, w, h, D0.top(z) + h / 2 - 0.003, 0.4) for z, w, h in t1], draw=False)
     # Superfiring main guns stepping down toward the bow, more along the keel.
-    gun((0, D.top(0.47), 0.47), 1.5)
-    gun((0, D1.top(0.62), 0.62), 1.4)
-    gun((0, D1.top(0.74), 0.74), 1.2)
-    gun((0, D0.top(0.88), 0.88), 1.2)
-    gun((0, D0.top(1.0), 1.0), 1.0)
-    for z in (0.42, 0.58, 0.72):
+    gun((0, D.top(0.64), 0.64), 1.6)
+    gun((0, D1.top(0.8), 0.8), 1.5)
+    gun((0, D1.top(0.94), 0.94), 1.3)
+    gun((0, D0.top(1.14), 1.14), 1.3)
+    gun((0, D0.top(1.27), 1.27), 1.1)
+    gun((0, D0.top(1.38), 1.38), 1.0)
+    for z in (0.52, 0.7, 0.88, 1.02):
         gun((0, Kl.bottom(z), z), 1.3, -1)
     for sx in (-1, 1):
-        for z in (0.34, 0.5, 0.66):
-            gun((sx * 0.08, D0.top(z) , z), 0.9)
-        for i in range(4):
-            pdc((sx * 0.125, H.top(0.32 + i * 0.12), 0.32 + i * 0.12))
+        for z in (0.44, 0.58, 0.72, 0.86):
+            gun((sx * 0.095, D0.top(z), z), 0.9)
+        for i in range(6):
+            pdc((sx * 0.145, H.top(0.42 + i * 0.1), 0.42 + i * 0.1))
         for i in range(3):  # missile cells in the deck
-            for j in range(6):
-                box((0.008, 0.002, 0.008), T((sx * (0.04 + i * 0.011), D0.top(0.8) + 0.001, 0.78 + j * 0.011)), DARK, rnd.uniform(0.45, 0.75), 0.0, False)
-    box((0.04, 0.003, 0.2), T((0, H.top(1.16) + 0.003, 1.16)) @ Matrix.Rotation(0.13, 4, 'X'), PAINT, 1.0, 0.0, True)
-    tower(0.32, D.top(0.32), 1.0)
-    cyl((0, Kl.bottom(0.45), 0.45), (0, Kl.bottom(0.45) - 0.1, 0.45), 0.002, 4, DARK, 0.9, 0.0, False)
+            for j in range(8):
+                box((0.008, 0.002, 0.008), T((sx * (0.04 + i * 0.011), D0.top(1.06) + 0.001, 1.02 + j * 0.011)), DARK, rnd.uniform(0.45, 0.75), 0.0, False)
+    box((0.04, 0.003, 0.24), T((0, H.top(1.58) + 0.003, 1.58)) @ Matrix.Rotation(0.16, 4, 'X'), PAINT, 1.0, 0.0, True)
+    tower(0.44, D.top(0.44), 1.0)
+    cyl((0, Kl.bottom(0.6), 0.6), (0, Kl.bottom(0.6) - 0.1, 0.6), 0.002, 4, DARK, 0.9, 0.0, False)
     tip(H, L)
-    jets(H, (0.26, 0.9))
-    running(H, 0.5)
+    jets(H, (0.34, 1.3))
+    running(H, 0.7)
     return noz
 
 
@@ -283,21 +290,21 @@ def tender():
     """You see the tanks: a bare keel between the engines and the bow with six big tanks hung on it, and a fuelling boom."""
     L = LEN[4]
     noz, A = aft(L)
-    z0, z1 = 0.22, 0.64
+    z0, z1 = 0.22, 0.776
     box((0.04, 0.04, z1 - z0 + 0.04), T((0, 0, (z0 + z1) / 2)), DARK, 0.85, 0.003)
     r = 0.074
-    for i in range(3):
+    for i in range(4):
         zc = z0 + 0.075 + i * 0.136
         for sx in (-1, 1):
             p = V((sx * (r + 0.03), 0, zc))
             sphere(p, r, HULL, rnd.uniform(0.92, 1.02), 28, 16)
             M = T(p)
-            band(-0.005, 0.005, r, PAINT if i == 1 else DARK, 1.0 if i == 1 else 0.8, M, 28, 0.002)
+            band(-0.005, 0.005, r, PAINT if i == 2 else DARK, 1.0 if i == 2 else 0.8, M, 28, 0.002)
             lathe(drum(r * 0.94, r * 1.05, r * 0.2), M, 8, DARK, 0.8, 0.0, False)
             beam((sx * 0.02, 0, zc), (sx * 0.035, 0, zc), 0.014, DARK, 0.8)
             for sy in (-1, 1):
                 strut((0, sy * 0.02, zc - 0.05), p + V((0, sy * r * 0.7, -r * 0.6)), 0.004)
-        if i < 2:  # frames between the pairs
+        if i < 3:  # frames between the pairs
             for s in (-1, 1):
                 box((0.2, 0.008, 0.008), T((0, s * 0.06, zc + 0.068)), DARK, 0.8, 0.0015)
             box((0.008, 0.128, 0.008), T((0, 0, zc + 0.068)), DARK, 0.8, 0.0015)
@@ -314,6 +321,7 @@ def tender():
     jets(A, (0.14,))
     light((-(r * 2 + 0.034), 0, z0 + 0.21), NAV_R, 0.005)
     light((r * 2 + 0.034, 0, z0 + 0.21), NAV_G, 0.005)
+    K.jets.append((z1 + 0.1, 0.06))
     return noz
 
 
@@ -339,6 +347,7 @@ def freighter():
                     box((0.074, 0.052, 0.003), T(c + V((0, 0, e * 0.02))), DARK, 0.8, 0.0, False)
     head(z1, L, 0.1, 0.08)
     jets(A, (0.14,))
+    K.jets.append((z1 + 0.1, 0.06))
     light((-0.104, 0, 0.48), NAV_R, 0.005)
     light((0.104, 0, 0.48), NAV_G, 0.005)
     return noz
@@ -348,13 +357,17 @@ HULLS = [corvette, frigate, escort, battleship, tender, freighter]
 
 
 def build():
-    nozzles = []
+    nozzles, engines, counts, jet = [], [], [], []
     for i, f in enumerate(HULLS):
         begin(i, (i * SPACING, 0, 0), 0.0, 100 + i)
         nozzles.append(f())
+        counts.append(len(K.engines))
+        engines += [v for e in K.engines for v in e]
+        lo, hi = min(K.jets), max(K.jets)
+        jet += [lo[0], lo[1], hi[0], hi[1]]
         begin(i + len(HULLS), (i * SPACING, 3.0, 0), LOD[i], 100 + i)
         f()
-    return {'nozzles': nozzles, 'spacing': SPACING, 'hulls': len(HULLS), 'lod_y': 3.0}
+    return {'nozzles': nozzles, 'spacing': SPACING, 'hulls': len(HULLS), 'lod_y': 3.0, 'true_size': 1, 'engines_n': counts, 'engines': engines, 'jets': jet}
 
 
 # Previews: each hull from above its port quarter, then from below its bow.

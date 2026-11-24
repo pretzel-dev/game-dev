@@ -258,7 +258,15 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
   the waist and taper. Each class has a character the owner named: corvette
   nimble, frigate intimidating, battleship formidable, escort shows its guns,
   tender shows its tanks. `concepts.py -- concord_a concord_b` draws the real
-  models on a side/top/angled sheet. `tools/blender/concepts.py` draws rough
+  models on a side/top/angled sheet. The owner's one-line brief per power:
+  **Concord sleek and agile; Republic utilitarian and intimidating; Holds
+  practical and functional.** Classes of one power must not share an outline
+  (the owner found frigate and escort too alike: the escort is now a broad
+  flat arrowhead). Concord models are made at their true size (`true_size`
+  in the file's extras: drawn without `CLASS_SIZE`, lengths in `LEN`), and the
+  file lists each housed engine (one torch each) and where the attitude jets
+  sit (`engines`, `jets`; `K.engines`, `K.jets` in the kit), because flares
+  placed by guesswork floated off the tapered hulls. `tools/blender/concepts.py` draws rough
   outline sheets to pick a direction before building; the owner liked the
   Holds "Lantern" (a cage of mismatched modules round a spine), found thin
   blades too thin and squat bricks too squat, and did not like radiator-wing
