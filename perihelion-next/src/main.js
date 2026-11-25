@@ -182,49 +182,29 @@ function fleetOf(s) {
 }
 function clearSel() { ui.armed = null; ui.struct = null; ui.sel = new Set(); ui.target = null; ui.targetShip = null; ui.routes = null; ui.routeKey = null; ui.build = false; ui.plotMode = false; ui.plot = null; }
 function selectShips(list) { clearSel(); ui.selBody = null; for (const s of list) ui.sel.add(s.id); sfx('select'); }
-/** Give the selected ships an order, in their formation. */
-function sendOrder(o) {
-  const ships = selShips(), sh = shapeOf(ships);
-  act({ t: 'order', ids: ships.map((x) => x.id), order: o ? { ...o, loose: sh === 'loose', shape: sh } : o });
-  sfx('confirm');
-}
 /** The ways to catch a ship (time and fuel per drive), worked out again every few game seconds. */
 function icptFor(ships, T) {
   const key = `${ships.map((x) => x.id)}:${T.id}`;
   if (ui.icptKey !== key || Math.abs(game.time - ui.icptT) > 4) { ui.icpt = S.intercepts(game, ships.map((x) => x.id), T.id); ui.icptKey = key; ui.icptT = game.time; }
   return ui.icpt;
 }
-/** The default course: cruise, or the first that the tanks allow. */
-const pickCourse = (list, tank) => list.find((r) => r.key === 'cruise' && r.reach !== false && r.dv <= tank) || list.find((r) => r.reach !== false && r.dv <= tank) || null;
 /**
- * Mouse right-click: the order button. With ships selected: a world, go there now by the default course;
- * another ship, go and catch it (Match unless another way was picked); one of your own, join it.
- * The panel stays on the target with the course used lit, so another course can still be picked.
+ * Mouse right-click: the order button. With ships selected it names the target (a world, another ship, or one of
+ * your own to join) and the panel shows the courses with their time and fuel. Nothing leaves until a course is
+ * pressed, so two fleets can be timed against the same target before either is sent.
  */
 function rightClick(x, y) {
   if (!live()) return;
   if (!$('sheet').hidden) { $('sheet').hidden = true; sfx('close'); return; }
   if (!ui.sel.size) return;
-  const ships = selShips(), tank = Math.min(...ships.map((k) => k.dv));
+  const ships = selShips();
   let hit = view.pick(x, y);
   if (hit && hit.ship != null) {
     const T = S.shipById(game, hit.ship);
-    if (T && mine(T) && !T.st.civil) {
-      if (ui.sel.has(T.id) || (T.at !== null && ships.every((k) => k.at === T.at))) { const w = view.pick(x, y, false); hit = w && w.body != null ? w : null; }
-      else { sendOrder({ type: 'form', lead: T.id }); ui.targetShip = null; ui.target = null; refreshUI(); return; }
-    } else if (T) {
-      ui.targetShip = T.id; ui.target = null; ui.routes = null;
-      const list = icptFor(ships, T), r = pickCourse(list, tank) || (list.some((x) => x.reach) ? null : list.find((x) => x.key === 'cruise'));
-      if (r) { sendOrder({ type: 'attack', ship: T.id, mode: ui.amode, profile: r.profile }); ui.sentKey = `${T.id}:${r.key}`; } else sfx('deny');
-      refreshUI(); return;
-    }
+    if (T && mine(T) && !T.st.civil && (ui.sel.has(T.id) || (T.at !== null && ships.every((k) => k.at === T.at)))) { const w = view.pick(x, y, false); hit = w && w.body != null ? w : null; }
+    else if (T) { ui.targetShip = T.id; ui.target = null; ui.routes = null; ui.sentKey = null; sfx('tap'); refreshUI(); return; }
   }
-  if (hit && hit.body != null && !ships.every((k) => k.at === hit.body)) {
-    setTarget(hit.body);
-    const r = pickCourse(ui.routes || [], tank);
-    if (r) { sendOrder({ type: 'orbit', body: hit.body, profile: r.profile, via: r.via, side: r.side }); ui.sentKey = `${hit.body}:${r.key}`; } else sfx('deny');
-    refreshUI(); return;
-  }
+  if (hit && hit.body != null && !ships.every((k) => k.at === hit.body)) { setTarget(hit.body); refreshUI(); return; }
   if (!hit) { ui.target = null; ui.targetShip = null; ui.routes = null; sfx('close'); refreshUI(); }
 }
 /** Mouse left-click: only ever selects (a world, a ship, or nothing). Shift-click adds or drops one of your ships. */
