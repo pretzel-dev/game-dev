@@ -1428,7 +1428,9 @@ function combat(game, dt) {
         }
       }
       if (s.torpsFree && !best.dead && best.st.power > 0 && best.seen[s.owner] === 2 && d < RULES.torpRange && st.tubes) launchTorps(game, s, { ship: best.id });
-    } else if (bat) {
+      if (d >= st.railRange) best = null; // (out of rail reach: the rails go to the battery instead of sitting idle)
+    }
+    if (!best && bat) {
       const p = game.bp[bat.id], v = game.bv[bat.id];
       const rx = p.x - s.x, ry = p.y - s.y, rz = p.z - s.z, d = Math.hypot(rx, ry, rz) || 1;
       const rate = (rx * (v.x - s.vx) + ry * (v.y - s.vy) + rz * (v.z - s.vz)) / d;

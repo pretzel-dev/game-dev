@@ -483,6 +483,27 @@ for (const k of SCENARIO_KEYS) {
   }
   ok(inward <= 1, 'a drifting ship that touches a world loses its inward speed');
 }
+{
+  // Attacking a defended world while an enemy ship sits at its moon (in torpedo reach, out of rail reach):
+  // the rails go to the battery instead of waiting on the ship.
+  const g = S.createGame({ seed: 3, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
+  S.step(g, 1);
+  const pl = g.bodies.find((b) => b.kind === 'planet' && !b.giant && g.bodies.some((m) => m.parent === b.id && m.kind === 'moon'));
+  const moon = g.bodies.find((m) => m.parent === pl.id && m.kind === 'moon');
+  S.capture(g, pl, 1); S.capture(g, moon, 1);
+  pl.structures = [{ type: 'battery', level: 1, left: 0 }]; pl.bhp = S.batteryMax(pl);
+  const a = g.ships.find((s) => s.owner === 0 && !s.st.civil), b = g.ships.find((s) => s.owner === 1 && !s.st.civil);
+  const pp = g.bp[pl.id], pv = g.bv[pl.id], mp = g.bp[moon.id], mv = g.bv[moon.id];
+  const r = pl.size * 2.2;
+  Object.assign(a, { x: pp.x + r, y: pp.y, z: pp.z, vx: pv.x, vy: pv.y, vz: pv.z, at: null, order: { type: 'orbit', body: pl.id, profile: 'cruise' }, torpsFree: false, fireFree: true });
+  Object.assign(b, { x: mp.x, y: mp.y + moon.size * 2, z: mp.z, vx: mv.x, vy: mv.y, vz: mv.z, at: null, order: null, fireFree: false, torpsFree: false });
+  b.beacon = true; // (kept in sight, as it would be with the world's own sensors)
+  b.seen[0] = 2; a.seen[1] = 2;
+  const dAB = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  const h0 = pl.bhp;
+  for (let i = 0; i < 40; i++) { a.order = { type: 'orbit', body: pl.id, profile: 'cruise' }; a.x = g.bp[pl.id].x + r; a.y = g.bp[pl.id].y; a.z = g.bp[pl.id].z; a.vx = g.bv[pl.id].x; a.vy = g.bv[pl.id].y; a.vz = g.bv[pl.id].z; b.seen[0] = 2; S.step(g, 0.2); }
+  ok(dAB > a.st.railRange && pl.bhp < h0, `the rails hit the battery while an enemy ship waits out of reach (${dAB.toFixed(1)} away)`);
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];
