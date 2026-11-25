@@ -110,9 +110,10 @@ after testing: agents, crews and upkeep, megaprojects, timed events, fixed maps.
 - Desktop (`@media (min-width: 900px)`, at the end of `style.css`): one centred
   column (menus too), smaller text than the phone scale. Mouse follows RTS
   basics (the owner asked): left-click only ever selects (`clickSelect`),
-  right-click is the order (`rightClick`: go by cruise, chase, join), and the
-  panel then shows the course used, lit, to switch. Touch keeps tap the
-  target, then pick a course. Keep the phone untouched.
+  right-click names the target (`rightClick`) and the panel shows the courses;
+  nothing is sent until a course is pressed (the owner wants to compare
+  times for several fleets before launching). Touch keeps tap the target,
+  then pick a course. Keep the phone untouched.
 - Explaining without clutter: on touch the first tap on a button shows a
   one-line hint (`HINT` in `main.js`) and the second tap does it; mouse users
   hover. Add a hint for every new button rather than text on screen.

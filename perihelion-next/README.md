@@ -238,11 +238,11 @@ timed events) are still there to lift back if testing asks for them.
   the locked world or ship), double-tap to fly in.
 - Mouse: click to select, drag to move the map, right-drag to turn, wheel to zoom.
   Left-click only selects (a world, a ship, or empty space to clear;
-  shift-click adds or drops one of your ships). Right-click gives the order to
-  the ships selected: on a world, go there now by cruise (a hard burn if
-  cruise is out of reach); on another ship, go and catch it; on one of your
-  own, join it. The panel then shows the courses with the one used lit, to
-  switch. Clicking the map closes the research sheet.
+  shift-click adds or drops one of your ships). Right-click names the target
+  for the ships selected (a world, another ship, or one of your own to join)
+  and the panel shows the courses with their time and fuel. Nothing leaves
+  until a course is pressed, so fleets can be timed before they are sent.
+  Clicking the map closes the research sheet.
 - Desktop: the interface is one centred column (top bar, panel at the bottom
   middle), and its text grows less with the screen than on a phone.
 - Keys: WASD or arrows move, Q/E turn, +/- zoom, Space pause, 1 to 4 time speed, H whole system, R research, F follow, Esc back.
