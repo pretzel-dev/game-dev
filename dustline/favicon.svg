@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dustline">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f86d6" />
+      <stop offset="1" stop-color="#f6d6ae" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#sky)" />
+  <path d="M0 40 L10 22 L18 22 L24 40 Z" fill="#c4583a" />
+  <path d="M40 40 L48 28 L56 40 Z" fill="#d97a4c" />
+  <path d="M0 40h64v24H0z" fill="#e39a5e" />
+  <g transform="rotate(-14 34 36)">
+    <rect x="20" y="32" width="26" height="7" rx="2" fill="#2f59c9" />
+    <rect x="26" y="26" width="12" height="7" rx="1" fill="none" stroke="#1f2023" stroke-width="2" />
+    <circle cx="24" cy="41" r="5" fill="#2a2624" />
+    <circle cx="42" cy="41" r="5" fill="#2a2624" />
+  </g>
+</svg>

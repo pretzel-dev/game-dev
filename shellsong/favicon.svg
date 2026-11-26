@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Shellsong">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7ad8f0" />
+      <stop offset="1" stop-color="#2a8ac0" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#sea)" />
+  <path d="M32 50 C18 50 14 38 16 30 C20 34 26 36 32 36 C38 36 44 34 48 30 C50 38 46 50 32 50 Z" fill="#ff8ab0" />
+  <g stroke="#ff6aa8" stroke-width="2" stroke-linecap="round">
+    <path d="M32 50 L32 36" /><path d="M32 50 L24 35" /><path d="M32 50 L40 35" /><path d="M32 50 L19 32" /><path d="M32 50 L45 32" />
+  </g>
+  <circle cx="32" cy="22" r="6" fill="#fff8f4" />
+  <circle cx="30" cy="20" r="2" fill="#fff" />
+  <path d="M24 12 l3 4 l5-6 l5 6 l3-4 l-1 6 h-14 z" fill="#f2c94a" />
+</svg>
