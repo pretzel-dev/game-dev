@@ -504,6 +504,19 @@ for (const k of SCENARIO_KEYS) {
   for (let i = 0; i < 40; i++) { a.order = { type: 'orbit', body: pl.id, profile: 'cruise' }; a.x = g.bp[pl.id].x + r; a.y = g.bp[pl.id].y; a.z = g.bp[pl.id].z; a.vx = g.bv[pl.id].x; a.vy = g.bv[pl.id].y; a.vz = g.bv[pl.id].z; b.seen[0] = 2; S.step(g, 0.2); }
   ok(dAB > a.st.railRange && pl.bhp < h0, `the rails hit the battery while an enemy ship waits out of reach (${dAB.toFixed(1)} away)`);
 }
+{
+  // A salvo only leaves ships within torpedo range of the target.
+  const g = S.createGame({ seed: 10, players: [{ faction: 'concord' }, { faction: 'boreal' }] });
+  g.noEvents = true; S.step(g, 1);
+  const a = g.ships.find((s) => s.owner === 0 && s.st.tubes), b = g.ships.find((s) => s.owner === 1 && !s.st.civil);
+  const z = g.belt.r + 20;
+  Object.assign(a, { x: 0, y: 30, z, vx: 0, vy: 0, vz: 0, at: null, order: null, torpsFree: false, fireFree: false });
+  Object.assign(b, { x: S.RULES.torpRange * 3, y: 30, z, vx: 0, vy: 0, vz: 0, at: null, order: null, torpsFree: false, fireFree: false });
+  b.seen[0] = 2;
+  ok(!S.salvo(g, 0, [a.id], { ship: b.id }) && !g.torps.length, 'no salvo at a ship out of torpedo range');
+  b.x = S.RULES.torpRange * 0.8;
+  ok(S.salvo(g, 0, [a.id], { ship: b.id }) && g.torps.length > 0, 'a salvo at a ship in range');
+}
 // (Whether AI-only games reach a winner is measured by check:matches; the AI is still poor at taking a defended capital.)
 {
   const players = [{ faction: 'concord', ai: 'normal' }, { faction: 'holds', ai: 'normal' }];
