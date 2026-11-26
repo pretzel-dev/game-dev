@@ -46,8 +46,8 @@ export const RULES = {
   pdcRange: 3,
   railRange: 7,
   railCool: 4,
-  torpRange: 20, // ships loose torpedoes on their own inside this
-  torp: { accel: 0.4, dv: 8, dmg: 28, life: 150, reload: 14, hit: 0.55 },
+  torpRange: 20, // ships loose torpedoes inside this, on their own or as an ordered salvo
+  torp: { accel: 0.4, dv: 8, dmg: 28, life: 60, reload: 14, hit: 0.55 },
   cold: 14, // range at which a cold (coasting) ship is spotted
   ident: 60, // range at which a burning ship is identified, not just seen
   worldSensor: 1.4, // a held world sees this much further than a ship
@@ -810,10 +810,18 @@ export function setStance(game, owner, ids, st) {
   return true;
 }
 /** Loose a salvo now at a chosen ship or battery, at any range. */
+/** How far a ship is from a salvo's target (a ship, or the surface of a world). */
+export function salvoDist(game, s, target) {
+  if (target.ship != null) { const T = shipById(game, target.ship); return T ? Math.hypot(T.x - s.x, T.y - s.y, T.z - s.z) : Infinity; }
+  const b = game.bodies[target.body], p = b && game.bp[b.id];
+  return p ? Math.max(0, Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z) - b.size) : Infinity;
+}
+/** Fire all torpedoes now at a chosen ship or battery. Only ships within torpedo range of it fire. */
 export function salvo(game, owner, ids, target) {
   let any = false;
   for (const s of game.ships) {
     if (!ids.includes(s.id) || s.owner !== owner) continue;
+    if (salvoDist(game, s, target) > RULES.torpRange) continue;
     if (launchTorps(game, s, target)) any = true;
   }
   return any;
@@ -1298,7 +1306,7 @@ function stepTorps(game, dt) {
     if (game.time - m.born > R.life) { m.dead = true; continue; }
     // Out of fuel and no longer closing (a miss, or one that never found its lock): it is finished. Before, these
     // coasted on for minutes, right across the system.
-    if (m.dv <= 0) { m.coast = (m.coast || 0) + dt; if ((closing <= 0 && m.coast > 3) || m.coast > 30) { m.dead = true; continue; } }
+    if (m.dv <= 0) { m.coast = (m.coast || 0) + dt; if ((closing <= 0 && m.coast > 3) || m.coast > 15) { m.dead = true; continue; } }
     m.burn = 0;
     if (m.dv > 0) {
       const tau = clamp(d / Math.max(0.5, closing), 0.5, 40);

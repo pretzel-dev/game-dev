@@ -170,7 +170,9 @@ timed events) are still there to lift back if testing asks for them.
   keeps its course; ? when it cannot be reckoned). Pressing a course gives the
   order, as for a world. Joined buttons are settings; boxes with time and fuel
   are orders.
-- **Torpedoes** steer round a world between them and their target. One that
+- **Torpedoes** reach as far as the dashed ring round selected ships, whether
+  fired on their own or as an ordered salvo; a salvo needs the target inside it.
+  They steer round a world between them and their target. One that
   runs out of fuel and is no longer closing is finished (it does not coast on).
 - **Upgrades.** A structure being upgraded keeps working at its present level.
 - **Capital alert.** An alert when enemy warships are known to be heading for

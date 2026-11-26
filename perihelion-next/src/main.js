@@ -291,7 +291,7 @@ const HINT = {
   pass: 'Fly past at speed and shoot.',
   match: 'Pull alongside and fight.',
   board: 'Pull alongside and take the ship.',
-  salvo: 'Fire all torpedoes.',
+  salvo: 'Fire all torpedoes. Needs the target inside the dashed ring.',
   cancel: 'Stop building this ship.',
   join: 'Fly to this ship and stay with it.',
   pick: 'Select this ship.',
@@ -487,7 +487,7 @@ function stripHTML() {
         h += `<div class="seg">${modes.map((m) => `<button class="${ui.amode === m ? 'on' : ''}" data-a="amode" data-v="${m}" title="${esc(HINT[m])}">${MODE_NAME[m]}</button>`).join('')}</div><div class="row">`;
         const full = Math.min(...ships.map((x) => x.st.dv)), tank = Math.min(...ships.map((x) => x.dv));
         for (const r of icptFor(ships, T)) h += tile('chase', r.key, L(icon(r.key), ROUTE_NAME[r.key]), r.reach ? `${mmss(Math.round(r.time / 5) * 5)} · <b class="${r.dv > tank ? 'bad' : ''}">${Math.round((r.dv / Math.max(0.01, full)) * 20) * 5}%</b>` : '? · ?', `wide ${r.reach && r.dv > tank ? 'no' : ''} ${ui.sentKey === `${T.id}:${r.key}` ? 'on' : ''}`);
-        if (ships.some((x) => x.torps > 0)) h += tile('salvo', T.id, L(icon('salvo'), 'Salvo'), '', 'wide');
+        if (ships.some((x) => x.torps > 0)) h += tile('salvo', T.id, L(icon('salvo'), 'Salvo'), '', `wide ${ships.some((x) => x.torps > 0 && S.salvoDist(game, x, { ship: T.id }) <= RULES.torpRange) ? '' : 'no'}`);
         h += '</div>';
       } else ui.targetShip = null;
     } else {
@@ -621,7 +621,7 @@ function clickStrip(a, v) {
       break;
     }
     case 'strike': order({ type: 'strike', body: +v, profile: 'hard' }); ui.target = null; ui.routes = null; break;
-    case 'salvo': act({ t: 'salvo', ids, ship: +v }); sfx('confirm'); break;
+    case 'salvo': if (ships.some((x) => x.torps > 0 && S.salvoDist(game, x, { ship: +v }) <= RULES.torpRange)) { act({ t: 'salvo', ids, ship: +v }); sfx('confirm'); } else sfx('deny'); break;
     case 'torps': act({ t: 'stance', ids, st: { torpsFree: !ships.every((s) => s.torpsFree) } }); sfx('tap'); break;
     case 'fire': act({ t: 'stance', ids, st: { fireFree: !ships.every((s) => s.fireFree) } }); sfx('tap'); break;
     case 'evade': act({ t: 'stance', ids, st: { evade: !ships.every((s) => s.evade) } }); sfx('tap'); break;
